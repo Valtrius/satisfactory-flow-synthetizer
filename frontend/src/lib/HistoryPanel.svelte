@@ -35,12 +35,23 @@
     type HistorySortPref,
     type HistoryStatusFilter
   } from './uiPrefs';
+  import { flip } from 'svelte/animate';
+  import {
+    insertIndexFromClient,
+    prefersReducedMotion,
+    setListDragging,
+    visualReorderSlots
+  } from './pointerReorder';
 
   type StatusFilter = HistoryStatusFilter;
   type EngineFilter = HistoryEngineFilter;
   type SearchFilter = HistorySearchFilter;
   type ToolbarPanel = 'sort' | 'filter';
   type HistorySort = HistorySortPref;
+  type DragBand = 'queued' | 'history';
+  type VisualItem =
+    | { kind: 'entry'; entry: HistoryEntry }
+    | { kind: 'ghost'; key: string };
 
   type Props = {
     queued: HistoryEntry[];
@@ -90,12 +101,20 @@
   let searchFilters = $state<SearchFilter[]>([...savedToolbar.searchFilters]);
   let sort = $state<HistorySort>(savedToolbar.sort);
 
-  let dragBand = $state<'queued' | 'history' | null>(null);
+  let dragBand = $state<DragBand | null>(null);
   let dragFromId = $state<string | null>(null);
-  let dragOverId = $state<string | null>(null);
-  let dragMoved = $state(false);
+  let dragInsertAt = $state<number | null>(null);
+  let dragActive = $state(false);
+  let dragPointerId = $state<number | null>(null);
   let dragOriginX = 0;
   let dragOriginY = 0;
+  let dragGrabX = 0;
+  let dragGrabY = 0;
+  let dragWidth = $state(0);
+  let dragHeight = $state(0);
+  let dragFloatX = $state(0);
+  let dragFloatY = $state(0);
+  let dragReduceMotion = false;
 
   const statusOptions: { value: StatusFilter; label: string }[] = [
     { value: 'completed', label: 'Done' },
@@ -286,6 +305,157 @@
       filteredHistory.length === 0
   );
 
+  const dragEntry = $derived(
+    dragFromId
+      ? (queued.find((entry) => entry.id === dragFromId) ??
+        history.find((entry) => entry.id === dragFromId) ??
+        null)
+      : null
+  );
+
+  const flipDuration = $derived(dragReduceMotion || !dragActive ? 0 : 220);
+
+  function visualList(entries: HistoryEntry[], band: DragBand): VisualItem[] {
+    if (!dragActive || dragBand !== band || !dragFromId) {
+      return entries.map((entry) => ({ kind: 'entry', entry }));
+    }
+    const fromIndex = entries.findIndex((entry) => entry.id === dragFromId);
+    return visualReorderSlots(entries, fromIndex, dragInsertAt, true).map((slot) =>
+      slot.kind === 'ghost'
+        ? { kind: 'ghost', key: `ghost-${band}` }
+        : { kind: 'entry', entry: slot.item }
+    );
+  }
+
+  const visualQueued = $derived(visualList(filteredQueued, 'queued'));
+  const visualHistory = $derived(visualList(filteredHistory, 'history'));
+
+  function dropTargetId(
+    entries: HistoryEntry[],
+    fromId: string,
+    insertAt: number
+  ): string | null {
+    const fromIndex = entries.findIndex((entry) => entry.id === fromId);
+    if (fromIndex < 0) return null;
+    const without = entries.filter((entry) => entry.id !== fromId);
+    const clamped = Math.max(0, Math.min(without.length, insertAt));
+    if (clamped === fromIndex) return fromId;
+    if (clamped < fromIndex) return without[clamped]?.id ?? null;
+    return without[clamped - 1]?.id ?? null;
+  }
+
+  function isInteractiveTarget(target: EventTarget | null): boolean {
+    if (!(target instanceof Element)) return false;
+    return Boolean(target.closest('button, input, textarea, a, [role="menuitem"]'));
+  }
+
+  function clearDragState(): void {
+    dragBand = null;
+    dragFromId = null;
+    dragInsertAt = null;
+    dragActive = false;
+    dragPointerId = null;
+    dragWidth = 0;
+    dragHeight = 0;
+    setListDragging(false);
+  }
+
+  function cancelDrag(): void {
+    if (!dragFromId) return;
+    clearDragState();
+  }
+
+  function updateDropTarget(clientY: number): void {
+    if (!dragBand || !dragFromId) return;
+    const entryEls = [
+      ...document.querySelectorAll<HTMLElement>(
+        `[data-history-band="${dragBand}"][data-history-id]`
+      )
+    ];
+    dragInsertAt = insertIndexFromClient(entryEls, clientY, 'y');
+  }
+
+  function onCardPointerDown(band: DragBand, id: string, event: PointerEvent): void {
+    if (event.button !== 0 || isInteractiveTarget(event.target) || renamingId === id) return;
+    event.preventDefault();
+    menuId = null;
+    openPanel = null;
+    dragReduceMotion = prefersReducedMotion();
+    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    const source = band === 'queued' ? filteredQueued : filteredHistory;
+    const fromIndex = source.findIndex((entry) => entry.id === id);
+    dragBand = band;
+    dragFromId = id;
+    dragInsertAt = fromIndex >= 0 ? fromIndex : 0;
+    dragActive = false;
+    dragPointerId = event.pointerId;
+    dragOriginX = event.clientX;
+    dragOriginY = event.clientY;
+    dragGrabX = event.clientX - rect.left;
+    dragGrabY = event.clientY - rect.top;
+    dragWidth = rect.width;
+    dragHeight = rect.height;
+    dragFloatX = rect.left;
+    dragFloatY = rect.top;
+  }
+
+  function onWindowPointerMove(event: PointerEvent): void {
+    if (dragPointerId == null || event.pointerId !== dragPointerId || !dragFromId) return;
+    if (!dragActive) {
+      if (
+        Math.abs(event.clientX - dragOriginX) <= 4 &&
+        Math.abs(event.clientY - dragOriginY) <= 4
+      ) {
+        return;
+      }
+      dragActive = true;
+      setListDragging(true);
+    }
+    dragFloatX = event.clientX - dragGrabX;
+    dragFloatY = event.clientY - dragGrabY;
+    updateDropTarget(event.clientY);
+  }
+
+  function onWindowPointerUp(event: PointerEvent): void {
+    if (dragPointerId == null || event.pointerId !== dragPointerId || !dragFromId) return;
+    const fromId = dragFromId;
+    const band = dragBand;
+    const insertAt = dragInsertAt;
+    const active = dragActive;
+    const source =
+      band === 'queued'
+        ? filteredQueued
+        : band === 'history'
+          ? filteredHistory
+          : [];
+    clearDragState();
+    if (active && band && insertAt != null) {
+      const toId = dropTargetId(source, fromId, insertAt);
+      if (toId && toId !== fromId) {
+        if (band === 'queued') onReorderQueued(fromId, toId);
+        else onReorderHistory(fromId, toId);
+      }
+      return;
+    }
+    if (!active) onSelect(fromId);
+  }
+
+  $effect(() => {
+    if (dragPointerId == null) return;
+    const move = (event: PointerEvent) => onWindowPointerMove(event);
+    const up = (event: PointerEvent) => onWindowPointerUp(event);
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', up);
+    return () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      window.removeEventListener('pointercancel', up);
+      document.body.classList.remove('history-dragging');
+      setListDragging(false);
+    };
+  });
+
   function chipClass(active: boolean): string {
     return `cursor-pointer rounded-control border px-2.5 py-1.5 text-left text-xs font-semibold transition-colors ${
       active
@@ -317,73 +487,6 @@
     renamingId = null;
   }
 
-  function isInteractiveTarget(target: EventTarget | null): boolean {
-    if (!(target instanceof Element)) return false;
-    return Boolean(target.closest('button, input, textarea, a, [role="menuitem"]'));
-  }
-
-  function onCardPointerDown(
-    band: 'queued' | 'history',
-    id: string,
-    event: PointerEvent
-  ): void {
-    if (event.button !== 0 || isInteractiveTarget(event.target) || renamingId === id) return;
-    event.preventDefault();
-    dragBand = band;
-    dragFromId = id;
-    dragOverId = id;
-    dragMoved = false;
-    dragOriginX = event.clientX;
-    dragOriginY = event.clientY;
-    (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
-  }
-
-  function onCardPointerMove(event: PointerEvent): void {
-    if (!dragBand || !dragFromId) return;
-    if (
-      Math.abs(event.clientX - dragOriginX) > 3 ||
-      Math.abs(event.clientY - dragOriginY) > 3
-    ) {
-      dragMoved = true;
-    }
-    const row = document
-      .elementsFromPoint(event.clientX, event.clientY)
-      .map((el) => (el instanceof Element ? el.closest<HTMLElement>('[data-history-id]') : null))
-      .find(
-        (el): el is HTMLElement =>
-          Boolean(el && el.dataset.historyId && el.dataset.historyId !== dragFromId)
-      );
-    if (!row) return;
-    const id = row.dataset.historyId;
-    const band = row.dataset.historyBand;
-    if (id && band === dragBand) dragOverId = id;
-  }
-
-  function finishCardPointer(event: PointerEvent, entryId: string): void {
-    if (!dragBand || !dragFromId) {
-      return;
-    }
-    const fromId = dragFromId;
-    const toId = dragOverId;
-    const band = dragBand;
-    const moved = dragMoved;
-    dragBand = null;
-    dragFromId = null;
-    dragOverId = null;
-    dragMoved = false;
-    try {
-      (event.currentTarget as HTMLElement).releasePointerCapture(event.pointerId);
-    } catch {
-      /* already released */
-    }
-    if (moved && toId && toId !== fromId) {
-      if (band === 'queued') onReorderQueued(fromId, toId);
-      else onReorderHistory(fromId, toId);
-      return;
-    }
-    if (!moved) onSelect(entryId);
-  }
-
   function toggleMenu(id: string, event: MouseEvent): void {
     event.stopPropagation();
     openPanel = null;
@@ -411,6 +514,11 @@
   }}
   onkeydown={(event) => {
     if (event.key === 'Escape') {
+      if (dragFromId) {
+        event.preventDefault();
+        cancelDrag();
+        return;
+      }
       menuId = null;
       openPanel = null;
     }
@@ -641,75 +749,98 @@
       </p>
     {:else}
       <div class="flex flex-col">
-        {#each filteredQueued as entry (entry.id)}
-          {@render row(entry, 'queued', true)}
+        {#each visualQueued as item (item.kind === 'ghost' ? item.key : item.entry.id)}
+          <div class="history-list-item" animate:flip={{ duration: flipDuration }}>
+            {#if item.kind === 'ghost'}
+              <div
+                class="history-drag-ghost"
+                style={`height: ${dragHeight}px`}
+                aria-hidden="true"
+              ></div>
+            {:else}
+              {@render row(item.entry, 'queued', true)}
+            {/if}
+          </div>
         {/each}
         {#if filteredRunning}
-          {@render row(filteredRunning, 'running', false)}
+          <div class="history-list-item">
+            {@render row(filteredRunning, 'running', false)}
+          </div>
         {/if}
-        {#each filteredHistory as entry (entry.id)}
-          {@render row(entry, 'history', historyDraggable)}
+        {#each visualHistory as item (item.kind === 'ghost' ? item.key : item.entry.id)}
+          <div class="history-list-item" animate:flip={{ duration: flipDuration }}>
+            {#if item.kind === 'ghost'}
+              <div
+                class="history-drag-ghost"
+                style={`height: ${dragHeight}px`}
+                aria-hidden="true"
+              ></div>
+            {:else}
+              {@render row(item.entry, 'history', historyDraggable)}
+            {/if}
+          </div>
         {/each}
       </div>
     {/if}
   </div>
 </Panel>
 
-{#snippet row(entry: HistoryEntry, band: 'queued' | 'running' | 'history', draggable: boolean)}
+{#if dragActive && dragEntry && dragBand}
+  <div
+    class="history-drag-float"
+    style={`width: ${dragWidth}px; transform: translate3d(${dragFloatX}px, ${dragFloatY}px, 0);`}
+    aria-hidden="true"
+  >
+    {@render row(dragEntry, dragBand, false, true)}
+  </div>
+{/if}
+
+{#snippet row(
+  entry: HistoryEntry,
+  band: 'queued' | 'running' | 'history',
+  draggable: boolean,
+  floating = false
+)}
   {@const selected = entry.id === selectedEntryId}
-  {@const dragging = dragFromId === entry.id}
-  {@const dropTarget = dragOverId === entry.id && dragFromId !== entry.id && dragBand === band}
   {@const metrics = entryHistoryMetrics(entry)}
   {@const allLayouts = Boolean(entry.request.enumerateAllAtN)}
   {@const engineZ3 = entry.request.engine === 'z3'}
   <div
     role="option"
-    tabindex="0"
+    tabindex={floating ? -1 : 0}
     aria-selected={selected}
-    data-history-id={entry.id}
-    data-history-band={band}
+    data-history-id={floating ? undefined : entry.id}
+    data-history-band={floating ? undefined : band}
     class={`relative grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-2 gap-y-1 border-b px-3 py-2.5 ${
       band === 'queued' ? 'border-dashed border-[#4a6574]' : 'border-solid border-line'
     } ${
       selected && band !== 'running' ? 'bg-selected shadow-[inset_3px_0_0_var(--color-accent)]' : ''
     } ${selected && band === 'running' ? 'shadow-[inset_3px_0_0_var(--color-accent)]' : ''} ${
-      !selected && band !== 'running' ? 'bg-transparent hover:bg-well-hover/55' : ''
+      !selected && band !== 'running' && !floating ? 'bg-transparent hover:bg-well-hover/55' : ''
     } ${band === 'running' ? 'history-entry-running cursor-pointer' : ''} ${
       selected && band === 'running' ? 'history-entry-running--selected' : ''
-    } ${draggable ? 'cursor-grab active:cursor-grabbing' : ''} ${
-      dragging ? 'history-entry-dragging z-2' : ''
+    } ${draggable && !floating ? 'cursor-grab' : ''} ${
+      floating ? 'history-drag-float-card border-solid' : ''
     }`}
-    onpointerdown={draggable && (band === 'queued' || band === 'history')
+    onpointerdown={draggable && !floating && (band === 'queued' || band === 'history')
       ? (event) => onCardPointerDown(band, entry.id, event)
       : undefined}
-    onpointermove={draggable ? onCardPointerMove : undefined}
-    onpointerup={draggable
-      ? (event) => finishCardPointer(event, entry.id)
-      : undefined}
-    onpointercancel={draggable
-      ? (event) => finishCardPointer(event, entry.id)
-      : undefined}
     onclick={() => {
-      if (draggable) return;
+      if (draggable || floating) return;
       onSelect(entry.id);
     }}
     onkeydown={(event) => {
+      if (floating) return;
       if (event.key === 'Enter' || event.key === ' ') {
         event.preventDefault();
         onSelect(entry.id);
       }
     }}
   >
-    {#if dropTarget && dragMoved}
-      <div
-        class="pointer-events-none absolute inset-x-0 top-0 z-3 h-0.5 bg-accent shadow-[0_0_10px_rgb(255_138_61/70%)]"
-        aria-hidden="true"
-      ></div>
-    {/if}
     <div class="min-w-0">
-      {#if renamingId === entry.id}
+      {#if renamingId === entry.id && !floating}
         <input
-          class="w-full rounded border border-accent bg-[#08141c] px-1.5 py-0.5 text-xs font-bold text-ink"
+          class="w-full rounded border border-accent bg-[#08141c] px-1.5 py-0.5 text-sm font-bold text-ink"
           bind:value={renameDraft}
           aria-label="Rename history entry"
           onclick={(event) => event.stopPropagation()}
@@ -733,7 +864,7 @@
           }}
         />
       {:else}
-        <p class="m-0 text-xs leading-snug font-bold wrap-break-word">{displayTitle(entry)}</p>
+        <p class="m-0 text-sm leading-snug font-bold wrap-break-word">{displayTitle(entry)}</p>
       {/if}
       <p class="mt-0.5 m-0 text-[0.7rem] tabular-nums text-muted">{subtitle(entry, band)}</p>
     </div>
@@ -764,8 +895,10 @@
           title="Remove from queue"
           aria-label="Remove from queue"
           class="!min-h-7 !w-7"
+          tabindex={floating ? -1 : undefined}
           onclick={(event) => {
             event.stopPropagation();
+            if (floating) return;
             onDelete(entry.id);
           }}
         >
@@ -780,7 +913,14 @@
           title="More actions"
           aria-label="More actions"
           class="!min-h-7 !w-7"
-          onclick={(event) => toggleMenu(entry.id, event)}
+          tabindex={floating ? -1 : undefined}
+          onclick={(event) => {
+            if (floating) {
+              event.stopPropagation();
+              return;
+            }
+            toggleMenu(entry.id, event);
+          }}
         >
           ⋯
         </Button>
@@ -830,7 +970,7 @@
       </li>
     </ul>
 
-    {#if menuId === entry.id}
+    {#if menuId === entry.id && !floating}
       <div
         class="absolute top-9 right-1 z-5 min-w-44 rounded-lg border border-line bg-panel py-1 shadow-[0_14px_32px_rgb(0_0_0/45%)]"
         role="menu"

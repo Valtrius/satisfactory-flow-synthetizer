@@ -4,7 +4,7 @@
   type Shape = 'default' | 'attached-left';
   type Size = 'default' | 'small' | 'large';
 
-  type Props = Omit<HTMLInputAttributes, 'value'> & {
+  type Props = Omit<HTMLInputAttributes, 'value' | 'size'> & {
     value?: string;
     shape?: Shape;
     size?: Size;
