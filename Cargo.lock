@@ -487,7 +487,6 @@ name = "custom-solver-adapter"
 version = "0.1.0"
 dependencies = [
  "num",
- "petgraph",
  "serde",
  "solver-api",
  "thiserror 2.0.20",
