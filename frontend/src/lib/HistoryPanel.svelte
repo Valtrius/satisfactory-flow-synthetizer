@@ -27,20 +27,20 @@
     entryStatusCaption,
     type HistoryEntry
   } from './historyModel';
+  import {
+    readUiPrefs,
+    updateUiPrefs,
+    type HistoryEngineFilter,
+    type HistorySearchFilter,
+    type HistorySortPref,
+    type HistoryStatusFilter
+  } from './uiPrefs';
 
-  type StatusFilter = 'completed' | 'failed' | 'cancelled' | 'incomplete' | 'unsat';
-  type EngineFilter = 'custom' | 'z3';
-  type SearchFilter = 'opt' | 'all';
+  type StatusFilter = HistoryStatusFilter;
+  type EngineFilter = HistoryEngineFilter;
+  type SearchFilter = HistorySearchFilter;
   type ToolbarPanel = 'sort' | 'filter';
-
-  type HistorySort =
-    | 'manual'
-    | 'newest'
-    | 'oldest'
-    | 'name-asc'
-    | 'name-desc'
-    | 'layouts-desc'
-    | 'nodes-asc';
+  type HistorySort = HistorySortPref;
 
   type Props = {
     queued: HistoryEntry[];
@@ -82,12 +82,13 @@
   let renameDraft = $state('');
   let renameIgnoreBlur = false;
   let menuId = $state<string | null>(null);
-  let query = $state('');
+  const savedToolbar = readUiPrefs().history;
+  let query = $state(savedToolbar.query);
   let openPanel = $state<ToolbarPanel | null>(null);
-  let statusFilters = $state<StatusFilter[]>([]);
-  let engineFilters = $state<EngineFilter[]>([]);
-  let searchFilters = $state<SearchFilter[]>([]);
-  let sort = $state<HistorySort>('manual');
+  let statusFilters = $state<StatusFilter[]>([...savedToolbar.statusFilters]);
+  let engineFilters = $state<EngineFilter[]>([...savedToolbar.engineFilters]);
+  let searchFilters = $state<SearchFilter[]>([...savedToolbar.searchFilters]);
+  let sort = $state<HistorySort>(savedToolbar.sort);
 
   let dragBand = $state<'queued' | 'history' | null>(null);
   let dragFromId = $state<string | null>(null);
@@ -133,6 +134,18 @@
     statusFilters.length > 0 || engineFilters.length > 0 || searchFilters.length > 0
   );
   const sortActive = $derived(sort !== 'manual');
+
+  $effect(() => {
+    updateUiPrefs({
+      history: {
+        query,
+        sort,
+        statusFilters,
+        engineFilters,
+        searchFilters
+      }
+    });
+  });
 
   function togglePanel(panel: ToolbarPanel, event: MouseEvent): void {
     event.stopPropagation();

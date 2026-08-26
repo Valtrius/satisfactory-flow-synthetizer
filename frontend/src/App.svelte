@@ -54,17 +54,16 @@
     compareSolutions,
     type SortColumn
   } from './lib/solutionSort';
+  import { readUiPrefs, updateUiPrefs } from './lib/uiPrefs';
   import type { EndpointRow, Solution, SolverEngine } from './types';
 
-  let nextEndpointId = 3;
-  let inputs = $state<EndpointRow[]>([]);
-  let outputs = $state<EndpointRow[]>([
-    { id: 'output-1', name: '', rate: '60', multiplier: '1' },
-    { id: 'output-2', name: '', rate: '60', multiplier: '1' }
-  ]);
-  let beltRate = $state('1200');
-  let enumerateAllAtN = $state(true);
-  let engine = $state<SolverEngine>('custom');
+  const savedForm = readUiPrefs().form;
+  let nextEndpointId = $state(savedForm.nextEndpointId);
+  let inputs = $state<EndpointRow[]>(savedForm.inputs.map((row) => ({ ...row })));
+  let outputs = $state<EndpointRow[]>(savedForm.outputs.map((row) => ({ ...row })));
+  let beltRate = $state(savedForm.beltRate);
+  let enumerateAllAtN = $state(savedForm.enumerateAllAtN);
+  let engine = $state<SolverEngine>(savedForm.engine);
 
   let historyEntries = $state<HistoryEntry[]>([]);
   let selectedEntryId = $state<string | null>(null);
@@ -230,6 +229,19 @@
 
   $effect(() => {
     persist.schedule(historyEntries, selectedEntryId);
+  });
+
+  $effect(() => {
+    updateUiPrefs({
+      form: {
+        inputs,
+        outputs,
+        beltRate,
+        enumerateAllAtN,
+        engine,
+        nextEndpointId
+      }
+    });
   });
 
   $effect(() => {
