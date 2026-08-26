@@ -33,7 +33,7 @@
 </script>
 
 <div
-  class={`flex flex-col items-start justify-between gap-4 px-6 py-5 md:flex-row md:items-center ${
+  class={`flex flex-col items-start justify-between gap-4 px-6 py-3 md:flex-row md:items-center ${
     borderBottom || showDetails ? 'border-b border-line' : ''
   } bg-[#0a151d]`}
 >
