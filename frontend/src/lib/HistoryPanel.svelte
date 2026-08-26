@@ -12,6 +12,8 @@
   import Zap from '@lucide/svelte/icons/zap';
   import Network from '@lucide/svelte/icons/network';
   import Table2 from '@lucide/svelte/icons/table-2';
+  import ArrowUpDown from '@lucide/svelte/icons/arrow-up-down';
+  import ListFilter from '@lucide/svelte/icons/list-filter';
   import Button from './ui/Button.svelte';
   import Input from './ui/Input.svelte';
   import Panel from './ui/Panel.svelte';
@@ -20,9 +22,25 @@
     displayTitle,
     entryElapsedMs,
     entryHistoryMetrics,
+    entryLayoutCount,
+    entryNodeCount,
     entryStatusCaption,
     type HistoryEntry
   } from './historyModel';
+
+  type StatusFilter = 'completed' | 'failed' | 'cancelled' | 'incomplete' | 'unsat';
+  type EngineFilter = 'custom' | 'z3';
+  type SearchFilter = 'opt' | 'all';
+  type ToolbarPanel = 'sort' | 'filter';
+
+  type HistorySort =
+    | 'manual'
+    | 'newest'
+    | 'oldest'
+    | 'name-asc'
+    | 'name-desc'
+    | 'layouts-desc'
+    | 'nodes-asc';
 
   type Props = {
     queued: HistoryEntry[];
@@ -65,6 +83,11 @@
   let renameIgnoreBlur = false;
   let menuId = $state<string | null>(null);
   let query = $state('');
+  let openPanel = $state<ToolbarPanel | null>(null);
+  let statusFilters = $state<StatusFilter[]>([]);
+  let engineFilters = $state<EngineFilter[]>([]);
+  let searchFilters = $state<SearchFilter[]>([]);
+  let sort = $state<HistorySort>('manual');
 
   let dragBand = $state<'queued' | 'history' | null>(null);
   let dragFromId = $state<string | null>(null);
@@ -73,7 +96,76 @@
   let dragOriginX = 0;
   let dragOriginY = 0;
 
+  const statusOptions: { value: StatusFilter; label: string }[] = [
+    { value: 'completed', label: 'Done' },
+    { value: 'failed', label: 'Failed' },
+    { value: 'cancelled', label: 'Cancelled' },
+    { value: 'incomplete', label: 'Incomplete' },
+    { value: 'unsat', label: 'Impossible' }
+  ];
+
+  const engineOptions: { value: EngineFilter; label: string }[] = [
+    { value: 'custom', label: 'Custom' },
+    { value: 'z3', label: 'Z3' }
+  ];
+
+  const searchOptions: { value: SearchFilter; label: string }[] = [
+    { value: 'opt', label: 'Optimal' },
+    { value: 'all', label: 'All layouts' }
+  ];
+
+  const sortOptions: { value: HistorySort; label: string; tip: string }[] = [
+    { value: 'manual', label: 'Manual', tip: 'Drag rows to reorder' },
+    { value: 'newest', label: 'Newest', tip: 'Most recently created first' },
+    { value: 'oldest', label: 'Oldest', tip: 'Oldest created first' },
+    { value: 'name-asc', label: 'Name A-Z', tip: 'Alphabetical by title' },
+    { value: 'name-desc', label: 'Name Z-A', tip: 'Reverse alphabetical' },
+    { value: 'layouts-desc', label: 'Most layouts', tip: 'Highest layout count first' },
+    { value: 'nodes-asc', label: 'Fewest nodes', tip: 'Smallest N first' }
+  ];
+
   const listEmpty = $derived(queued.length === 0 && !running && history.length === 0);
+  const historyDraggable = $derived(sort === 'manual');
+  const allEntries = $derived(
+    running ? [...queued, running, ...history] : [...queued, ...history]
+  );
+  const filtersActive = $derived(
+    statusFilters.length > 0 || engineFilters.length > 0 || searchFilters.length > 0
+  );
+  const sortActive = $derived(sort !== 'manual');
+
+  function togglePanel(panel: ToolbarPanel, event: MouseEvent): void {
+    event.stopPropagation();
+    menuId = null;
+    openPanel = openPanel === panel ? null : panel;
+  }
+
+  function clearFilters(): void {
+    statusFilters = [];
+    engineFilters = [];
+    searchFilters = [];
+  }
+
+  function toggleValue<T extends string>(list: T[], value: T): T[] {
+    return list.includes(value) ? list.filter((item) => item !== value) : [...list, value];
+  }
+
+  function toggleStatus(value: StatusFilter): void {
+    statusFilters = toggleValue(statusFilters, value);
+  }
+
+  function toggleEngine(value: EngineFilter): void {
+    engineFilters = toggleValue(engineFilters, value);
+  }
+
+  function toggleSearch(value: SearchFilter): void {
+    searchFilters = toggleValue(searchFilters, value);
+  }
+
+  function chooseSort(value: HistorySort): void {
+    sort = value;
+    openPanel = null;
+  }
 
   function matchesQuery(entry: HistoryEntry): boolean {
     const needle = query.trim().toLowerCase();
@@ -81,9 +173,99 @@
     return displayTitle(entry).toLowerCase().includes(needle);
   }
 
-  const filteredQueued = $derived(queued.filter(matchesQuery));
-  const filteredRunning = $derived(running && matchesQuery(running) ? running : null);
-  const filteredHistory = $derived(history.filter(matchesQuery));
+  function entryEngine(entry: HistoryEntry): EngineFilter {
+    return entry.request.engine === 'z3' ? 'z3' : 'custom';
+  }
+
+  function entrySearch(entry: HistoryEntry): SearchFilter {
+    return entry.request.enumerateAllAtN ? 'all' : 'opt';
+  }
+
+  function matchesStatusFilters(entry: HistoryEntry): boolean {
+    return statusFilters.length === 0 || (statusFilters as string[]).includes(entry.status);
+  }
+
+  function matchesEngineFilters(entry: HistoryEntry): boolean {
+    return engineFilters.length === 0 || engineFilters.includes(entryEngine(entry));
+  }
+
+  function matchesSearchFilters(entry: HistoryEntry): boolean {
+    return searchFilters.length === 0 || searchFilters.includes(entrySearch(entry));
+  }
+
+  function matchesFilter(entry: HistoryEntry): boolean {
+    return (
+      matchesStatusFilters(entry) && matchesEngineFilters(entry) && matchesSearchFilters(entry)
+    );
+  }
+
+  function matchesEntry(entry: HistoryEntry): boolean {
+    return matchesQuery(entry) && matchesFilter(entry);
+  }
+
+  /** Facet counts ignore their own dimension so other chips stay meaningful. */
+  function countStatus(value: StatusFilter): number {
+    return allEntries.filter(
+      (entry) =>
+        matchesQuery(entry) &&
+        matchesEngineFilters(entry) &&
+        matchesSearchFilters(entry) &&
+        entry.status === value
+    ).length;
+  }
+
+  function countEngine(value: EngineFilter): number {
+    return allEntries.filter(
+      (entry) =>
+        matchesQuery(entry) &&
+        matchesStatusFilters(entry) &&
+        matchesSearchFilters(entry) &&
+        entryEngine(entry) === value
+    ).length;
+  }
+
+  function countSearch(value: SearchFilter): number {
+    return allEntries.filter(
+      (entry) =>
+        matchesQuery(entry) &&
+        matchesStatusFilters(entry) &&
+        matchesEngineFilters(entry) &&
+        entrySearch(entry) === value
+    ).length;
+  }
+
+  function compareHistory(a: HistoryEntry, b: HistoryEntry): number {
+    switch (sort) {
+      case 'newest':
+        return b.createdAtMs - a.createdAtMs;
+      case 'oldest':
+        return a.createdAtMs - b.createdAtMs;
+      case 'name-asc':
+        return displayTitle(a).localeCompare(displayTitle(b), undefined, { sensitivity: 'base' });
+      case 'name-desc':
+        return displayTitle(b).localeCompare(displayTitle(a), undefined, { sensitivity: 'base' });
+      case 'layouts-desc':
+        return entryLayoutCount(b) - entryLayoutCount(a);
+      case 'nodes-asc': {
+        const aNodes = entryNodeCount(a);
+        const bNodes = entryNodeCount(b);
+        if (aNodes == null && bNodes == null) return 0;
+        if (aNodes == null) return 1;
+        if (bNodes == null) return -1;
+        return aNodes - bNodes;
+      }
+      default:
+        return 0;
+    }
+  }
+
+  const filteredQueued = $derived(queued.filter(matchesEntry));
+  const filteredRunning = $derived(running && matchesEntry(running) ? running : null);
+  const filteredHistory = $derived(
+    sort === 'manual'
+      ? history.filter(matchesEntry)
+      : history.filter(matchesEntry).slice().sort(compareHistory)
+  );
   const noMatches = $derived(
     !listEmpty &&
       filteredQueued.length === 0 &&
@@ -91,8 +273,21 @@
       filteredHistory.length === 0
   );
 
+  function chipClass(active: boolean): string {
+    return `cursor-pointer rounded-control border px-2.5 py-1.5 text-left text-xs font-semibold transition-colors ${
+      active
+        ? 'border-accent/70 bg-selected text-ink'
+        : 'border-control-border bg-control/60 text-muted hover:border-control-border-hover hover:text-control-fg'
+    }`;
+  }
+
+  function iconBtnClass(active: boolean): string {
+    return active ? '!border-accent/70 !bg-selected !text-accent' : '';
+  }
+
   function startRename(entry: HistoryEntry): void {
     menuId = null;
+    openPanel = null;
     renameIgnoreBlur = false;
     renamingId = entry.id;
     renameDraft = displayTitle(entry);
@@ -178,6 +373,7 @@
 
   function toggleMenu(id: string, event: MouseEvent): void {
     event.stopPropagation();
+    openPanel = null;
     menuId = menuId === id ? null : id;
   }
 
@@ -198,6 +394,13 @@
 <svelte:window
   onclick={() => {
     menuId = null;
+    openPanel = null;
+  }}
+  onkeydown={(event) => {
+    if (event.key === 'Escape') {
+      menuId = null;
+      openPanel = null;
+    }
   }}
 />
 
@@ -235,23 +438,196 @@
     </div>
   </div>
 
-  <div class="shrink-0 border-b border-line px-3 py-2">
-    <Input
-      type="search"
-      class="h-9 text-xs"
-      placeholder="Search by name…"
-      aria-label="Search history by name"
-      bind:value={query}
-    />
+  <div class="relative shrink-0 border-b border-line px-3 py-2">
+    <div class="flex items-center gap-1.5">
+      <Input
+        type="search"
+        size="small"
+        class="min-w-0 flex-1"
+        placeholder="Search…"
+        aria-label="Search history by name"
+        bind:value={query}
+      />
+      <Button
+        size="small"
+        square
+        type="button"
+        title="Sort history"
+        aria-label="Sort history"
+        aria-expanded={openPanel === 'sort'}
+        aria-haspopup="dialog"
+        class={iconBtnClass(openPanel === 'sort' || sortActive)}
+        onclick={(event) => togglePanel('sort', event)}
+      >
+        <ArrowUpDown class="size-3.5" strokeWidth={2.2} />
+      </Button>
+      <Button
+        size="small"
+        square
+        type="button"
+        title="Filter history"
+        aria-label="Filter history"
+        aria-expanded={openPanel === 'filter'}
+        aria-haspopup="dialog"
+        class={iconBtnClass(openPanel === 'filter' || filtersActive)}
+        onclick={(event) => togglePanel('filter', event)}
+      >
+        <ListFilter class="size-3.5" strokeWidth={2.2} />
+      </Button>
+    </div>
+
+    {#if openPanel === 'sort'}
+      <div
+        class="absolute inset-x-2 top-[calc(100%-0.15rem)] z-20 rounded-control border border-line bg-panel-2 py-1.5 shadow-[0_14px_32px_rgb(0_0_0/45%)]"
+        role="dialog"
+        aria-label="Sort history"
+        tabindex="-1"
+        onclick={(event) => event.stopPropagation()}
+        onpointerdown={(event) => event.stopPropagation()}
+        onkeydown={(event) => event.stopPropagation()}
+      >
+        <p class="m-0 px-3 pt-1 pb-1.5 text-[0.65rem] font-bold tracking-[0.08em] text-dim uppercase">
+          Sort by
+        </p>
+        <div class="flex flex-col gap-0.5 px-1.5 pb-1" role="listbox" aria-label="Sort options">
+          {#each sortOptions as option (option.value)}
+            <button
+              type="button"
+              role="option"
+              aria-selected={sort === option.value}
+              class={`rounded-control border px-2.5 py-2 text-left transition-colors ${
+                sort === option.value
+                  ? 'border-accent/70 bg-selected'
+                  : 'border-transparent hover:bg-well-hover/70'
+              }`}
+              onclick={() => chooseSort(option.value)}
+            >
+              <span class="block text-xs font-bold text-ink">{option.label}</span>
+              <span class="mt-0.5 block text-[0.68rem] text-muted">{option.tip}</span>
+            </button>
+          {/each}
+        </div>
+      </div>
+    {:else if openPanel === 'filter'}
+      <div
+        class="absolute inset-x-2 top-[calc(100%-0.15rem)] z-20 max-h-[min(28rem,70dvh)] overflow-y-auto rounded-control border border-line bg-panel-2 px-3 py-2.5 shadow-[0_14px_32px_rgb(0_0_0/45%)]"
+        role="dialog"
+        aria-label="Filter history"
+        tabindex="-1"
+        onclick={(event) => event.stopPropagation()}
+        onpointerdown={(event) => event.stopPropagation()}
+        onkeydown={(event) => event.stopPropagation()}
+      >
+        <div class="mb-2.5 flex items-center justify-between gap-2">
+          <p class="m-0 text-[0.65rem] font-bold tracking-[0.08em] text-dim uppercase">Filter</p>
+          <button
+            type="button"
+            class="cursor-pointer border-0 bg-transparent p-0 text-xs font-semibold text-accent hover:text-accent-bright disabled:cursor-default disabled:text-dim"
+            disabled={!filtersActive}
+            onclick={() => clearFilters()}
+          >
+            Clear
+          </button>
+        </div>
+
+        <div class="flex flex-col gap-3">
+          <div>
+            <p class="m-0 mb-1.5 text-[0.7rem] font-semibold text-muted">Status</p>
+            <div class="flex flex-wrap gap-1.5" role="group" aria-label="Status filters">
+              <button
+                type="button"
+                class={chipClass(statusFilters.length === 0)}
+                aria-pressed={statusFilters.length === 0}
+                onclick={() => {
+                  statusFilters = [];
+                }}
+              >
+                All
+              </button>
+              {#each statusOptions as option (option.value)}
+                {@const count = countStatus(option.value)}
+                <button
+                  type="button"
+                  class={chipClass(statusFilters.includes(option.value))}
+                  aria-pressed={statusFilters.includes(option.value)}
+                  onclick={() => toggleStatus(option.value)}
+                >
+                  {option.label}
+                  <span class="ml-1 font-medium text-dim tabular-nums">{count}</span>
+                </button>
+              {/each}
+            </div>
+          </div>
+
+          <div>
+            <p class="m-0 mb-1.5 text-[0.7rem] font-semibold text-muted">Engine</p>
+            <div class="flex flex-wrap gap-1.5" role="group" aria-label="Engine filters">
+              <button
+                type="button"
+                class={chipClass(engineFilters.length === 0)}
+                aria-pressed={engineFilters.length === 0}
+                onclick={() => {
+                  engineFilters = [];
+                }}
+              >
+                Any
+              </button>
+              {#each engineOptions as option (option.value)}
+                {@const count = countEngine(option.value)}
+                <button
+                  type="button"
+                  class={chipClass(engineFilters.includes(option.value))}
+                  aria-pressed={engineFilters.includes(option.value)}
+                  onclick={() => toggleEngine(option.value)}
+                >
+                  {option.label}
+                  <span class="ml-1 font-medium text-dim tabular-nums">{count}</span>
+                </button>
+              {/each}
+            </div>
+          </div>
+
+          <div>
+            <p class="m-0 mb-1.5 text-[0.7rem] font-semibold text-muted">Search</p>
+            <div class="flex flex-wrap gap-1.5" role="group" aria-label="Search filters">
+              <button
+                type="button"
+                class={chipClass(searchFilters.length === 0)}
+                aria-pressed={searchFilters.length === 0}
+                onclick={() => {
+                  searchFilters = [];
+                }}
+              >
+                Any
+              </button>
+              {#each searchOptions as option (option.value)}
+                {@const count = countSearch(option.value)}
+                <button
+                  type="button"
+                  class={chipClass(searchFilters.includes(option.value))}
+                  aria-pressed={searchFilters.includes(option.value)}
+                  onclick={() => toggleSearch(option.value)}
+                >
+                  {option.label}
+                  <span class="ml-1 font-medium text-dim tabular-nums">{count}</span>
+                </button>
+              {/each}
+            </div>
+          </div>
+        </div>
+      </div>
+    {/if}
   </div>
 
-  <div class="min-h-0 flex-1 overflow-y-auto px-2 py-2" role="listbox" aria-label="Job history">
+  <div class="min-h-0 flex-1 overflow-y-auto" role="listbox" aria-label="Job history">
     {#if listEmpty}
-      <p class="m-0 px-2 py-3 text-xs text-dim">Solve a problem to build history.</p>
+      <p class="m-0 px-3 py-3 text-xs text-dim">Solve a problem to build history.</p>
     {:else if noMatches}
-      <p class="m-0 px-2 py-3 text-xs text-dim">No entries match “{query.trim()}”.</p>
+      <p class="m-0 px-3 py-3 text-xs text-dim">
+        No entries match{query.trim() ? ` “${query.trim()}”` : ' these filters'}.
+      </p>
     {:else}
-      <div class="flex flex-col gap-1.5">
+      <div class="flex flex-col">
         {#each filteredQueued as entry (entry.id)}
           {@render row(entry, 'queued', true)}
         {/each}
@@ -259,7 +635,7 @@
           {@render row(filteredRunning, 'running', false)}
         {/if}
         {#each filteredHistory as entry (entry.id)}
-          {@render row(entry, 'history', true)}
+          {@render row(entry, 'history', historyDraggable)}
         {/each}
       </div>
     {/if}
@@ -279,12 +655,8 @@
     aria-selected={selected}
     data-history-id={entry.id}
     data-history-band={band}
-    class={`relative grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-2 gap-y-1 rounded-lg px-2.5 py-2.5 ${
-      band === 'queued'
-        ? 'border border-dashed border-[#4a6574]'
-        : band === 'history'
-          ? 'border border-solid border-line'
-          : 'border border-solid border-transparent'
+    class={`relative grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-2 gap-y-1 border-b px-3 py-2.5 ${
+      band === 'queued' ? 'border-dashed border-[#4a6574]' : 'border-solid border-line'
     } ${
       selected && band !== 'running' ? 'bg-selected shadow-[inset_3px_0_0_var(--color-accent)]' : ''
     } ${selected && band === 'running' ? 'shadow-[inset_3px_0_0_var(--color-accent)]' : ''} ${
@@ -317,7 +689,7 @@
   >
     {#if dropTarget && dragMoved}
       <div
-        class="pointer-events-none absolute inset-x-1 -top-1 z-3 h-1 rounded-full bg-accent shadow-[0_0_10px_rgb(255_138_61/70%)]"
+        class="pointer-events-none absolute inset-x-0 top-0 z-3 h-0.5 bg-accent shadow-[0_0_10px_rgb(255_138_61/70%)]"
         aria-hidden="true"
       ></div>
     {/if}

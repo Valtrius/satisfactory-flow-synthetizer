@@ -97,7 +97,6 @@
         <Button
           variant="danger"
           square
-          class="h-10.5"
           type="button"
           aria-label={`Remove ${labelPrefix.toLowerCase()} ${index + 1}`}
           title={`Remove ${labelPrefix.toLowerCase()}`}

@@ -29,13 +29,18 @@
   };
 
   const sizes: Record<Size, string> = {
-    default: 'min-h-10.5 px-4 py-2 text-sm',
-    small: 'min-h-8.5 px-3 py-1.5 text-xs'
+    default: 'min-h-9 px-4 py-2 text-sm',
+    small: 'min-h-8 px-3 py-1.5 text-xs'
+  };
+
+  const squareSizes: Record<Size, string> = {
+    default: 'min-h-9 w-9 min-w-9',
+    small: 'min-h-8 w-8 min-w-8'
   };
 </script>
 
 <button
-  class={`cursor-pointer rounded-control border font-bold transition-[border-color,background-color,background-image,transform,box-shadow] duration-150 hover:-translate-y-px disabled:cursor-not-allowed disabled:opacity-50 ${variants[variant]} ${square ? 'grid min-h-8.5 w-8.5 min-w-8.5 place-items-center p-0' : sizes[size]} ${className}`}
+  class={`cursor-pointer rounded-control border font-bold transition-[border-color,background-color,background-image,transform,box-shadow] duration-150 hover:-translate-y-px disabled:cursor-not-allowed disabled:opacity-50 ${variants[variant]} ${square ? `grid place-items-center p-0 ${squareSizes[size]}` : sizes[size]} ${className}`}
   {...props}
 >
   {@render children()}

@@ -49,7 +49,7 @@
         inputmode="decimal"
       />
       <em
-        class="grid h-10.5 place-items-center whitespace-nowrap rounded-tr-xs rounded-br-lg border border-l-0 border-field-border bg-well-hover px-3 text-xs not-italic text-muted"
+        class="grid h-9 place-items-center whitespace-nowrap rounded-tr-xs rounded-br-lg border border-l-0 border-field-border bg-well-hover px-3 text-xs not-italic text-muted"
         >/ min</em
       >
     </div>
@@ -58,6 +58,7 @@
   <div class="mt-5 border-t border-line pt-4">
     <span class="mb-2 block text-xs font-bold tracking-wide text-muted">Solver engine</span>
     <SegmentedControl
+      size="default"
       options={engineOptions}
       value={engine}
       onchange={onEngineChange}
