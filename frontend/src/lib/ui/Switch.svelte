@@ -21,8 +21,8 @@
   {onclick}
 >
   <span
-    class={`pointer-events-none absolute top-1/2 size-3.5 -translate-y-1/2 rounded-full bg-ink shadow-sm transition-[left] duration-150 ${
-      checked ? 'left-[calc(100%-0.975rem)]' : 'left-0.5'
+    class={`pointer-events-none absolute top-1/2 size-3.5 -translate-y-1/2 rounded-full shadow-sm transition-[left,background-color] duration-150 ${
+      checked ? 'left-[calc(100%-0.975rem)] bg-on-accent' : 'left-0.5 bg-ink'
     }`}
   ></span>
 </button>

@@ -1,7 +1,6 @@
 <script lang="ts">
   import Button from './ui/Button.svelte';
   import Input from './ui/Input.svelte';
-  import Panel from './ui/Panel.svelte';
   import SegmentedControl from './ui/SegmentedControl.svelte';
   import Switch from './ui/Switch.svelte';
   import type { SolverEngine } from '../types';
@@ -11,6 +10,7 @@
     enumerateAllAtN: boolean;
     engine: SolverEngine;
     hasRunning: boolean;
+    class?: string;
     onEnumerateChange: (value: boolean) => void;
     onEngineChange: (value: SolverEngine) => void;
     onSolve: () => void;
@@ -21,6 +21,7 @@
     enumerateAllAtN,
     engine,
     hasRunning,
+    class: className = '',
     onEnumerateChange,
     onEngineChange,
     onSolve
@@ -32,9 +33,9 @@
   ];
 </script>
 
-<Panel element="aside" class="flex flex-col p-4.5 md:col-span-2 md:p-6 xl:col-span-1">
+<section class={`flex flex-col p-4.5 md:p-6 ${className}`}>
   <h2 class="m-0 text-lg font-bold tracking-tight">Constraint</h2>
-  <label class="mt-6">
+  <label class="mt-5.5">
     <span class="mb-1.5 block text-xs font-bold tracking-wide text-muted">Maximum belt rate</span>
     <div class="flex items-center">
       <Input
@@ -79,7 +80,7 @@
       onclick={() => onEnumerateChange(!enumerateAllAtN)}
     />
   </div>
-  <div class="mt-5.5 flex items-center gap-2.5">
+  <div class="mt-auto flex items-center gap-2.5 pt-5.5">
     <Button variant="primary" class="flex-1" type="button" onclick={onSolve}>
       {hasRunning
         ? enumerateAllAtN
@@ -90,4 +91,4 @@
           : 'Find optimal layout'}
     </Button>
   </div>
-</Panel>
+</section>

@@ -5,7 +5,6 @@
   import { MAX_ENDPOINTS } from './endpoints';
   import Button from './ui/Button.svelte';
   import Input from './ui/Input.svelte';
-  import Panel from './ui/Panel.svelte';
 
   type Props = {
     title: string;
@@ -15,6 +14,7 @@
     minRows?: number;
     emptyTitle?: string;
     emptyBody?: string;
+    class?: string;
     onAdd: () => void;
     onRemove: (index: number) => void;
     onUpdate: (index: number, field: 'rate' | 'multiplier', value: string) => void;
@@ -29,6 +29,7 @@
     minRows = 0,
     emptyTitle,
     emptyBody,
+    class: className = '',
     onAdd,
     onRemove,
     onUpdate,
@@ -36,7 +37,7 @@
   }: Props = $props();
 </script>
 
-<Panel class="p-4.5 md:p-6">
+<section class={`flex flex-col p-4.5 md:p-6 ${className}`}>
   <div class="flex items-start justify-between gap-4">
     <h2 class="m-0 text-lg font-bold tracking-tight">{title}</h2>
     <Button
@@ -94,11 +95,11 @@
     {/each}
     {#if endpoints.length === 0 && emptyTitle && emptyBody}
       <div
-        class="grid min-h-17.5 content-center gap-1.5 rounded-tl-lg rounded-tr-xs rounded-br-lg rounded-bl-xs border border-dashed border-[#375866] bg-[#0a1c25]/55 px-4 py-3 text-[#a9bec7]"
+        class="grid min-h-17.5 content-center gap-1.5 rounded-control border border-dashed border-[#375866] bg-[#0a1c25]/55 px-4 py-3 text-[#a9bec7]"
       >
         <strong class="text-sm text-[#d5e3e8]">{emptyTitle}</strong>
         <span class="text-xs leading-relaxed">{emptyBody}</span>
       </div>
     {/if}
   </div>
-</Panel>
+</section>

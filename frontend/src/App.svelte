@@ -2,10 +2,9 @@
   import { onDestroy, onMount } from 'svelte';
   import { writable, type Writable } from 'svelte/store';
   import type { Edge, Node } from '@xyflow/svelte';
-  import ConstraintPanel from './lib/ConstraintPanel.svelte';
   import EmptyGraphState from './lib/EmptyGraphState.svelte';
-  import EndpointListPanel from './lib/EndpointListPanel.svelte';
   import ErrorBanner from './lib/ErrorBanner.svelte';
+  import FlowInputsPanel from './lib/FlowInputsPanel.svelte';
   import HistoryPanel from './lib/HistoryPanel.svelte';
   import ResultsSplitView from './lib/ResultsSplitView.svelte';
   import SearchTelemetry from './lib/SearchTelemetry.svelte';
@@ -461,49 +460,31 @@
           showResultsTable || solution ? 'xl:min-h-[calc(100dvh-2rem)]' : ''
         }`}
       >
-        <section
-          class="grid shrink-0 grid-cols-1 items-stretch gap-4 md:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(290px,.72fr)]"
-          aria-label="Flow inputs"
-        >
-          <EndpointListPanel
-            title="Supply"
-            labelPrefix="Input"
-            endpoints={inputs}
-            slots={inputSlots}
-            emptyTitle="Automatic supply"
-            emptyBody="The solver will split the exact demand total across as many capacity-safe input belts as needed."
-            onAdd={() => addEndpoint('inputs')}
-            onRemove={(index) => removeEndpoint('inputs', index)}
-            onUpdate={(index, field, value) => updateEndpoint('inputs', index, field, value)}
-            onCommitMultiplier={(index) => commitMultiplier('inputs', index)}
-          />
-
-          <EndpointListPanel
-            title="Demand"
-            labelPrefix="Output"
-            endpoints={outputs}
-            slots={outputSlots}
-            minRows={1}
-            onAdd={() => addEndpoint('outputs')}
-            onRemove={(index) => removeEndpoint('outputs', index)}
-            onUpdate={(index, field, value) => updateEndpoint('outputs', index, field, value)}
-            onCommitMultiplier={(index) => commitMultiplier('outputs', index)}
-          />
-
-          <ConstraintPanel
-            bind:beltRate
-            {enumerateAllAtN}
-            {engine}
-            {hasRunning}
-            onEnumerateChange={(value) => {
-              enumerateAllAtN = value;
-            }}
-            onEngineChange={(value) => {
-              engine = value;
-            }}
-            onSolve={() => void solve()}
-          />
-        </section>
+        <FlowInputsPanel
+          {inputs}
+          {outputs}
+          {inputSlots}
+          {outputSlots}
+          bind:beltRate
+          {enumerateAllAtN}
+          {engine}
+          {hasRunning}
+          onAddInput={() => addEndpoint('inputs')}
+          onRemoveInput={(index) => removeEndpoint('inputs', index)}
+          onUpdateInput={(index, field, value) => updateEndpoint('inputs', index, field, value)}
+          onCommitInputMultiplier={(index) => commitMultiplier('inputs', index)}
+          onAddOutput={() => addEndpoint('outputs')}
+          onRemoveOutput={(index) => removeEndpoint('outputs', index)}
+          onUpdateOutput={(index, field, value) => updateEndpoint('outputs', index, field, value)}
+          onCommitOutputMultiplier={(index) => commitMultiplier('outputs', index)}
+          onEnumerateChange={(value) => {
+            enumerateAllAtN = value;
+          }}
+          onEngineChange={(value) => {
+            engine = value;
+          }}
+          onSolve={() => void solve()}
+        />
 
         {#if errorMessage}
           <ErrorBanner message={errorMessage} />
