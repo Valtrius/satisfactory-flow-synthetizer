@@ -2,13 +2,14 @@
 
 use serde::{Deserialize, Serialize};
 use solver_api::{
-    GlobalUnsatProof, ProofObligation, ProofSummary, SearchInstrumentation, SolvePhase,
-    ValidationSummary,
+    CanonicalGraphKey, GlobalUnsatProof, ProofObligation, ProofSummary, Rational,
+    SearchInstrumentation, SolvePhase, ValidationSummary,
 };
 use solver_z3::{
     DisplayRate as Z3DisplayRate, GraphEdge as Z3GraphEdge, GraphNode as Z3GraphNode,
     Solution as Z3Solution, SolverProgress as Z3Progress,
 };
+use std::collections::BTreeSet;
 
 use custom_solver_adapter::presentation::{
     DisplayRate as CustomDisplayRate, GraphEdge as CustomGraphEdge, GraphNode as CustomGraphNode,
@@ -94,14 +95,14 @@ pub struct SolutionStats {
     pub splitters: usize,
     pub mergers: usize,
     pub feedback_loops: usize,
-    /// Shared link/belt count: Custom optimized `L`, or Z3 operator↔operator belts.
+    /// Belts connecting two physical operators; excludes input/output stubs and discard lines.
     pub link_count: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub checked_through: Option<usize>,
-    /// Z3-only alias of operator↔operator belts (same value as `link_count` for Z3).
+    /// Compatibility alias of operator-to-operator belts (same value as `link_count`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub belt_count: Option<usize>,
-    /// Z3-only peak internal belt throughput.
+    /// Peak throughput across operator-to-operator belts.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub internal_max_throughput: Option<DisplayRate>,
     /// Custom-only physical belt count including discard.
@@ -131,6 +132,9 @@ pub struct Solution {
     pub nodes: Vec<GraphNode>,
     pub edges: Vec<GraphEdge>,
     pub build_steps: Vec<String>,
+    /// Shared, flow-independent canonical identity used by both engine adapters.
+    #[serde(skip)]
+    pub(crate) layout_key: Option<CanonicalGraphKey>,
 }
 
 /// Live progress. Discriminated by `engine`; Z3 keeps its portfolio `kind` fields.
@@ -187,11 +191,29 @@ impl SolverProgress {
 impl Solution {
     #[must_use]
     pub fn has_same_layout(&self, other: &Self) -> bool {
-        self.engine == other.engine && self.nodes == other.nodes && self.edges == other.edges
+        match (&self.layout_key, &other.layout_key) {
+            (Some(left), Some(right)) => left == right,
+            _ => self.nodes == other.nodes && self.edges == other.edges,
+        }
+    }
+
+    pub(crate) fn set_layout_key(&mut self, key: CanonicalGraphKey) {
+        self.layout_key = Some(key);
     }
 
     #[must_use]
     pub fn from_z3(solution: Z3Solution) -> Self {
+        let nodes = solution
+            .nodes
+            .into_iter()
+            .map(node_from_z3)
+            .collect::<Vec<_>>();
+        let edges = solution
+            .edges
+            .into_iter()
+            .map(edge_from_z3)
+            .collect::<Vec<_>>();
+        let (belt_count, internal_max_throughput) = operator_belt_metrics(&nodes, &edges);
         Self {
             engine: SolverEngine::Z3,
             status: solution.status,
@@ -203,12 +225,10 @@ impl Solution {
                 splitters: solution.stats.splitters,
                 mergers: solution.stats.mergers,
                 feedback_loops: solution.stats.feedback_loops,
-                link_count: solution.stats.belt_count,
+                link_count: belt_count,
                 checked_through: Some(solution.stats.checked_through),
-                belt_count: Some(solution.stats.belt_count),
-                internal_max_throughput: Some(display_from_z3(
-                    solution.stats.internal_max_throughput,
-                )),
+                belt_count: Some(belt_count),
+                internal_max_throughput: Some(internal_max_throughput),
                 physical_link_count: None,
                 discard_link_count: None,
             },
@@ -216,14 +236,26 @@ impl Solution {
             total_output: display_from_z3(solution.total_output),
             discard_rate: display_from_z3(solution.discard_rate),
             belt_rate: display_from_z3(solution.belt_rate),
-            nodes: solution.nodes.into_iter().map(node_from_z3).collect(),
-            edges: solution.edges.into_iter().map(edge_from_z3).collect(),
+            nodes,
+            edges,
             build_steps: solution.build_steps,
+            layout_key: None,
         }
     }
 
     #[must_use]
     pub fn from_custom(solution: PresentationSolution) -> Self {
+        let nodes = solution
+            .nodes
+            .into_iter()
+            .map(node_from_custom)
+            .collect::<Vec<_>>();
+        let edges = solution
+            .edges
+            .into_iter()
+            .map(edge_from_custom)
+            .collect::<Vec<_>>();
+        let (belt_count, internal_max_throughput) = operator_belt_metrics(&nodes, &edges);
         Self {
             engine: SolverEngine::Custom,
             status: solution.status,
@@ -236,13 +268,13 @@ impl Solution {
                 mergers: usize::try_from(solution.stats.mergers).unwrap_or(usize::MAX),
                 feedback_loops: usize::try_from(solution.stats.feedback_loops)
                     .unwrap_or(usize::MAX),
-                link_count: usize::try_from(solution.stats.link_count).unwrap_or(usize::MAX),
+                link_count: belt_count,
                 checked_through: solution
                     .stats
                     .checked_through
                     .map(|value| usize::try_from(value).unwrap_or(usize::MAX)),
-                belt_count: None,
-                internal_max_throughput: None,
+                belt_count: Some(belt_count),
+                internal_max_throughput: Some(internal_max_throughput),
                 physical_link_count: Some(
                     usize::try_from(solution.stats.physical_link_count).unwrap_or(usize::MAX),
                 ),
@@ -254,11 +286,50 @@ impl Solution {
             total_output: display_from_custom(solution.total_output),
             discard_rate: display_from_custom(solution.discard_rate),
             belt_rate: display_from_custom(solution.belt_rate),
-            nodes: solution.nodes.into_iter().map(node_from_custom).collect(),
-            edges: solution.edges.into_iter().map(edge_from_custom).collect(),
+            nodes,
+            edges,
             build_steps: solution.build_steps,
+            layout_key: None,
         }
     }
+}
+
+fn operator_belt_metrics(nodes: &[GraphNode], edges: &[GraphEdge]) -> (usize, DisplayRate) {
+    let operators = nodes
+        .iter()
+        .filter(|node| {
+            matches!(
+                node.kind,
+                GraphNodeKind::Splitter2
+                    | GraphNodeKind::Splitter3
+                    | GraphNodeKind::Merger2
+                    | GraphNodeKind::Merger3
+            )
+        })
+        .map(|node| node.id.as_str())
+        .collect::<BTreeSet<_>>();
+    let mut count = 0;
+    let mut maximum = Rational::from(0);
+    let mut displayed_maximum = DisplayRate {
+        exact: "0".to_owned(),
+        decimal: "0".to_owned(),
+    };
+    for edge in edges {
+        if edge.discarded
+            || !operators.contains(edge.source.as_str())
+            || !operators.contains(edge.target.as_str())
+        {
+            continue;
+        }
+        count += 1;
+        if let Ok(rate) = edge.rate.exact.parse::<Rational>()
+            && rate > maximum
+        {
+            maximum = rate;
+            displayed_maximum = edge.rate.clone();
+        }
+    }
+    (count, displayed_maximum)
 }
 
 /// Optional global-UNSAT payload for Custom terminal jobs.
@@ -462,7 +533,7 @@ mod tests {
         .unwrap();
         let best = BestKnownSolution {
             node_count: 0,
-            link_count: 1,
+            link_count: 0,
             physical_link_count: 1,
             discard_link_count: 0,
             canonical_graph_key: CanonicalGraphKey::from_bytes(vec![1]),
@@ -477,7 +548,7 @@ mod tests {
             validation: ValidationSummary {
                 validator_version: 2,
                 node_count: 0,
-                link_count: 1,
+                link_count: 0,
                 physical_link_count: 1,
                 discard_link_count: 0,
                 cyclic_scc_count: 0,
@@ -488,9 +559,63 @@ mod tests {
         assert_eq!(solution.engine, SolverEngine::Custom);
         assert_eq!(solution.status, "best_known");
         assert!(solution.proof.is_none());
-        assert_eq!(solution.stats.link_count, 1);
-        assert!(solution.stats.belt_count.is_none());
-        assert!(solution.stats.internal_max_throughput.is_none());
+        assert_eq!(solution.stats.link_count, 0);
+        assert_eq!(solution.stats.belt_count, Some(0));
+        assert_eq!(
+            solution.stats.internal_max_throughput,
+            Some(DisplayRate {
+                exact: "0".to_owned(),
+                decimal: "0".to_owned(),
+            })
+        );
         assert_eq!(solution.stats.physical_link_count, Some(1));
+    }
+
+    #[test]
+    fn shared_belt_metrics_exclude_terminal_stubs_and_report_peak_internal_rate() {
+        let nodes = vec![
+            GraphNode {
+                id: "input".to_owned(),
+                kind: GraphNodeKind::Input,
+                label: String::new(),
+            },
+            GraphNode {
+                id: "splitter".to_owned(),
+                kind: GraphNodeKind::Splitter2,
+                label: String::new(),
+            },
+            GraphNode {
+                id: "merger".to_owned(),
+                kind: GraphNodeKind::Merger2,
+                label: String::new(),
+            },
+            GraphNode {
+                id: "output".to_owned(),
+                kind: GraphNodeKind::Output,
+                label: String::new(),
+            },
+        ];
+        let edge = |source: &str, target: &str, exact: &str| GraphEdge {
+            id: format!("{source}-{target}"),
+            source: source.to_owned(),
+            target: target.to_owned(),
+            source_port: 0,
+            target_port: 0,
+            rate: DisplayRate {
+                exact: exact.to_owned(),
+                decimal: exact.to_owned(),
+            },
+            feedback: false,
+            discarded: false,
+        };
+        let edges = vec![
+            edge("input", "splitter", "10"),
+            edge("splitter", "merger", "7"),
+            edge("merger", "output", "10"),
+        ];
+
+        let (count, peak) = operator_belt_metrics(&nodes, &edges);
+        assert_eq!(count, 1);
+        assert_eq!(peak.exact, "7");
     }
 }

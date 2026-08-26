@@ -228,7 +228,7 @@ mod tests {
         // Equivalent node/port labels have their own deeper state-level test:
         // `solver_core::search::tests::canonical_mrv_keeps_relabelled_state_cache_outcomes_equivalent`.
         let expected = expected.expect("the determinism matrix must produce a witness");
-        assert_eq!((expected.node_count, expected.link_count), (1, 3));
+        assert_eq!((expected.node_count, expected.link_count), (1, 0));
     }
 
     #[test]

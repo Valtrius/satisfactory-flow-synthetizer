@@ -18,6 +18,7 @@ use tauri::AppHandle;
 use crate::{
     Job, JobStatus,
     contract::{Solution, SolveRequest, SolverProgress},
+    layout_identity,
 };
 
 pub fn run_custom_job(
@@ -50,7 +51,7 @@ pub fn run_custom_job(
     });
     let presentation_failure = Mutex::new(None);
     let observer = |event| {
-        if let Err(error) = on_custom_event(app, job, &prepared, event) {
+        if let Err(error) = on_custom_event(app, job, request, &prepared, event) {
             let mut failure = presentation_failure
                 .lock()
                 .expect("presentation failure lock poisoned");
@@ -92,7 +93,7 @@ pub fn run_custom_job(
     }
 
     match result {
-        Ok(solve_result) => apply_custom_terminal(app, job, &prepared, &solve_result),
+        Ok(solve_result) => apply_custom_terminal(app, job, request, &prepared, &solve_result),
         Err(error) => job.update(app, |snapshot| {
             snapshot.status = JobStatus::Failed;
             snapshot.error = Some(error.to_string());
@@ -105,6 +106,7 @@ pub fn run_custom_job(
 fn on_custom_event(
     app: &AppHandle,
     job: &Job,
+    request: &SolveRequest,
     prepared: &PreparedAppRequest,
     event: SolverEvent,
 ) -> Result<(), String> {
@@ -116,7 +118,7 @@ fn on_custom_event(
         SolverEvent::Incumbent(best) => {
             let presented = present_best_known_solution(prepared, &best, None)
                 .map_err(|error| format!("presentation failed: {error}"))?;
-            let solution = Solution::from_custom(presented);
+            let solution = custom_solution(request, presented)?;
             job.update(app, |snapshot| {
                 if !matches!(snapshot.status, JobStatus::Running | JobStatus::Cancelling) {
                     return;
@@ -129,7 +131,7 @@ fn on_custom_event(
             let presented = present_best_known_solution(prepared, &layout, None)
                 .map_err(|error| format!("presentation failed: {error}"))?;
             // Enumerated layouts are distinct witnesses, never optimality claims.
-            let solution = Solution::from_custom(presented);
+            let solution = custom_solution(request, presented)?;
             job.append_solution(app, solution);
             Ok(())
         }
@@ -139,6 +141,7 @@ fn on_custom_event(
 fn apply_custom_terminal(
     app: &AppHandle,
     job: &Job,
+    request: &SolveRequest,
     prepared: &PreparedAppRequest,
     solve_result: &SolveResult,
 ) {
@@ -156,15 +159,24 @@ fn apply_custom_terminal(
     };
 
     match presented {
-        PresentedSolveOutcome::Optimal(solution) => job.update(app, |snapshot| {
-            let solution = Solution::from_custom(solution);
-            promote_optimal(&mut snapshot.results, &mut snapshot.result, solution);
-            snapshot.status = JobStatus::Completed;
-            snapshot.enumeration_complete = true;
-            snapshot.progress = None;
-            snapshot.unsat = None;
-            snapshot.error = None;
-        }),
+        PresentedSolveOutcome::Optimal(solution) => {
+            let Ok(solution) = custom_solution(request, solution) else {
+                job.update(app, |snapshot| {
+                    snapshot.status = JobStatus::Failed;
+                    snapshot.error = Some("could not canonicalize Custom result".to_owned());
+                    snapshot.enumeration_complete = false;
+                });
+                return;
+            };
+            job.update(app, |snapshot| {
+                promote_optimal(&mut snapshot.results, &mut snapshot.result, solution);
+                snapshot.status = JobStatus::Completed;
+                snapshot.enumeration_complete = true;
+                snapshot.progress = None;
+                snapshot.unsat = None;
+                snapshot.error = None;
+            });
+        }
         PresentedSolveOutcome::GloballyUnsat(proof) => job.update(app, |snapshot| {
             snapshot.status = JobStatus::Unsat;
             snapshot.result = None;
@@ -174,7 +186,21 @@ fn apply_custom_terminal(
             snapshot.error = Some("No exact network exists for these rates.".to_owned());
         }),
         PresentedSolveOutcome::Incomplete(incomplete) => {
-            let best = incomplete.best_known.map(Solution::from_custom);
+            let best = incomplete
+                .best_known
+                .map(|solution| custom_solution(request, solution))
+                .transpose();
+            let best = match best {
+                Ok(best) => best,
+                Err(error) => {
+                    job.update(app, |snapshot| {
+                        snapshot.status = JobStatus::Failed;
+                        snapshot.error = Some(error);
+                        snapshot.enumeration_complete = false;
+                    });
+                    return;
+                }
+            };
             let (status, error) = match incomplete.reason {
                 IncompleteReason::Cancelled => (JobStatus::Cancelled, None),
                 IncompleteReason::DeadlineReached => (
@@ -196,6 +222,15 @@ fn apply_custom_terminal(
             });
         }
     }
+}
+
+fn custom_solution(
+    request: &SolveRequest,
+    presented: custom_solver_adapter::presentation::PresentationSolution,
+) -> Result<Solution, String> {
+    let mut solution = Solution::from_custom(presented);
+    layout_identity::attach(request, &mut solution)?;
+    Ok(solution)
 }
 
 fn promote_optimal(
@@ -265,6 +300,7 @@ mod tests {
                 discarded: false,
             }],
             build_steps: Vec::new(),
+            layout_key: None,
         }
     }
 

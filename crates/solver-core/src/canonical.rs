@@ -1,8 +1,9 @@
 //! Production colored-incidence canonicalization and canonical augmentation support.
 //!
-//! The implementation builds an explicit incidence graph and applies stable color refinement plus
-//! individualization. It shares only the final full-witness byte protocol with the deliberately
-//! factorial reference canonicalizer; it does not call or reproduce the reference search.
+//! Internal search keys use `canonaut` on a vertex-colored subdivision of the
+//! edge-colored incidence graph. Full witness keys retain the exhaustive
+//! individualization path so the public reference protocol remains byte-stable.
+//! Neither path calls or reproduces the reference solver's topology search.
 
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -10,8 +11,10 @@ use std::{
         RwLock,
         atomic::{AtomicBool, Ordering},
     },
+    time::Instant,
 };
 
+use canonaut::structs::{CanonautManager, DenseGraph};
 use num::{BigInt, Integer, One, Signed, Zero};
 use solver_api::{
     CanonicalGraphKey, ConsumerPortRef, DiscardTerminalIndex, InputTerminalIndex, NodeId,
@@ -19,7 +22,10 @@ use solver_api::{
     ProducerPortRef, Rational,
 };
 
-use crate::topology::{OpenPortRef, TopologyState};
+use crate::{
+    hotspot_profile,
+    topology::{OpenPortRef, TopologyState},
+};
 
 /// One structural connection in a partial topology.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -458,6 +464,34 @@ pub fn canonicalize_witness(problem: &Problem, graph: &PhysicalGraph) -> Canonic
         .expect("uncancelled canonicalization must complete")
 }
 
+/// Canonicalizes the effective physical layout while deliberately ignoring link-flow choices.
+///
+/// This is the shared result-deduplication identity. It preserves typed operators, terminal
+/// associations, physical port incidence, and discard sinks, but treats two valid witnesses that
+/// differ only by a feasible circulation inside a cycle as the same displayed layout.
+#[must_use]
+pub fn canonicalize_effective_layout(
+    problem: &Problem,
+    graph: &PhysicalGraph,
+) -> CanonicalGraphKey {
+    let topology = PartialTopology {
+        problem: problem.clone(),
+        nodes: graph.nodes.clone(),
+        links: graph
+            .links
+            .iter()
+            .map(|link| PartialLink {
+                producer: link.producer,
+                consumer: link.consumer,
+                flow: None,
+            })
+            .collect(),
+        discard_count: discard_count_from_links(&graph.links),
+        remaining_profile: NodeProfile::default(),
+    };
+    CanonicalGraphKey::from_bytes(select_canonical(&topology, None, EncodingKind::Layout).bytes)
+}
+
 pub(crate) fn canonicalize_witness_cancellable(
     problem: &Problem,
     graph: &PhysicalGraph,
@@ -547,6 +581,23 @@ pub fn canonicalize_open_port(
     topology: &PartialTopology,
     port: OpenPortRef,
 ) -> CanonicalOpenPortKey {
+    canonicalize_open_port_inner(topology, port, None)
+        .expect("uncancelled open-port canonicalization must complete")
+}
+
+pub(crate) fn canonicalize_open_port_cancellable(
+    topology: &PartialTopology,
+    port: OpenPortRef,
+    cancel: &AtomicBool,
+) -> Option<CanonicalOpenPortKey> {
+    canonicalize_open_port_inner(topology, port, Some(cancel))
+}
+
+fn canonicalize_open_port_inner(
+    topology: &PartialTopology,
+    port: OpenPortRef,
+    cancel: Option<&AtomicBool>,
+) -> Option<CanonicalOpenPortKey> {
     assert!(
         open_port_is_declared(topology, port),
         "marked port must be declared"
@@ -555,7 +606,8 @@ pub fn canonicalize_open_port(
         open_port_is_unused(topology, port),
         "marked port must be open"
     );
-    CanonicalOpenPortKey(select_canonical_open_port(topology, port).bytes)
+    select_canonical_open_port(topology, port, cancel)
+        .map(|selected| CanonicalOpenPortKey(selected.bytes))
 }
 
 /// Partitions all physical links into exact automorphism orbits.
@@ -651,18 +703,31 @@ pub(crate) fn is_canonical_last_link_with_cache(
     if link >= topology.links.len() {
         return Some(false);
     }
-    let admissible = admissible_link_indices_with_cache(topology, cache, cancel)?;
+    let admissible_started = Instant::now();
+    let Some(admissible) = admissible_link_indices_with_cache(topology, cache, cancel) else {
+        hotspot_profile::record_cl_admissible(admissible_started.elapsed());
+        return None;
+    };
+    hotspot_profile::record_cl_admissible(admissible_started.elapsed());
     if !admissible.contains(&link) {
         return Some(false);
     }
-    let candidate = canonicalize_marked_link_cancellable(topology, link, cancel)?;
+    let min_started = Instant::now();
+    let Some(candidate) = canonicalize_marked_link_cancellable(topology, link, cancel) else {
+        hotspot_profile::record_cl_min_select(min_started.elapsed());
+        return None;
+    };
     let mut minimum = None;
     for index in admissible {
-        let key = canonicalize_marked_link_cancellable(topology, index, cancel)?;
+        let Some(key) = canonicalize_marked_link_cancellable(topology, index, cancel) else {
+            hotspot_profile::record_cl_min_select(min_started.elapsed());
+            return None;
+        };
         if minimum.as_ref().is_none_or(|current| key < *current) {
             minimum = Some(key);
         }
     }
+    hotspot_profile::record_cl_min_select(min_started.elapsed());
     Some(minimum.is_some_and(|minimum| candidate == minimum))
 }
 
@@ -712,11 +777,22 @@ fn admissible_reverse_transition_with_cache(
     if cancel.load(Ordering::Relaxed) {
         return None;
     }
-    let target = canonicalize_marked_link_cancellable(structural_child, link, cancel)?;
+    hotspot_profile::record_cl_reverse_check();
+    let target_started = Instant::now();
+    let Some(target) = canonicalize_marked_link_cancellable(structural_child, link, cancel) else {
+        hotspot_profile::record_cl_reverse_target(target_started.elapsed());
+        return None;
+    };
+    hotspot_profile::record_cl_reverse_target(target_started.elapsed());
     let Some(parent) = reverse_parent(structural_child, link) else {
         return Some(false);
     };
-    let canonical_parent = canonical_partial_topology_cancellable(&parent, cancel)?;
+    let parent_started = Instant::now();
+    let Some(canonical_parent) = canonical_partial_topology_cancellable(&parent, cancel) else {
+        hotspot_profile::record_cl_reverse_parent_canon(parent_started.elapsed());
+        return None;
+    };
+    hotspot_profile::record_cl_reverse_parent_canon(parent_started.elapsed());
     Some(
         recursively_constructible_with_cache(&canonical_parent, local_memo, cache, cancel)?
             && parent_can_recreate_marked_child_cancellable(&canonical_parent, &target, cancel)?,
@@ -732,36 +808,61 @@ fn recursively_constructible_with_cache(
     if cancel.load(Ordering::Relaxed) {
         return None;
     }
-    let canonical = canonical_partial_topology_cancellable(topology, cancel)?;
-    let key = canonicalize_state_cancellable(&canonical, cancel)?;
+    let lookup_started = Instant::now();
+    let Some(canonical) = canonical_partial_topology_cancellable(topology, cancel) else {
+        hotspot_profile::record_cl_constructible_lookup(lookup_started.elapsed());
+        return None;
+    };
+    let Some(key) = canonicalize_state_cancellable(&canonical, cancel) else {
+        hotspot_profile::record_cl_constructible_lookup(lookup_started.elapsed());
+        return None;
+    };
     if let Some(&known) = local_memo.get(&key) {
+        hotspot_profile::record_cl_constructible_lookup(lookup_started.elapsed());
+        hotspot_profile::record_cl_constructible_hit();
         return Some(known);
     }
     if let Some(&known) = cache.completed.read().ok()?.get(&key) {
+        hotspot_profile::record_cl_constructible_lookup(lookup_started.elapsed());
+        hotspot_profile::record_cl_constructible_hit();
         local_memo.insert(key, known);
         return Some(known);
     }
+    hotspot_profile::record_cl_constructible_lookup(lookup_started.elapsed());
+    let miss_started = Instant::now();
     let constructible = if canonical.nodes.is_empty() && canonical.links.is_empty() {
-        true
+        Some(true)
     } else if canonical.links.is_empty() {
-        false
+        Some(false)
     } else {
         // Link count strictly decreases, so this provisional value is needed
         // only by this call and is never published to another worker.
         local_memo.insert(key.clone(), false);
         let mut found = false;
         for link in 0..canonical.links.len() {
-            if admissible_reverse_transition_with_cache(
+            match admissible_reverse_transition_with_cache(
                 &canonical, link, local_memo, cache, cancel,
-            )? {
-                found = true;
-                break;
+            ) {
+                Some(true) => {
+                    found = true;
+                    break;
+                }
+                Some(false) => {}
+                None => {
+                    hotspot_profile::record_cl_constructible_miss(miss_started.elapsed());
+                    return None;
+                }
             }
         }
-        found
+        Some(found)
+    };
+    let Some(constructible) = constructible else {
+        hotspot_profile::record_cl_constructible_miss(miss_started.elapsed());
+        return None;
     };
     local_memo.insert(key.clone(), constructible);
     cache.completed.write().ok()?.insert(key, constructible);
+    hotspot_profile::record_cl_constructible_miss(miss_started.elapsed());
     Some(constructible)
 }
 
@@ -835,12 +936,27 @@ fn parent_can_recreate_marked_child_cancellable(
     target: &MarkedLinkCanonicalKey,
     cancel: &AtomicBool,
 ) -> Option<bool> {
+    let recreate_started = Instant::now();
+    let result =
+        parent_can_recreate_marked_child_cancellable_inner(canonical_parent, target, cancel);
+    hotspot_profile::record_cl_recreate(recreate_started.elapsed());
+    result
+}
+
+fn parent_can_recreate_marked_child_cancellable_inner(
+    canonical_parent: &PartialTopology,
+    target: &MarkedLinkCanonicalKey,
+    cancel: &AtomicBool,
+) -> Option<bool> {
     let Ok(mut state) = TopologyState::from_partial_topology(canonical_parent) else {
         return Some(false);
     };
+    let legal_started = Instant::now();
     let Some(decisions) = state.legal_decisions_cancellable(cancel) else {
+        hotspot_profile::record_cl_recreate_legal(legal_started.elapsed());
         return None;
     };
+    hotspot_profile::record_cl_recreate_legal(legal_started.elapsed());
     for decision in decisions {
         if cancel.load(Ordering::Relaxed) {
             return None;
@@ -990,6 +1106,7 @@ fn give_back_profile_node(profile: &mut NodeProfile, node_type: NodeType) -> Opt
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum EncodingKind {
     State,
+    Layout,
     SccSummary,
     Marked,
     MarkedPort,
@@ -1095,12 +1212,15 @@ fn select_canonical_cancellable_inner(
     encoding: EncodingKind,
     cancel: Option<&AtomicBool>,
 ) -> Option<SelectedCanonical> {
+    let started = Instant::now();
     let incidence = IncidenceGraph::build(
         topology,
         marked_link,
         matches!(encoding, EncodingKind::Witness),
     );
-    select_canonical_with_incidence(topology, &incidence, encoding, None, cancel)
+    let selected = select_canonical_with_incidence(topology, &incidence, encoding, None, cancel);
+    hotspot_profile::record_graph_canon(started.elapsed());
+    selected
 }
 
 struct SccAnnotations<'a> {
@@ -1109,21 +1229,27 @@ struct SccAnnotations<'a> {
     known_consumers: &'a BTreeMap<ConsumerPortRef, Rational>,
 }
 
-fn select_canonical_open_port(topology: &PartialTopology, port: OpenPortRef) -> SelectedCanonical {
+fn select_canonical_open_port(
+    topology: &PartialTopology,
+    port: OpenPortRef,
+    cancel: Option<&AtomicBool>,
+) -> Option<SelectedCanonical> {
+    let started = Instant::now();
     let mut incidence = IncidenceGraph::build(topology, None, false);
     let marked = match port {
         OpenPortRef::Producer(reference) => MarkedPort::Producer(reference),
         OpenPortRef::Consumer(reference) => MarkedPort::Consumer(reference),
     };
     let marked_vertex = incidence.mark_port(marked);
-    select_canonical_with_incidence(
+    let selected = select_canonical_with_incidence(
         topology,
         &incidence,
         EncodingKind::MarkedPort,
         Some(marked_vertex),
-        None,
-    )
-    .expect("uncancelled canonicalization must complete")
+        cancel,
+    );
+    hotspot_profile::record_graph_canon(started.elapsed());
+    selected
 }
 
 fn select_canonical_with_incidence(
@@ -1135,6 +1261,15 @@ fn select_canonical_with_incidence(
 ) -> Option<SelectedCanonical> {
     if cancel.is_some_and(|flag| flag.load(Ordering::Relaxed)) {
         return None;
+    }
+    if encoding != EncodingKind::Witness {
+        return select_canonical_with_canonaut(
+            topology,
+            incidence,
+            encoding,
+            individualized_vertex,
+            cancel,
+        );
     }
     let mut initial = incidence.initial_colors();
     if let Some(vertex) = individualized_vertex {
@@ -1156,6 +1291,96 @@ fn select_canonical_with_incidence(
         return None;
     }
     Some(best.expect("individualization always reaches at least one discrete coloring"))
+}
+
+fn select_canonical_with_canonaut(
+    topology: &PartialTopology,
+    incidence: &IncidenceGraph,
+    encoding: EncodingKind,
+    individualized_vertex: Option<VertexId>,
+    cancel: Option<&AtomicBool>,
+) -> Option<SelectedCanonical> {
+    let original_vertex_count = incidence.base_colors.len();
+    let edge_count = incidence
+        .adjacency
+        .iter()
+        .enumerate()
+        .map(|(left, neighbors)| neighbors.iter().filter(|(_, right)| left < *right).count())
+        .sum::<usize>();
+    let mut graph = DenseGraph::new(original_vertex_count.saturating_add(edge_count));
+    let mut colors = incidence
+        .base_colors
+        .iter()
+        .cloned()
+        .map(CanonicalVertexColor::Original)
+        .collect::<Vec<_>>();
+    let mut edge_vertex = original_vertex_count;
+    for (left, neighbors) in incidence.adjacency.iter().enumerate() {
+        for &(edge_color, right) in neighbors {
+            if left >= right {
+                continue;
+            }
+            graph.add_edge(left, edge_vertex);
+            graph.add_edge(edge_vertex, right);
+            colors.push(CanonicalVertexColor::Incidence(edge_color));
+            edge_vertex += 1;
+        }
+    }
+    debug_assert_eq!(edge_vertex, graph.number_of_vertices());
+    let mut color_ids = ordered_color_ids(&colors);
+    if let Some(vertex) = individualized_vertex {
+        color_ids[vertex] = color_ids
+            .iter()
+            .copied()
+            .max()
+            .unwrap_or(0)
+            .checked_add(1)
+            .expect("canonical color count must fit u32");
+    }
+    graph.set_colors(color_ids);
+    if cancel.is_some_and(|flag| flag.load(Ordering::Relaxed)) {
+        return None;
+    }
+    let mut manager = CanonautManager::new(graph.number_of_vertices()).with_canonization();
+    manager.canonize_graph(&graph);
+    if cancel.is_some_and(|flag| flag.load(Ordering::Relaxed)) {
+        return None;
+    }
+
+    let mut positions = vec![usize::MAX; original_vertex_count];
+    for (position, &raw_vertex) in manager.labeling().iter().enumerate() {
+        let vertex = usize::try_from(raw_vertex).expect("canonical vertex index must fit usize");
+        if vertex < original_vertex_count {
+            positions[vertex] = position;
+        }
+    }
+    let groups = incidence.labeling_groups(topology);
+    let mut ranks = vec![None; original_vertex_count];
+    for group in groups {
+        let mut ordered = group;
+        ordered.sort_by_key(|&vertex| positions[vertex]);
+        for (rank, vertex) in ordered.into_iter().enumerate() {
+            ranks[vertex] = Some(u32::try_from(rank).expect("canonical rank must fit u32"));
+        }
+    }
+    let candidate = incidence.relabel(topology, &ranks);
+    let bytes = match encoding {
+        EncodingKind::State => {
+            let mut bytes = encode_partial_state(topology, &candidate, PartialMark::None);
+            encode_semantic_system(topology, &candidate, &mut bytes);
+            bytes
+        }
+        EncodingKind::Layout => encode_partial_state(topology, &candidate, PartialMark::None),
+        EncodingKind::SccSummary => encode_scc_summary_input(topology, &candidate),
+        EncodingKind::Marked => encode_partial_state(topology, &candidate, PartialMark::Link),
+        EncodingKind::MarkedPort => encode_partial_state(topology, &candidate, PartialMark::Port),
+        EncodingKind::Witness => unreachable!("witness protocol uses exhaustive minimization"),
+    };
+    Some(SelectedCanonical {
+        bytes,
+        topology: candidate,
+        ranks,
+    })
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1237,6 +1462,7 @@ fn search_individualizations(
             encode_semantic_system(topology, &candidate, &mut bytes);
             bytes
         }
+        EncodingKind::Layout => encode_partial_state(topology, &candidate, PartialMark::None),
         EncodingKind::SccSummary => encode_scc_summary_input(topology, &candidate),
         EncodingKind::Marked => encode_partial_state(topology, &candidate, PartialMark::Link),
         EncodingKind::MarkedPort => encode_partial_state(topology, &candidate, PartialMark::Port),
@@ -1285,6 +1511,12 @@ enum EdgeColor {
     OwnsConsumerPort,
     LinkProducerIncidence,
     LinkConsumerIncidence,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+enum CanonicalVertexColor {
+    Original(BaseColor),
+    Incidence(EdgeColor),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -3474,6 +3706,11 @@ mod tests {
         assert_ne!(
             canonicalize_witness(&problem, &one).key,
             canonicalize_witness(&problem, &half).key
+        );
+        assert_eq!(
+            canonicalize_effective_layout(&problem, &one),
+            canonicalize_effective_layout(&problem, &half),
+            "display dedupe deliberately ignores the chosen feasible flow witness"
         );
     }
 

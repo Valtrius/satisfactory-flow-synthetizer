@@ -12,7 +12,7 @@ pub enum SolvePhase {
     GlobalChecks,
     /// Computing the proven starting node lower bound.
     ComputingLowerBound,
-    /// Exhausting profiles in lexicographic `(node_count, link_count)` order.
+    /// Exhausting profiles in node-count and structural-link-group order.
     Searching,
     /// Flattening and independently validating a candidate witness.
     ValidatingWitness,
@@ -26,7 +26,7 @@ pub enum SolvePhase {
 pub struct ProofObligation {
     /// Node count currently being proved SAT or UNSAT.
     pub node_count: u32,
-    /// Current fixed link group, if profile enumeration has reached that level.
+    /// Current structural non-discard physical-link group, if reached.
     pub link_count: Option<u32>,
     /// Current fixed node-type profile, if assigned.
     pub profile: Option<NodeProfile>,

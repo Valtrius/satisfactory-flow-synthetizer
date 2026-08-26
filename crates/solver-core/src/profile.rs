@@ -10,12 +10,12 @@ pub struct ProfileGroup {
     pub profiles: Vec<NodeProfile>,
 }
 
-/// Exact objective and physical-link accounting for one fixed node profile.
+/// Exact structural search-group and physical-link accounting for one fixed node profile.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ProfileLinkAccounting {
-    /// Modeled non-discard links used by lexicographic optimization.
+    /// Non-discard physical links used to partition finite search obligations.
     pub link_count: u32,
-    /// Anonymous discard links excluded from the objective.
+    /// Anonymous discard links excluded from the structural group count.
     pub discard_link_count: u32,
     /// All physical links, equal to `link_count + discard_link_count`.
     pub physical_link_count: u32,
@@ -28,7 +28,7 @@ pub struct AccountedProfile {
     pub accounting: ProfileLinkAccounting,
 }
 
-/// Profiles sharing one optimized non-discard link count.
+/// Profiles sharing one structural non-discard physical-link count.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AccountedProfileGroup {
     pub link_count: u32,

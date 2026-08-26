@@ -24,10 +24,10 @@ use crate::{
         canonicalize_marked_link_cancellable,
         canonicalize_scc_summary_input_with_relabeling_cancellable, canonicalize_state_cancellable,
         canonicalize_structural_decision_core_cancellable, canonicalize_witness_cancellable,
-        is_canonical_last_link_with_cache,
     },
     component_search::{ComponentResolver, discover_components},
     components::Component,
+    hotspot_profile,
     lower_bound::profile_impossibility,
     no_good::{
         CanonicalNoGoodKey, ConflictCore, ConflictRule, NoGoodScope, SolveLocalNoGoods,
@@ -381,16 +381,12 @@ pub(crate) fn search_profile_with_component_resolver_and_no_goods(
     )
 }
 
-/// Builds the deterministic canonical first-augmentation leaves for one fixed
-/// profile.
+/// Builds deterministic first-decision leaves for one fixed profile.
 ///
-/// Soundness follows from the primitive canonical-augmentation proof. If the
-/// root is incomplete, every retained physical completion has a first
-/// primitive link whose marked child passes [`is_canonical_last_link`].
 /// `TopologyState::legal_decisions` contains exactly one representative of
-/// each marked-child orbit. The sorted accepted children therefore cover the
-/// complete primitive quotient search, without depending on component macros.
-/// Macros remain available below the first link as acceleration paths.
+/// each marked-child orbit. Partitioning over every such representative covers
+/// the complete primitive search. Canonical state memoization below each root
+/// removes equivalent later construction histories.
 ///
 /// A terminal partition represents the whole root only when the root is
 /// already complete or has no accepted primitive augmentation. This keeps the
@@ -415,7 +411,7 @@ pub(crate) fn plan_profile_root_partitions_with_cache(
     problem: &NormalizedProblem,
     profile: NodeProfile,
     cancel: &AtomicBool,
-    constructibility_cache: &ConstructibilityCache,
+    _constructibility_cache: &ConstructibilityCache,
 ) -> RootPartitionPlan {
     let initialized = initialize_profile_search(
         problem,
@@ -474,32 +470,18 @@ pub(crate) fn plan_profile_root_partitions_with_cache(
             ));
         };
         let topology = state.partial_topology();
-        let Some(canonical_last) = is_canonical_last_link_with_cache(
-            &topology,
-            link_index,
-            constructibility_cache,
-            cancel,
-        ) else {
+        let Some(marked_key) = canonicalize_marked_link_cancellable(&topology, link_index, cancel)
+        else {
             state.rollback(checkpoint);
             return RootPartitionPlan::Immediate(Box::new(
                 context.incomplete(IncompleteReason::Cancelled, started),
             ));
         };
-        if canonical_last {
-            let Some(marked_key) =
-                canonicalize_marked_link_cancellable(&topology, link_index, cancel)
-            else {
-                state.rollback(checkpoint);
-                return RootPartitionPlan::Immediate(Box::new(
-                    context.incomplete(IncompleteReason::Cancelled, started),
-                ));
-            };
-            partitions.push(RootPartition {
-                id: RootPartitionId(0),
-                stable_key: augmentation_partition_key(&marked_key),
-                first_decision: Some(decision),
-            });
-        }
+        partitions.push(RootPartition {
+            id: RootPartitionId(0),
+            stable_key: augmentation_partition_key(&marked_key),
+            first_decision: Some(decision),
+        });
         state.rollback(checkpoint);
     }
 
@@ -568,7 +550,7 @@ pub(crate) fn search_profile_root_partition_with_caches(
         profile,
         cancel,
         components,
-        SearchFeatures::OPTIMIZED,
+        SearchFeatures::PRODUCTION,
         Some(resolver),
         structural_no_goods,
     );
@@ -616,21 +598,13 @@ pub(crate) fn search_profile_root_partition_with_caches(
             else {
                 return context.incomplete(IncompleteReason::Cancelled, started);
             };
-            let canonical_last = is_canonical_last_link_with_cache(
-                &topology,
-                link_index,
-                &context.constructibility_cache,
-                cancel,
-            );
-            if canonical_last.is_none() {
-                DfsResult::Incomplete
-            } else if actual_key != partition.stable_key || canonical_last != Some(true) {
-                DfsResult::Failed(ProfileSearchError::InvalidRootPartition(
-                    "first decision does not match its canonical key",
-                ))
-            } else {
+            if actual_key == partition.stable_key {
                 increment(&mut context.stats.instrumentation.raw_structural_decisions);
                 evaluate_applied_child(&mut state, &mut propagation, &mut context, link_index)
+            } else {
+                DfsResult::Failed(ProfileSearchError::InvalidRootPartition(
+                    "first decision does not match its partition key",
+                ))
             }
         }
     };
@@ -694,6 +668,16 @@ impl SearchFeatures {
         dynamic_scc: true,
         scc_cache: SccCacheMode::Enabled,
         component_macros: ComponentMacroMode::Enabled,
+    };
+
+    const PRODUCTION: Self = Self {
+        exact_propagation: true,
+        profile_lower_bounds: Some(ProfileBounds),
+        no_goods: NoGoodMode::Disabled,
+        reachability: true,
+        dynamic_scc: true,
+        scc_cache: SccCacheMode::Enabled,
+        component_macros: ComponentMacroMode::Disabled,
     };
 
     #[cfg(test)]
@@ -1249,7 +1233,9 @@ fn learn_local_no_good(
         NoGoodScope::SolveLocal,
         context.cancel,
     );
-    context.record_canonicalization(canonical_started.elapsed());
+    let elapsed = canonical_started.elapsed();
+    context.record_canonicalization(elapsed);
+    hotspot_profile::record_learn_no_good(elapsed);
     let Some(key) = key else {
         // A stale/malformed provenance reference disables this optional
         // optimization. It is never converted into an impossibility proof.
@@ -1283,7 +1269,9 @@ fn learn_structural_no_good(
         NoGoodScope::GlobalStructural,
         context.cancel,
     );
-    context.record_canonicalization(canonical_started.elapsed());
+    let elapsed = canonical_started.elapsed();
+    context.record_canonicalization(elapsed);
+    hotspot_profile::record_learn_no_good(elapsed);
     let Some(key) = key else {
         return;
     };
@@ -1320,7 +1308,9 @@ fn matches_structural_no_good(
         context.cancel,
         |key| context.structural_no_goods.contains(key),
     )?;
-    context.record_canonicalization(started.elapsed());
+    let elapsed = started.elapsed();
+    context.record_canonicalization(elapsed);
+    hotspot_profile::record_no_good_match(elapsed);
     if matched {
         increment(&mut context.stats.instrumentation.no_good_hits);
         Some(true)
@@ -1354,7 +1344,9 @@ fn matches_local_no_good(
         context.cancel,
         |key| context.local_no_goods.contains(key),
     );
-    context.record_canonicalization(started.elapsed());
+    let elapsed = started.elapsed();
+    context.record_canonicalization(elapsed);
+    hotspot_profile::record_no_good_match(elapsed);
     let Some(matched) = matched else {
         return Ok(None);
     };
@@ -1450,6 +1442,9 @@ fn matches_canonical_no_good(
     Some(false)
 }
 
+// The outer option reports cancellation; the inner option reports that the
+// selected links do not form a valid core in the requested proof scope.
+#[allow(clippy::option_option)]
 fn canonical_no_good_subset_key(
     snapshot: &PartialTopology,
     selected_links: &[usize],
@@ -1507,6 +1502,7 @@ fn search_state(
         return DfsResult::Incomplete;
     }
 
+    let snapshot_started = Instant::now();
     let snapshot = match propagation {
         Some(propagation) => match propagation.partial_topology_with_known_link_flows(state) {
             Ok(snapshot) => snapshot,
@@ -1514,11 +1510,14 @@ fn search_state(
         },
         None => state.partial_topology(),
     };
+    hotspot_profile::record_snapshot(snapshot_started.elapsed());
     let canonical_started = Instant::now();
     let Some(state_key) = canonicalize_state_cancellable(&snapshot, context.cancel) else {
         return DfsResult::Incomplete;
     };
-    context.record_canonicalization(canonical_started.elapsed());
+    let elapsed = canonical_started.elapsed();
+    context.record_canonicalization(elapsed);
+    hotspot_profile::record_state_canonicalize(elapsed);
 
     if context.features.no_goods == NoGoodMode::Enabled {
         if !context.local_no_goods.is_empty() {
@@ -1533,7 +1532,9 @@ fn search_state(
                 context.cancel,
                 |key| context.local_no_goods.contains(key),
             );
-            context.record_canonicalization(started.elapsed());
+            let elapsed = started.elapsed();
+            context.record_canonicalization(elapsed);
+            hotspot_profile::record_no_good_match(elapsed);
             match matched {
                 None => return DfsResult::Incomplete,
                 Some(true) => {
@@ -1556,7 +1557,9 @@ fn search_state(
                 context.cancel,
                 |key| context.structural_no_goods.contains(key),
             );
-            context.record_canonicalization(started.elapsed());
+            let elapsed = started.elapsed();
+            context.record_canonicalization(elapsed);
+            hotspot_profile::record_no_good_match(elapsed);
             match matched {
                 None => return DfsResult::Incomplete,
                 Some(true) => {
@@ -1607,15 +1610,26 @@ fn search_state(
         return evaluate_complete_state(state, context, state_key);
     }
 
-    if state.selected_open_orbit().is_none() {
+    let orbit_started = Instant::now();
+    let Some(orbit) = state.selected_open_orbit_cancellable(context.cancel) else {
+        hotspot_profile::record_legal_decisions(orbit_started.elapsed());
+        context.remove_state_status(&state_key);
+        return DfsResult::Incomplete;
+    };
+    let Some(orbit) = orbit else {
+        hotspot_profile::record_legal_decisions(orbit_started.elapsed());
         // No open port means no future structural decision can attach a remaining
         // node or occupy a missing mandatory port. Since this state is not
         // complete, its completion set is empty.
         learn_structural_no_good(state, context, ConflictRule::PortCompletionImpossibility);
         context.insert_state_status(state_key, StateStatus::ProvenDead);
         return DfsResult::Exhausted(None);
-    }
-    let Some(decisions) = state.legal_decisions_cancellable(context.cancel) else {
+    };
+    let Some(decisions) = ({
+        let decisions = state.legal_decisions_for_orbit_cancellable(&orbit, context.cancel);
+        hotspot_profile::record_legal_decisions(orbit_started.elapsed());
+        decisions
+    }) else {
         context.remove_state_status(&state_key);
         return DfsResult::Incomplete;
     };
@@ -1631,7 +1645,7 @@ fn search_state(
             {
                 continue;
             }
-            for attachment in state.component_attachments(component) {
+            for attachment in TopologyState::component_attachments_for_orbit(component, &orbit) {
                 attempted_transition = true;
                 if context.cancel.load(Ordering::Relaxed) {
                     context.remove_state_status(&state_key);
@@ -1707,9 +1721,11 @@ fn search_component(
 ) -> DfsResult {
     let topology_checkpoint = state.checkpoint();
     let propagation_checkpoint = propagation.as_ref().map(PropagationState::checkpoint);
+    let apply_started = Instant::now();
     let batch = match state.apply_component(component, attachment) {
         Ok(batch) => batch,
         Err(error) => {
+            hotspot_profile::record_component_apply(apply_started.elapsed());
             rollback_branch(
                 state,
                 propagation,
@@ -1719,6 +1735,7 @@ fn search_component(
             return DfsResult::Failed(topology_error(&error));
         }
     };
+    hotspot_profile::record_component_apply(apply_started.elapsed());
     increment(&mut context.stats.instrumentation.component_hits);
 
     let result =
@@ -1748,7 +1765,9 @@ fn evaluate_component_child(
     if let Some(propagation) = propagation.as_mut() {
         let propagation_started = Instant::now();
         let outcome = propagation.synchronize_after_component_batch(state, component, batch);
-        context.record_algebra(propagation_started.elapsed());
+        let elapsed = propagation_started.elapsed();
+        context.record_algebra(elapsed);
+        hotspot_profile::record_propagation_sync(elapsed);
         let outcome = match outcome {
             Ok(outcome) => outcome,
             Err(error) => return DfsResult::Failed(propagation_error(&error)),
@@ -1782,7 +1801,9 @@ fn evaluate_component_child(
         }
     }
     if context.features.reachability {
+        let reachability_started = Instant::now();
         let reachability = analyze_reachability(state);
+        hotspot_profile::record_reachability(reachability_started.elapsed());
         if matches!(reachability.verdict, ReachabilityVerdict::ProvenDead(_)) {
             increment(&mut context.stats.instrumentation.lower_bound_prunes);
             learn_structural_no_good(state, context, ConflictRule::ConnectivityImpossibility);
@@ -1805,7 +1826,9 @@ fn evaluate_component_child(
     let Some(child_key) = canonicalize_state_cancellable(&snapshot, context.cancel) else {
         return DfsResult::Incomplete;
     };
-    context.record_canonicalization(canonical_started.elapsed());
+    let elapsed = canonical_started.elapsed();
+    context.record_canonicalization(elapsed);
+    hotspot_profile::record_state_canonicalize(elapsed);
     if !sibling_keys.insert(child_key) {
         increment(
             &mut context
@@ -1826,9 +1849,11 @@ fn search_decision(
 ) -> DfsResult {
     let topology_checkpoint = state.checkpoint();
     let propagation_checkpoint = propagation.as_ref().map(PropagationState::checkpoint);
+    let apply_started = Instant::now();
     let decision_id = match state.apply_legal_decision(decision) {
         Ok(decision_id) => decision_id,
         Err(error) => {
+            hotspot_profile::record_apply_decision(apply_started.elapsed());
             rollback_branch(
                 state,
                 propagation,
@@ -1838,6 +1863,7 @@ fn search_decision(
             return DfsResult::Failed(topology_error(&error));
         }
     };
+    hotspot_profile::record_apply_decision(apply_started.elapsed());
     let Some(link_index) = state.link_index_for(decision_id) else {
         rollback_branch(
             state,
@@ -1872,7 +1898,9 @@ fn evaluate_applied_child(
     if let Some(propagation) = propagation.as_mut() {
         let propagation_started = Instant::now();
         let outcome = propagation.synchronize_after_topology_mutation(state);
-        context.record_algebra(propagation_started.elapsed());
+        let elapsed = propagation_started.elapsed();
+        context.record_algebra(elapsed);
+        hotspot_profile::record_propagation_sync(elapsed);
         let outcome = match outcome {
             Ok(outcome) => outcome,
             Err(error) => return DfsResult::Failed(propagation_error(&error)),
@@ -1908,7 +1936,9 @@ fn evaluate_applied_child(
     }
 
     if context.features.reachability {
+        let reachability_started = Instant::now();
         let reachability = analyze_reachability(state);
+        hotspot_profile::record_reachability(reachability_started.elapsed());
         if matches!(reachability.verdict, ReachabilityVerdict::ProvenDead(_)) {
             increment(&mut context.stats.instrumentation.lower_bound_prunes);
             learn_structural_no_good(state, context, ConflictRule::ConnectivityImpossibility);
@@ -1916,41 +1946,12 @@ fn evaluate_applied_child(
         }
     }
 
-    // Canonical augmentation is intentionally structural. Exact propagated link
-    // values refine only the subsequent StateKey; they cannot change which
-    // physical link is the canonical removable augmentation.
-    let structural_child = state.partial_topology();
-    let canonical_started = Instant::now();
-    let Some(canonical_child) = is_canonical_last_link_with_cache(
-        &structural_child,
-        link_index,
-        &context.constructibility_cache,
-        context.cancel,
-    ) else {
-        context.record_canonicalization(canonical_started.elapsed());
-        return DfsResult::Incomplete;
-    };
-    context.record_canonicalization(canonical_started.elapsed());
-
-    // The canonical-last predicate ranges only over admissible reverse
-    // transitions. Such a transition removes its link, dematerializes one newly
-    // isolated birth node when required, and proves that the reduced canonical
-    // parent's selected MRV orbit can recreate the marked child. The decision
-    // just applied supplies at least one such parent. Choosing the invariant
-    // minimum marked orbit therefore retains an inductive construction path for
-    // every unlabeled child. Rejected decisions remove only equivalent histories,
-    // never a physical completion.
-    if canonical_child {
-        search_state(state, propagation, context)
-    } else {
-        increment(
-            &mut context
-                .stats
-                .instrumentation
-                .canonical_duplicates_eliminated,
-        );
-        DfsResult::Exhausted(None)
-    }
+    // Canonical state memoization below removes equivalent construction
+    // histories directly. The former recursive canonical-last gate attempted
+    // to reject those histories before memoization, but proving that a reverse
+    // parent was itself constructible required dozens of full graph canons for
+    // every applied link.
+    search_state(state, propagation, context)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1988,7 +1989,9 @@ fn analyze_affected_dynamic_sccs_inner(
             else {
                 return Ok(DynamicSccVerdict::Cancelled);
             };
-            context.record_canonicalization(canonical_started.elapsed());
+            let elapsed = canonical_started.elapsed();
+            context.record_canonicalization(elapsed);
+            hotspot_profile::record_scc_canonicalize(elapsed);
 
             // Soundness: the key canonically encodes the full partial-state
             // equations, selected region, and every supplied exact known port
@@ -2009,7 +2012,9 @@ fn analyze_affected_dynamic_sccs_inner(
                 let algebra_started = Instant::now();
                 let summary =
                     summarize_open_scc(state, region, &known).map_err(|error| scc_error(&error));
-                context.record_algebra(algebra_started.elapsed());
+                let elapsed = algebra_started.elapsed();
+                context.record_algebra(elapsed);
+                hotspot_profile::record_scc_algebra(elapsed);
                 let summary = summary?;
                 let cached = cache_open_scc_summary(&summary.algebra, &coordinates)?;
                 if context.features.scc_cache == SccCacheMode::Enabled {
@@ -2042,7 +2047,9 @@ fn analyze_affected_dynamic_sccs_inner(
             let update = propagation
                 .promote_open_scc_deductions(&known_values, &ratios)
                 .map_err(|error| propagation_error(&error))?;
-            context.record_algebra(propagation_started.elapsed());
+            let elapsed = propagation_started.elapsed();
+            context.record_algebra(elapsed);
+            hotspot_profile::record_propagation_sync(elapsed);
             if let PropagationOutcome::Pruned(conflict) = update.outcome {
                 context.record_propagation_prune(&conflict);
                 learn_local_no_good(
@@ -2315,6 +2322,7 @@ fn evaluate_complete_state(
     context: &mut SearchContext<'_>,
     state_key: StateKey,
 ) -> DfsResult {
+    let complete_started = Instant::now();
     increment(&mut context.stats.complete_topologies);
     let partial = state.partial_topology();
     let topology = PhysicalGraph {
@@ -2338,10 +2346,12 @@ fn evaluate_complete_state(
         Err(error) if is_candidate_rejection(&error) => {
             increment(&mut context.stats.rejected_complete_topologies);
             context.insert_state_status(state_key, StateStatus::ProvenDead);
+            hotspot_profile::record_evaluate_complete(complete_started.elapsed());
             return DfsResult::Exhausted(None);
         }
         Err(error) => {
             context.remove_state_status(&state_key);
+            hotspot_profile::record_evaluate_complete(complete_started.elapsed());
             return DfsResult::Failed(ProfileSearchError::InvalidCompleteTopology(Box::new(error)));
         }
     };
@@ -2351,6 +2361,7 @@ fn evaluate_complete_state(
         canonicalize_witness_cancellable(&context.problem, &solved, context.cancel)
     else {
         context.remove_state_status(&state_key);
+        hotspot_profile::record_evaluate_complete(complete_started.elapsed());
         return DfsResult::Incomplete;
     };
     context.record_canonicalization(canonical_started.elapsed());
@@ -2361,25 +2372,30 @@ fn evaluate_complete_state(
         Ok(validation) => validation,
         Err(error) => {
             context.remove_state_status(&state_key);
+            hotspot_profile::record_evaluate_complete(complete_started.elapsed());
             return DfsResult::Failed(ProfileSearchError::ValidationFirewall(Box::new(error)));
         }
     };
     if validation.cyclic_scc_count != 0 {
         increment(&mut context.stats.validated_cyclic_topologies);
     }
+    let structural_link_count = validation
+        .physical_link_count
+        .checked_sub(validation.discard_link_count);
     if validation.node_count != context.expected_node_count
-        || validation.link_count != context.expected_link_count
+        || structural_link_count != Some(context.expected_link_count)
         || validation.physical_link_count != context.expected_physical_link_count
         || validation.discard_link_count != context.expected_discard_link_count
     {
         context.remove_state_status(&state_key);
+        hotspot_profile::record_evaluate_complete(complete_started.elapsed());
         return DfsResult::Failed(ProfileSearchError::ValidationCountMismatch {
             expected_nodes: context.expected_node_count,
             expected_links: context.expected_link_count,
             expected_physical_links: context.expected_physical_link_count,
             expected_discard_links: context.expected_discard_link_count,
             actual_nodes: validation.node_count,
-            actual_links: validation.link_count,
+            actual_links: structural_link_count.unwrap_or(validation.link_count),
             actual_physical_links: validation.physical_link_count,
             actual_discard_links: validation.discard_link_count,
         });
@@ -2392,6 +2408,7 @@ fn evaluate_complete_state(
         validation,
     });
     context.insert_state_status(state_key, StateStatus::SatWitness(key.clone()));
+    hotspot_profile::record_evaluate_complete(complete_started.elapsed());
     DfsResult::Exhausted(Some(key))
 }
 
@@ -2810,7 +2827,7 @@ mod tests {
         let problem = problem(&["60"], &["60"], "60");
         let witness = exhaustive_witness(search(&problem, NodeProfile::default())).unwrap();
         assert_eq!(witness.validation.node_count, 0);
-        assert_eq!(witness.validation.link_count, 1);
+        assert_eq!(witness.validation.link_count, 0);
         assert_eq!(witness.validation.discard_link_count, 0);
         assert_eq!(witness.validation.physical_link_count, 1);
         validate_solution(&normalized_problem(&problem), &witness.graph).unwrap();
@@ -2908,7 +2925,7 @@ mod tests {
         assert_eq!(optimized, reference);
         assert_eq!(unoptimized, reference);
         let witness = optimized.unwrap();
-        assert_eq!(witness.validation.link_count, 1);
+        assert_eq!(witness.validation.link_count, 0);
         assert_eq!(witness.validation.discard_link_count, 2);
         assert_eq!(witness.validation.physical_link_count, 3);
         assert!(witness.graph.links.iter().all(|link| link.flow == 1.into()));
@@ -2937,7 +2954,7 @@ mod tests {
         assert_eq!(disabled, reference);
         assert!(enabled_stats.instrumentation.component_hits > 0);
         let witness = enabled.unwrap();
-        assert_eq!(witness.validation.link_count, 3);
+        assert_eq!(witness.validation.link_count, 0);
         assert_eq!(witness.validation.discard_link_count, 1);
         assert_eq!(witness.validation.physical_link_count, 4);
     }
@@ -3686,14 +3703,10 @@ mod tests {
         let mut state = TopologyState::new(&normalized, fixed_profile).unwrap();
         let root_snapshot = state.partial_topology();
         let cancel = AtomicBool::new(false);
-        let empty_key = canonical_no_good_subset_key(
-            &root_snapshot,
-            &[],
-            NoGoodScope::SolveLocal,
-            &cancel,
-        )
-        .unwrap()
-        .unwrap();
+        let empty_key =
+            canonical_no_good_subset_key(&root_snapshot, &[], NoGoodScope::SolveLocal, &cancel)
+                .unwrap()
+                .unwrap();
         assert_eq!(
             matches_canonical_no_good(
                 &root_snapshot,

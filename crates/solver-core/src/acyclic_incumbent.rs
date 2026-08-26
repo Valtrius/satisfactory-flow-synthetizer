@@ -303,7 +303,7 @@ mod tests {
             max_link_rate: problem.max_link_rate,
         };
         let validation = validate_solution(&public_problem, &graph).unwrap();
-        assert_eq!((validation.node_count, validation.link_count), (7, 14));
+        assert_eq!((validation.node_count, validation.link_count), (7, 11));
         assert_eq!(validation.cyclic_scc_count, 0);
     }
 

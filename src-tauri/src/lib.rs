@@ -1,6 +1,7 @@
 mod contract;
 mod engines;
 mod history;
+mod layout_identity;
 
 use std::{
     collections::HashMap,
@@ -220,6 +221,13 @@ impl Job {
         let payload = {
             let mut snapshot = self.snapshot.lock().expect("job snapshot lock poisoned");
             if !matches!(snapshot.status, JobStatus::Running | JobStatus::Cancelling) {
+                return;
+            }
+            if snapshot
+                .results
+                .iter()
+                .any(|existing| existing.has_same_layout(&solution))
+            {
                 return;
             }
             if snapshot.result.is_none() {

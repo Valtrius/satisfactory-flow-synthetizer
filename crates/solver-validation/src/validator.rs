@@ -282,9 +282,17 @@ pub fn validate_solution(
             .count(),
     )
     .map_err(|_| ValidationError::GraphTooLarge)?;
-    let link_count = physical_link_count
-        .checked_sub(discard_link_count)
-        .ok_or(ValidationError::GraphTooLarge)?;
+    let link_count = u32::try_from(
+        graph
+            .links
+            .iter()
+            .filter(|link| {
+                matches!(link.producer, ProducerPortRef::Node { .. })
+                    && matches!(link.consumer, ConsumerPortRef::Node { .. })
+            })
+            .count(),
+    )
+    .map_err(|_| ValidationError::GraphTooLarge)?;
     Ok(ValidationSummary {
         validator_version: VALIDATOR_VERSION,
         node_count: u32::try_from(graph.nodes.len()).map_err(|_| ValidationError::GraphTooLarge)?,
@@ -1085,7 +1093,7 @@ mod tests {
         let problem = problem(&["1"], &["1"], "1000");
         let summary = validate_solution(&problem, &direct_graph("1")).unwrap();
         assert_eq!(summary.node_count, 0);
-        assert_eq!(summary.link_count, 1);
+        assert_eq!(summary.link_count, 0);
         assert_eq!(summary.physical_link_count, 1);
         assert_eq!(summary.discard_link_count, 0);
         assert_eq!(summary.cyclic_scc_count, 0);
@@ -1098,7 +1106,7 @@ mod tests {
     fn validates_exact_splitter_and_merger_equations_at_capacity() {
         let split_problem = problem(&["120"], &["60", "60"], "120");
         let split = validate_solution(&split_problem, &split_graph()).unwrap();
-        assert_eq!((split.node_count, split.link_count), (1, 3));
+        assert_eq!((split.node_count, split.link_count), (1, 0));
 
         let merge_problem = problem(&["30", "90"], &["120"], "120");
         let merge_graph = PhysicalGraph {
@@ -1110,7 +1118,7 @@ mod tests {
             ],
         };
         let merge = validate_solution(&merge_problem, &merge_graph).unwrap();
-        assert_eq!((merge.node_count, merge.link_count), (1, 3));
+        assert_eq!((merge.node_count, merge.link_count), (1, 0));
     }
 
     #[test]
@@ -1126,7 +1134,7 @@ mod tests {
 
         let summary = validate_solution(&problem, &graph).unwrap();
         assert_eq!(summary.node_count, 0);
-        assert_eq!(summary.link_count, 1);
+        assert_eq!(summary.link_count, 0);
         assert_eq!(summary.physical_link_count, 2);
         assert_eq!(summary.discard_link_count, 1);
     }
@@ -1137,7 +1145,7 @@ mod tests {
         let summary = validate_solution(&problem, &discard_split_graph()).unwrap();
 
         assert_eq!(summary.node_count, 1);
-        assert_eq!(summary.link_count, 2);
+        assert_eq!(summary.link_count, 0);
         assert_eq!(summary.physical_link_count, 4);
         assert_eq!(summary.discard_link_count, 2);
     }
@@ -1278,7 +1286,7 @@ mod tests {
         let problem = problem(&["5"], &["10/3", "5/3"], "20");
         let summary = validate_solution(&problem, &feedback_graph()).unwrap();
         assert_eq!(summary.node_count, 3);
-        assert_eq!(summary.link_count, 6);
+        assert_eq!(summary.link_count, 3);
         assert_eq!(summary.cyclic_scc_count, 1);
     }
 
@@ -1288,7 +1296,7 @@ mod tests {
         let summary = validate_solution(&problem, &feedback_discard_graph()).unwrap();
 
         assert_eq!(summary.node_count, 3);
-        assert_eq!(summary.link_count, 5);
+        assert_eq!(summary.link_count, 3);
         assert_eq!(summary.physical_link_count, 6);
         assert_eq!(summary.discard_link_count, 1);
         assert_eq!(summary.cyclic_scc_count, 1);

@@ -161,7 +161,7 @@ impl From<ProofLedgerError> for SolverError {
     }
 }
 
-/// Solves a public exact-flow problem in strict lexicographic `(nodes, links)` order.
+/// Solves a public exact-flow problem for the minimum physical operator count.
 ///
 /// The solver exhausts all smaller node counts, all smaller link groups at the winning node count,
 /// and every profile in the winning equal-link group. A witness is mapped out of normalized units
@@ -455,8 +455,8 @@ fn solve_with_component_resolver_and_observer_ordered(
                 return Ok(incomplete(IncompleteReason::Cancelled, best_known, proof));
             }
 
-            // A concrete validated witness in the first satisfiable link group
-            // is already a complete lexicographic certificate: the proven
+            // A concrete validated witness in the first satisfiable structural group
+            // is already a complete minimum-node certificate: the proven
             // node lower bound discharges every smaller N, and the groups
             // visited earlier at this N were folded UNSAT. This optional small
             // acyclic constructor proves only existence; a miss leaves the
@@ -1054,9 +1054,8 @@ impl ProfileGroupRun<'_> {
     ) -> Vec<RootTaskOutput> {
         let mut completed = Vec::with_capacity(tasks.len());
         for handle in handles {
-            match handle.join() {
-                Ok(mut outputs) => completed.append(&mut outputs),
-                Err(_) => {}
+            if let Ok(mut outputs) = handle.join() {
+                completed.append(&mut outputs);
             }
         }
         // Sample cancel only after workers stop. Sampling earlier races with the
@@ -1246,8 +1245,21 @@ fn restore_and_validate(
     }
     let validation = validate_solution(caller_problem, &graph)
         .map_err(|error| SolverError::ValidationFirewall(Box::new(error)))?;
+    let structural_link_count = validation
+        .physical_link_count
+        .checked_sub(validation.discard_link_count)
+        .ok_or(SolverError::ValidationCountMismatch {
+            expected_nodes: node_count,
+            expected_links: accounting.link_count,
+            expected_physical_links: accounting.physical_link_count,
+            expected_discard_links: accounting.discard_link_count,
+            actual_nodes: validation.node_count,
+            actual_links: validation.link_count,
+            actual_physical_links: validation.physical_link_count,
+            actual_discard_links: validation.discard_link_count,
+        })?;
     if validation.node_count != node_count
-        || validation.link_count != accounting.link_count
+        || structural_link_count != accounting.link_count
         || validation.physical_link_count != accounting.physical_link_count
         || validation.discard_link_count != accounting.discard_link_count
     {
@@ -1257,14 +1269,14 @@ fn restore_and_validate(
             expected_physical_links: accounting.physical_link_count,
             expected_discard_links: accounting.discard_link_count,
             actual_nodes: validation.node_count,
-            actual_links: validation.link_count,
+            actual_links: structural_link_count,
             actual_physical_links: validation.physical_link_count,
             actual_discard_links: validation.discard_link_count,
         });
     }
     Ok(BestKnownSolution {
         node_count,
-        link_count: accounting.link_count,
+        link_count: validation.link_count,
         physical_link_count: validation.physical_link_count,
         discard_link_count: validation.discard_link_count,
         // Canonical identity deliberately stays in normalized units and canonical terminal order.
@@ -1491,7 +1503,7 @@ mod tests {
         let SolveResult::Optimal(solution) = bounded(&problem, 0) else {
             panic!("expected direct-link optimum");
         };
-        assert_eq!((solution.node_count, solution.link_count), (0, 1));
+        assert_eq!((solution.node_count, solution.link_count), (0, 0));
         assert_eq!(
             solution.validation,
             validate_solution(&problem, &solution.graph).unwrap()
@@ -1502,7 +1514,7 @@ mod tests {
     fn enumeration_emits_every_distinct_minimum_node_layout() {
         // Both the S2+M2 (L=5) and S3+M3 (L=6) profiles are feasible at the
         // proven minimum N=2. Enumeration must therefore continue after the
-        // lexicographically winning link group.
+        // first satisfiable structural link group.
         let problem = problem(&[2, 3], &[1, 4], 5);
         let layouts = Mutex::new(BTreeMap::new());
         let result = enumerate_with_observer(
@@ -1529,8 +1541,8 @@ mod tests {
         let layouts = layouts.into_inner().unwrap();
         assert!(layouts.len() >= 2);
         assert!(layouts.values().all(|solution| solution.node_count == 2));
-        assert!(layouts.values().any(|solution| solution.link_count == 5));
-        assert!(layouts.values().any(|solution| solution.link_count == 6));
+        assert!(layouts.values().any(|solution| solution.link_count == 1));
+        assert!(layouts.values().any(|solution| solution.link_count == 2));
         assert!(layouts.contains_key(&preferred.canonical_graph_key));
     }
 
@@ -1570,7 +1582,7 @@ mod tests {
         let SolveResult::Optimal(solution) = bounded(&problem, 0) else {
             panic!("expected direct output plus one anonymous discard");
         };
-        assert_eq!((solution.node_count, solution.link_count), (0, 1));
+        assert_eq!((solution.node_count, solution.link_count), (0, 0));
         assert_eq!(solution.physical_link_count, 2);
         assert_eq!(solution.discard_link_count, 1);
         assert_eq!(
@@ -1597,7 +1609,7 @@ mod tests {
         let SolveResult::Optimal(solution) = production else {
             panic!("expected one node to provide enough capacity-safe discard belts");
         };
-        assert_eq!((solution.node_count, solution.link_count), (1, 2));
+        assert_eq!((solution.node_count, solution.link_count), (1, 0));
         assert_eq!(solution.physical_link_count, 4);
         assert_eq!(solution.discard_link_count, 2);
     }
@@ -1659,7 +1671,7 @@ mod tests {
         let SolveResult::Optimal(solution) = production else {
             panic!("expected two-node optimum");
         };
-        assert_eq!((solution.node_count, solution.link_count), (2, 5));
+        assert_eq!((solution.node_count, solution.link_count), (2, 1));
     }
 
     #[test]
@@ -1895,7 +1907,7 @@ mod tests {
         );
         match result {
             SolveResult::Optimal(solution) => {
-                assert_eq!((solution.node_count, solution.link_count), (7, 14));
+                assert_eq!((solution.node_count, solution.link_count), (7, 11));
                 assert_eq!(solution.proof.initial_node_lower_bound, 7);
                 validate_solution(&problem, &solution.graph).unwrap();
             }
@@ -1951,7 +1963,7 @@ mod tests {
         let SolveResult::Optimal(solution) = &results[0] else {
             panic!("expected a one-node surplus optimum");
         };
-        assert_eq!((solution.node_count, solution.link_count), (1, 2));
+        assert_eq!((solution.node_count, solution.link_count), (1, 0));
     }
 
     #[test]

@@ -13,7 +13,7 @@ pub struct ValidationSummary {
     pub validator_version: u32,
     /// Number of physical splitters and mergers checked.
     pub node_count: u32,
-    /// Number of optimized non-discard links checked.
+    /// Number of operator-to-operator belts checked; excludes terminal stubs and discard lines.
     pub link_count: u32,
     /// Total number of positive, capacity-constrained physical links checked.
     pub physical_link_count: u32,
@@ -50,7 +50,7 @@ pub struct ProofSummary {
 pub struct BestKnownSolution {
     /// Physical splitter/merger count of this feasible witness.
     pub node_count: u32,
-    /// Optimized non-discard link count of this feasible witness.
+    /// Operator-to-operator belt count; excludes terminal stubs and discard lines.
     pub link_count: u32,
     /// Total physical link count, including discard lines.
     pub physical_link_count: u32,
@@ -64,19 +64,19 @@ pub struct BestKnownSolution {
     pub validation: ValidationSummary,
 }
 
-/// A lexicographically optimal and independently validated physical solution.
+/// A minimum-node and independently validated physical solution.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OptimalSolution {
     /// Proven minimum physical splitter/merger count.
     pub node_count: u32,
-    /// Proven minimum non-discard link count among solutions with `node_count` nodes.
+    /// Operator-to-operator belt count of the selected minimum-node witness.
     pub link_count: u32,
     /// Total physical link count of the selected witness, including discard lines.
     pub physical_link_count: u32,
     /// Anonymous discard-link count, excluded from optimization.
     pub discard_link_count: u32,
-    /// Smallest canonical witness at the optimal `(node_count, link_count)`.
+    /// Deterministic canonical identity of the selected minimum-node witness.
     pub canonical_graph_key: CanonicalGraphKey,
     /// Fully flattened physical graph.
     pub graph: PhysicalGraph,

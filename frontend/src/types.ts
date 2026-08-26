@@ -74,12 +74,12 @@ export interface SolutionStats {
   splitters: number;
   mergers: number;
   feedbackLoops: number;
-  /** Shared link/belt count (Custom optimized L, or Z3 operator↔operator belts). */
+  /** Shared operator-to-operator belt count; excludes input/output stubs and discard lines. */
   linkCount: number;
   checkedThrough?: number | null;
-  /** Z3-only. */
+  /** Compatibility alias of linkCount, supplied by both engines. */
   beltCount?: number | null;
-  /** Z3-only. */
+  /** Peak throughput across operator-to-operator belts, supplied by both engines. */
   internalMaxThroughput?: DisplayRate | null;
   /** Custom-only. */
   physicalLinkCount?: number | null;

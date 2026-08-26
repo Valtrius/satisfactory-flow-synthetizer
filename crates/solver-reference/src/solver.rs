@@ -60,7 +60,7 @@ pub enum ReferenceError {
     ValidationFirewall(Box<ValidationError>),
 }
 
-/// Exhaustively solve a small problem in lexicographic `(node_count, link_count)` order.
+/// Exhaustively solve a small problem for the minimum physical operator count.
 ///
 /// This oracle deliberately uses no production lower bounds, partial-state cache,
 /// pruning, components, propagation, or no-goods. At a fixed equal-link group it
@@ -326,8 +326,21 @@ fn evaluate_topology(
     let validation = validate_solution(caller_problem, &caller_graph)
         .map_err(|error| ReferenceError::ValidationFirewall(Box::new(error)))?;
     let node_count = plan.profile.node_count();
+    let structural_link_count = validation
+        .physical_link_count
+        .checked_sub(validation.discard_link_count)
+        .ok_or(ReferenceError::ValidationCountMismatch {
+            expected_nodes: node_count,
+            expected_links: plan.link_count,
+            expected_physical_links: plan.physical_link_count,
+            expected_discard_links: plan.discard_link_count,
+            actual_nodes: validation.node_count,
+            actual_links: validation.link_count,
+            actual_physical_links: validation.physical_link_count,
+            actual_discard_links: validation.discard_link_count,
+        })?;
     if validation.node_count != node_count
-        || validation.link_count != plan.link_count
+        || structural_link_count != plan.link_count
         || validation.physical_link_count != plan.physical_link_count
         || validation.discard_link_count != plan.discard_link_count
     {
@@ -337,14 +350,14 @@ fn evaluate_topology(
             expected_physical_links: plan.physical_link_count,
             expected_discard_links: plan.discard_link_count,
             actual_nodes: validation.node_count,
-            actual_links: validation.link_count,
+            actual_links: structural_link_count,
             actual_physical_links: validation.physical_link_count,
             actual_discard_links: validation.discard_link_count,
         });
     }
     Ok(Some(BestKnownSolution {
         node_count,
-        link_count: plan.link_count,
+        link_count: validation.link_count,
         physical_link_count: plan.physical_link_count,
         discard_link_count: plan.discard_link_count,
         canonical_graph_key: solved_canonical.key,
@@ -571,7 +584,7 @@ mod tests {
         let SolveResult::Optimal(solution) = result else {
             panic!("expected an optimal direct link");
         };
-        assert_eq!((solution.node_count, solution.link_count), (0, 1));
+        assert_eq!((solution.node_count, solution.link_count), (0, 0));
         assert_eq!(solution.graph.links[0].flow, "60".parse().unwrap());
         assert_eq!(
             solution.validation,
@@ -633,13 +646,13 @@ mod tests {
         let SolveResult::Optimal(split) = split else {
             panic!("expected splitter optimum");
         };
-        assert_eq!((split.node_count, split.link_count), (1, 3));
+        assert_eq!((split.node_count, split.link_count), (1, 0));
 
         let merge = solve(&problem(&["30", "90"], &["120"], "120"), 1);
         let SolveResult::Optimal(merge) = merge else {
             panic!("expected merger optimum");
         };
-        assert_eq!((merge.node_count, merge.link_count), (1, 3));
+        assert_eq!((merge.node_count, merge.link_count), (1, 0));
     }
 
     #[test]
@@ -649,7 +662,7 @@ mod tests {
             panic!("expected direct output plus one discard");
         };
         assert_eq!(solution.node_count, 0);
-        assert_eq!(solution.link_count, 1);
+        assert_eq!(solution.link_count, 0);
         assert_eq!(solution.physical_link_count, 2);
         assert_eq!(solution.discard_link_count, 1);
         assert_eq!(discard_total(&solution.graph), "1".parse().unwrap());
@@ -665,7 +678,7 @@ mod tests {
         let SolveResult::Optimal(solution) = solve(&problem, 1) else {
             panic!("expected one splitter to create sufficient discard lines");
         };
-        assert_eq!((solution.node_count, solution.link_count), (1, 2));
+        assert_eq!((solution.node_count, solution.link_count), (1, 0));
         assert_eq!(solution.physical_link_count, 4);
         assert_eq!(solution.discard_link_count, 2);
         assert_eq!(

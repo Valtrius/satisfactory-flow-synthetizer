@@ -55,7 +55,7 @@ pub struct GraphEdge {
     pub discarded: bool,
 }
 
-/// Public counts explicitly separate optimized `L` from physical discard belts.
+/// Public counts separate operator belts from all physical terminal/discard links.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PresentationStats {
@@ -345,9 +345,17 @@ fn verify_counts(counts: WitnessCounts, graph: &PhysicalGraph) -> Result<(), Pre
         (
             "link_count",
             counts.links,
-            actual_physical
-                .checked_sub(actual_discard)
-                .ok_or(PresentationError::CountOverflow)?,
+            u32::try_from(
+                graph
+                    .links
+                    .iter()
+                    .filter(|link| {
+                        matches!(link.producer, ProducerPortRef::Node { .. })
+                            && matches!(link.consumer, ConsumerPortRef::Node { .. })
+                    })
+                    .count(),
+            )
+            .map_err(|_| PresentationError::CountOverflow)?,
         ),
     ] {
         if expected != actual {
@@ -693,7 +701,7 @@ mod tests {
         let request = prepared(&["1", "1"], &["1"], "1");
         let best = BestKnownSolution {
             node_count: 0,
-            link_count: 1,
+            link_count: 0,
             physical_link_count: 2,
             discard_link_count: 1,
             canonical_graph_key: CanonicalGraphKey::from_bytes(vec![1]),
@@ -712,7 +720,7 @@ mod tests {
                     },
                 ],
             },
-            validation: validation(0, 1, 2, 1),
+            validation: validation(0, 0, 2, 1),
         };
         let outcome = SolveResult::Incomplete(IncompleteResult {
             reason: IncompleteReason::Cancelled,
@@ -726,7 +734,7 @@ mod tests {
         };
         let solution = presented.best_known.unwrap();
         assert_eq!(solution.status, "best_known");
-        assert_eq!(solution.stats.link_count, 1);
+        assert_eq!(solution.stats.link_count, 0);
         assert_eq!(solution.stats.physical_link_count, 2);
         assert_eq!(solution.stats.discard_link_count, 1);
         assert_eq!(solution.stats.checked_through, None);
@@ -774,13 +782,13 @@ mod tests {
             links.reverse();
             SolveResult::Optimal(OptimalSolution {
                 node_count: 1,
-                link_count: 3,
+                link_count: 0,
                 physical_link_count: 3,
                 discard_link_count: 0,
                 canonical_graph_key: CanonicalGraphKey::from_bytes(vec![1]),
                 graph: PhysicalGraph { nodes, links },
                 proof: ProofSummary::default(),
-                validation: validation(1, 3, 3, 0),
+                validation: validation(1, 0, 3, 0),
             })
         };
         let left =

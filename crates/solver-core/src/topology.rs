@@ -15,6 +15,7 @@ use crate::{
     canonical::{
         CanonicalOpenPortKey, MarkedLinkCanonicalKey, PartialLink, PartialTopology,
         canonicalize_marked_link, canonicalize_marked_link_cancellable, canonicalize_open_port,
+        canonicalize_open_port_cancellable,
     },
     components::Component,
     problem::NormalizedProblem,
@@ -714,57 +715,81 @@ impl TopologyState {
     /// Chooses deterministic MRV, then known-flow, external, and canonical order.
     #[must_use]
     pub fn selected_open_orbit(&self) -> Option<OpenPortOrbit> {
+        self.selected_open_orbit_inner(None).unwrap_or_default()
+    }
+
+    // The outer option reports cancellation; the inner option reports a
+    // complete topology with no remaining open-port orbit.
+    #[allow(clippy::option_option)]
+    pub(crate) fn selected_open_orbit_cancellable(
+        &self,
+        cancel: &AtomicBool,
+    ) -> Option<Option<OpenPortOrbit>> {
+        self.selected_open_orbit_inner(Some(cancel))
+    }
+
+    #[allow(clippy::option_option)]
+    fn selected_open_orbit_inner(
+        &self,
+        cancel: Option<&AtomicBool>,
+    ) -> Option<Option<OpenPortOrbit>> {
         let topology = self.partial_topology();
-        self.open_representatives()
-            .into_iter()
-            .map(|representative| {
-                let legal_partner_count = self.decisions_for(representative).len();
-                let (has_known_flow, is_external, symmetry_class) = match representative {
-                    OpenPortRef::Producer(reference) => {
-                        let port = &self.producer_ports[&reference];
-                        (
-                            port.known_flow.is_some(),
-                            matches!(port.owner, PortOwner::Input(_)),
-                            port.symmetry_class,
-                        )
-                    }
-                    OpenPortRef::Consumer(reference) => {
-                        let port = &self.consumer_ports[&reference];
-                        (
-                            port.known_flow.is_some(),
-                            matches!(port.owner, PortOwner::Output(_) | PortOwner::Discard(_)),
-                            port.symmetry_class,
-                        )
-                    }
-                };
-                OpenPortOrbit {
-                    representative,
-                    legal_partner_count,
-                    has_known_flow,
-                    is_external,
-                    symmetry_class,
-                    canonical_key: canonicalize_open_port(&topology, representative),
+        let mut orbits = Vec::new();
+        for representative in self.open_representatives() {
+            if cancel.is_some_and(|flag| flag.load(Ordering::Relaxed)) {
+                return None;
+            }
+            let legal_partner_count = self.decisions_for(representative).len();
+            let (has_known_flow, is_external, symmetry_class) = match representative {
+                OpenPortRef::Producer(reference) => {
+                    let port = &self.producer_ports[&reference];
+                    (
+                        port.known_flow.is_some(),
+                        matches!(port.owner, PortOwner::Input(_)),
+                        port.symmetry_class,
+                    )
                 }
-            })
-            .min_by(|left, right| {
-                let left_key = (
-                    left.legal_partner_count,
-                    !left.has_known_flow,
-                    !left.is_external,
-                    matches!(left.symmetry_class, PortClass::Unique),
-                    &left.canonical_key,
-                    left.representative,
-                );
-                let right_key = (
-                    right.legal_partner_count,
-                    !right.has_known_flow,
-                    !right.is_external,
-                    matches!(right.symmetry_class, PortClass::Unique),
-                    &right.canonical_key,
-                    right.representative,
-                );
-                left_key.cmp(&right_key)
-            })
+                OpenPortRef::Consumer(reference) => {
+                    let port = &self.consumer_ports[&reference];
+                    (
+                        port.known_flow.is_some(),
+                        matches!(port.owner, PortOwner::Output(_) | PortOwner::Discard(_)),
+                        port.symmetry_class,
+                    )
+                }
+            };
+            let canonical_key = match cancel {
+                Some(flag) => canonicalize_open_port_cancellable(&topology, representative, flag)?,
+                None => canonicalize_open_port(&topology, representative),
+            };
+            orbits.push(OpenPortOrbit {
+                representative,
+                legal_partner_count,
+                has_known_flow,
+                is_external,
+                symmetry_class,
+                canonical_key,
+            });
+        }
+        Some(orbits.into_iter().min_by(|left, right| {
+            let left_key = (
+                left.legal_partner_count,
+                !left.has_known_flow,
+                !left.is_external,
+                matches!(left.symmetry_class, PortClass::Unique),
+                &left.canonical_key,
+                left.representative,
+            );
+            let right_key = (
+                right.legal_partner_count,
+                !right.has_known_flow,
+                !right.is_external,
+                matches!(right.symmetry_class, PortClass::Unique),
+                &right.canonical_key,
+                right.representative,
+            );
+            left_key.cmp(&right_key)
+        }))
     }
 
     /// Lists legal decisions in canonical marked-child order.
@@ -775,7 +800,7 @@ impl TopologyState {
     #[must_use]
     pub fn legal_decisions(&mut self) -> Vec<TopologyDecision> {
         self.legal_decisions_cancellable(&AtomicBool::new(false))
-            .expect("uncancelled legal decisions must complete")
+            .unwrap_or_default()
     }
 
     /// Cancellation-aware form of [`Self::legal_decisions`].
@@ -786,9 +811,17 @@ impl TopologyState {
         &mut self,
         cancel: &AtomicBool,
     ) -> Option<Vec<TopologyDecision>> {
-        let Some(orbit) = self.selected_open_orbit() else {
+        let Some(orbit) = self.selected_open_orbit_cancellable(cancel)? else {
             return Some(Vec::new());
         };
+        self.legal_decisions_for_orbit_cancellable(&orbit, cancel)
+    }
+
+    pub(crate) fn legal_decisions_for_orbit_cancellable(
+        &mut self,
+        orbit: &OpenPortOrbit,
+        cancel: &AtomicBool,
+    ) -> Option<Vec<TopologyDecision>> {
         Some(
             self.keyed_decisions_for(orbit.representative, Some(cancel))?
                 .into_iter()
@@ -802,7 +835,7 @@ impl TopologyState {
     pub fn ordered_decision_child_keys(&mut self) -> Vec<MarkedLinkCanonicalKey> {
         self.selected_open_orbit().map_or_else(Vec::new, |orbit| {
             self.keyed_decisions_for(orbit.representative, None)
-                .expect("uncancelled decision keys must complete")
+                .unwrap_or_default()
                 .into_iter()
                 .map(|(key, _)| key)
                 .collect()
@@ -871,6 +904,13 @@ impl TopologyState {
         let Some(orbit) = self.selected_open_orbit() else {
             return Vec::new();
         };
+        Self::component_attachments_for_orbit(component, &orbit)
+    }
+
+    pub(crate) fn component_attachments_for_orbit(
+        component: &Component,
+        orbit: &OpenPortOrbit,
+    ) -> Vec<ComponentAttachment> {
         match orbit.representative {
             OpenPortRef::Producer(producer) => (0..component.boundary().input_count())
                 .map(
@@ -1922,10 +1962,12 @@ mod tests {
         let cancel = AtomicBool::new(true);
         assert!(state.legal_decisions_cancellable(&cancel).is_none());
         cancel.store(false, Ordering::Relaxed);
-        assert!(!state
-            .legal_decisions_cancellable(&cancel)
-            .unwrap()
-            .is_empty());
+        assert!(
+            !state
+                .legal_decisions_cancellable(&cancel)
+                .unwrap()
+                .is_empty()
+        );
     }
 
     #[test]

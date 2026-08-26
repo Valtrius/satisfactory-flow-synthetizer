@@ -6,6 +6,7 @@ pub mod component_enumerator;
 pub mod component_optimizer;
 pub mod component_search;
 pub mod components;
+pub mod hotspot_profile;
 pub mod lower_bound;
 pub mod no_good;
 pub mod problem;

@@ -9,7 +9,7 @@ use solver_api::{
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ProfilePlan {
     pub profile: NodeProfile,
-    /// Optimized non-discard link count.
+    /// Non-discard physical-link count used to group exhaustive search obligations.
     pub link_count: u32,
     pub discard_link_count: u32,
     pub physical_link_count: u32,
@@ -32,7 +32,7 @@ pub struct ProfileTopology {
 }
 
 impl ProfileTopology {
-    /// Returns the optimized non-discard link count.
+    /// Returns the non-discard physical-link search-group count.
     ///
     /// # Panics
     ///
