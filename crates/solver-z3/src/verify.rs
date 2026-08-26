@@ -438,6 +438,14 @@ fn solve_linear_system(mut matrix: Vec<Vec<BigRational>>) -> Result<Vec<BigRatio
 
 #[allow(clippy::too_many_lines)]
 pub(crate) fn build_solution(problem: &Problem, verified: &VerifiedCandidate) -> Solution {
+    build_solution_with_status(problem, verified, "proven_optimal")
+}
+
+pub(crate) fn build_solution_with_status(
+    problem: &Problem,
+    verified: &VerifiedCandidate,
+    status: &str,
+) -> Solution {
     let node_count = verified.candidate.node_types.len();
     let mut nodes = Vec::new();
     let mut edges = Vec::new();
@@ -517,7 +525,7 @@ pub(crate) fn build_solution(problem: &Problem, verified: &VerifiedCandidate) ->
     let (belt_count, internal_max_throughput) = operator_belt_metrics(&nodes, &edges);
 
     Solution {
-        status: "proven_optimal".to_owned(),
+        status: status.to_owned(),
         model_version: 3,
         stats: SolutionStats {
             node_count,

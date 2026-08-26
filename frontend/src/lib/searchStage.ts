@@ -263,6 +263,13 @@ export function searchHeadline(
     return `Advancing past ${nodeCountLabel(snapshot.progress.nodeCount)}`;
   }
   if (isZ3Progress(snapshot.progress) && 'nodeCount' in snapshot.progress) {
+    const improving =
+      'incumbentBeltCount' in snapshot.progress &&
+      snapshot.progress.incumbentBeltCount != null &&
+      snapshot.progress.maxOperatorBelts != null;
+    if (improving) {
+      return `Improving below ${snapshot.progress.incumbentBeltCount} belts at N=${snapshot.progress.nodeCount}`;
+    }
     return `Checking ${snapshot.progress.nodeCount}-node layouts`;
   }
   return 'Searching';
@@ -320,5 +327,5 @@ export function searchSubline(
   }
   return searchEnumerate
     ? `Started from lower bound ${view.lowerBound} · will enumerate every layout at the proven minimum`
-    : `Started from lower bound ${view.lowerBound} · proving optimality as size grows`;
+    : `Started from lower bound ${view.lowerBound} · proving min nodes, then min operator belts`;
 }

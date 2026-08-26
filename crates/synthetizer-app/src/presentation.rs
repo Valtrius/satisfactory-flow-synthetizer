@@ -512,8 +512,7 @@ fn feedback_annotation(
                 ProducerPortRef::Node { node: source, .. },
                 ConsumerPortRef::Node { node: target, .. },
             ) => {
-                let (Some(&source), Some(&target)) =
-                    (indexes.get(&source), indexes.get(&target))
+                let (Some(&source), Some(&target)) = (indexes.get(&source), indexes.get(&target))
                 else {
                     continue;
                 };
@@ -940,10 +939,8 @@ mod tests {
     fn natural_loop_marks_the_return_into_the_merger() {
         let merger = NodeId(0);
         let splitter = NodeId(1);
-        let operators = BTreeMap::from([
-            (merger, NodeType::Merger2),
-            (splitter, NodeType::Splitter2),
-        ]);
+        let operators =
+            BTreeMap::from([(merger, NodeType::Merger2), (splitter, NodeType::Splitter2)]);
         let links = vec![
             PhysicalLink {
                 producer: ProducerPortRef::Input(InputTerminalIndex(0)),

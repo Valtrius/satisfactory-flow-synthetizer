@@ -197,6 +197,11 @@ pub enum SolverProgress {
         profile_count: usize,
         attempt_slots: usize,
         threads_per_attempt: usize,
+        /// Present while Opt searches under a strict operator-belt cap.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        max_operator_belts: Option<usize>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        incumbent_belt_count: Option<usize>,
     },
     /// Every profile at this size was unsat; some SAT models failed verification.
     CandidateRejected {
@@ -217,5 +222,9 @@ pub enum SolverProgress {
         abandoned_attempts: usize,
         rejected_unstable_candidates: usize,
         attempt_slots: usize,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        max_operator_belts: Option<usize>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        incumbent_belt_count: Option<usize>,
     },
 }

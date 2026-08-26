@@ -106,8 +106,7 @@ pub fn enumerate_profiles(
         output_count,
         &Rational::zero(),
         &Rational::one(),
-    )
-    {
+    ) {
         if !profiles.contains(&plan.profile) {
             profiles.push(plan.profile);
         }

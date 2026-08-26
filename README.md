@@ -45,14 +45,14 @@ Every physical belt, including discard belts, must carry a positive flow that do
 - **Custom** — deterministic exact topology search with proof accounting, independent validation, incremental incumbents, complete minimum-node enumeration, and an optional verified SQLite component accelerator.
 - **Z3** — portfolio SMT solver with parallel attempts, progress telemetry, feedback verification, cancellation, and minimum-node enumeration.
 
-Custom optimizes lexicographically by physical splitter/merger count, then by non-discard link count. Returned witnesses pass an independent validator before they reach the UI.
+Both solvers optimize lexicographically by physical splitter/merger count, then by non-discard operator-to-operator link count. Custom proves that order with its link-group ledger. Z3 Opt finds any min-N layout, streams improving `best_known` incumbents under a strict belt cap, then proves nothing better exists. Returned witnesses pass an independent validator before they reach the UI.
 
 ### Result semantics
 
-- `proven_optimal` — a completed Custom proof or a completed Z3 optimum.
-- `best_known` — an independently validated layout, not an optimality claim.
+- `proven_optimal` — a completed Custom proof or a completed Z3 Opt run after the belt-cap improvement proof.
+- `best_known` — an independently validated layout, not an optimality claim (including live Z3 Opt incumbents before the final proof).
 - Custom reports global UNSAT separately from incomplete/resource-limited work and internal failures.
-- Cancelling enumeration keeps every layout already delivered. On successful completion, the preferred Custom layout becomes `proven_optimal`; other minimum-node layouts stay validated `best_known` alternatives (the proof picks the preferred lexicographic witness).
+- Cancelling enumeration keeps every layout already delivered. On successful completion, the preferred Custom layout becomes `proven_optimal`; other minimum-node layouts stay validated `best_known` alternatives (the proof picks the preferred lexicographic witness). Cancelling Z3 Opt mid-improve keeps the best streamed incumbent as `best_known`.
 - Engine-specific telemetry appears only when it has a real counterpart. Custom does not invent Z3 portfolio slots or peak-throughput metrics.
 
 ## Developers

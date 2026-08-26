@@ -190,15 +190,11 @@ pub fn profile_link_accounting(
     surplus: &Rational,
     max_link_rate: &Rational,
 ) -> Result<Option<ProfileLinkAccounting>, ProfileArithmeticError> {
-    Ok(profile_link_accountings(
-        profile,
-        input_count,
-        output_count,
-        surplus,
-        max_link_rate,
-    )?
-    .into_iter()
-    .next())
+    Ok(
+        profile_link_accountings(profile, input_count, output_count, surplus, max_link_rate)?
+            .into_iter()
+            .next(),
+    )
 }
 
 /// Enumerates every port-balanced profile for one fixed physical node count.
@@ -234,7 +230,10 @@ pub fn enumerate_profile_groups(
                     &Rational::zero(),
                     &Rational::one(),
                 )? {
-                    groups.entry(accounting.link_count).or_default().push(profile);
+                    groups
+                        .entry(accounting.link_count)
+                        .or_default()
+                        .push(profile);
                 }
             }
         }

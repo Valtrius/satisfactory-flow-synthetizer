@@ -9,7 +9,11 @@
 //!
 //! When `SolveRequest::enumerate_all_at_n` is set, the first verified size is kept and
 //! every distinct layout at that size is collected (with streaming
-//! [`SolverEvent::SolutionFound`] events) instead of returning the first hit.
+//! [`SolverEvent::SolutionFound`] events) instead of returning a single optimum.
+//!
+//! Classic (Opt) mode proves minimal `N`, then iteratively improves operator belt
+//! count `L` under `L_op < incumbent` until that bound is UNSAT, streaming each
+//! better incumbent as `best_known` before the final proven-optimal witness.
 //!
 //! # Portfolio parallelism
 //!
@@ -61,7 +65,8 @@ use crate::{
         consumer_count, node_consumer, node_producer, output_consumer, producer_count,
     },
     verify::{
-        ProblemError, build_solution, normalize_problem, solution_identity, verify_candidate,
+        ProblemError, build_solution, build_solution_with_status, normalize_problem,
+        solution_identity, verify_candidate,
     },
 };
 
@@ -80,7 +85,7 @@ pub enum SolveError {
 
 #[derive(Clone, Debug)]
 pub enum SolveTermination {
-    /// Classic mode: the first verified minimal-N layout.
+    /// Classic mode: proven (Nmin, Lmin) after belt-count improvement.
     Completed(Box<Solution>),
     /// Full-N mode finished collecting every distinct layout at minimal N.
     Enumerated(Vec<Solution>),
@@ -158,11 +163,21 @@ where
                 lower_bound,
                 rejected_before: rejected_total,
                 enumerate,
+                max_operator_belts: None,
+                incumbent_belt_count: None,
             },
         )? {
             SizeSearch::Found(candidate) => {
-                let solution = build_solution(&problem, &candidate);
-                return Ok(SolveTermination::Completed(Box::new(solution)));
+                return finish_opt_at_size(
+                    &problem,
+                    cancel,
+                    &on_progress,
+                    &throttle,
+                    node_count,
+                    lower_bound,
+                    rejected_total,
+                    &candidate,
+                );
             }
             SizeSearch::Enumerated(solutions) => {
                 return Ok(SolveTermination::Enumerated(solutions));
@@ -636,6 +651,8 @@ struct SizeProgressContext<'a, F: FnMut(SolverEvent) + Send> {
     lower_bound: usize,
     rejected_before: usize,
     attempt_slots: usize,
+    max_operator_belts: Option<usize>,
+    incumbent_belt_count: Option<usize>,
 }
 
 fn report_size_progress<F>(force: bool, ctx: &SizeProgressContext<'_, F>)
@@ -672,6 +689,8 @@ where
             abandoned_attempts: telemetry.abandoned_attempts,
             rejected_unstable_candidates: rejected,
             attempt_slots: ctx.attempt_slots,
+            max_operator_belts: ctx.max_operator_belts,
+            incumbent_belt_count: ctx.incumbent_belt_count,
         },
     );
 }
@@ -687,13 +706,108 @@ fn attempt_seed(node_count: usize, profile: usize, replica: usize) -> u32 {
     u32::try_from(hash & u64::from(u32::MAX)).expect("masked to u32")
 }
 
-/// Search all operator profiles at `node_count` under the production portfolio policy.
+/// After the first verified layout at minimal N, improve operator belt count until UNSAT.
+#[allow(clippy::too_many_arguments)]
+fn finish_opt_at_size<F>(
+    problem: &Problem,
+    cancel: &AtomicBool,
+    on_progress: &Mutex<F>,
+    throttle: &EmitThrottle,
+    node_count: usize,
+    lower_bound: usize,
+    rejected_before: usize,
+    first: &crate::model::VerifiedCandidate,
+) -> Result<SolveTermination, SolveError>
+where
+    F: FnMut(SolverEvent) + Send,
+{
+    let mut incumbent = build_solution_with_status(problem, first, "best_known");
+    {
+        let mut callback = on_progress.lock().expect("progress callback");
+        callback(SolverEvent::SolutionFound(Box::new(incumbent.clone())));
+    }
+
+    loop {
+        if cancel.load(Ordering::Relaxed) {
+            return Ok(SolveTermination::Cancelled {
+                solutions: vec![incumbent],
+            });
+        }
+        let Some(cap) = incumbent.stats.belt_count.checked_sub(1) else {
+            "proven_optimal".clone_into(&mut incumbent.status);
+            return Ok(SolveTermination::Completed(Box::new(incumbent)));
+        };
+
+        match search_size(
+            problem,
+            cancel,
+            on_progress,
+            throttle,
+            SizeSearchOptions {
+                node_count,
+                lower_bound,
+                rejected_before,
+                enumerate: false,
+                max_operator_belts: Some(cap),
+                incumbent_belt_count: Some(incumbent.stats.belt_count),
+            },
+        )? {
+            SizeSearch::Found(candidate) => {
+                let better = build_solution_with_status(problem, &candidate, "best_known");
+                if better.stats.belt_count >= incumbent.stats.belt_count {
+                    return Err(SolveError::Solver(
+                        "belt-cap search returned a non-improving witness".to_owned(),
+                    ));
+                }
+                incumbent = better;
+                let mut callback = on_progress.lock().expect("progress callback");
+                callback(SolverEvent::SolutionFound(Box::new(incumbent.clone())));
+            }
+            SizeSearch::Unsatisfiable(_) => {
+                "proven_optimal".clone_into(&mut incumbent.status);
+                return Ok(SolveTermination::Completed(Box::new(incumbent)));
+            }
+            SizeSearch::Cancelled => {
+                return Ok(SolveTermination::Cancelled {
+                    solutions: vec![incumbent],
+                });
+            }
+            SizeSearch::CancelledEnumerated(solutions) => {
+                let mut kept = solutions;
+                if kept.is_empty() {
+                    kept.push(incumbent);
+                }
+                return Ok(SolveTermination::Cancelled { solutions: kept });
+            }
+            SizeSearch::Enumerated(_) => {
+                return Err(SolveError::Solver(
+                    "opt improvement must not enumerate".to_owned(),
+                ));
+            }
+            SizeSearch::FailedEnumerated { solutions, error } => {
+                let mut kept = solutions;
+                if kept.is_empty() {
+                    kept.push(incumbent);
+                }
+                return Ok(SolveTermination::Incomplete {
+                    solutions: kept,
+                    error,
+                });
+            }
+        }
+    }
+}
+
 #[derive(Clone, Copy)]
 struct SizeSearchOptions {
     node_count: usize,
     lower_bound: usize,
     rejected_before: usize,
     enumerate: bool,
+    /// Cap operator↔operator belts (`<= max`). `None` means unconstrained.
+    max_operator_belts: Option<usize>,
+    /// Current Opt incumbent belt count (progress telemetry only).
+    incumbent_belt_count: Option<usize>,
 }
 
 fn search_size<F>(
@@ -724,6 +838,8 @@ where
         options.lower_bound,
         options.rejected_before,
         options.enumerate,
+        options.max_operator_belts,
+        options.incumbent_belt_count,
     )
 }
 
@@ -744,6 +860,8 @@ fn search_size_with_threads_per_attempt<F>(
     lower_bound: usize,
     rejected_before: usize,
     enumerate: bool,
+    max_operator_belts: Option<usize>,
+    incumbent_belt_count: Option<usize>,
 ) -> Result<SizeSearch, SolveError>
 where
     F: FnMut(SolverEvent) + Send,
@@ -770,6 +888,8 @@ where
             profile_count: profiles.len(),
             attempt_slots,
             threads_per_attempt,
+            max_operator_belts,
+            incumbent_belt_count,
         },
     );
 
@@ -800,6 +920,8 @@ where
         lower_bound,
         rejected_before,
         attempt_slots,
+        max_operator_belts,
+        incumbent_belt_count,
     };
     let profiles = profiles.as_slice();
     let progress_ctx = &progress_ctx;
@@ -859,6 +981,7 @@ where
                         enumerate,
                         enumerated,
                         seen_identities,
+                        max_operator_belts,
                     );
                     {
                         let mut sched = scheduler.lock().expect("scheduler");
@@ -992,6 +1115,7 @@ fn run_attempt<F>(
     enumerate: bool,
     enumerated: &Mutex<Vec<Solution>>,
     seen_identities: &Mutex<HashSet<String>>,
+    max_operator_belts: Option<usize>,
 ) -> AttemptResult
 where
     F: FnMut(SolverEvent) + Send,
@@ -1027,6 +1151,7 @@ where
                 enumerate,
                 enumerated,
                 seen_identities,
+                max_operator_belts,
             );
             done.store(true, Ordering::Relaxed);
             result
@@ -1055,6 +1180,7 @@ fn run_attempt_in_context<F>(
     enumerate: bool,
     enumerated: &Mutex<Vec<Solution>>,
     seen_identities: &Mutex<HashSet<String>>,
+    max_operator_belts: Option<usize>,
 ) -> AttemptResult
 where
     F: FnMut(SolverEvent) + Send,
@@ -1075,6 +1201,7 @@ where
         cancel,
         stop_all,
         stop_profile,
+        max_operator_belts,
     ) else {
         return AttemptResult::Cancelled;
     };
@@ -1288,6 +1415,7 @@ impl Encoding {
             &AtomicBool::new(false),
             &AtomicBool::new(false),
             &AtomicBool::new(false),
+            None,
         )
         .expect("encoding construction is not cancelled")
     }
@@ -1296,7 +1424,7 @@ impl Encoding {
     ///
     /// `random_seed` is applied to both `sat.random_seed` and `smt.random_seed` so
     /// portfolio replicas explore different search trajectories.
-    #[allow(clippy::too_many_lines)]
+    #[allow(clippy::too_many_lines, clippy::too_many_arguments)]
     fn try_new_with_threads(
         problem: &Problem,
         fixed_node_types: &[OperatorKind],
@@ -1305,6 +1433,7 @@ impl Encoding {
         cancel: &AtomicBool,
         stop_all: &AtomicBool,
         stop_profile: &AtomicBool,
+        max_operator_belts: Option<usize>,
     ) -> Option<Self> {
         let cancelled = || {
             cancel.load(Ordering::Relaxed)
@@ -1494,6 +1623,24 @@ impl Encoding {
                     solver.assert(output(0).eq(Real::add(&[input_0, input(1), input(2)])));
                 }
             }
+        }
+
+        if let Some(max_belts) = max_operator_belts {
+            let mut operator_edges = Vec::new();
+            for producer in 0..producer_total {
+                let full_producer = producers[producer];
+                if full_producer < input_count {
+                    continue;
+                }
+                for consumer in 0..consumer_total {
+                    let full_consumer = consumers[consumer];
+                    if full_consumer < node_count * PORTS {
+                        operator_edges.push((&edges[producer][consumer], 1));
+                    }
+                }
+            }
+            let max_i32 = i32::try_from(max_belts).expect("belt cap fits i32");
+            solver.assert(Bool::pb_le(operator_edges.as_slice(), max_i32));
         }
 
         Some(Self {
@@ -1902,6 +2049,8 @@ mod tests {
                 lower_bound: node_count_lower_bound(problem),
                 rejected_before: 0,
                 enumerate: false,
+                max_operator_belts: None,
+                incumbent_belt_count: None,
             },
         )
     }
@@ -2459,6 +2608,144 @@ mod tests {
     }
 
     #[test]
+    fn classic_opt_streams_best_known_then_matches_min_enumerated_belts() {
+        let base = SolveRequest {
+            inputs: vec![endpoint("input", "120")],
+            outputs: vec![endpoint("a", "60"), endpoint("b", "60")],
+            belt_rate: "1200".to_owned(),
+            enumerate_all_at_n: false,
+        };
+        let streamed = Mutex::new(Vec::new());
+        let SolveTermination::Completed(opt) =
+            solve_exact(&base, &AtomicBool::new(false), |event| {
+                if let SolverEvent::SolutionFound(solution) = event {
+                    streamed.lock().expect("streamed").push(*solution);
+                }
+            })
+            .unwrap()
+        else {
+            panic!("expected completed opt");
+        };
+        let streamed = streamed.into_inner().expect("streamed");
+        assert!(
+            !streamed.is_empty(),
+            "opt must stream at least one best_known incumbent"
+        );
+        assert!(
+            streamed
+                .iter()
+                .all(|solution| solution.status == "best_known"),
+            "streamed opt incumbents must be best_known, got {streamed:?}"
+        );
+        assert_eq!(opt.status, "proven_optimal");
+        assert!(
+            !opt.nodes.is_empty() && !opt.edges.is_empty(),
+            "proven_optimal must include a drawable graph, got {} nodes / {} edges",
+            opt.nodes.len(),
+            opt.edges.len()
+        );
+        assert!(
+            streamed
+                .iter()
+                .all(|solution| !solution.nodes.is_empty() && !solution.edges.is_empty()),
+            "streamed best_known incumbents must include drawable graphs"
+        );
+        assert_eq!(
+            opt.stats.belt_count,
+            streamed.last().expect("last").stats.belt_count
+        );
+
+        let mut enumerate = base.clone();
+        enumerate.enumerate_all_at_n = true;
+        let SolveTermination::Enumerated(all) =
+            solve_exact(&enumerate, &AtomicBool::new(false), |_| {}).unwrap()
+        else {
+            panic!("expected enumerated layouts");
+        };
+        let min_belts = all
+            .iter()
+            .map(|solution| solution.stats.belt_count)
+            .min()
+            .expect("enumerated layouts");
+        assert_eq!(
+            opt.stats.belt_count, min_belts,
+            "opt must return the minimum operator-belt layout among Nmin layouts"
+        );
+        assert!(
+            all.iter()
+                .all(|solution| solution.stats.node_count == opt.stats.node_count)
+        );
+    }
+
+    #[test]
+    fn classic_opt_improves_when_first_witness_has_operator_belts() {
+        // Unbalanced inputs need operator↔operator links. Search order may already
+        // return Lmin as the first Nmin witness, but when it does not, incumbents
+        // must strictly improve and the final Opt result must match enumeration.
+        let base = SolveRequest {
+            inputs: vec![endpoint("a", "30"), endpoint("b", "90")],
+            outputs: vec![endpoint("x", "60"), endpoint("y", "60")],
+            belt_rate: "1200".to_owned(),
+            enumerate_all_at_n: false,
+        };
+        let streamed = Mutex::new(Vec::new());
+        let SolveTermination::Completed(opt) =
+            solve_exact(&base, &AtomicBool::new(false), |event| {
+                if let SolverEvent::SolutionFound(solution) = event {
+                    streamed.lock().expect("streamed").push(*solution);
+                }
+            })
+            .unwrap()
+        else {
+            panic!("expected completed opt");
+        };
+        let streamed = streamed.into_inner().expect("streamed");
+        assert!(
+            !streamed.is_empty(),
+            "opt must stream at least one best_known incumbent"
+        );
+        assert!(
+            streamed.first().expect("first").stats.belt_count > 0,
+            "fixture must involve operator belts"
+        );
+        assert!(
+            streamed
+                .iter()
+                .all(|solution| solution.status == "best_known")
+        );
+        for window in streamed.windows(2) {
+            assert!(
+                window[1].stats.belt_count < window[0].stats.belt_count,
+                "incumbents must strictly improve L"
+            );
+        }
+        assert_eq!(opt.status, "proven_optimal");
+        assert_eq!(
+            opt.stats.belt_count,
+            streamed.last().expect("last").stats.belt_count
+        );
+
+        let mut enumerate = base.clone();
+        enumerate.enumerate_all_at_n = true;
+        let SolveTermination::Enumerated(all) =
+            solve_exact(&enumerate, &AtomicBool::new(false), |_| {}).unwrap()
+        else {
+            panic!("expected enumerated layouts");
+        };
+        let min_belts = all
+            .iter()
+            .map(|solution| solution.stats.belt_count)
+            .min()
+            .expect("enumerated layouts");
+        assert_eq!(opt.stats.belt_count, min_belts);
+        assert!(
+            all.iter().any(|solution| solution.stats.belt_count > min_belts)
+                || streamed.len() == 1,
+            "either enumeration has suboptimal L at Nmin (improve can matter) or the first witness was already Lmin"
+        );
+    }
+
+    #[test]
     fn an_active_parallel_search_stops_cleanly() {
         let request = SolveRequest {
             inputs: vec![endpoint("input", "358")],
@@ -2553,6 +2840,8 @@ mod tests {
                         node_count_lower_bound(&problem),
                         0,
                         false,
+                        None,
+                        None,
                     )
                     .unwrap();
                     eprintln!(

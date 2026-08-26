@@ -152,6 +152,8 @@ export type Z3SolverProgress =
       profileCount: number;
       attemptSlots: number;
       threadsPerAttempt: number;
+      maxOperatorBelts?: number | null;
+      incumbentBeltCount?: number | null;
     }
   | {
       kind: 'candidate_rejected';
@@ -172,6 +174,8 @@ export type Z3SolverProgress =
       abandonedAttempts: number;
       rejectedUnstableCandidates: number;
       attemptSlots: number;
+      maxOperatorBelts?: number | null;
+      incumbentBeltCount?: number | null;
     };
 
 export type SolverProgress =
