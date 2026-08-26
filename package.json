@@ -10,6 +10,7 @@
     "build": "tauri build",
     "check": "npm run check -w frontend",
     "test": "npm run test -w frontend",
+    "release:version": "node scripts/release-version.mjs",
     "tauri": "tauri"
   },
   "devDependencies": {

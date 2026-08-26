@@ -1,0 +1,92 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "[0-9]+.[0-9]+.[0-9]+"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # git-cliff needs the previous tags and history.
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: npm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate tag and Tauri version
+        shell: pwsh
+        run: |
+          $tagVersion = "${{ github.ref_name }}"
+          $config = Get-Content "src-tauri/tauri.conf.json" | ConvertFrom-Json
+          $tauriVersion = $config.version
+
+          if ($tagVersion -ne $tauriVersion) {
+            throw "Tag version $tagVersion does not match tauri.conf.json version $tauriVersion"
+          }
+
+      - name: Generate release notes
+        uses: orhun/git-cliff-action@v4
+        with:
+          config: cliff.toml
+          args: --latest --strip header
+        env:
+          OUTPUT: RELEASE_NOTES.md
+
+      - name: Build Tauri application
+        run: npm run tauri build -- --bundles nsis
+
+      - name: Prepare release artifacts
+        shell: pwsh
+        run: |
+          # Cargo workspace target lives at the repo root.
+          $binary = "target/release/satisfactory-flow-synthetizer.exe"
+
+          Copy-Item `
+            $binary `
+            "satisfactory-flow-synthetizer_${{ github.ref_name }}_portable.exe"
+
+          $installer = Get-ChildItem `
+            "target/release/bundle/nsis/*-setup.exe" |
+            Select-Object -First 1
+
+          if (-not $installer) {
+            throw "NSIS installer not found"
+          }
+
+          Copy-Item `
+            $installer.FullName `
+            "satisfactory-flow-synthetizer_${{ github.ref_name }}_setup.exe"
+
+      - name: Create GitHub release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            "satisfactory-flow-synthetizer_${{ github.ref_name }}_portable.exe" \
+            "satisfactory-flow-synthetizer_${{ github.ref_name }}_setup.exe" \
+            --title "${{ github.ref_name }}" \
+            --notes-file RELEASE_NOTES.md
