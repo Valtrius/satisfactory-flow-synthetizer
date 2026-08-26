@@ -6,6 +6,7 @@
   import Trash2 from '@lucide/svelte/icons/trash-2';
   import X from '@lucide/svelte/icons/x';
   import Button from './ui/Button.svelte';
+  import Input from './ui/Input.svelte';
   import Panel from './ui/Panel.svelte';
   import {
     displayTitle,
@@ -53,6 +54,7 @@
   let renameDraft = $state('');
   let renameIgnoreBlur = false;
   let menuId = $state<string | null>(null);
+  let query = $state('');
 
   let dragBand = $state<'queued' | 'history' | null>(null);
   let dragFromId = $state<string | null>(null);
@@ -62,6 +64,22 @@
   let dragOriginY = 0;
 
   const listEmpty = $derived(queued.length === 0 && !running && history.length === 0);
+
+  function matchesQuery(entry: HistoryEntry): boolean {
+    const needle = query.trim().toLowerCase();
+    if (!needle) return true;
+    return displayTitle(entry).toLowerCase().includes(needle);
+  }
+
+  const filteredQueued = $derived(queued.filter(matchesQuery));
+  const filteredRunning = $derived(running && matchesQuery(running) ? running : null);
+  const filteredHistory = $derived(history.filter(matchesQuery));
+  const noMatches = $derived(
+    !listEmpty &&
+      filteredQueued.length === 0 &&
+      filteredRunning == null &&
+      filteredHistory.length === 0
+  );
 
   function startRename(entry: HistoryEntry): void {
     menuId = null;
@@ -199,18 +217,30 @@
     </div>
   </div>
 
+  <div class="shrink-0 border-b border-line px-3 py-2">
+    <Input
+      type="search"
+      class="h-9 text-xs"
+      placeholder="Search by name…"
+      aria-label="Search history by name"
+      bind:value={query}
+    />
+  </div>
+
   <div class="min-h-0 flex-1 overflow-y-auto px-2 py-2" role="listbox" aria-label="Job history">
     {#if listEmpty}
       <p class="m-0 px-2 py-3 text-xs text-dim">Solve a problem to build history.</p>
+    {:else if noMatches}
+      <p class="m-0 px-2 py-3 text-xs text-dim">No entries match “{query.trim()}”.</p>
     {:else}
       <div class="flex flex-col gap-1.5">
-        {#each queued as entry (entry.id)}
+        {#each filteredQueued as entry (entry.id)}
           {@render row(entry, 'queued', true)}
         {/each}
-        {#if running}
-          {@render row(running, 'running', false)}
+        {#if filteredRunning}
+          {@render row(filteredRunning, 'running', false)}
         {/if}
-        {#each history as entry (entry.id)}
+        {#each filteredHistory as entry (entry.id)}
           {@render row(entry, 'history', true)}
         {/each}
       </div>
