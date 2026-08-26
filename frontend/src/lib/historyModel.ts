@@ -222,11 +222,96 @@ export function defaultTitle(request: SolveRequest): string {
   return `${left} = ${right}`;
 }
 
+export function entryLayoutCount(entry: HistoryEntry): number {
+  if (entry.results.length > 0) return entry.results.length;
+  return entry.result ? 1 : 0;
+}
+
+export function entryNodeCount(entry: HistoryEntry): number | null {
+  const fromResult =
+    entry.results[0]?.stats.nodeCount ?? entry.result?.stats.nodeCount ?? null;
+  if (fromResult != null) return fromResult;
+  const progress = entry.progress;
+  if (!progress) return null;
+  if (progress.engine === 'z3' && 'nodeCount' in progress) return progress.nodeCount;
+  if (progress.engine === 'custom' && progress.obligation?.nodeCount != null) {
+    return progress.obligation.nodeCount;
+  }
+  return null;
+}
+
+export type HistoryMetricCell = {
+  value: string;
+  tip: string;
+};
+
+export type HistoryMetrics = {
+  search: HistoryMetricCell;
+  engine: HistoryMetricCell;
+  nodes: HistoryMetricCell;
+  layouts: HistoryMetricCell;
+};
+
+/** Compact icon-grid metrics for history cards. */
+export function entryHistoryMetrics(entry: HistoryEntry): HistoryMetrics {
+  const allLayouts = Boolean(entry.request.enumerateAllAtN);
+  const engine = entry.request.engine === 'z3' ? 'Z3' : 'Custom';
+  const nodeCount = entryNodeCount(entry);
+  const layoutCount = entryLayoutCount(entry);
+
+  return {
+    search: {
+      value: allLayouts ? 'All' : 'Opt',
+      tip: allLayouts ? 'Search: Find all layouts at N' : 'Search: Find optimal layout'
+    },
+    engine: {
+      value: engine,
+      tip: `Engine: ${engine}`
+    },
+    nodes: {
+      value: nodeCount != null ? `N=${nodeCount}` : 'N=—',
+      tip: nodeCount != null ? `Node count N = ${nodeCount}` : 'Node count unknown until solved'
+    },
+    layouts: {
+      value: String(layoutCount),
+      tip:
+        layoutCount === 0
+          ? 'No layouts yet'
+          : `${layoutCount} layout${layoutCount === 1 ? '' : 's'} found`
+    }
+  };
+}
+
+/** Short status line under the title (metrics carry search/engine/N/layouts). */
+export function entryStatusCaption(entry: HistoryEntry): string {
+  switch (entry.status) {
+    case 'queued':
+      return 'Queued';
+    case 'running':
+      return '';
+    case 'cancelling':
+      return 'Stopping…';
+    case 'failed':
+      return 'Failed';
+    case 'unsat':
+      return 'Globally impossible';
+    case 'incomplete':
+      return 'Incomplete';
+    case 'cancelled':
+      return 'Cancelled';
+    case 'completed': {
+      const solutionStatus = entry.result?.status ?? entry.results[0]?.status;
+      return solutionStatus === 'best_known' ? 'Best known' : 'Completed';
+    }
+    default:
+      return '';
+  }
+}
+
 /** Compact outcome line for history rows (no status pills). */
 export function entryOutcomeLine(entry: HistoryEntry): string {
-  const layoutCount = entry.results.length > 0 ? entry.results.length : entry.result ? 1 : 0;
-  const nodeCount =
-    entry.results[0]?.stats.nodeCount ?? entry.result?.stats.nodeCount ?? null;
+  const layoutCount = entryLayoutCount(entry);
+  const nodeCount = entryNodeCount(entry);
 
   if (entry.status === 'queued') {
     return entry.request.enumerateAllAtN ? 'All layouts' : 'Optimal';

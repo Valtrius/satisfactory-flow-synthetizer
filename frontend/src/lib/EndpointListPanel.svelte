@@ -1,4 +1,5 @@
 <script lang="ts">
+  import type { Component } from 'svelte';
   import Plus from '@lucide/svelte/icons/plus';
   import X from '@lucide/svelte/icons/x';
   import type { EndpointRow } from '../types';
@@ -6,8 +7,16 @@
   import Button from './ui/Button.svelte';
   import Input from './ui/Input.svelte';
 
+  type IconComponent = Component<{
+    class?: string;
+    size?: number;
+    strokeWidth?: number;
+    'aria-hidden'?: boolean | 'true';
+  }>;
+
   type Props = {
     title: string;
+    icon?: IconComponent;
     labelPrefix: string;
     endpoints: EndpointRow[];
     slots: number;
@@ -23,6 +32,7 @@
 
   let {
     title,
+    icon: TitleIcon,
     labelPrefix,
     endpoints,
     slots,
@@ -37,9 +47,14 @@
   }: Props = $props();
 </script>
 
-<section class={`flex flex-col p-4.5 md:p-6 ${className}`}>
-  <div class="flex items-start justify-between gap-4">
-    <h2 class="m-0 text-lg font-bold tracking-tight">{title}</h2>
+<section class={`flex flex-col px-4 pt-3 pb-4.5 md:pb-6 ${className}`}>
+  <div class="flex items-center justify-between gap-4">
+    <h2 class="m-0 flex items-center gap-2 text-lg font-bold tracking-tight">
+      {#if TitleIcon}
+        <TitleIcon class="size-[1.05rem] shrink-0 text-accent" strokeWidth={2.2} aria-hidden="true" />
+      {/if}
+      {title}
+    </h2>
     <Button
       variant="primary"
       size="small"

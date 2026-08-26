@@ -4,7 +4,9 @@ import {
   createQueuedEntry,
   defaultTitle,
   entryElapsedMs,
+  entryHistoryMetrics,
   entryOutcomeLine,
+  entryStatusCaption,
   mergeImportedPayload,
   partitionEntries,
   reorderWithinBand,
@@ -151,6 +153,78 @@ describe('entryOutcomeLine', () => {
     const entry = createQueuedEntry(z3Form, z3Request);
     expect(entry.form.engine).toBe('z3');
     expect(entry.request.engine).toBe('z3');
+  });
+});
+
+describe('entryHistoryMetrics', () => {
+  it('summarizes search, engine, nodes, and layouts', () => {
+    const entry = completed({
+      id: 'metrics',
+      enumerationComplete: true,
+      results: [
+        {
+          engine: 'custom',
+          status: 'best_known',
+          modelVersion: 1,
+          stats: {
+            nodeCount: 5,
+            splitters: 1,
+            mergers: 1,
+            feedbackLoops: 0,
+            linkCount: 4,
+            checkedThrough: 5
+          },
+          totalInput: { exact: '120', decimal: '120' },
+          totalOutput: { exact: '120', decimal: '120' },
+          discardRate: { exact: '0', decimal: '0' },
+          beltRate: { exact: '1200', decimal: '1200' },
+          nodes: [],
+          edges: [],
+          buildSteps: []
+        },
+        {
+          engine: 'custom',
+          status: 'best_known',
+          modelVersion: 1,
+          stats: {
+            nodeCount: 5,
+            splitters: 1,
+            mergers: 1,
+            feedbackLoops: 0,
+            linkCount: 5,
+            checkedThrough: 5
+          },
+          totalInput: { exact: '120', decimal: '120' },
+          totalOutput: { exact: '120', decimal: '120' },
+          discardRate: { exact: '0', decimal: '0' },
+          beltRate: { exact: '1200', decimal: '1200' },
+          nodes: [],
+          edges: [],
+          buildSteps: []
+        }
+      ]
+    });
+    expect(entryHistoryMetrics(entry)).toEqual({
+      search: { value: 'All', tip: 'Search: Find all layouts at N' },
+      engine: { value: 'Custom', tip: 'Engine: Custom' },
+      nodes: { value: 'N=5', tip: 'Node count N = 5' },
+      layouts: { value: '2', tip: '2 layouts found' }
+    });
+    expect(entryStatusCaption(entry)).toBe('Best known');
+  });
+
+  it('uses placeholders for queued jobs', () => {
+    const entry = createQueuedEntry(
+      { ...form, enumerateAllAtN: false, engine: 'z3' },
+      { ...request, enumerateAllAtN: false, engine: 'z3' }
+    );
+    expect(entryHistoryMetrics(entry)).toEqual({
+      search: { value: 'Opt', tip: 'Search: Find optimal layout' },
+      engine: { value: 'Z3', tip: 'Engine: Z3' },
+      nodes: { value: 'N=—', tip: 'Node count unknown until solved' },
+      layouts: { value: '0', tip: 'No layouts yet' }
+    });
+    expect(entryStatusCaption(entry)).toBe('Queued');
   });
 });
 

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import SlidersHorizontal from '@lucide/svelte/icons/sliders-horizontal';
   import Button from './ui/Button.svelte';
   import Input from './ui/Input.svelte';
   import SegmentedControl from './ui/SegmentedControl.svelte';
@@ -33,8 +34,11 @@
   ];
 </script>
 
-<section class={`flex flex-col p-4.5 md:p-6 ${className}`}>
-  <h2 class="m-0 text-lg font-bold tracking-tight">Constraint</h2>
+<section class={`flex flex-col px-4 pt-3 pb-4.5 md:pb-6 ${className}`}>
+  <h2 class="m-0 flex items-center gap-2 text-lg font-bold tracking-tight">
+    <SlidersHorizontal class="size-[1.05rem] shrink-0 text-accent" strokeWidth={2.2} aria-hidden="true" />
+    Constraint
+  </h2>
   <label class="mt-5.5">
     <span class="mb-1.5 block text-xs font-bold tracking-wide text-muted">Maximum belt rate</span>
     <div class="flex items-center">

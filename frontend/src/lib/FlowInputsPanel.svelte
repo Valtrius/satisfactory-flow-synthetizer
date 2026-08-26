@@ -1,4 +1,6 @@
 <script lang="ts">
+  import Download from '@lucide/svelte/icons/download';
+  import UploadCloud from '@lucide/svelte/icons/upload-cloud';
   import type { EndpointRow, SolverEngine } from '../types';
   import ConstraintPanel from './ConstraintPanel.svelte';
   import EndpointListPanel from './EndpointListPanel.svelte';
@@ -56,6 +58,7 @@
 >
   <EndpointListPanel
     title="Supply"
+    icon={Download}
     labelPrefix="Input"
     endpoints={inputs}
     slots={inputSlots}
@@ -69,6 +72,7 @@
 
   <EndpointListPanel
     title="Demand"
+    icon={UploadCloud}
     labelPrefix="Output"
     endpoints={outputs}
     slots={outputSlots}

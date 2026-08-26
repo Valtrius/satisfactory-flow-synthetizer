@@ -1,16 +1,26 @@
 <script lang="ts">
+  import History from '@lucide/svelte/icons/history';
   import Download from '@lucide/svelte/icons/download';
   import Upload from '@lucide/svelte/icons/upload';
   import Pencil from '@lucide/svelte/icons/pencil';
   import Copy from '@lucide/svelte/icons/copy';
   import Trash2 from '@lucide/svelte/icons/trash-2';
   import X from '@lucide/svelte/icons/x';
+  import Target from '@lucide/svelte/icons/target';
+  import LayoutGrid from '@lucide/svelte/icons/layout-grid';
+  import Cpu from '@lucide/svelte/icons/cpu';
+  import Zap from '@lucide/svelte/icons/zap';
+  import Network from '@lucide/svelte/icons/network';
+  import Table2 from '@lucide/svelte/icons/table-2';
   import Button from './ui/Button.svelte';
   import Input from './ui/Input.svelte';
   import Panel from './ui/Panel.svelte';
+  import { formatElapsed } from './searchStage';
   import {
     displayTitle,
-    entryOutcomeLine,
+    entryElapsedMs,
+    entryHistoryMetrics,
+    entryStatusCaption,
     type HistoryEntry
   } from './historyModel';
 
@@ -176,7 +186,12 @@
       if (entry.status === 'cancelling') return `Stopping… · ${runningElapsedLabel}`;
       return runningElapsedLabel || '0:00.0';
     }
-    return entryOutcomeLine(entry);
+    const status = entryStatusCaption(entry);
+    if (band === 'queued') return status;
+    const elapsed =
+      entry.startedAtMs != null ? formatElapsed(entryElapsedMs(entry)) : '';
+    if (elapsed && status) return `${elapsed} · ${status}`;
+    return status || elapsed;
   }
 </script>
 
@@ -191,7 +206,10 @@
   class="flex h-[calc(100dvh-2rem)] min-h-140 flex-col overflow-hidden"
 >
   <div class="flex items-center justify-between gap-2 border-b border-line px-4 py-3">
-    <h2 class="m-0 text-lg font-bold tracking-tight">History</h2>
+    <h2 class="m-0 flex items-center gap-2 text-lg font-bold tracking-tight">
+      <History class="size-[1.05rem] text-accent" strokeWidth={2.2} aria-hidden="true" />
+      History
+    </h2>
     <div class="flex gap-1">
       <Button
         size="small"
@@ -252,13 +270,16 @@
   {@const selected = entry.id === selectedEntryId}
   {@const dragging = dragFromId === entry.id}
   {@const dropTarget = dragOverId === entry.id && dragFromId !== entry.id && dragBand === band}
+  {@const metrics = entryHistoryMetrics(entry)}
+  {@const allLayouts = Boolean(entry.request.enumerateAllAtN)}
+  {@const engineZ3 = entry.request.engine === 'z3'}
   <div
     role="option"
     tabindex="0"
     aria-selected={selected}
     data-history-id={entry.id}
     data-history-band={band}
-    class={`relative grid grid-cols-[minmax(0,1fr)_auto] items-start gap-2 rounded-lg px-2.5 py-2.5 ${
+    class={`relative grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-2 gap-y-1 rounded-lg px-2.5 py-2.5 ${
       band === 'queued'
         ? 'border border-dashed border-[#4a6574]'
         : band === 'history'
@@ -380,6 +401,49 @@
         </Button>
       {/if}
     </div>
+
+    <ul class="col-span-2 m-0 grid list-none grid-cols-2 gap-x-2 gap-y-0.5 p-0">
+      <li
+        class="inline-flex min-w-0 items-center gap-1 text-[0.68rem] font-semibold text-muted tabular-nums"
+        title={metrics.search.tip}
+        aria-label={metrics.search.tip}
+      >
+        {#if allLayouts}
+          <LayoutGrid class="size-3 shrink-0 text-accent-bright" strokeWidth={2.2} aria-hidden="true" />
+        {:else}
+          <Target class="size-3 shrink-0 text-accent-bright" strokeWidth={2.2} aria-hidden="true" />
+        {/if}
+        <span class="truncate">{metrics.search.value}</span>
+      </li>
+      <li
+        class="inline-flex min-w-0 items-center gap-1 text-[0.68rem] font-semibold text-muted tabular-nums"
+        title={metrics.engine.tip}
+        aria-label={metrics.engine.tip}
+      >
+        {#if engineZ3}
+          <Zap class="size-3 shrink-0 text-flow" strokeWidth={2.2} aria-hidden="true" />
+        {:else}
+          <Cpu class="size-3 shrink-0 text-flow" strokeWidth={2.2} aria-hidden="true" />
+        {/if}
+        <span class="truncate">{metrics.engine.value}</span>
+      </li>
+      <li
+        class="inline-flex min-w-0 items-center gap-1 text-[0.68rem] font-semibold text-muted tabular-nums"
+        title={metrics.nodes.tip}
+        aria-label={metrics.nodes.tip}
+      >
+        <Network class="size-3 shrink-0 text-[#9ec5d6]" strokeWidth={2.2} aria-hidden="true" />
+        <span class="truncate">{metrics.nodes.value}</span>
+      </li>
+      <li
+        class="inline-flex min-w-0 items-center gap-1 text-[0.68rem] font-semibold text-muted tabular-nums"
+        title={metrics.layouts.tip}
+        aria-label={metrics.layouts.tip}
+      >
+        <Table2 class="size-3 shrink-0 text-warning" strokeWidth={2.2} aria-hidden="true" />
+        <span class="truncate">{metrics.layouts.value}</span>
+      </li>
+    </ul>
 
     {#if menuId === entry.id}
       <div
