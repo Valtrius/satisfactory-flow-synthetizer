@@ -469,7 +469,11 @@
 
       <div
         class={`min-w-0 flex flex-col gap-4 ${
-          showResultsTable || solution ? 'xl:min-h-[calc(100dvh-2rem)]' : ''
+          showResultsTable
+            ? 'xl:min-h-[calc(100dvh-2rem)]'
+            : solution
+              ? 'xl:h-[calc(100dvh-2rem)]'
+              : ''
         }`}
       >
         <FlowInputsPanel
@@ -566,7 +570,10 @@
             onNodeDragStop={graph.onNodeDragStop}
           />
         {:else if solution}
-          <section class="flex min-h-112 flex-1 flex-col gap-4" aria-labelledby="result-title">
+          <section
+            class="flex min-h-112 flex-1 flex-col gap-4 xl:min-h-0"
+            aria-labelledby="result-title"
+          >
             <div class="shrink-0">
               <SolutionSummary {solution} {elapsedLabel} />
             </div>
@@ -585,7 +592,11 @@
                 fullscreen={graphFullscreen}
                 subtitle="Drag nodes, pan, or zoom. Dashed amber belts mark feedback."
                 class="min-h-0 flex-1"
-                canvasClass="flow-wrap min-h-0 w-full flex-1 bg-[#08141c]"
+                canvasClass={`flow-wrap w-full bg-[#08141c] ${
+                  graphFullscreen
+                    ? 'min-h-0 flex-1'
+                    : 'h-[68vh] min-h-107.5 xl:h-auto xl:min-h-0 xl:flex-1'
+                }`}
                 onRotate={graph.rotate}
                 canUndo={canUndoGraph}
                 canRedo={canRedoGraph}
