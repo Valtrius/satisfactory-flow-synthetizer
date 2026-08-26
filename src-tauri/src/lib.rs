@@ -416,6 +416,11 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
+            let package = app.package_info();
+            let title = format!("{} · {}", package.name, package.version);
+            if let Some(window) = app.get_webview_window("main") {
+                window.set_title(&title)?;
+            }
             let store = history::init_history_store(app.handle())
                 .map_err(|error| -> Box<dyn std::error::Error> { error.into() })?;
             app.manage(store);
