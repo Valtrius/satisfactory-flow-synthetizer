@@ -20,9 +20,10 @@ use crate::{
     algebra::sparse::Consistency,
     canonical::{
         CanonicalFlowEndpoint, ConstructibilityCache, MarkedLinkCanonicalKey, PartialTopology,
-        SccSummaryKey, StateKey, canonicalize_local_decision_core, canonicalize_marked_link,
-        canonicalize_scc_summary_input_with_relabeling, canonicalize_state,
-        canonicalize_structural_decision_core, canonicalize_witness,
+        SccSummaryKey, StateKey, canonicalize_local_decision_core_cancellable,
+        canonicalize_marked_link_cancellable,
+        canonicalize_scc_summary_input_with_relabeling_cancellable, canonicalize_state_cancellable,
+        canonicalize_structural_decision_core_cancellable, canonicalize_witness_cancellable,
         is_canonical_last_link_with_cache,
     },
     component_search::{ComponentResolver, discover_components},
@@ -44,6 +45,9 @@ use crate::{
         AppliedComponentBatch, ComponentAttachment, FlowVarId, TopologyDecision, TopologyState,
     },
 };
+
+#[cfg(test)]
+use crate::canonical::canonicalize_state;
 
 /// Maximum induced decision subsets canonicalized during one no-good lookup.
 ///
@@ -441,7 +445,11 @@ pub(crate) fn plan_profile_root_partitions_with_cache(
         return RootPartitionPlan::Partitions(vec![terminal_root_partition()]);
     }
 
-    let decisions = state.legal_decisions();
+    let Some(decisions) = state.legal_decisions_cancellable(cancel) else {
+        return RootPartitionPlan::Immediate(Box::new(
+            context.incomplete(IncompleteReason::Cancelled, started),
+        ));
+    };
     let mut partitions = Vec::with_capacity(decisions.len());
     for decision in decisions {
         if cancel.load(Ordering::Relaxed) {
@@ -450,7 +458,7 @@ pub(crate) fn plan_profile_root_partitions_with_cache(
             ));
         }
         let checkpoint = state.checkpoint();
-        let decision_id = match state.apply(decision) {
+        let decision_id = match state.apply_legal_decision(decision) {
             Ok(decision_id) => decision_id,
             Err(error) => {
                 state.rollback(checkpoint);
@@ -478,7 +486,14 @@ pub(crate) fn plan_profile_root_partitions_with_cache(
             ));
         };
         if canonical_last {
-            let marked_key = canonicalize_marked_link(&topology, link_index);
+            let Some(marked_key) =
+                canonicalize_marked_link_cancellable(&topology, link_index, cancel)
+            else {
+                state.rollback(checkpoint);
+                return RootPartitionPlan::Immediate(Box::new(
+                    context.incomplete(IncompleteReason::Cancelled, started),
+                ));
+            };
             partitions.push(RootPartition {
                 id: RootPartitionId(0),
                 stable_key: augmentation_partition_key(&marked_key),
@@ -580,7 +595,10 @@ pub(crate) fn search_profile_root_partition_with_caches(
             }
         }
         Some(decision) => {
-            let Ok(decision_id) = state.apply(decision) else {
+            if cancel.load(Ordering::Relaxed) {
+                return context.incomplete(IncompleteReason::Cancelled, started);
+            }
+            let Ok(decision_id) = state.apply_legal_decision(decision) else {
                 return context.failed(
                     ProfileSearchError::InvalidRootPartition(
                         "first decision is not legal at this root",
@@ -592,8 +610,12 @@ pub(crate) fn search_profile_root_partition_with_caches(
                 return context.failed(ProfileSearchError::MissingAppliedLink, started);
             };
             let topology = state.partial_topology();
-            let actual_key =
-                augmentation_partition_key(&canonicalize_marked_link(&topology, link_index));
+            let Some(actual_key) =
+                canonicalize_marked_link_cancellable(&topology, link_index, cancel)
+                    .map(|key| augmentation_partition_key(&key))
+            else {
+                return context.incomplete(IncompleteReason::Cancelled, started);
+            };
             let canonical_last = is_canonical_last_link_with_cache(
                 &topology,
                 link_index,
@@ -1156,6 +1178,9 @@ fn discover_live_components(
     };
 
     for discovered in discover_components(state, propagation) {
+        if context.cancel.load(Ordering::Relaxed) {
+            return;
+        }
         let resolution =
             resolver.resolve(&discovered.component, &discovered.request, context.cancel);
         context.stats.instrumentation.component_db_lookups = context
@@ -1217,11 +1242,19 @@ fn learn_local_no_good(
             },
         );
     let canonical_started = Instant::now();
-    let key = canonical_no_good_key(state, &snapshot, &core, NoGoodScope::SolveLocal);
+    let key = canonical_no_good_key(
+        state,
+        &snapshot,
+        &core,
+        NoGoodScope::SolveLocal,
+        context.cancel,
+    );
     context.record_canonicalization(canonical_started.elapsed());
     let Some(key) = key else {
         // A stale/malformed provenance reference disables this optional
         // optimization. It is never converted into an impossibility proof.
+        // Cancellation also skips learning; the search frame already observes
+        // the same flag on the next interruptible seam.
         return Ok(());
     };
     context.local_no_goods.learn(key, core);
@@ -1243,7 +1276,13 @@ fn learn_structural_no_good(
     );
     let snapshot = state.partial_topology();
     let canonical_started = Instant::now();
-    let key = canonical_no_good_key(state, &snapshot, &core, NoGoodScope::GlobalStructural);
+    let key = canonical_no_good_key(
+        state,
+        &snapshot,
+        &core,
+        NoGoodScope::GlobalStructural,
+        context.cancel,
+    );
     context.record_canonicalization(canonical_started.elapsed());
     let Some(key) = key else {
         return;
@@ -1262,25 +1301,31 @@ fn propagation_conflict_rule(conflict: &PropagationConflict) -> ConflictRule {
     }
 }
 
-fn matches_structural_no_good(state: &TopologyState, context: &mut SearchContext<'_>) -> bool {
+fn matches_structural_no_good(
+    state: &TopologyState,
+    context: &mut SearchContext<'_>,
+) -> Option<bool> {
     if context.features.no_goods == NoGoodMode::Disabled || context.structural_no_goods.is_empty() {
-        return false;
+        return Some(false);
     }
     let snapshot = state.partial_topology();
     let started = Instant::now();
     let counts = context
         .structural_no_goods
         .decision_counts_through(snapshot.links.len());
-    let matched =
-        matches_canonical_no_good(&snapshot, &counts, NoGoodScope::GlobalStructural, |key| {
-            context.structural_no_goods.contains(key)
-        });
+    let matched = matches_canonical_no_good(
+        &snapshot,
+        &counts,
+        NoGoodScope::GlobalStructural,
+        context.cancel,
+        |key| context.structural_no_goods.contains(key),
+    )?;
     context.record_canonicalization(started.elapsed());
     if matched {
         increment(&mut context.stats.instrumentation.no_good_hits);
-        true
+        Some(true)
     } else {
-        false
+        Some(false)
     }
 }
 
@@ -1288,9 +1333,9 @@ fn matches_local_no_good(
     state: &TopologyState,
     propagation: Option<&PropagationState>,
     context: &mut SearchContext<'_>,
-) -> Result<bool, ProfileSearchError> {
+) -> Result<Option<bool>, ProfileSearchError> {
     if context.features.no_goods == NoGoodMode::Disabled || context.local_no_goods.is_empty() {
-        return Ok(false);
+        return Ok(Some(false));
     }
     let snapshot = match propagation {
         Some(propagation) => propagation
@@ -1302,15 +1347,22 @@ fn matches_local_no_good(
     let counts = context
         .local_no_goods
         .decision_counts_through(snapshot.links.len());
-    let matched = matches_canonical_no_good(&snapshot, &counts, NoGoodScope::SolveLocal, |key| {
-        context.local_no_goods.contains(key)
-    });
+    let matched = matches_canonical_no_good(
+        &snapshot,
+        &counts,
+        NoGoodScope::SolveLocal,
+        context.cancel,
+        |key| context.local_no_goods.contains(key),
+    );
     context.record_canonicalization(started.elapsed());
+    let Some(matched) = matched else {
+        return Ok(None);
+    };
     if matched {
         increment(&mut context.stats.instrumentation.no_good_hits);
-        Ok(true)
+        Ok(Some(true))
     } else {
-        Ok(false)
+        Ok(Some(false))
     }
 }
 
@@ -1319,19 +1371,14 @@ fn canonical_no_good_key(
     snapshot: &PartialTopology,
     core: &ConflictCore,
     scope: NoGoodScope,
+    cancel: &AtomicBool,
 ) -> Option<CanonicalNoGoodKey> {
     let selected_links = core
         .decisions
         .iter()
         .map(|&decision| state.link_index_for(decision))
         .collect::<Option<Vec<_>>>()?;
-    let state = match scope {
-        NoGoodScope::SolveLocal => canonicalize_local_decision_core(snapshot, &selected_links)?,
-        NoGoodScope::GlobalStructural => {
-            canonicalize_structural_decision_core(snapshot, &selected_links)?
-        }
-    };
-    CanonicalNoGoodKey::new(selected_links.len(), state)
+    canonical_no_good_subset_key(snapshot, &selected_links, scope, cancel)?
 }
 
 /// Tests whether the current decisions contain an isomorphic proven core.
@@ -1355,8 +1402,9 @@ fn matches_canonical_no_good(
     snapshot: &PartialTopology,
     decision_counts: &[usize],
     scope: NoGoodScope,
+    cancel: &AtomicBool,
     mut contains: impl FnMut(&CanonicalNoGoodKey) -> bool,
-) -> bool {
+) -> Option<bool> {
     let link_count = snapshot.links.len();
     let mut examined = 0_usize;
 
@@ -1364,11 +1412,14 @@ fn matches_canonical_no_good(
     if decision_counts.binary_search(&link_count).is_ok() {
         let all_links = (0..link_count).collect::<Vec<_>>();
         examined = 1;
-        if canonical_no_good_subset_key(snapshot, &all_links, scope)
+        if cancel.load(Ordering::Relaxed) {
+            return None;
+        }
+        if canonical_no_good_subset_key(snapshot, &all_links, scope, cancel)?
             .as_ref()
             .is_some_and(&mut contains)
         {
-            return true;
+            return Some(true);
         }
     }
 
@@ -1378,36 +1429,54 @@ fn matches_canonical_no_good(
         }
         let mut subset = (0..decision_count).collect::<Vec<_>>();
         loop {
+            if cancel.load(Ordering::Relaxed) {
+                return None;
+            }
             if examined >= MAX_NO_GOOD_SUBSET_PROJECTIONS {
-                return false;
+                return Some(false);
             }
             examined += 1;
-            if canonical_no_good_subset_key(snapshot, &subset, scope)
+            if canonical_no_good_subset_key(snapshot, &subset, scope, cancel)?
                 .as_ref()
                 .is_some_and(&mut contains)
             {
-                return true;
+                return Some(true);
             }
             if decision_count == 0 || !advance_combination(&mut subset, link_count) {
                 break;
             }
         }
     }
-    false
+    Some(false)
 }
 
 fn canonical_no_good_subset_key(
     snapshot: &PartialTopology,
     selected_links: &[usize],
     scope: NoGoodScope,
-) -> Option<CanonicalNoGoodKey> {
+    cancel: &AtomicBool,
+) -> Option<Option<CanonicalNoGoodKey>> {
     let state = match scope {
-        NoGoodScope::SolveLocal => canonicalize_local_decision_core(snapshot, selected_links)?,
+        NoGoodScope::SolveLocal => {
+            match canonicalize_local_decision_core_cancellable(snapshot, selected_links, cancel) {
+                Some(state) => state,
+                None if cancel.load(Ordering::Relaxed) => return None,
+                None => return Some(None),
+            }
+        }
         NoGoodScope::GlobalStructural => {
-            canonicalize_structural_decision_core(snapshot, selected_links)?
+            match canonicalize_structural_decision_core_cancellable(
+                snapshot,
+                selected_links,
+                cancel,
+            ) {
+                Some(state) => state,
+                None if cancel.load(Ordering::Relaxed) => return None,
+                None => return Some(None),
+            }
         }
     };
-    CanonicalNoGoodKey::new(selected_links.len(), state)
+    Some(CanonicalNoGoodKey::new(selected_links.len(), state))
 }
 
 fn advance_combination(combination: &mut [usize], universe: usize) -> bool {
@@ -1446,7 +1515,9 @@ fn search_state(
         None => state.partial_topology(),
     };
     let canonical_started = Instant::now();
-    let state_key = canonicalize_state(&snapshot);
+    let Some(state_key) = canonicalize_state_cancellable(&snapshot, context.cancel) else {
+        return DfsResult::Incomplete;
+    };
     context.record_canonicalization(canonical_started.elapsed());
 
     if context.features.no_goods == NoGoodMode::Enabled {
@@ -1455,14 +1526,21 @@ fn search_state(
             let counts = context
                 .local_no_goods
                 .decision_counts_through(snapshot.links.len());
-            let matched =
-                matches_canonical_no_good(&snapshot, &counts, NoGoodScope::SolveLocal, |key| {
-                    context.local_no_goods.contains(key)
-                });
+            let matched = matches_canonical_no_good(
+                &snapshot,
+                &counts,
+                NoGoodScope::SolveLocal,
+                context.cancel,
+                |key| context.local_no_goods.contains(key),
+            );
             context.record_canonicalization(started.elapsed());
-            if matched {
-                increment(&mut context.stats.instrumentation.no_good_hits);
-                return DfsResult::Exhausted(None);
+            match matched {
+                None => return DfsResult::Incomplete,
+                Some(true) => {
+                    increment(&mut context.stats.instrumentation.no_good_hits);
+                    return DfsResult::Exhausted(None);
+                }
+                Some(false) => {}
             }
         }
         if !context.structural_no_goods.is_empty() {
@@ -1475,12 +1553,17 @@ fn search_state(
                 &structural_snapshot,
                 &counts,
                 NoGoodScope::GlobalStructural,
+                context.cancel,
                 |key| context.structural_no_goods.contains(key),
             );
             context.record_canonicalization(started.elapsed());
-            if matched {
-                increment(&mut context.stats.instrumentation.no_good_hits);
-                return DfsResult::Exhausted(None);
+            match matched {
+                None => return DfsResult::Incomplete,
+                Some(true) => {
+                    increment(&mut context.stats.instrumentation.no_good_hits);
+                    return DfsResult::Exhausted(None);
+                }
+                Some(false) => {}
             }
         }
     }
@@ -1532,7 +1615,10 @@ fn search_state(
         context.insert_state_status(state_key, StateStatus::ProvenDead);
         return DfsResult::Exhausted(None);
     }
-    let decisions = state.legal_decisions();
+    let Some(decisions) = state.legal_decisions_cancellable(context.cancel) else {
+        context.remove_state_status(&state_key);
+        return DfsResult::Incomplete;
+    };
 
     let mut best_key = None;
     let mut attempted_transition = false;
@@ -1654,8 +1740,10 @@ fn evaluate_component_child(
     batch: &AppliedComponentBatch,
     sibling_keys: &mut BTreeSet<StateKey>,
 ) -> DfsResult {
-    if matches_structural_no_good(state, context) {
-        return DfsResult::Exhausted(None);
+    match matches_structural_no_good(state, context) {
+        None => return DfsResult::Incomplete,
+        Some(true) => return DfsResult::Exhausted(None),
+        Some(false) => {}
     }
     if let Some(propagation) = propagation.as_mut() {
         let propagation_started = Instant::now();
@@ -1666,8 +1754,9 @@ fn evaluate_component_child(
             Err(error) => return DfsResult::Failed(propagation_error(&error)),
         };
         match matches_local_no_good(state, Some(propagation), context) {
-            Ok(true) => return DfsResult::Exhausted(None),
-            Ok(false) => {}
+            Ok(None) => return DfsResult::Incomplete,
+            Ok(Some(true)) => return DfsResult::Exhausted(None),
+            Ok(Some(false)) => {}
             Err(error) => return DfsResult::Failed(error),
         }
         if let PropagationOutcome::Pruned(conflict) = outcome {
@@ -1688,6 +1777,7 @@ fn evaluate_component_child(
         match analyze_affected_dynamic_sccs(state, propagation.as_mut(), context, None) {
             Ok(DynamicSccVerdict::Open) => {}
             Ok(DynamicSccVerdict::ProvenDead) => return DfsResult::Exhausted(None),
+            Ok(DynamicSccVerdict::Cancelled) => return DfsResult::Incomplete,
             Err(error) => return DfsResult::Failed(error),
         }
     }
@@ -1712,7 +1802,9 @@ fn evaluate_component_child(
         None => state.partial_topology(),
     };
     let canonical_started = Instant::now();
-    let child_key = canonicalize_state(&snapshot);
+    let Some(child_key) = canonicalize_state_cancellable(&snapshot, context.cancel) else {
+        return DfsResult::Incomplete;
+    };
     context.record_canonicalization(canonical_started.elapsed());
     if !sibling_keys.insert(child_key) {
         increment(
@@ -1734,7 +1826,7 @@ fn search_decision(
 ) -> DfsResult {
     let topology_checkpoint = state.checkpoint();
     let propagation_checkpoint = propagation.as_ref().map(PropagationState::checkpoint);
-    let decision_id = match state.apply(decision) {
+    let decision_id = match state.apply_legal_decision(decision) {
         Ok(decision_id) => decision_id,
         Err(error) => {
             rollback_branch(
@@ -1772,8 +1864,10 @@ fn evaluate_applied_child(
     context: &mut SearchContext<'_>,
     link_index: usize,
 ) -> DfsResult {
-    if matches_structural_no_good(state, context) {
-        return DfsResult::Exhausted(None);
+    match matches_structural_no_good(state, context) {
+        None => return DfsResult::Incomplete,
+        Some(true) => return DfsResult::Exhausted(None),
+        Some(false) => {}
     }
     if let Some(propagation) = propagation.as_mut() {
         let propagation_started = Instant::now();
@@ -1784,8 +1878,9 @@ fn evaluate_applied_child(
             Err(error) => return DfsResult::Failed(propagation_error(&error)),
         };
         match matches_local_no_good(state, Some(propagation), context) {
-            Ok(true) => return DfsResult::Exhausted(None),
-            Ok(false) => {}
+            Ok(None) => return DfsResult::Incomplete,
+            Ok(Some(true)) => return DfsResult::Exhausted(None),
+            Ok(Some(false)) => {}
             Err(error) => return DfsResult::Failed(error),
         }
         if let PropagationOutcome::Pruned(conflict) = outcome {
@@ -1807,6 +1902,7 @@ fn evaluate_applied_child(
         {
             Ok(DynamicSccVerdict::Open) => {}
             Ok(DynamicSccVerdict::ProvenDead) => return DfsResult::Exhausted(None),
+            Ok(DynamicSccVerdict::Cancelled) => return DfsResult::Incomplete,
             Err(error) => return DfsResult::Failed(error),
         }
     }
@@ -1861,6 +1957,7 @@ fn evaluate_applied_child(
 enum DynamicSccVerdict {
     Open,
     ProvenDead,
+    Cancelled,
 }
 
 fn analyze_affected_dynamic_sccs(
@@ -1886,7 +1983,11 @@ fn analyze_affected_dynamic_sccs_inner(
         let mut added_fact = false;
         for region in affected.affected_regions().filter(|region| region.cyclic) {
             let canonical_started = Instant::now();
-            let coordinates = canonical_scc_summary_coordinates(state, &region.nodes, &known)?;
+            let Some(coordinates) =
+                canonical_scc_summary_coordinates(state, &region.nodes, &known, context.cancel)?
+            else {
+                return Ok(DynamicSccVerdict::Cancelled);
+            };
             context.record_canonicalization(canonical_started.elapsed());
 
             // Soundness: the key canonically encodes the full partial-state
@@ -1983,7 +2084,8 @@ fn canonical_scc_summary_coordinates(
     state: &TopologyState,
     region_nodes: &[solver_api::NodeId],
     known: &BTreeMap<FlowVarId, Rational>,
-) -> Result<SccSummaryCoordinates, ProfileSearchError> {
+    cancel: &AtomicBool,
+) -> Result<Option<SccSummaryCoordinates>, ProfileSearchError> {
     let known_producers = state
         .producer_ports()
         .iter()
@@ -2005,12 +2107,15 @@ fn canonical_scc_summary_coordinates(
         })
         .collect::<BTreeMap<_, _>>();
     let region_nodes = region_nodes.iter().copied().collect::<BTreeSet<_>>();
-    let canonical = canonicalize_scc_summary_input_with_relabeling(
+    let Some(canonical) = canonicalize_scc_summary_input_with_relabeling_cancellable(
         &state.partial_topology(),
         &region_nodes,
         &known_producers,
         &known_consumers,
-    );
+        cancel,
+    ) else {
+        return Ok(None);
+    };
     let mut raw_to_canonical = BTreeMap::new();
     let mut canonical_to_raw = BTreeMap::new();
     for (&reference, port) in state.producer_ports() {
@@ -2043,11 +2148,11 @@ fn canonical_scc_summary_coordinates(
             CanonicalFlowEndpoint::Consumer(canonical_reference),
         )?;
     }
-    Ok(SccSummaryCoordinates {
+    Ok(Some(SccSummaryCoordinates {
         key: canonical.key,
         raw_to_canonical,
         canonical_to_raw,
-    })
+    }))
 }
 
 fn insert_scc_coordinate(
@@ -2242,7 +2347,12 @@ fn evaluate_complete_state(
     };
 
     let canonical_started = Instant::now();
-    let canonical = canonicalize_witness(&context.problem, &solved);
+    let Some(canonical) =
+        canonicalize_witness_cancellable(&context.problem, &solved, context.cancel)
+    else {
+        context.remove_state_status(&state_key);
+        return DfsResult::Incomplete;
+    };
     context.record_canonicalization(canonical_started.elapsed());
     let validation_started = Instant::now();
     let validation = validate_solution(&context.problem, &canonical.graph);
@@ -3458,15 +3568,24 @@ mod tests {
             propagation_conflict_rule(conflict),
             retained.clone(),
         );
-        let key = canonical_no_good_key(&state, &snapshot, &expected_core, NoGoodScope::SolveLocal)
-            .unwrap();
+        let key = canonical_no_good_key(
+            &state,
+            &snapshot,
+            &expected_core,
+            NoGoodScope::SolveLocal,
+            &cancel,
+        )
+        .unwrap();
         let learned = context
             .local_no_goods
             .get(&key)
             .expect("the canonical conflict core was learned");
         assert_eq!(learned.core.provenance, retained);
         assert_eq!(learned.core.decisions, retained.decisions());
-        assert!(matches_local_no_good(&state, Some(&propagation), &mut context).unwrap());
+        assert_eq!(
+            matches_local_no_good(&state, Some(&propagation), &mut context).unwrap(),
+            Some(true)
+        );
     }
 
     #[test]
@@ -3551,9 +3670,10 @@ mod tests {
         let sibling_state = TopologyState::from_partial_topology(&sibling).unwrap();
         let sibling_propagation =
             PropagationState::new(&sibling_state, &normalized.max_link_rate).unwrap();
-        assert!(
-            !matches_local_no_good(&sibling_state, Some(&sibling_propagation), &mut context)
-                .unwrap()
+        assert_eq!(
+            matches_local_no_good(&sibling_state, Some(&sibling_propagation), &mut context)
+                .unwrap(),
+            Some(false)
         );
         assert_eq!(context.stats.instrumentation.no_good_hits, 1);
     }
@@ -3565,14 +3685,25 @@ mod tests {
         let fixed_profile = profile(1, 0, 0, 0);
         let mut state = TopologyState::new(&normalized, fixed_profile).unwrap();
         let root_snapshot = state.partial_topology();
-        let empty_key =
-            canonical_no_good_subset_key(&root_snapshot, &[], NoGoodScope::SolveLocal).unwrap();
-        assert!(matches_canonical_no_good(
+        let cancel = AtomicBool::new(false);
+        let empty_key = canonical_no_good_subset_key(
             &root_snapshot,
-            &[0],
+            &[],
             NoGoodScope::SolveLocal,
-            |candidate| candidate == &empty_key,
-        ));
+            &cancel,
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(
+            matches_canonical_no_good(
+                &root_snapshot,
+                &[0],
+                NoGoodScope::SolveLocal,
+                &cancel,
+                |candidate| candidate == &empty_key,
+            ),
+            Some(true)
+        );
 
         let checkpoint = state.checkpoint();
         let decision = state
@@ -3600,6 +3731,7 @@ mod tests {
             &first_snapshot,
             &first_core,
             NoGoodScope::SolveLocal,
+            &cancel,
         )
         .unwrap();
 
@@ -3610,6 +3742,7 @@ mod tests {
                 &state.partial_topology(),
                 &first_core,
                 NoGoodScope::SolveLocal,
+                &cancel,
             )
             .is_none()
         );
@@ -3626,6 +3759,7 @@ mod tests {
                 &state.partial_topology(),
                 &replayed_core,
                 NoGoodScope::SolveLocal,
+                &cancel,
             ),
             Some(first_key)
         );
@@ -3687,7 +3821,7 @@ mod tests {
             ConflictRule::ConnectivityImpossibility,
         );
         assert_eq!(context.structural_no_goods.len(), 1);
-        assert!(matches_structural_no_good(&state, &mut context));
+        assert_eq!(matches_structural_no_good(&state, &mut context), Some(true));
         assert_eq!(context.stats.instrumentation.no_good_hits, 1);
     }
 

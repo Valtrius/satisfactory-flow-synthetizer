@@ -14,8 +14,8 @@
   role="switch"
   aria-checked={checked}
   aria-label={label}
-  class={`relative mt-0.5 h-5 w-9 shrink-0 rounded-full border transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
-    checked ? 'border-[#f07831] bg-accent' : 'border-[#456171] bg-[#314953]'
+  class={`relative mt-0.5 h-5 w-9 shrink-0 rounded-full border border-[#293f4b] transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+    checked ? 'bg-linear-to-br from-accent-bright to-accent shadow-[0_4px_16px_rgb(255_128_52/16%)]' : 'border-[#456171] bg-[#314953]'
   }`}
   {disabled}
   {onclick}

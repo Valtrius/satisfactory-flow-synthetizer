@@ -51,7 +51,7 @@
         type="button"
         class={`rounded-md px-2.5 py-2 text-sm font-bold transition-colors ${
           engine === 'custom'
-            ? 'bg-[#1d3a2e] text-[#8bdeb8]'
+            ? 'bg-linear-to-br from-accent-bright to-accent text-[#15191b] shadow-[0_4px_16px_rgb(255_128_52/16%)]'
             : 'text-muted hover:bg-[#12222c] hover:text-[#dfe9ed]'
         }`}
         aria-pressed={engine === 'custom'}
@@ -63,7 +63,7 @@
         type="button"
         class={`rounded-md px-2.5 py-2 text-sm font-bold transition-colors ${
           engine === 'z3'
-            ? 'bg-[#1d3a2e] text-[#8bdeb8]'
+            ? 'bg-linear-to-br from-accent-bright to-accent text-[#15191b] shadow-[0_4px_16px_rgb(255_128_52/16%)]'
             : 'text-muted hover:bg-[#12222c] hover:text-[#dfe9ed]'
         }`}
         aria-pressed={engine === 'z3'}

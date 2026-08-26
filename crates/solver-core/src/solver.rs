@@ -5,7 +5,7 @@ use std::{
     panic::{AssertUnwindSafe, catch_unwind},
     sync::{
         Arc,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
     },
     thread,
     time::Instant,
@@ -21,7 +21,7 @@ use thiserror::Error;
 
 use crate::{
     acyclic_incumbent::find_small_acyclic_witness,
-    canonical::ConstructibilityCache,
+    canonical::{ConstructibilityCache, canonicalize_witness_cancellable},
     component_search::{ApplicationComponentRuntime, ComponentResolver, EmptyComponentStore},
     lower_bound::{LowerBoundError, baseline_lower_bounds},
     no_good::StructuralNoGoodStore,
@@ -488,8 +488,11 @@ fn solve_with_component_resolver_and_observer_ordered(
                             outputs: normalized.outputs.as_slice().to_vec(),
                             max_link_rate: normalized.max_link_rate.clone(),
                         };
-                        let canonical =
-                            crate::canonical::canonicalize_witness(&normalized_problem, &graph);
+                        let Some(canonical) =
+                            canonicalize_witness_cancellable(&normalized_problem, &graph, cancel)
+                        else {
+                            return Ok(incomplete(IncompleteReason::Cancelled, best_known, proof));
+                        };
                         let validation = validate_solution(&normalized_problem, &canonical.graph)
                             .map_err(|error| {
                             SolverError::ValidationFirewall(Box::new(error))
@@ -872,11 +875,7 @@ struct RootTaskOutput {
     result: RootTaskResult,
 }
 
-type AssignedRootTasks = Vec<(usize, RootTask)>;
-type RootWorker<'scope> = (
-    AssignedRootTasks,
-    thread::ScopedJoinHandle<'scope, Vec<RootTaskOutput>>,
-);
+type RootWorker<'scope> = thread::ScopedJoinHandle<'scope, Vec<RootTaskOutput>>;
 
 #[derive(Debug)]
 enum RootTaskResult {
@@ -932,6 +931,16 @@ impl ProfileGroupRun<'_> {
         let mut tasks = Vec::new();
         let mut immediate = Vec::new();
         for (profile_index, accounted) in profiles.iter().copied().enumerate() {
+            if self.cancel.load(Ordering::Relaxed) {
+                ledger.register_profile_partitions(
+                    self.node_count,
+                    self.link_count,
+                    accounted.profile,
+                    [0],
+                )?;
+                immediate.push(cancelled_root_output(profile_index, 0));
+                continue;
+            }
             match plan_profile_root_partitions_with_cache(
                 self.problem,
                 accounted.profile,
@@ -975,33 +984,36 @@ impl ProfileGroupRun<'_> {
         constructibility_cache: &Arc<ConstructibilityCache>,
     ) -> Vec<RootTaskOutput> {
         let worker_count = self.requested_workers.min(tasks.len());
+        let next_task = AtomicUsize::new(0);
         thread::scope(|scope| {
             let mut handles = Vec::with_capacity(worker_count);
-            for worker_index in 0..worker_count {
-                let assigned = tasks
-                    .iter()
-                    .cloned()
-                    .enumerate()
-                    .filter(|(index, _)| index % worker_count == worker_index)
-                    .collect::<Vec<_>>();
-                let fallback = assigned.clone();
+            for _ in 0..worker_count {
+                let next_task = &next_task;
                 let shared_no_goods = Arc::clone(self.structural_no_goods);
                 let constructibility_cache = Arc::clone(constructibility_cache);
                 let handle = scope.spawn(move || {
-                    assigned
-                        .into_iter()
-                        .map(|(_, task)| {
-                            self.execute_root(
-                                &task,
-                                &shared_no_goods,
-                                Arc::clone(&constructibility_cache),
-                            )
-                        })
-                        .collect::<Vec<_>>()
+                    let mut completed = Vec::new();
+                    loop {
+                        // Stop claiming new root obligations once cancel is set.
+                        // In-flight searches still observe the same flag.
+                        if self.cancel.load(Ordering::Relaxed) {
+                            break;
+                        }
+                        let index = next_task.fetch_add(1, Ordering::Relaxed);
+                        let Some(task) = tasks.get(index) else {
+                            break;
+                        };
+                        completed.push(self.execute_root(
+                            task,
+                            &shared_no_goods,
+                            Arc::clone(&constructibility_cache),
+                        ));
+                    }
+                    completed
                 });
-                handles.push((fallback, handle));
+                handles.push(handle);
             }
-            Self::join_root_workers(handles, tasks.len())
+            Self::join_root_workers(handles, tasks, self.cancel)
         })
     }
 
@@ -1035,18 +1047,55 @@ impl ProfileGroupRun<'_> {
         }
     }
 
-    fn join_root_workers(handles: Vec<RootWorker<'_>>, capacity: usize) -> Vec<RootTaskOutput> {
-        let mut completed = Vec::with_capacity(capacity);
-        for (fallback, handle) in handles {
+    fn join_root_workers(
+        handles: Vec<RootWorker<'_>>,
+        tasks: &[RootTask],
+        cancel: &AtomicBool,
+    ) -> Vec<RootTaskOutput> {
+        let mut completed = Vec::with_capacity(tasks.len());
+        for handle in handles {
             match handle.join() {
                 Ok(mut outputs) => completed.append(&mut outputs),
-                Err(_) => completed.extend(fallback.into_iter().map(|(_, task)| RootTaskOutput {
-                    profile_index: task.profile_index,
-                    partition: task.partition.id().ordinal(),
-                    result: RootTaskResult::WorkerPanicked,
-                })),
+                Err(_) => {}
             }
         }
+        // Sample cancel only after workers stop. Sampling earlier races with the
+        // dynamic queue: a late cancel can leave unclaimed roots that would then
+        // be recorded as panics instead of Cancelled.
+        let cancelled = cancel.load(Ordering::Relaxed)
+            || completed.iter().any(|output| {
+                matches!(
+                    &output.result,
+                    RootTaskResult::Search(result)
+                        if matches!(
+                            result.as_ref(),
+                            ProfileSearchResult::Incomplete {
+                                reason: IncompleteReason::Cancelled,
+                                ..
+                            }
+                        )
+                )
+            });
+        let completed_keys = completed
+            .iter()
+            .map(|output| (output.profile_index, output.partition))
+            .collect::<std::collections::BTreeSet<_>>();
+        completed.extend(tasks.iter().filter_map(|task| {
+            let partition = task.partition.id().ordinal();
+            let key = (task.profile_index, partition);
+            if completed_keys.contains(&key) {
+                return None;
+            }
+            Some(if cancelled {
+                cancelled_root_output(task.profile_index, partition)
+            } else {
+                RootTaskOutput {
+                    profile_index: task.profile_index,
+                    partition,
+                    result: RootTaskResult::WorkerPanicked,
+                }
+            })
+        }));
         completed
     }
 
@@ -1108,6 +1157,19 @@ impl ProfileGroupRun<'_> {
                 })
             })
             .collect()
+    }
+}
+
+fn cancelled_root_output(profile_index: usize, partition: u32) -> RootTaskOutput {
+    RootTaskOutput {
+        profile_index,
+        partition,
+        result: RootTaskResult::Search(Box::new(ProfileSearchResult::Incomplete {
+            reason: IncompleteReason::Cancelled,
+            best_witness: None,
+            witnesses: Vec::new(),
+            stats: ProfileSearchStats::default(),
+        })),
     }
 }
 
@@ -1725,6 +1787,72 @@ mod tests {
         assert_eq!(incomplete.proof.initial_node_lower_bound, 7);
         assert_eq!(incomplete.proof.node_counts_exhausted_through, Some(6));
         assert_eq!(first_search_node.into_inner().unwrap(), Some(7));
+    }
+
+    #[test]
+    fn cancellation_returns_promptly_once_search_workers_are_busy() {
+        let problem = problem(&[216], &[66, 150], 1_200);
+        let cancel = Arc::new(AtomicBool::new(false));
+        let cancel_started = Arc::new(Mutex::new(None));
+        let timer_cancel = Arc::clone(&cancel);
+        let timer_started = Arc::clone(&cancel_started);
+        thread::spawn(move || {
+            // Let workers enter the hard seven-node search before cancelling.
+            thread::sleep(std::time::Duration::from_millis(200));
+            *timer_started.lock().unwrap() = Some(Instant::now());
+            timer_cancel.store(true, Ordering::Relaxed);
+        });
+        let result = solve_with_observer(
+            &problem,
+            &SolveOptions {
+                max_nodes: Some(7),
+                worker_count: thread::available_parallelism().map_or(4, std::num::NonZero::get),
+            },
+            cancel.as_ref(),
+            &|_| {},
+        )
+        .unwrap();
+        let SolveResult::Incomplete(incomplete) = result else {
+            panic!("busy-worker cancellation must stop the seven-node search");
+        };
+        assert_eq!(incomplete.reason, IncompleteReason::Cancelled);
+        let cancel_started = cancel_started
+            .lock()
+            .unwrap()
+            .expect("timer must arm cancellation");
+        assert!(
+            cancel_started.elapsed() < std::time::Duration::from_secs(3),
+            "cancel lingered for {:?}",
+            cancel_started.elapsed()
+        );
+    }
+
+    #[test]
+    fn cancellation_with_backlogged_roots_never_reports_worker_panic() {
+        let problem = problem(&[216], &[66, 150], 1_200);
+        let cancel = Arc::new(AtomicBool::new(false));
+        let timer_cancel = Arc::clone(&cancel);
+        thread::spawn(move || {
+            thread::sleep(std::time::Duration::from_millis(50));
+            timer_cancel.store(true, Ordering::Relaxed);
+        });
+        let result = solve(
+            &problem,
+            &SolveOptions {
+                max_nodes: Some(7),
+                // One worker leaves a deep backlog so cancel must fill unclaimed
+                // roots as Cancelled rather than inventing worker panics.
+                worker_count: 1,
+            },
+            cancel.as_ref(),
+        );
+        match result {
+            Ok(SolveResult::Incomplete(incomplete)) => {
+                assert_eq!(incomplete.reason, IncompleteReason::Cancelled);
+            }
+            Ok(other) => panic!("expected Cancelled incomplete, got {other:?}"),
+            Err(error) => panic!("unclaimed cancelled roots must not panic the group: {error}"),
+        }
     }
 
     #[test]

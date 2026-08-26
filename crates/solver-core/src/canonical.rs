@@ -182,6 +182,15 @@ pub fn canonicalize_state(topology: &PartialTopology) -> StateKey {
     StateKey(selected.bytes)
 }
 
+/// Computes the production state key, or stops during labeling when cancelled.
+pub(crate) fn canonicalize_state_cancellable(
+    topology: &PartialTopology,
+    cancel: &AtomicBool,
+) -> Option<StateKey> {
+    select_canonical_cancellable(topology, None, EncodingKind::State, cancel)
+        .map(|selected| StateKey(selected.bytes))
+}
+
 /// Canonicalizes the complete input of [`crate::scc::summarize_open_scc`].
 ///
 /// `known_producers` and `known_consumers` must be the endpoint projection of
@@ -228,6 +237,39 @@ pub fn canonicalize_scc_summary_input_with_relabeling(
     known_producers: &BTreeMap<ProducerPortRef, Rational>,
     known_consumers: &BTreeMap<ConsumerPortRef, Rational>,
 ) -> CanonicalSccSummaryInput {
+    canonicalize_scc_summary_input_with_relabeling_inner(
+        topology,
+        region_nodes,
+        known_producers,
+        known_consumers,
+        None,
+    )
+    .expect("uncancelled canonicalization must complete")
+}
+
+pub(crate) fn canonicalize_scc_summary_input_with_relabeling_cancellable(
+    topology: &PartialTopology,
+    region_nodes: &BTreeSet<NodeId>,
+    known_producers: &BTreeMap<ProducerPortRef, Rational>,
+    known_consumers: &BTreeMap<ConsumerPortRef, Rational>,
+    cancel: &AtomicBool,
+) -> Option<CanonicalSccSummaryInput> {
+    canonicalize_scc_summary_input_with_relabeling_inner(
+        topology,
+        region_nodes,
+        known_producers,
+        known_consumers,
+        Some(cancel),
+    )
+}
+
+fn canonicalize_scc_summary_input_with_relabeling_inner(
+    topology: &PartialTopology,
+    region_nodes: &BTreeSet<NodeId>,
+    known_producers: &BTreeMap<ProducerPortRef, Rational>,
+    known_consumers: &BTreeMap<ConsumerPortRef, Rational>,
+    cancel: Option<&AtomicBool>,
+) -> Option<CanonicalSccSummaryInput> {
     assert!(
         region_nodes
             .iter()
@@ -240,15 +282,20 @@ pub fn canonicalize_scc_summary_input_with_relabeling(
         known_consumers,
     };
     let incidence = IncidenceGraph::build_annotated(topology, None, false, Some(&annotations));
-    let selected =
-        select_canonical_with_incidence(topology, &incidence, EncodingKind::SccSummary, None);
+    let selected = select_canonical_with_incidence(
+        topology,
+        &incidence,
+        EncodingKind::SccSummary,
+        None,
+        cancel,
+    )?;
     let (producer_relabeling, consumer_relabeling) =
         incidence.port_relabeling(topology, &selected.ranks);
-    CanonicalSccSummaryInput {
+    Some(CanonicalSccSummaryInput {
         key: SccSummaryKey(selected.bytes),
         producer_relabeling,
         consumer_relabeling,
-    }
+    })
 }
 
 /// Computes a problem-independent canonical key for structural no-goods.
@@ -270,6 +317,20 @@ pub fn canonicalize_structural_state(topology: &PartialTopology) -> StateKey {
     canonicalize_state(&structural)
 }
 
+pub(crate) fn canonicalize_structural_state_cancellable(
+    topology: &PartialTopology,
+    cancel: &AtomicBool,
+) -> Option<StateKey> {
+    let mut structural = topology.clone();
+    structural.problem.inputs.fill(Rational::one());
+    structural.problem.outputs.fill(Rational::one());
+    structural.problem.max_link_rate = Rational::one();
+    for link in &mut structural.links {
+        link.flow = None;
+    }
+    canonicalize_state_cancellable(&structural, cancel)
+}
+
 /// Canonicalizes one solve-local conflict core selected by physical link index.
 ///
 /// Only links named by the proof core and their incident typed nodes remain
@@ -289,6 +350,15 @@ pub fn canonicalize_local_decision_core(
     decision_core_projection(topology, selected_links).map(|core| canonicalize_state(&core))
 }
 
+pub(crate) fn canonicalize_local_decision_core_cancellable(
+    topology: &PartialTopology,
+    selected_links: &[usize],
+    cancel: &AtomicBool,
+) -> Option<StateKey> {
+    let core = decision_core_projection(topology, selected_links)?;
+    canonicalize_state_cancellable(&core, cancel)
+}
+
 /// Canonicalizes one problem-independent structural conflict core.
 ///
 /// This uses the same induced decision projection as
@@ -304,6 +374,15 @@ pub fn canonicalize_structural_decision_core(
 ) -> Option<StateKey> {
     decision_core_projection(topology, selected_links)
         .map(|core| canonicalize_structural_state(&core))
+}
+
+pub(crate) fn canonicalize_structural_decision_core_cancellable(
+    topology: &PartialTopology,
+    selected_links: &[usize],
+    cancel: &AtomicBool,
+) -> Option<StateKey> {
+    let core = decision_core_projection(topology, selected_links)?;
+    canonicalize_structural_state_cancellable(&core, cancel)
 }
 
 fn decision_core_projection(
@@ -375,6 +454,23 @@ pub fn canonicalize_partial(topology: &PartialTopology) -> StateKey {
 /// same structural requirements before an optimal result can be returned.
 #[must_use]
 pub fn canonicalize_witness(problem: &Problem, graph: &PhysicalGraph) -> CanonicalWitness {
+    canonicalize_witness_inner(problem, graph, None)
+        .expect("uncancelled canonicalization must complete")
+}
+
+pub(crate) fn canonicalize_witness_cancellable(
+    problem: &Problem,
+    graph: &PhysicalGraph,
+    cancel: &AtomicBool,
+) -> Option<CanonicalWitness> {
+    canonicalize_witness_inner(problem, graph, Some(cancel))
+}
+
+fn canonicalize_witness_inner(
+    problem: &Problem,
+    graph: &PhysicalGraph,
+    cancel: Option<&AtomicBool>,
+) -> Option<CanonicalWitness> {
     let discard_count = discard_count_from_links(&graph.links);
     let topology = PartialTopology {
         problem: problem.clone(),
@@ -391,14 +487,15 @@ pub fn canonicalize_witness(problem: &Problem, graph: &PhysicalGraph) -> Canonic
         discard_count,
         remaining_profile: NodeProfile::default(),
     };
-    let selected = select_canonical(&topology, None, EncodingKind::Witness);
-    CanonicalWitness {
+    let selected =
+        select_canonical_cancellable_inner(&topology, None, EncodingKind::Witness, cancel)?;
+    Some(CanonicalWitness {
         key: CanonicalGraphKey::from_bytes(selected.bytes),
         graph: selected
             .topology
             .into_physical_graph()
             .expect("a full witness has an exact flow on every link"),
-    }
+    })
 }
 
 /// Canonicalizes a partial topology after individualizing one physical link.
@@ -421,6 +518,20 @@ pub fn canonicalize_marked_link(
     MarkedLinkCanonicalKey(
         select_canonical(topology, Some(marked_link), EncodingKind::Marked).bytes,
     )
+}
+
+/// Computes a marked-link key, or stops during labeling when cancelled.
+pub(crate) fn canonicalize_marked_link_cancellable(
+    topology: &PartialTopology,
+    marked_link: usize,
+    cancel: &AtomicBool,
+) -> Option<MarkedLinkCanonicalKey> {
+    assert!(
+        marked_link < topology.links.len(),
+        "marked link index must be in range"
+    );
+    select_canonical_cancellable(topology, Some(marked_link), EncodingKind::Marked, cancel)
+        .map(|selected| MarkedLinkCanonicalKey(selected.bytes))
 }
 
 /// Canonicalizes a partial topology after individualizing one open port.
@@ -544,14 +655,15 @@ pub(crate) fn is_canonical_last_link_with_cache(
     if !admissible.contains(&link) {
         return Some(false);
     }
-    let candidate = canonicalize_marked_link(topology, link);
-    Some(
-        admissible
-            .into_iter()
-            .map(|index| canonicalize_marked_link(topology, index))
-            .min()
-            .is_some_and(|minimum| candidate == minimum),
-    )
+    let candidate = canonicalize_marked_link_cancellable(topology, link, cancel)?;
+    let mut minimum = None;
+    for index in admissible {
+        let key = canonicalize_marked_link_cancellable(topology, index, cancel)?;
+        if minimum.as_ref().is_none_or(|current| key < *current) {
+            minimum = Some(key);
+        }
+    }
+    Some(minimum.is_some_and(|minimum| candidate == minimum))
 }
 
 fn admissible_link_indices(topology: &PartialTopology) -> Vec<usize> {
@@ -600,14 +712,14 @@ fn admissible_reverse_transition_with_cache(
     if cancel.load(Ordering::Relaxed) {
         return None;
     }
-    let target = canonicalize_marked_link(structural_child, link);
+    let target = canonicalize_marked_link_cancellable(structural_child, link, cancel)?;
     let Some(parent) = reverse_parent(structural_child, link) else {
         return Some(false);
     };
-    let canonical_parent = canonical_partial_topology(&parent);
+    let canonical_parent = canonical_partial_topology_cancellable(&parent, cancel)?;
     Some(
         recursively_constructible_with_cache(&canonical_parent, local_memo, cache, cancel)?
-            && parent_can_recreate_marked_child(&canonical_parent, &target),
+            && parent_can_recreate_marked_child_cancellable(&canonical_parent, &target, cancel)?,
     )
 }
 
@@ -620,8 +732,8 @@ fn recursively_constructible_with_cache(
     if cancel.load(Ordering::Relaxed) {
         return None;
     }
-    let canonical = canonical_partial_topology(topology);
-    let key = canonicalize_state(&canonical);
+    let canonical = canonical_partial_topology_cancellable(topology, cancel)?;
+    let key = canonicalize_state_cancellable(&canonical, cancel)?;
     if let Some(&known) = local_memo.get(&key) {
         return Some(known);
     }
@@ -718,6 +830,40 @@ fn parent_can_recreate_marked_child(
     false
 }
 
+fn parent_can_recreate_marked_child_cancellable(
+    canonical_parent: &PartialTopology,
+    target: &MarkedLinkCanonicalKey,
+    cancel: &AtomicBool,
+) -> Option<bool> {
+    let Ok(mut state) = TopologyState::from_partial_topology(canonical_parent) else {
+        return Some(false);
+    };
+    let Some(decisions) = state.legal_decisions_cancellable(cancel) else {
+        return None;
+    };
+    for decision in decisions {
+        if cancel.load(Ordering::Relaxed) {
+            return None;
+        }
+        let checkpoint = state.checkpoint();
+        let recreated = if let Ok(decision_id) = state.apply_legal_decision(decision) {
+            if let Some(added_link) = state.link_index_for(decision_id) {
+                canonicalize_marked_link_cancellable(&state.partial_topology(), added_link, cancel)?
+                    == *target
+            } else {
+                false
+            }
+        } else {
+            false
+        };
+        state.rollback(checkpoint);
+        if recreated {
+            return Some(true);
+        }
+    }
+    Some(false)
+}
+
 fn structural_projection(topology: &PartialTopology) -> PartialTopology {
     let mut structural = topology.clone();
     for link in &mut structural.links {
@@ -794,6 +940,19 @@ fn canonical_partial_topology(topology: &PartialTopology) -> PartialTopology {
         topology.discard_count,
         topology.remaining_profile,
     )
+}
+
+fn canonical_partial_topology_cancellable(
+    topology: &PartialTopology,
+    cancel: &AtomicBool,
+) -> Option<PartialTopology> {
+    select_canonical_cancellable(topology, None, EncodingKind::State, cancel).map(|selected| {
+        selected.topology.into_partial_topology(
+            topology.problem.clone(),
+            topology.discard_count,
+            topology.remaining_profile,
+        )
+    })
 }
 
 fn discard_count_from_links(links: &[PhysicalLink]) -> u32 {
@@ -917,12 +1076,31 @@ fn select_canonical(
     marked_link: Option<usize>,
     encoding: EncodingKind,
 ) -> SelectedCanonical {
+    select_canonical_cancellable_inner(topology, marked_link, encoding, None)
+        .expect("uncancelled canonicalization must complete")
+}
+
+fn select_canonical_cancellable(
+    topology: &PartialTopology,
+    marked_link: Option<usize>,
+    encoding: EncodingKind,
+    cancel: &AtomicBool,
+) -> Option<SelectedCanonical> {
+    select_canonical_cancellable_inner(topology, marked_link, encoding, Some(cancel))
+}
+
+fn select_canonical_cancellable_inner(
+    topology: &PartialTopology,
+    marked_link: Option<usize>,
+    encoding: EncodingKind,
+    cancel: Option<&AtomicBool>,
+) -> Option<SelectedCanonical> {
     let incidence = IncidenceGraph::build(
         topology,
         marked_link,
         matches!(encoding, EncodingKind::Witness),
     );
-    select_canonical_with_incidence(topology, &incidence, encoding, None)
+    select_canonical_with_incidence(topology, &incidence, encoding, None, cancel)
 }
 
 struct SccAnnotations<'a> {
@@ -943,7 +1121,9 @@ fn select_canonical_open_port(topology: &PartialTopology, port: OpenPortRef) -> 
         &incidence,
         EncodingKind::MarkedPort,
         Some(marked_vertex),
+        None,
     )
+    .expect("uncancelled canonicalization must complete")
 }
 
 fn select_canonical_with_incidence(
@@ -951,7 +1131,11 @@ fn select_canonical_with_incidence(
     incidence: &IncidenceGraph,
     encoding: EncodingKind,
     individualized_vertex: Option<VertexId>,
-) -> SelectedCanonical {
+    cancel: Option<&AtomicBool>,
+) -> Option<SelectedCanonical> {
+    if cancel.is_some_and(|flag| flag.load(Ordering::Relaxed)) {
+        return None;
+    }
     let mut initial = incidence.initial_colors();
     if let Some(vertex) = individualized_vertex {
         initial[vertex] = initial
@@ -962,14 +1146,16 @@ fn select_canonical_with_incidence(
             .checked_add(1)
             .expect("canonical color count must fit u32");
     }
-    let initial = incidence.refine(initial);
+    let initial = incidence.refine_cancellable(initial, cancel)?;
     let groups = incidence.labeling_groups(topology);
     let ranks = vec![None; incidence.base_colors.len()];
     let mut best = None;
-    search_individualizations(
-        topology, incidence, &groups, 0, 0, initial, ranks, encoding, &mut best,
-    );
-    best.expect("individualization always reaches at least one discrete coloring")
+    if !search_individualizations(
+        topology, incidence, &groups, 0, 0, initial, ranks, encoding, cancel, &mut best,
+    ) {
+        return None;
+    }
+    Some(best.expect("individualization always reaches at least one discrete coloring"))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -982,12 +1168,16 @@ fn search_individualizations(
     colors: Vec<u32>,
     ranks: Vec<Option<u32>>,
     encoding: EncodingKind,
+    cancel: Option<&AtomicBool>,
     best: &mut Option<SelectedCanonical>,
-) {
+) -> bool {
+    if cancel.is_some_and(|flag| flag.load(Ordering::Relaxed)) {
+        return false;
+    }
     if group_index < groups.len() {
         let group = &groups[group_index];
         if rank_in_group == group.len() {
-            search_individualizations(
+            return search_individualizations(
                 topology,
                 incidence,
                 groups,
@@ -996,9 +1186,9 @@ fn search_individualizations(
                 colors,
                 ranks,
                 encoding,
+                cancel,
                 best,
             );
-            return;
         }
 
         let individual_color = colors.iter().copied().max().unwrap_or(0) + 1;
@@ -1011,13 +1201,18 @@ fn search_individualizations(
         // reduction must prove an automorphism before treating two choices as equivalent.
         choices.sort_by_key(|vertex| (colors[*vertex], *vertex));
         for vertex in choices {
+            if cancel.is_some_and(|flag| flag.load(Ordering::Relaxed)) {
+                return false;
+            }
             let mut individualized = colors.clone();
             individualized[vertex] = individual_color;
-            let refined = incidence.refine(individualized);
+            let Some(refined) = incidence.refine_cancellable(individualized, cancel) else {
+                return false;
+            };
             let mut next_ranks = ranks.clone();
             next_ranks[vertex] =
                 Some(u32::try_from(rank_in_group).expect("one label group must fit a u32 rank"));
-            search_individualizations(
+            if !search_individualizations(
                 topology,
                 incidence,
                 groups,
@@ -1026,10 +1221,13 @@ fn search_individualizations(
                 refined,
                 next_ranks,
                 encoding,
+                cancel,
                 best,
-            );
+            ) {
+                return false;
+            }
         }
-        return;
+        return true;
     }
 
     let candidate = incidence.relabel(topology, &ranks);
@@ -1051,6 +1249,7 @@ fn search_individualizations(
             ranks,
         });
     }
+    true
 }
 
 type VertexId = usize;
@@ -1296,8 +1495,15 @@ impl IncidenceGraph {
         ordered_color_ids(&self.base_colors)
     }
 
-    fn refine(&self, mut colors: Vec<u32>) -> Vec<u32> {
+    fn refine_cancellable(
+        &self,
+        mut colors: Vec<u32>,
+        cancel: Option<&AtomicBool>,
+    ) -> Option<Vec<u32>> {
         loop {
+            if cancel.is_some_and(|flag| flag.load(Ordering::Relaxed)) {
+                return None;
+            }
             let signatures = self
                 .adjacency
                 .iter()
@@ -1316,7 +1522,7 @@ impl IncidenceGraph {
                 .collect::<Vec<_>>();
             let next = ordered_color_ids(&signatures);
             if same_partition(&colors, &next) {
-                return next;
+                return Some(next);
             }
             colors = next;
         }

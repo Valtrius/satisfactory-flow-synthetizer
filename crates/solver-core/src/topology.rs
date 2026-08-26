@@ -1,6 +1,9 @@
 //! Mutable lazy-materialized physical topology with undo-log rollback.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    sync::atomic::{AtomicBool, Ordering},
+};
 
 use solver_api::{
     ConsumerPortRef, DiscardTerminalIndex, InputTerminalIndex, NodeId, NodeProfile, NodeType,
@@ -11,7 +14,7 @@ use thiserror::Error;
 use crate::{
     canonical::{
         CanonicalOpenPortKey, MarkedLinkCanonicalKey, PartialLink, PartialTopology,
-        canonicalize_marked_link, canonicalize_open_port,
+        canonicalize_marked_link, canonicalize_marked_link_cancellable, canonicalize_open_port,
     },
     components::Component,
     problem::NormalizedProblem,
@@ -771,19 +774,35 @@ impl TopologyState {
     /// without changing the quotient search order.
     #[must_use]
     pub fn legal_decisions(&mut self) -> Vec<TopologyDecision> {
-        self.selected_open_orbit().map_or_else(Vec::new, |orbit| {
-            self.keyed_decisions_for(orbit.representative)
+        self.legal_decisions_cancellable(&AtomicBool::new(false))
+            .expect("uncancelled legal decisions must complete")
+    }
+
+    /// Cancellation-aware form of [`Self::legal_decisions`].
+    ///
+    /// Marked-child canonicalization for each candidate can dominate search time,
+    /// so the production search must be able to abandon this enumeration.
+    pub(crate) fn legal_decisions_cancellable(
+        &mut self,
+        cancel: &AtomicBool,
+    ) -> Option<Vec<TopologyDecision>> {
+        let Some(orbit) = self.selected_open_orbit() else {
+            return Some(Vec::new());
+        };
+        Some(
+            self.keyed_decisions_for(orbit.representative, Some(cancel))?
                 .into_iter()
                 .map(|(_, decision)| decision)
-                .collect()
-        })
+                .collect(),
+        )
     }
 
     /// Returns the invariant ordered marked-child keys of all legal decisions.
     #[must_use]
     pub fn ordered_decision_child_keys(&mut self) -> Vec<MarkedLinkCanonicalKey> {
         self.selected_open_orbit().map_or_else(Vec::new, |orbit| {
-            self.keyed_decisions_for(orbit.representative)
+            self.keyed_decisions_for(orbit.representative, None)
+                .expect("uncancelled decision keys must complete")
                 .into_iter()
                 .map(|(key, _)| key)
                 .collect()
@@ -802,6 +821,42 @@ impl TopologyState {
             return Err(TopologyError::NonCanonicalDecision);
         }
         self.apply_legal_decision(decision)
+    }
+
+    /// Applies a decision already known to be in [`Self::legal_decisions`].
+    ///
+    /// Search uses this after a cancellable legal-decision enumeration so it does
+    /// not pay a second full marked-child canonicalization pass on every branch.
+    pub(crate) fn apply_legal_decision(
+        &mut self,
+        decision: TopologyDecision,
+    ) -> Result<DecisionId, TopologyError> {
+        if matches!(decision.producer, ProducerChoice::NewNode { .. })
+            && matches!(decision.consumer, ConsumerChoice::NewNode { .. })
+        {
+            return Err(TopologyError::TwoNewNodes);
+        }
+        let producer = match decision.producer {
+            ProducerChoice::Existing(reference) => reference,
+            ProducerChoice::NewNode { node_type, port } => {
+                let node = self.materialize(node_type)?;
+                ProducerPortRef::Node {
+                    node: node.id,
+                    port,
+                }
+            }
+        };
+        let consumer = match decision.consumer {
+            ConsumerChoice::Existing(reference) => reference,
+            ConsumerChoice::NewNode { node_type, port } => {
+                let node = self.materialize(node_type)?;
+                ConsumerPortRef::Node {
+                    node: node.id,
+                    port,
+                }
+            }
+        };
+        self.connect(producer, consumer)
     }
 
     /// Lists the canonical boundary coordinates that can attach `component`
@@ -1045,58 +1100,41 @@ impl TopologyState {
         Ok(())
     }
 
-    fn apply_legal_decision(
-        &mut self,
-        decision: TopologyDecision,
-    ) -> Result<DecisionId, TopologyError> {
-        if matches!(decision.producer, ProducerChoice::NewNode { .. })
-            && matches!(decision.consumer, ConsumerChoice::NewNode { .. })
-        {
-            return Err(TopologyError::TwoNewNodes);
-        }
-        let producer = match decision.producer {
-            ProducerChoice::Existing(reference) => reference,
-            ProducerChoice::NewNode { node_type, port } => {
-                let node = self.materialize(node_type)?;
-                ProducerPortRef::Node {
-                    node: node.id,
-                    port,
-                }
-            }
-        };
-        let consumer = match decision.consumer {
-            ConsumerChoice::Existing(reference) => reference,
-            ConsumerChoice::NewNode { node_type, port } => {
-                let node = self.materialize(node_type)?;
-                ConsumerPortRef::Node {
-                    node: node.id,
-                    port,
-                }
-            }
-        };
-        self.connect(producer, consumer)
-    }
-
     fn keyed_decisions_for(
         &mut self,
         anchor: OpenPortRef,
-    ) -> Vec<(MarkedLinkCanonicalKey, TopologyDecision)> {
+        cancel: Option<&AtomicBool>,
+    ) -> Option<Vec<(MarkedLinkCanonicalKey, TopologyDecision)>> {
         let mut keyed = Vec::new();
         for decision in self.decisions_for(anchor) {
+            if cancel.is_some_and(|flag| flag.load(Ordering::Relaxed)) {
+                return None;
+            }
             let checkpoint = self.checkpoint();
-            let key = self
+            let key = match self
                 .apply_legal_decision(decision)
                 .ok()
                 .and_then(|decision_id| self.link_index_for(decision_id))
-                .map(|link| canonicalize_marked_link(&self.partial_topology(), link));
+            {
+                Some(link) => match cancel {
+                    Some(flag) => {
+                        canonicalize_marked_link_cancellable(&self.partial_topology(), link, flag)
+                    }
+                    None => Some(canonicalize_marked_link(&self.partial_topology(), link)),
+                },
+                None => None,
+            };
             self.rollback(checkpoint);
+            if cancel.is_some_and(|flag| flag.load(Ordering::Relaxed)) {
+                return None;
+            }
             if let Some(key) = key {
                 keyed.push((key, decision));
             }
         }
         keyed.sort_by(|left, right| left.0.cmp(&right.0).then_with(|| left.1.cmp(&right.1)));
         keyed.dedup_by(|left, right| left.0 == right.0);
-        keyed
+        Some(keyed)
     }
 
     fn allocate_flow_var(&mut self) -> Result<FlowVarId, TopologyError> {
@@ -1543,7 +1581,10 @@ fn direct_self_link(producer: ProducerPortRef, consumer: ConsumerPortRef) -> boo
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeMap;
+    use std::{
+        collections::BTreeMap,
+        sync::atomic::{AtomicBool, Ordering},
+    };
 
     use super::*;
     use crate::{
@@ -1872,6 +1913,19 @@ mod tests {
         assert_eq!(decisions.len(), 1);
         state.apply(decisions[0]).unwrap();
         assert!(state.is_complete());
+    }
+
+    #[test]
+    fn legal_decision_enumeration_honors_cancellation() {
+        let mut state =
+            TopologyState::new(&normalized(&["3"], &["1", "1", "1"]), profile(0, 1, 0, 0)).unwrap();
+        let cancel = AtomicBool::new(true);
+        assert!(state.legal_decisions_cancellable(&cancel).is_none());
+        cancel.store(false, Ordering::Relaxed);
+        assert!(!state
+            .legal_decisions_cancellable(&cancel)
+            .unwrap()
+            .is_empty());
     }
 
     #[test]
