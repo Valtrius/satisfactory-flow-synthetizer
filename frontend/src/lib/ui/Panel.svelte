@@ -14,7 +14,7 @@
 
 <svelte:element
   this={element}
-  class={`rounded-tl-2xl rounded-tr-sm rounded-br-2xl rounded-bl-sm border border-line bg-linear-to-br from-panel-2/97 to-[#0a161e]/97 shadow-[0_18px_55px_rgb(0_0_0/17%)] ${className}`}
+  class={`rounded-panel border border-line bg-linear-to-br from-panel-2/97 to-[#0a161e]/97 shadow-[0_18px_55px_rgb(0_0_0/17%)] ${className}`}
 >
   {@render children()}
 </svelte:element>

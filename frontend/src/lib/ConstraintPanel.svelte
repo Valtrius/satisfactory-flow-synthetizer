@@ -2,6 +2,7 @@
   import Button from './ui/Button.svelte';
   import Input from './ui/Input.svelte';
   import Panel from './ui/Panel.svelte';
+  import SegmentedControl from './ui/SegmentedControl.svelte';
   import Switch from './ui/Switch.svelte';
   import type { SolverEngine } from '../types';
 
@@ -24,6 +25,11 @@
     onEngineChange,
     onSolve
   }: Props = $props();
+
+  const engineOptions: { value: SolverEngine; label: string }[] = [
+    { value: 'custom', label: 'Custom' },
+    { value: 'z3', label: 'Z3' }
+  ];
 </script>
 
 <Panel element="aside" class="flex flex-col p-4.5 md:col-span-2 md:p-6 xl:col-span-1">
@@ -38,7 +44,7 @@
         inputmode="decimal"
       />
       <em
-        class="grid h-10.5 place-items-center whitespace-nowrap rounded-tr-xs rounded-br-lg border border-l-0 border-[#293f4b] bg-[#12222c] px-3 text-xs not-italic text-muted"
+        class="grid h-10.5 place-items-center whitespace-nowrap rounded-tr-xs rounded-br-lg border border-l-0 border-field-border bg-well-hover px-3 text-xs not-italic text-muted"
         >/ min</em
       >
     </div>
@@ -46,32 +52,12 @@
 
   <div class="mt-5 border-t border-line pt-4">
     <span class="mb-2 block text-xs font-bold tracking-wide text-muted">Solver engine</span>
-    <div class="grid grid-cols-2 gap-1 rounded-lg border border-[#293f4b] bg-[#0a151d] p-1">
-      <button
-        type="button"
-        class={`rounded-md px-2.5 py-2 text-sm font-bold transition-colors ${
-          engine === 'custom'
-            ? 'bg-linear-to-br from-accent-bright to-accent text-[#15191b] shadow-[0_4px_16px_rgb(255_128_52/16%)]'
-            : 'text-muted hover:bg-[#12222c] hover:text-[#dfe9ed]'
-        }`}
-        aria-pressed={engine === 'custom'}
-        onclick={() => onEngineChange('custom')}
-      >
-        Custom
-      </button>
-      <button
-        type="button"
-        class={`rounded-md px-2.5 py-2 text-sm font-bold transition-colors ${
-          engine === 'z3'
-            ? 'bg-linear-to-br from-accent-bright to-accent text-[#15191b] shadow-[0_4px_16px_rgb(255_128_52/16%)]'
-            : 'text-muted hover:bg-[#12222c] hover:text-[#dfe9ed]'
-        }`}
-        aria-pressed={engine === 'z3'}
-        onclick={() => onEngineChange('z3')}
-      >
-        Z3
-      </button>
-    </div>
+    <SegmentedControl
+      options={engineOptions}
+      value={engine}
+      onchange={onEngineChange}
+      aria-label="Solver engine"
+    />
     <span class="mt-1.5 block text-xs text-muted">
       {engine === 'custom'
         ? 'Deterministic exact search with incumbents and optional full-N enumeration.'

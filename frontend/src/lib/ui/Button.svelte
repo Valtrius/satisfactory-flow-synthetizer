@@ -22,10 +22,10 @@
   }: Props = $props();
 
   const variants: Record<Variant, string> = {
-    default: 'border-[#314856] bg-[#142630] text-[#d8e3e8] hover:border-[#527387] hover:bg-[#1a3340]',
-    primary: 'border-[#f07831] bg-linear-to-br from-accent-bright to-accent text-[#15191b] shadow-[0_8px_28px_rgb(255_128_52/18%)] hover:border-[#ffc49d] hover:from-[#ffc08f] hover:to-[#ff934e]',
-    danger: 'border-danger/70 bg-[#69221f]/35 text-[#ffc0bb] hover:border-danger hover:bg-[#8c2a26]/55',
-    quiet: 'border-[#314856] bg-transparent text-muted hover:border-[#527387] hover:bg-[#1a3340]'
+    default: 'intent-default',
+    primary: 'intent-primary intent-primary-glow',
+    danger: 'intent-danger',
+    quiet: 'intent-quiet'
   };
 
   const sizes: Record<Size, string> = {
@@ -35,7 +35,7 @@
 </script>
 
 <button
-  class={`cursor-pointer rounded-tl-lg rounded-tr-xs rounded-br-lg rounded-bl-xs border font-bold transition-[border-color,background-color,transform] duration-150 hover:-translate-y-px disabled:cursor-not-allowed disabled:opacity-50 ${variants[variant]} ${square ? 'grid min-h-8.5 w-8.5 min-w-8.5 place-items-center p-0' : sizes[size]} ${className}`}
+  class={`cursor-pointer rounded-control border font-bold transition-[border-color,background-color,background-image,transform,box-shadow] duration-150 hover:-translate-y-px disabled:cursor-not-allowed disabled:opacity-50 ${variants[variant]} ${square ? 'grid min-h-8.5 w-8.5 min-w-8.5 place-items-center p-0' : sizes[size]} ${className}`}
   {...props}
 >
   {@render children()}

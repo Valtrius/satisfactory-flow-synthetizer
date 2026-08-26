@@ -109,7 +109,7 @@
     <div class="flex w-full items-start justify-between gap-4 md:w-auto md:items-center">
       <div class="flex flex-wrap gap-4.5 text-xs text-muted" aria-label="Graph legend">
         <span class="flex items-center gap-1.5"
-          ><i class="block h-0.75 w-5.5 bg-cyan"></i> Main flow</span
+          ><i class="block h-0.75 w-5.5 bg-flow"></i> Main flow</span
         >
         <span class="flex items-center gap-1.5"
           ><i class="legend-line-feedback block h-0.75 w-5.5"></i> Feedback</span

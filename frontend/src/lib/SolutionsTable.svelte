@@ -90,7 +90,7 @@
               data-col-index={index}
               class={`sticky top-0 z-1 select-none border-b border-[#1a2c36] bg-[#101f2a] px-2 py-2.5 text-left text-[0.7rem] font-bold tracking-wide text-muted uppercase ${
                 dragOver === index && dragFrom != null && dragFrom !== index
-                  ? 'bg-[#2a1810] ring-1 ring-inset ring-accent/50'
+                  ? 'bg-selected ring-1 ring-inset ring-accent/50'
                   : dragFrom === index
                     ? 'opacity-70'
                     : ''
@@ -120,7 +120,7 @@
                       index === 0
                         ? 'bg-accent text-[#1a1008]'
                         : index === 1
-                          ? 'bg-cyan text-[#071017]'
+                          ? 'bg-flow text-root'
                           : 'bg-[#5d7180] text-[#eaf1f5]'
                     }`}
                   >
@@ -138,7 +138,7 @@
         {#each solutions as solution, index (index)}
           <tr
             class={`cursor-pointer border-b border-[#1a2c36] tabular-nums hover:bg-[#122430] ${
-              index === selectedIndex ? 'bg-[#2a1810] shadow-[inset_3px_0_0_#ff8a3d]' : ''
+              index === selectedIndex ? 'bg-selected shadow-[inset_3px_0_0_var(--color-accent)]' : ''
             }`}
             onclick={() => onSelect(index)}
             aria-selected={index === selectedIndex}

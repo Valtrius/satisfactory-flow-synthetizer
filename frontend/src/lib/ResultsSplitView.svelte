@@ -88,28 +88,28 @@
   });
 </script>
 
-<section class="mt-4" aria-label="Search results">
-  <Panel class="overflow-hidden">
-    <SearchTelemetry
-      {searchView}
-      muted={searchStageMuted}
-      {busy}
-      {elapsedLabel}
-      {headline}
-      {subline}
-      {sizeBody}
-      {foundCount}
-      {showFound}
-      {showDetails}
-      borderBottom
-    />
+<section class="flex min-h-112 flex-1 flex-col" aria-label="Search results">
+  <Panel class="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
+    <div class="shrink-0">
+      <SearchTelemetry
+        {searchView}
+        muted={searchStageMuted}
+        {busy}
+        {elapsedLabel}
+        {headline}
+        {subline}
+        {sizeBody}
+        {foundCount}
+        {showFound}
+        {showDetails}
+        borderBottom
+      />
+    </div>
 
     <div
-      class="grid grid-cols-1 items-stretch xl:h-[68vh] xl:min-h-107.5 xl:grid-cols-[minmax(280px,360px)_minmax(0,1fr)]"
+      class="grid min-h-0 flex-1 grid-cols-1 items-stretch max-xl:grid-rows-[minmax(16rem,50vh)_minmax(16rem,50vh)] xl:grid-cols-[minmax(280px,360px)_minmax(0,1fr)]"
     >
-      <div
-        class="h-[68vh] min-h-107.5 border-b border-line xl:h-full xl:min-h-0 xl:border-r xl:border-b-0"
-      >
+      <div class="min-h-0 border-b border-line xl:border-r xl:border-b-0">
         <SolutionsTable
           {solutions}
           {selectedIndex}
@@ -124,7 +124,7 @@
         {fitRevision}
         {fullscreen}
         subtitle={graphSubtitle}
-        class={`h-[68vh] min-h-107.5 xl:h-full xl:min-h-0 ${
+        class={`min-h-0 ${
           fullscreen ? 'fixed inset-0 z-100 !h-dvh !min-h-0 bg-[#08141c]' : ''
         }`}
         {onRotate}

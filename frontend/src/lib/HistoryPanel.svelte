@@ -235,9 +235,9 @@
           ? 'border border-solid border-line'
           : 'border border-solid border-transparent'
     } ${
-      selected && band !== 'running' ? 'bg-[#2a1810] shadow-[inset_3px_0_0_#ff8a3d]' : ''
-    } ${selected && band === 'running' ? 'shadow-[inset_3px_0_0_#ff8a3d]' : ''} ${
-      !selected && band !== 'running' ? 'bg-transparent hover:bg-[#12222c]/55' : ''
+      selected && band !== 'running' ? 'bg-selected shadow-[inset_3px_0_0_var(--color-accent)]' : ''
+    } ${selected && band === 'running' ? 'shadow-[inset_3px_0_0_var(--color-accent)]' : ''} ${
+      !selected && band !== 'running' ? 'bg-transparent hover:bg-well-hover/55' : ''
     } ${band === 'running' ? 'history-entry-running cursor-pointer' : ''} ${
       selected && band === 'running' ? 'history-entry-running--selected' : ''
     } ${draggable ? 'cursor-grab active:cursor-grabbing' : ''} ${

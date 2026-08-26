@@ -11,14 +11,102 @@
   --color-line: #203440;
   --color-accent: #ff8a3d;
   --color-accent-bright: #ffab6b;
+  --color-accent-border: #f07831;
+  --color-accent-border-hover: #ffc49d;
+  --color-accent-from-hover: #ffc08f;
+  --color-accent-to-hover: #ff934e;
+  --color-on-accent: #15191b;
   --color-flow: #4cc9ce;
   --color-danger: #f06a62;
+  --color-danger-bg: rgb(105 34 31 / 35%);
+  --color-danger-bg-hover: rgb(140 42 38 / 55%);
+  --color-danger-fg: #ffc0bb;
+  --color-danger-border: rgb(240 106 98 / 70%);
   --color-warning: #e8b654;
-  --color-orange: #ff8a3d;
-  --color-orange-bright: #ffab6b;
-  --color-cyan: #4cc9ce;
-  --color-red: #f06a62;
-  --color-yellow: #e8b654;
+  --color-control: #142630;
+  --color-control-hover: #1a3340;
+  --color-control-border: #314856;
+  --color-control-border-hover: #527387;
+  --color-control-fg: #d8e3e8;
+  --color-field: #09151d;
+  --color-field-border: #293f4b;
+  --color-field-border-hover: #3b596a;
+  --color-well: #0a151d;
+  --color-well-hover: #12222c;
+  --color-selected: color-mix(in srgb, var(--color-accent) 14%, transparent);
+  --shadow-accent: 0 8px 28px rgb(255 128 52 / 18%);
+  --shadow-accent-sm: 0 4px 16px rgb(255 128 52 / 16%);
+}
+
+@utility intent-primary {
+  border-color: var(--color-accent-border);
+  background-image: linear-gradient(
+    to bottom right,
+    var(--color-accent-bright),
+    var(--color-accent)
+  );
+  color: var(--color-on-accent);
+  box-shadow: var(--shadow-accent-sm);
+
+  &:hover {
+    border-color: var(--color-accent-border-hover);
+    background-image: linear-gradient(
+      to bottom right,
+      var(--color-accent-from-hover),
+      var(--color-accent-to-hover)
+    );
+  }
+}
+
+@utility intent-primary-glow {
+  box-shadow: var(--shadow-accent);
+}
+
+@utility intent-default {
+  border-color: var(--color-control-border);
+  background-color: var(--color-control);
+  color: var(--color-control-fg);
+
+  &:hover {
+    border-color: var(--color-control-border-hover);
+    background-color: var(--color-control-hover);
+  }
+}
+
+@utility intent-danger {
+  border-color: var(--color-danger-border);
+  background-color: var(--color-danger-bg);
+  color: var(--color-danger-fg);
+
+  &:hover {
+    border-color: var(--color-danger);
+    background-color: var(--color-danger-bg-hover);
+  }
+}
+
+@utility intent-quiet {
+  border-color: var(--color-control-border);
+  background-color: transparent;
+  color: var(--color-muted);
+
+  &:hover {
+    border-color: var(--color-control-border-hover);
+    background-color: var(--color-control-hover);
+  }
+}
+
+@utility rounded-control {
+  border-top-left-radius: var(--radius-lg);
+  border-top-right-radius: var(--radius-xs);
+  border-bottom-right-radius: var(--radius-lg);
+  border-bottom-left-radius: var(--radius-xs);
+}
+
+@utility rounded-panel {
+  border-top-left-radius: var(--radius-2xl);
+  border-top-right-radius: var(--radius-sm);
+  border-bottom-right-radius: var(--radius-2xl);
+  border-bottom-left-radius: var(--radius-sm);
 }
 
 @layer base {
@@ -74,7 +162,7 @@
 .legend-line-feedback {
   background: repeating-linear-gradient(
     to right,
-    var(--color-yellow) 0 5px,
+    var(--color-warning) 0 5px,
     transparent 5px 9px
   );
 }
@@ -82,7 +170,7 @@
 .legend-line-discard {
   background: repeating-linear-gradient(
     to right,
-    var(--color-red) 0 5px,
+    var(--color-danger) 0 5px,
     transparent 5px 9px
   );
 }
@@ -144,17 +232,17 @@
 }
 
 .flow-wrap .svelte-flow__edge-path {
-  stroke: var(--color-cyan);
+  stroke: var(--color-flow);
   stroke-width: 2.2;
 }
 
 .flow-wrap .factory-edge--feedback .svelte-flow__edge-path {
-  stroke: var(--color-yellow);
+  stroke: var(--color-warning);
   stroke-dasharray: 7 5;
 }
 
 .flow-wrap .factory-edge--discard .svelte-flow__edge-path {
-  stroke: var(--color-red);
+  stroke: var(--color-danger);
   stroke-dasharray: 7 5;
 }
 
@@ -254,7 +342,11 @@
 
 .history-entry-running--selected {
   background:
-    linear-gradient(#2a1810, #2a1810) padding-box,
+    linear-gradient(
+        color-mix(in srgb, var(--color-accent) 14%, #0c151c),
+        color-mix(in srgb, var(--color-accent) 14%, #0c151c)
+      )
+      padding-box,
     conic-gradient(
       from var(--history-run-angle),
       transparent 0deg,
@@ -285,6 +377,6 @@
   }
 
   .history-entry-running--selected {
-    background: #2a1810;
+    background: color-mix(in srgb, var(--color-accent) 14%, #0c151c);
   }
 }

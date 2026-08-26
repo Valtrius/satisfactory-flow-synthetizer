@@ -456,9 +456,13 @@
         />
       </div>
 
-      <div class="min-w-0">
+      <div
+        class={`min-w-0 flex flex-col gap-4 ${
+          showResultsTable || solution ? 'xl:min-h-[calc(100dvh-2rem)]' : ''
+        }`}
+      >
         <section
-          class="grid grid-cols-1 items-stretch gap-4 md:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(290px,.72fr)]"
+          class="grid shrink-0 grid-cols-1 items-stretch gap-4 md:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(290px,.72fr)]"
           aria-label="Flow inputs"
         >
           <EndpointListPanel
@@ -506,7 +510,7 @@
         {/if}
 
         {#if showSearchStage && viewJob && !showResultsTable}
-          <section class="mt-4" aria-labelledby="search-stage-title">
+          <section class="shrink-0" aria-labelledby="search-stage-title">
             <Panel class="overflow-hidden">
               <SearchTelemetry
                 {searchView}
@@ -569,14 +573,16 @@
             onNodeDragStop={graph.onNodeDragStop}
           />
         {:else if solution}
-          <section class="mt-4" aria-labelledby="result-title">
-            <SolutionSummary {solution} {elapsedLabel} />
+          <section class="flex min-h-112 flex-1 flex-col gap-4" aria-labelledby="result-title">
+            <div class="shrink-0">
+              <SolutionSummary {solution} {elapsedLabel} />
+            </div>
 
             <Panel
-              class={`overflow-hidden ${
+              class={`min-h-0 flex-1 overflow-hidden ${
                 graphFullscreen
                   ? 'fixed inset-0 z-100 flex h-dvh w-full flex-col !rounded-none !border-0 !bg-[#08141c]'
-                  : ''
+                  : 'flex flex-col'
               }`}
             >
               <TopologyGraphPanel
@@ -585,10 +591,8 @@
                 fitRevision={graphFitRevision}
                 fullscreen={graphFullscreen}
                 subtitle="Drag nodes, pan, or zoom. Dashed amber belts mark feedback."
-                class={graphFullscreen ? 'min-h-0 flex-1' : ''}
-                canvasClass={`flow-wrap w-full bg-[#08141c] ${
-                  graphFullscreen ? 'min-h-0 flex-1' : 'h-[68vh] min-h-107.5'
-                }`}
+                class="min-h-0 flex-1"
+                canvasClass="flow-wrap min-h-0 w-full flex-1 bg-[#08141c]"
                 onRotate={graph.rotate}
                 canUndo={canUndoGraph}
                 canRedo={canRedoGraph}

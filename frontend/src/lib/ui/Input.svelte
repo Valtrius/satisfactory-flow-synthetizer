@@ -18,13 +18,13 @@
   }: Props = $props();
 
   const shapes: Record<Shape, string> = {
-    default: 'rounded-tl-lg rounded-tr-xs rounded-br-lg rounded-bl-xs',
+    default: 'rounded-control',
     'attached-left': 'rounded-tl-lg rounded-bl-xs'
   };
 </script>
 
 <input
   bind:value
-  class={`h-10.5 ${compact ? 'w-11.5' : 'w-full'} border border-[#293f4b] bg-[#09151d] px-3 text-ink transition-colors hover:border-[#3b596a] focus:z-10 focus:outline-2 focus:outline-offset-3 focus:outline-accent disabled:cursor-not-allowed disabled:opacity-50 ${shapes[shape]} ${className}`}
+  class={`h-10.5 ${compact ? 'w-11.5' : 'w-full'} border border-field-border bg-field px-3 text-ink transition-colors hover:border-field-border-hover focus:z-10 focus:outline-2 focus:outline-offset-3 focus:outline-accent disabled:cursor-not-allowed disabled:opacity-50 ${shapes[shape]} ${className}`}
   {...props}
 />

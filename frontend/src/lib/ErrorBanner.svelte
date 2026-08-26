@@ -13,7 +13,7 @@
 </script>
 
 <section
-  class="my-4 flex gap-2 rounded-tl-xl rounded-tr-sm rounded-br-xl rounded-bl-sm border border-danger/50 bg-[#5c1a17]/35 px-4.5 py-3.5 text-sm text-[#ffaaa4]"
+  class="flex gap-2 rounded-tl-xl rounded-tr-sm rounded-br-xl rounded-bl-sm border border-danger/50 bg-danger-bg px-4.5 py-3.5 text-sm text-danger-fg"
   role="alert"
 >
   <strong>{title}</strong>
