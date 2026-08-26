@@ -203,6 +203,7 @@
       bind:nodes={readNodes, writeNodes}
       bind:edges={readEdges, writeEdges}
       {nodeTypes}
+      proOptions={{ hideAttribution: true }}
       fitView
       minZoom={0.1}
       maxZoom={2}
