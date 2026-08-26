@@ -497,6 +497,9 @@ fn solve_with_component_resolver_and_observer_ordered(
                             .map_err(|error| {
                             SolverError::ValidationFirewall(Box::new(error))
                         })?;
+                        if validation.link_count != accounted.accounting.link_count {
+                            continue;
+                        }
                         let witness = ProfileWitness {
                             canonical_graph_key: canonical.key,
                             graph: canonical.graph,
@@ -945,6 +948,7 @@ impl ProfileGroupRun<'_> {
                 self.problem,
                 accounted.profile,
                 self.cancel,
+                Some(accounted.accounting),
                 constructibility_cache,
             ) {
                 RootPartitionPlan::Partitions(partitions) => {
@@ -1033,6 +1037,7 @@ impl ProfileGroupRun<'_> {
                 self.resolver,
                 Arc::clone(structural_no_goods),
                 constructibility_cache,
+                Some(task.accounted.accounting),
                 &task.partition,
                 self.collect_all_witnesses,
             )
@@ -1245,21 +1250,8 @@ fn restore_and_validate(
     }
     let validation = validate_solution(caller_problem, &graph)
         .map_err(|error| SolverError::ValidationFirewall(Box::new(error)))?;
-    let structural_link_count = validation
-        .physical_link_count
-        .checked_sub(validation.discard_link_count)
-        .ok_or(SolverError::ValidationCountMismatch {
-            expected_nodes: node_count,
-            expected_links: accounting.link_count,
-            expected_physical_links: accounting.physical_link_count,
-            expected_discard_links: accounting.discard_link_count,
-            actual_nodes: validation.node_count,
-            actual_links: validation.link_count,
-            actual_physical_links: validation.physical_link_count,
-            actual_discard_links: validation.discard_link_count,
-        })?;
     if validation.node_count != node_count
-        || structural_link_count != accounting.link_count
+        || validation.link_count != accounting.link_count
         || validation.physical_link_count != accounting.physical_link_count
         || validation.discard_link_count != accounting.discard_link_count
     {
@@ -1269,7 +1261,7 @@ fn restore_and_validate(
             expected_physical_links: accounting.physical_link_count,
             expected_discard_links: accounting.discard_link_count,
             actual_nodes: validation.node_count,
-            actual_links: structural_link_count,
+            actual_links: validation.link_count,
             actual_physical_links: validation.physical_link_count,
             actual_discard_links: validation.discard_link_count,
         });
@@ -1676,13 +1668,14 @@ mod tests {
 
     #[test]
     fn equal_link_group_driver_continues_after_the_first_sat_profile() {
-        // N=3, I=O=2 has exactly two profiles in L=7: S3+2*M2 and 2*S2+M3.
-        // Mocking only fixed-profile exhaustion keeps this policy test bounded while exercising
-        // the same driver used by solve. The first profile reports SAT; the second must still run.
+        // N=3, I=O=2 has exactly two profiles in the minimum operator-L group (L=3):
+        // S3+2*M2 and 2*S2+M3. Mocking only fixed-profile exhaustion keeps this policy
+        // test bounded while exercising the same driver used by solve. The first profile
+        // reports SAT; the second must still run.
         let group = enumerate_profile_groups(3, 2, 2)
             .unwrap()
             .into_iter()
-            .find(|group| group.link_count == 7)
+            .find(|group| group.link_count == 3)
             .unwrap();
         assert_eq!(group.profiles.len(), 2);
         let first = group.profiles[0];

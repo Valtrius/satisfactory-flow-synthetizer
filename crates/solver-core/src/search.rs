@@ -34,7 +34,7 @@ use crate::{
         StructuralNoGoodStore,
     },
     problem::NormalizedProblem,
-    profile::{ProfileArithmeticError, profile_link_accounting},
+    profile::{ProfileArithmeticError, ProfileLinkAccounting, profile_link_accounting},
     propagation::{
         PropagationCheckpoint, PropagationConflict, PropagationError, PropagationOutcome,
         PropagationState,
@@ -403,6 +403,7 @@ pub(crate) fn plan_profile_root_partitions(
         problem,
         profile,
         cancel,
+        None,
         &ConstructibilityCache::default(),
     )
 }
@@ -411,6 +412,7 @@ pub(crate) fn plan_profile_root_partitions_with_cache(
     problem: &NormalizedProblem,
     profile: NodeProfile,
     cancel: &AtomicBool,
+    accounting: Option<ProfileLinkAccounting>,
     _constructibility_cache: &ConstructibilityCache,
 ) -> RootPartitionPlan {
     let initialized = initialize_profile_search(
@@ -421,6 +423,7 @@ pub(crate) fn plan_profile_root_partitions_with_cache(
         SearchFeatures::WITHOUT_COMPONENTS,
         None,
         Arc::new(StructuralNoGoodStore::default()),
+        accounting,
     );
     let InitializedSearch {
         context,
@@ -528,6 +531,7 @@ pub(crate) fn search_profile_root_partition_with_component_resolver_and_no_goods
         resolver,
         structural_no_goods,
         Arc::new(ConstructibilityCache::default()),
+        None,
         partition,
         false,
     )
@@ -542,6 +546,7 @@ pub(crate) fn search_profile_root_partition_with_caches(
     resolver: &dyn ComponentResolver,
     structural_no_goods: Arc<StructuralNoGoodStore>,
     constructibility_cache: Arc<ConstructibilityCache>,
+    accounting: Option<ProfileLinkAccounting>,
     partition: &RootPartition,
     collect_all_witnesses: bool,
 ) -> ProfileSearchResult {
@@ -553,6 +558,7 @@ pub(crate) fn search_profile_root_partition_with_caches(
         SearchFeatures::PRODUCTION,
         Some(resolver),
         structural_no_goods,
+        accounting,
     );
     let InitializedSearch {
         mut context,
@@ -803,6 +809,7 @@ fn search_profile_with_features_and_resolver(
         features,
         resolver,
         structural_no_goods,
+        None,
     );
     let InitializedSearch {
         mut context,
@@ -833,6 +840,7 @@ fn initialize_profile_search<'a>(
     features: SearchFeatures,
     resolver: Option<&'a dyn ComponentResolver>,
     structural_no_goods: Arc<StructuralNoGoodStore>,
+    expected_accounting: Option<ProfileLinkAccounting>,
 ) -> Result<InitializedSearch<'a>, Box<ProfileSearchResult>> {
     let started = Instant::now();
     let mut context = SearchContext::new_with_resolver(
@@ -859,18 +867,21 @@ fn initialize_profile_search<'a>(
             context.failed(ProfileSearchError::TerminalCountOverflow, started),
         ));
     };
-    let accounting = match profile_link_accounting(
-        profile,
-        input_count,
-        output_count,
-        &problem.surplus,
-        &problem.max_link_rate,
-    ) {
-        Ok(Some(accounting)) => accounting,
-        Ok(None) => return Err(Box::new(context.exhausted(started))),
-        Err(error) => return Err(Box::new(context.failed(error.into(), started))),
+    let accounting = match expected_accounting {
+        Some(accounting) => accounting,
+        None => match profile_link_accounting(
+            profile,
+            input_count,
+            output_count,
+            &problem.surplus,
+            &problem.max_link_rate,
+        ) {
+            Ok(Some(accounting)) => accounting,
+            Ok(None) => return Err(Box::new(context.exhausted(started))),
+            Err(error) => return Err(Box::new(context.failed(error.into(), started))),
+        },
     };
-    context.expected_link_count = accounting.link_count;
+    context.expected_link_count = expected_accounting.map(|accounting| accounting.link_count);
     context.expected_physical_link_count = accounting.physical_link_count;
     context.expected_discard_link_count = accounting.discard_link_count;
     if features.profile_lower_bounds.is_some()
@@ -932,7 +943,7 @@ enum DfsResult {
 struct SearchContext<'a> {
     problem: Problem,
     expected_node_count: u32,
-    expected_link_count: u32,
+    expected_link_count: Option<u32>,
     expected_physical_link_count: u32,
     expected_discard_link_count: u32,
     cancel: &'a AtomicBool,
@@ -997,7 +1008,7 @@ impl<'a> SearchContext<'a> {
                 max_link_rate: normalized.max_link_rate.clone(),
             },
             expected_node_count: checked_node_count(profile).unwrap_or(u32::MAX),
-            expected_link_count: 0,
+            expected_link_count: None,
             expected_physical_link_count: 0,
             expected_discard_link_count: 0,
             cancel,
@@ -1511,6 +1522,13 @@ fn search_state(
         None => state.partial_topology(),
     };
     hotspot_profile::record_snapshot(snapshot_started.elapsed());
+    if context
+        .expected_link_count
+        .is_some_and(|expected| operator_link_count(&snapshot) > expected)
+    {
+        increment(&mut context.stats.instrumentation.lower_bound_prunes);
+        return DfsResult::Exhausted(None);
+    }
     let canonical_started = Instant::now();
     let Some(state_key) = canonicalize_state_cancellable(&snapshot, context.cancel) else {
         return DfsResult::Incomplete;
@@ -1709,6 +1727,20 @@ fn search_state(
     });
     context.insert_state_status(state_key, status);
     DfsResult::Exhausted(best_key)
+}
+
+fn operator_link_count(topology: &PartialTopology) -> u32 {
+    u32::try_from(
+        topology
+            .links
+            .iter()
+            .filter(|link| {
+                matches!(link.producer, solver_api::ProducerPortRef::Node { .. })
+                    && matches!(link.consumer, solver_api::ConsumerPortRef::Node { .. })
+            })
+            .count(),
+    )
+    .unwrap_or(u32::MAX)
 }
 
 fn search_component(
@@ -2379,11 +2411,15 @@ fn evaluate_complete_state(
     if validation.cyclic_scc_count != 0 {
         increment(&mut context.stats.validated_cyclic_topologies);
     }
-    let structural_link_count = validation
-        .physical_link_count
-        .checked_sub(validation.discard_link_count);
+    if context
+        .expected_link_count
+        .is_some_and(|expected| validation.link_count != expected)
+    {
+        context.insert_state_status(state_key, StateStatus::ProvenDead);
+        hotspot_profile::record_evaluate_complete(complete_started.elapsed());
+        return DfsResult::Exhausted(None);
+    }
     if validation.node_count != context.expected_node_count
-        || structural_link_count != Some(context.expected_link_count)
         || validation.physical_link_count != context.expected_physical_link_count
         || validation.discard_link_count != context.expected_discard_link_count
     {
@@ -2391,11 +2427,11 @@ fn evaluate_complete_state(
         hotspot_profile::record_evaluate_complete(complete_started.elapsed());
         return DfsResult::Failed(ProfileSearchError::ValidationCountMismatch {
             expected_nodes: context.expected_node_count,
-            expected_links: context.expected_link_count,
+            expected_links: context.expected_link_count.unwrap_or(validation.link_count),
             expected_physical_links: context.expected_physical_link_count,
             expected_discard_links: context.expected_discard_link_count,
             actual_nodes: validation.node_count,
-            actual_links: structural_link_count.unwrap_or(validation.link_count),
+            actual_links: validation.link_count,
             actual_physical_links: validation.physical_link_count,
             actual_discard_links: validation.discard_link_count,
         });
@@ -2685,6 +2721,7 @@ mod tests {
             SearchFeatures::WITHOUT_COMPONENTS,
             None,
             Arc::new(StructuralNoGoodStore::default()),
+            None,
         )
         .unwrap();
         eprintln!(
@@ -4130,7 +4167,7 @@ mod tests {
         )
         .unwrap()
         .unwrap();
-        context.expected_link_count = accounting.link_count;
+        context.expected_link_count = Some(accounting.link_count);
         context.expected_physical_link_count = accounting.physical_link_count;
         context.expected_discard_link_count = accounting.discard_link_count;
         let mut left_propagation =
@@ -4342,7 +4379,7 @@ mod tests {
         )
         .unwrap()
         .unwrap();
-        context.expected_link_count = accounting.link_count;
+        context.expected_link_count = Some(accounting.link_count);
         context.expected_physical_link_count = accounting.physical_link_count;
         context.expected_discard_link_count = accounting.discard_link_count;
         let mut state = TopologyState::from_partial_topology(partial).unwrap();

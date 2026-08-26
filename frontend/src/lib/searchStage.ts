@@ -191,8 +191,7 @@ export function sizeSearchBody(snapshot: JobSnapshot, view: SearchStageView): st
         ? `Stopped during ${customPhaseLabel(view.phase).toLowerCase()}.`
         : `${customPhaseLabel(view.phase)}.`;
     }
-    const link =
-      view.linkCount != null ? ` · L=${view.linkCount}` : '';
+    const link = view.linkCount != null ? ` · L=${view.linkCount}` : '';
     return muted
       ? `Stopped while searching N=${view.nodeCount}${link}.`
       : `Searching N=${view.nodeCount}${link} · ${view.profilesCompleted}${

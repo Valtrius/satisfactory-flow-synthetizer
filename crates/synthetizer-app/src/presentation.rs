@@ -567,7 +567,8 @@ fn feedback_annotation(
             forward[source].push(target);
         }
     }
-    (feedback, u32::try_from(cyclic.len()).unwrap_or(u32::MAX))
+    let feedback_count = u32::try_from(feedback.len()).unwrap_or(u32::MAX);
+    (feedback, feedback_count)
 }
 
 fn path_exists(adjacency: &[Vec<usize>], start: usize, goal: usize) -> bool {
@@ -801,5 +802,68 @@ mod tests {
     fn decimal_preview_is_exact_integer_long_division() {
         assert_eq!(format_rate(&"1/3".parse().unwrap()).decimal, "0.333333");
         assert_eq!(format_rate(&"5/2".parse().unwrap()).decimal, "2.5");
+    }
+
+    #[test]
+    fn feedback_count_matches_the_number_of_annotated_feedback_belts() {
+        let splitter = NodeId(0);
+        let left_merger = NodeId(1);
+        let right_merger = NodeId(2);
+        let operators = BTreeMap::from([
+            (splitter, NodeType::Splitter3),
+            (left_merger, NodeType::Merger2),
+            (right_merger, NodeType::Merger2),
+        ]);
+        let links = vec![
+            PhysicalLink {
+                producer: ProducerPortRef::Node {
+                    node: splitter,
+                    port: 0,
+                },
+                consumer: ConsumerPortRef::Node {
+                    node: left_merger,
+                    port: 0,
+                },
+                flow: Rational::one(),
+            },
+            PhysicalLink {
+                producer: ProducerPortRef::Node {
+                    node: left_merger,
+                    port: 0,
+                },
+                consumer: ConsumerPortRef::Node {
+                    node: splitter,
+                    port: 0,
+                },
+                flow: Rational::one(),
+            },
+            PhysicalLink {
+                producer: ProducerPortRef::Node {
+                    node: splitter,
+                    port: 1,
+                },
+                consumer: ConsumerPortRef::Node {
+                    node: right_merger,
+                    port: 0,
+                },
+                flow: Rational::one(),
+            },
+            PhysicalLink {
+                producer: ProducerPortRef::Node {
+                    node: right_merger,
+                    port: 0,
+                },
+                consumer: ConsumerPortRef::Node {
+                    node: splitter,
+                    port: 1,
+                },
+                flow: Rational::one(),
+            },
+        ];
+
+        let (feedback, count) = feedback_annotation(&operators, &links);
+
+        assert_eq!(feedback.len(), 2);
+        assert_eq!(count, 2);
     }
 }

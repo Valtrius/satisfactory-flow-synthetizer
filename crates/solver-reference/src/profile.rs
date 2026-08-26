@@ -9,7 +9,7 @@ use solver_api::{
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ProfilePlan {
     pub profile: NodeProfile,
-    /// Non-discard physical-link count used to group exhaustive search obligations.
+    /// Belts whose producer and consumer are both physical operators.
     pub link_count: u32,
     pub discard_link_count: u32,
     pub physical_link_count: u32,
@@ -32,19 +32,16 @@ pub struct ProfileTopology {
 }
 
 impl ProfileTopology {
-    /// Returns the non-discard physical-link search-group count.
-    ///
-    /// # Panics
-    ///
-    /// Panics if a manually constructed topology claims more discard links
-    /// than its physical `links` vector contains. The exhaustive enumerator
-    /// always constructs this invariant.
+    /// Returns the operator-to-operator belt count.
     #[must_use]
     pub fn link_count(&self) -> usize {
         self.links
-            .len()
-            .checked_sub(self.discard_link_count as usize)
-            .expect("discard count is part of the physical link set")
+            .iter()
+            .filter(|(producer, consumer)| {
+                matches!(producer, ProducerPortRef::Node { .. })
+                    && matches!(consumer, ConsumerPortRef::Node { .. })
+            })
+            .count()
     }
 
     /// Returns the total physical link count, including discard lines.
@@ -78,11 +75,13 @@ pub fn enumerate_profile_plans(
                     merger2,
                     merger3: merger_total - merger2,
                 };
-                if let Some(plan) =
-                    profile_plan(profile, input_count, output_count, surplus, max_link_rate)
-                {
-                    plans.push(plan);
-                }
+                plans.extend(profile_plans(
+                    profile,
+                    input_count,
+                    output_count,
+                    surplus,
+                    max_link_rate,
+                ));
             }
         }
     }
@@ -100,42 +99,71 @@ pub fn enumerate_profiles(
     input_count: u32,
     output_count: u32,
 ) -> Vec<NodeProfile> {
-    enumerate_profile_plans(
+    let mut profiles = Vec::new();
+    for plan in enumerate_profile_plans(
         node_count,
         input_count,
         output_count,
         &Rational::zero(),
         &Rational::one(),
     )
-    .into_iter()
-    .map(|plan| plan.profile)
-    .collect()
+    {
+        if !profiles.contains(&plan.profile) {
+            profiles.push(plan.profile);
+        }
+    }
+    profiles
 }
 
-fn profile_plan(
+fn profile_plans(
     profile: NodeProfile,
     input_count: u32,
     output_count: u32,
     surplus: &Rational,
     max_link_rate: &Rational,
-) -> Option<ProfilePlan> {
-    let physical = u64::from(input_count).checked_add(producer_port_count(profile))?;
-    let modeled = u64::from(output_count).checked_add(consumer_port_count(profile))?;
+) -> Vec<ProfilePlan> {
+    let Some(physical) = u64::from(input_count).checked_add(producer_port_count(profile)) else {
+        return Vec::new();
+    };
+    let Some(modeled) = u64::from(output_count).checked_add(consumer_port_count(profile)) else {
+        return Vec::new();
+    };
     let discard = if surplus.is_zero() {
-        (physical == modeled).then_some(0)?
+        if physical != modeled {
+            return Vec::new();
+        }
+        0
     } else {
-        let discard = physical.checked_sub(modeled)?;
+        let Some(discard) = physical.checked_sub(modeled) else {
+            return Vec::new();
+        };
         if discard == 0 || surplus > &(max_link_rate * &Rational::from(discard)) {
-            return None;
+            return Vec::new();
         }
         discard
     };
-    Some(ProfilePlan {
-        profile,
-        link_count: u32::try_from(modeled).ok()?,
-        discard_link_count: u32::try_from(discard).ok()?,
-        physical_link_count: u32::try_from(physical).ok()?,
-    })
+    let node_producers = producer_port_count(profile);
+    let node_consumers = consumer_port_count(profile);
+    let external_consumers = u64::from(output_count) + discard;
+    let minimum = node_consumers
+        .saturating_sub(u64::from(input_count))
+        .max(node_producers.saturating_sub(external_consumers));
+    let maximum = node_producers.min(node_consumers);
+    let (Ok(discard_link_count), Ok(physical_link_count)) =
+        (u32::try_from(discard), u32::try_from(physical))
+    else {
+        return Vec::new();
+    };
+    (minimum..=maximum)
+        .filter_map(|link_count| {
+            Some(ProfilePlan {
+                profile,
+                link_count: u32::try_from(link_count).ok()?,
+                discard_link_count,
+                physical_link_count,
+            })
+        })
+        .collect()
 }
 
 /// Enumerates every legal explicit port bijection for one labeled profile.
@@ -260,11 +288,6 @@ fn profile_has_port_balance(
 ) -> bool {
     u64::from(input_count) + producer_port_count(profile)
         == u64::from(output_count) + consumer_port_count(profile) + u64::from(discard_link_count)
-}
-
-#[cfg(test)]
-fn profile_link_count(profile: NodeProfile, input_count: u32) -> u64 {
-    u64::from(input_count) + producer_port_count(profile)
 }
 
 fn producer_port_count(profile: NodeProfile) -> u64 {
@@ -404,11 +427,11 @@ mod tests {
         let profiles = enumerate_profiles(3, 1, 2);
         assert_eq!(profiles, vec![profile(2, 0, 1, 0), profile(1, 1, 0, 1)]);
 
-        let link_counts = profiles
-            .iter()
-            .map(|candidate| profile_link_count(*candidate, 1))
-            .collect::<Vec<_>>();
-        assert_eq!(link_counts, vec![6, 7]);
+        let plans = enumerate_profile_plans(3, 1, 2, &Rational::zero(), &Rational::one());
+        assert_eq!(
+            plans.iter().map(|plan| plan.link_count).collect::<Vec<_>>(),
+            vec![3, 4, 4, 5]
+        );
         for candidate in profiles {
             assert_eq!(
                 1 + producer_port_count(candidate),
@@ -531,24 +554,38 @@ mod tests {
         let plans = enumerate_profile_plans(1, 1, 1, &"3/2".parse().unwrap(), &Rational::one());
         assert_eq!(
             plans,
-            vec![ProfilePlan {
-                profile: profile(0, 1, 0, 0),
-                link_count: 2,
-                discard_link_count: 2,
-                physical_link_count: 4,
-            }]
+            vec![
+                ProfilePlan {
+                    profile: profile(0, 1, 0, 0),
+                    link_count: 0,
+                    discard_link_count: 2,
+                    physical_link_count: 4,
+                },
+                ProfilePlan {
+                    profile: profile(0, 1, 0, 0),
+                    link_count: 1,
+                    discard_link_count: 2,
+                    physical_link_count: 4,
+                },
+            ]
         );
 
         let equal_link_plans =
             enumerate_profile_plans(1, 1, 1, &"1/2".parse().unwrap(), &Rational::one());
-        assert_eq!(equal_link_plans.len(), 2);
-        assert!(equal_link_plans.iter().all(|plan| plan.link_count == 2));
+        assert_eq!(equal_link_plans.len(), 4);
+        assert_eq!(
+            equal_link_plans
+                .iter()
+                .map(|plan| plan.link_count)
+                .collect::<Vec<_>>(),
+            vec![0, 0, 1, 1]
+        );
         let mut discard_counts = equal_link_plans
             .iter()
             .map(|plan| plan.discard_link_count)
             .collect::<Vec<_>>();
         discard_counts.sort_unstable();
-        assert_eq!(discard_counts, vec![1, 2]);
+        assert_eq!(discard_counts, vec![1, 1, 2, 2]);
     }
 
     #[test]
@@ -556,7 +593,7 @@ mod tests {
         let topologies = collect_discard_topologies(NodeProfile::default(), 2, 1, 1);
         assert_eq!(topologies.len(), 2);
         for topology in topologies {
-            assert_eq!(topology.link_count(), 1);
+            assert_eq!(topology.link_count(), 0);
             assert_eq!(topology.physical_link_count(), 2);
             assert_eq!(topology.discard_link_count, 1);
             assert_eq!(

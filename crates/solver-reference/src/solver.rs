@@ -295,6 +295,9 @@ fn evaluate_topology(
     plan: ProfilePlan,
     seen: &mut BTreeSet<solver_api::CanonicalGraphKey>,
 ) -> Result<Option<BestKnownSolution>, ReferenceError> {
+    if topology.link_count() != plan.link_count as usize {
+        return Ok(None);
+    }
     let placeholder = PhysicalGraph {
         nodes: topology.nodes,
         links: topology
@@ -326,21 +329,8 @@ fn evaluate_topology(
     let validation = validate_solution(caller_problem, &caller_graph)
         .map_err(|error| ReferenceError::ValidationFirewall(Box::new(error)))?;
     let node_count = plan.profile.node_count();
-    let structural_link_count = validation
-        .physical_link_count
-        .checked_sub(validation.discard_link_count)
-        .ok_or(ReferenceError::ValidationCountMismatch {
-            expected_nodes: node_count,
-            expected_links: plan.link_count,
-            expected_physical_links: plan.physical_link_count,
-            expected_discard_links: plan.discard_link_count,
-            actual_nodes: validation.node_count,
-            actual_links: validation.link_count,
-            actual_physical_links: validation.physical_link_count,
-            actual_discard_links: validation.discard_link_count,
-        })?;
     if validation.node_count != node_count
-        || structural_link_count != plan.link_count
+        || validation.link_count != plan.link_count
         || validation.physical_link_count != plan.physical_link_count
         || validation.discard_link_count != plan.discard_link_count
     {
@@ -350,7 +340,7 @@ fn evaluate_topology(
             expected_physical_links: plan.physical_link_count,
             expected_discard_links: plan.discard_link_count,
             actual_nodes: validation.node_count,
-            actual_links: structural_link_count,
+            actual_links: validation.link_count,
             actual_physical_links: validation.physical_link_count,
             actual_discard_links: validation.discard_link_count,
         });
