@@ -417,6 +417,7 @@ pub(crate) fn search_profile_root_partition(
     accounting: Option<ProfileLinkAccounting>,
     partition: &RootPartition,
     collect_all_witnesses: bool,
+    progress: Option<&(dyn Fn(&SearchInstrumentation) + Sync)>,
 ) -> ProfileSearchResult {
     let initialized = initialize_profile_search(
         problem,
@@ -435,6 +436,7 @@ pub(crate) fn search_profile_root_partition(
         Err(result) => return *result,
     };
     context.collect_all_witnesses = collect_all_witnesses;
+    context.progress = progress;
 
     let result = match partition.first_decision {
         None => {
@@ -709,6 +711,8 @@ struct SearchContext<'a> {
     collect_all_witnesses: bool,
     stats: ProfileSearchStats,
     features: SearchFeatures,
+    progress: Option<&'a (dyn Fn(&SearchInstrumentation) + Sync)>,
+    last_progress_at: Option<Instant>,
 }
 
 impl<'a> SearchContext<'a> {
@@ -742,6 +746,19 @@ impl<'a> SearchContext<'a> {
             collect_all_witnesses: false,
             stats: ProfileSearchStats::default(),
             features,
+            progress: None,
+            last_progress_at: None,
+        }
+    }
+
+    fn publish_progress(&mut self) {
+        if let Some(progress) = self.progress
+            && self
+                .last_progress_at
+                .is_none_or(|last| last.elapsed() >= Duration::from_millis(50))
+        {
+            progress(&self.stats.instrumentation);
+            self.last_progress_at = Some(Instant::now());
         }
     }
 
@@ -750,10 +767,12 @@ impl<'a> SearchContext<'a> {
             &mut self.stats.instrumentation.canonicalization_time_ns,
             elapsed,
         );
+        self.publish_progress();
     }
 
     fn record_algebra(&mut self, elapsed: Duration) {
         add_duration_ns(&mut self.stats.instrumentation.algebra_time_ns, elapsed);
+        self.publish_progress();
     }
 
     fn record_propagation_prune(&mut self, conflict: &PropagationConflict) {
@@ -871,6 +890,7 @@ fn search_state(
     propagation: &mut Option<PropagationState>,
     context: &mut SearchContext<'_>,
 ) -> DfsResult {
+    context.publish_progress();
     if context.cancel.load(Ordering::Relaxed) {
         return DfsResult::Incomplete;
     }
@@ -968,6 +988,7 @@ fn search_state(
             return DfsResult::Incomplete;
         }
         increment(&mut context.stats.instrumentation.raw_structural_decisions);
+        context.publish_progress();
         match search_decision(state, propagation, context, decision) {
             DfsResult::Exhausted(child_key) => retain_smallest_key(&mut best_key, child_key),
             DfsResult::Incomplete => {
@@ -1737,7 +1758,7 @@ mod tests {
                     for index in assigned {
                         let partition = &partitions[index];
                         let result = search_profile_root_partition(
-                            problem, profile, cancel, None, partition, false,
+                            problem, profile, cancel, None, partition, false, None,
                         );
                         let witness = match result {
                             ProfileSearchResult::Exhausted { best_witness, .. } => best_witness,

@@ -1,6 +1,6 @@
 <script lang="ts">
   import ChevronDown from '@lucide/svelte/icons/chevron-down';
-  import { diagnosticProgress, diagnosticText, type SearchStageView } from './searchStage';
+  import { diagnosticProgress, diagnosticText, formatTelemetryNumber, type SearchStageView } from './searchStage';
   import Button from './ui/Button.svelte';
 
   type Props = {
@@ -67,7 +67,7 @@
   <div class="flex shrink-0 items-center gap-3">
     {#if collapsible && showFound && !detailsVisible}
       <span class="whitespace-nowrap text-sm text-muted tabular-nums">
-        <strong class="text-[#dfe9ed]">{foundCount}</strong> found
+        <strong class="text-[#dfe9ed]">{formatTelemetryNumber(foundCount)}</strong> found
       </span>
     {/if}
     <span class="whitespace-nowrap text-sm text-muted tabular-nums">{elapsedLabel}</span>
@@ -107,13 +107,13 @@
           { label: 'Best L', value: searchView.bestLinkCount }
         ] as metric}
           <div class="min-w-18 rounded-lg border border-[#253a45] bg-[#050f15]/55 px-2.5 py-2">
-            <strong class="block text-lg text-[#dfe9ed] tabular-nums">{metric.value ?? '—'}</strong>
+            <strong class="block text-lg text-[#dfe9ed] tabular-nums">{formatTelemetryNumber(metric.value)}</strong>
             <span class="text-[0.7rem] text-dim">{metric.label}</span>
           </div>
         {/each}
         {#if showFound}
           <div class="min-w-18 rounded-lg border border-[#253a45] bg-[#050f15]/55 px-2.5 py-2">
-            <strong class="block text-lg text-[#dfe9ed] tabular-nums">{foundCount}</strong>
+            <strong class="block text-lg text-[#dfe9ed] tabular-nums">{formatTelemetryNumber(foundCount)}</strong>
             <span class="text-[0.7rem] text-dim">found</span>
           </div>
         {/if}
@@ -128,7 +128,7 @@
         <div class="mb-3">
           <div class="mb-1.5 flex justify-between gap-3 text-xs text-muted">
             <span>{profiles.label}</span>
-            <strong class="text-[#dfe9ed] tabular-nums">{profiles.closed} / {profiles.total}</strong>
+            <strong class="text-[#dfe9ed] tabular-nums">{formatTelemetryNumber(profiles.closed)} / {formatTelemetryNumber(profiles.total)}</strong>
           </div>
           <div
             role="progressbar"

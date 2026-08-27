@@ -3,9 +3,13 @@
 use std::{
     collections::BTreeMap,
     panic::{AssertUnwindSafe, catch_unwind},
-    sync::atomic::{AtomicBool, AtomicUsize, Ordering},
+    sync::{
+        Mutex,
+        atomic::{AtomicBool, AtomicUsize, Ordering},
+        mpsc,
+    },
     thread,
-    time::Instant,
+    time::{Duration, Instant},
 };
 
 #[cfg(test)]
@@ -41,6 +45,7 @@ use crate::{
 };
 
 const PROOF_VERSION: u32 = 1;
+const PROGRESS_INTERVAL: Duration = Duration::from_millis(250);
 
 /// Finite controls for production search.
 ///
@@ -437,7 +442,31 @@ fn solve_internal(
                 #[cfg(test)]
                 panic_next_root_worker,
             }
-            .run(group.profiles, &mut proof_ledger)?;
+            .run(group.profiles, &mut proof_ledger, &|live| {
+                let mut snapshot = instrumentation.clone();
+                merge_instrumentation(&mut snapshot, live);
+                emit_progress(
+                    observer,
+                    SolvePhase::Searching,
+                    Some(ProofObligation {
+                        node_count,
+                        link_count: Some(group.link_count),
+                        profile: None,
+                        root_partition: None,
+                    }),
+                    0,
+                    Some(total_profiles),
+                    &snapshot,
+                    solve_started,
+                );
+            })?;
+            // Live counters already include unfinished roots. Fold all final counters
+            // before replaying ordered proof events so telemetry never moves backwards.
+            for task in &profile_tasks {
+                for root in &task.roots {
+                    merge_instrumentation(&mut instrumentation, &root.instrumentation);
+                }
+            }
             let mut group_best = None;
             let mut completed_profiles = 0_u32;
             let mut stopped = None;
@@ -445,7 +474,6 @@ fn solve_internal(
                 let accounted = task.accounted;
                 let profile = accounted.profile;
                 for root in &task.roots {
-                    merge_instrumentation(&mut instrumentation, &root.instrumentation);
                     if root.exhausted {
                         increment_proof(&mut proof.root_partitions_exhausted)?;
                     }
@@ -760,12 +788,14 @@ struct ProfileGroupRun<'a> {
 /// Each fixed profile is a complete, independent proof obligation. Running those
 /// obligations concurrently therefore changes neither the searched quotient nor
 /// the lexicographic proof. Results are sorted back into canonical profile order
-/// before proof counters, incumbents, or progress events become observable.
+/// before proof counters or incumbents become observable. Advisory instrumentation
+/// is sampled independently while workers are running.
 impl ProfileGroupRun<'_> {
     fn run(
         &self,
         profiles: Vec<AccountedProfile>,
         ledger: &mut ProofLedger,
+        progress: &(dyn Fn(&SearchInstrumentation) + Sync),
     ) -> Result<Vec<ProfileTaskOutput>, SolverError> {
         ledger.register_link_group(
             self.node_count,
@@ -773,7 +803,17 @@ impl ProfileGroupRun<'_> {
             profiles.iter().map(|accounted| accounted.profile),
         )?;
         let (root_tasks, mut root_outputs) = self.plan_roots(&profiles, ledger)?;
-        root_outputs.extend(self.execute_roots(&root_tasks));
+        let mut immediate = SearchInstrumentation::default();
+        for output in &root_outputs {
+            if let RootTaskResult::Search(result) = &output.result {
+                merge_instrumentation(&mut immediate, &profile_result_metadata(result).1);
+            }
+        }
+        root_outputs.extend(self.execute_roots(&root_tasks, &|live| {
+            let mut snapshot = immediate.clone();
+            merge_instrumentation(&mut snapshot, live);
+            progress(&snapshot);
+        }));
         root_outputs.sort_unstable_by_key(|task| (task.profile_index, task.partition));
         let mut completions = self.record_roots(&profiles, root_outputs, ledger)?;
         self.fold_profiles(profiles, &mut completions, ledger)
@@ -834,15 +874,44 @@ impl ProfileGroupRun<'_> {
         Ok((tasks, immediate))
     }
 
-    fn execute_roots(&self, tasks: &[RootTask]) -> Vec<RootTaskOutput> {
+    fn execute_roots(
+        &self,
+        tasks: &[RootTask],
+        progress: &(dyn Fn(&SearchInstrumentation) + Sync),
+    ) -> Vec<RootTaskOutput> {
         let worker_count = self.requested_workers.min(tasks.len());
+        if worker_count == 0 {
+            return Vec::new();
+        }
         let next_task = AtomicUsize::new(0);
+        // One bounded slot per worker, not a queue of every search-state update.
+        let live = (0..worker_count)
+            .map(|_| Mutex::new(SearchInstrumentation::default()))
+            .collect::<Vec<_>>();
         thread::scope(|scope| {
+            let (stop, stopped) = mpsc::channel::<()>();
+            let live = &live;
+            let reporter = scope.spawn(move || {
+                while matches!(
+                    stopped.recv_timeout(PROGRESS_INTERVAL),
+                    Err(mpsc::RecvTimeoutError::Timeout)
+                ) {
+                    let mut snapshot = SearchInstrumentation::default();
+                    for worker in live {
+                        let worker = worker
+                            .lock()
+                            .unwrap_or_else(std::sync::PoisonError::into_inner);
+                        merge_instrumentation(&mut snapshot, &worker);
+                    }
+                    progress(&snapshot);
+                }
+            });
             let mut handles = Vec::with_capacity(worker_count);
-            for _ in 0..worker_count {
+            for telemetry in live {
                 let next_task = &next_task;
                 let handle = scope.spawn(move || {
                     let mut completed = Vec::new();
+                    let mut totals = SearchInstrumentation::default();
                     loop {
                         // Stop claiming new root obligations once cancel is set.
                         // In-flight searches still observe the same flag.
@@ -853,17 +922,39 @@ impl ProfileGroupRun<'_> {
                         let Some(task) = tasks.get(index) else {
                             break;
                         };
-                        completed.push(self.execute_root(task));
+                        let output = self.execute_root(task, &|current| {
+                            let mut snapshot = totals.clone();
+                            merge_instrumentation(&mut snapshot, current);
+                            *telemetry
+                                .lock()
+                                .unwrap_or_else(std::sync::PoisonError::into_inner) = snapshot;
+                        });
+                        if let RootTaskResult::Search(result) = &output.result {
+                            merge_instrumentation(&mut totals, &profile_result_metadata(result).1);
+                        }
+                        *telemetry
+                            .lock()
+                            .unwrap_or_else(std::sync::PoisonError::into_inner) = totals.clone();
+                        completed.push(output);
                     }
                     completed
                 });
                 handles.push(handle);
             }
-            Self::join_root_workers(handles, tasks, self.cancel)
+            let completed = Self::join_root_workers(handles, tasks, self.cancel);
+            // Disconnect wakes the timer immediately, including on unwinding. Join
+            // before the caller emits final progress, so no stale heartbeat can follow it.
+            drop(stop);
+            let _ = reporter.join();
+            completed
         })
     }
 
-    fn execute_root(&self, task: &RootTask) -> RootTaskOutput {
+    fn execute_root(
+        &self,
+        task: &RootTask,
+        progress: &(dyn Fn(&SearchInstrumentation) + Sync),
+    ) -> RootTaskOutput {
         let partition = task.partition.id().ordinal();
         let result = catch_unwind(AssertUnwindSafe(|| {
             #[cfg(test)]
@@ -880,6 +971,7 @@ impl ProfileGroupRun<'_> {
                 Some(task.accounted.accounting),
                 &task.partition,
                 self.collect_all_witnesses,
+                Some(progress),
             )
         }))
         .map_or(RootTaskResult::WorkerPanicked, |result| {
@@ -1315,6 +1407,9 @@ fn progress_snapshot(
             .as_ref()
             .and_then(|o| o.link_count)
             .map(LinkConstraint::Exact),
+        // The outer loop starts at the certified bound and advances N only after
+        // the ledger proves every smaller N UNSAT. Current N is therefore also
+        // the strengthened lower bound, not just an arbitrary worker target.
         node_lower_bound: obligation.as_ref().map(|o| o.node_count),
         best_node_count: None,
         best_link_count: None,
@@ -1337,8 +1432,6 @@ fn increment_proof(counter: &mut u64) -> Result<(), SolverError> {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Mutex;
-
     use solver_api::{GlobalUnsatProof, GlobalUnsatReason, NodeProfile, Rational};
     use solver_reference::{ReferenceOptions, solve_reference};
 
@@ -1637,6 +1730,143 @@ mod tests {
     }
 
     #[test]
+    fn progress_bound_strengthens_only_after_smaller_nodes_are_proved_unsat() {
+        let problem = problem(&[2, 3], &[1, 4], 5);
+        let cancel = AtomicBool::new(false);
+        let events = Mutex::new(Vec::new());
+        let result = solve_with_observer(&problem, &SolveOptions::default(), &cancel, &|event| {
+            if let SolverEvent::Progress(progress) = event {
+                if progress.node_count == Some(2) {
+                    cancel.store(true, Ordering::Relaxed);
+                }
+                events.lock().unwrap().push(progress);
+            }
+        })
+        .unwrap();
+        let SolveResult::Incomplete(stopped) = result else {
+            panic!("must stop at the strengthened bound before proving SAT");
+        };
+        assert_eq!(stopped.reason, IncompleteReason::Cancelled);
+        assert_eq!(stopped.proof.initial_node_lower_bound, 0);
+        assert_eq!(stopped.proof.node_counts_exhausted_through, Some(1));
+        let events = events.into_inner().unwrap();
+        assert!(events.iter().any(|p| p.node_lower_bound == Some(0)));
+        let advanced = events.iter().find(|p| p.node_count == Some(2)).unwrap();
+        assert_eq!(advanced.node_lower_bound, Some(2));
+    }
+
+    #[test]
+    fn periodic_progress_reports_live_work_before_profiles_close() {
+        for worker_count in [1, 4] {
+            // This cyclic case cannot finish through the optional acyclic witness path.
+            let problem = problem(&[65], &[40, 25], 1_200);
+            let cancel = AtomicBool::new(false);
+            let events = Mutex::new(Vec::new());
+            let heartbeats = AtomicUsize::new(0);
+            let result = thread::scope(|scope| {
+                // Bound the test even if a regression prevents all heartbeats.
+                let (done, finished) = mpsc::channel::<()>();
+                let watchdog_cancel = &cancel;
+                scope.spawn(move || {
+                    if finished.recv_timeout(Duration::from_secs(10)).is_err() {
+                        watchdog_cancel.store(true, Ordering::Relaxed);
+                    }
+                });
+                let result = solve_with_observer(
+                    &problem,
+                    &SolveOptions {
+                        max_nodes: Some(6),
+                        worker_count,
+                    },
+                    &cancel,
+                    &|event| {
+                        if let SolverEvent::Progress(progress) = event {
+                            let live = progress.phase == SolvePhase::Searching
+                                && !progress.custom.iter().any(|d| d.name == "custom.profile")
+                                && diagnostic_counter(&progress, "custom.raw_structural_decisions")
+                                    > 0;
+                            if live && heartbeats.fetch_add(1, Ordering::Relaxed) >= 2 {
+                                cancel.store(true, Ordering::Relaxed);
+                            }
+                            events.lock().unwrap().push(progress);
+                        }
+                    },
+                );
+                let _ = done.send(());
+                result
+            })
+            .unwrap();
+            assert!(matches!(result, SolveResult::Incomplete(ref stopped)
+                if stopped.reason == IncompleteReason::Cancelled));
+            assert!(
+                heartbeats.load(Ordering::Relaxed) >= 3,
+                "no live timer updates: {:?}",
+                events
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .map(|p| (
+                        p.phase,
+                        p.elapsed_ms,
+                        diagnostic_counter(p, "custom.raw_structural_decisions"),
+                        diagnostic_counter(p, "custom.canonical_states_retained"),
+                    ))
+                    .collect::<Vec<_>>()
+            );
+            let events = events.into_inner().unwrap();
+            let live = events
+                .iter()
+                .filter(|progress| {
+                    progress.phase == SolvePhase::Searching
+                        && !progress.custom.iter().any(|d| d.name == "custom.profile")
+                        && diagnostic_counter(progress, "custom.raw_structural_decisions") > 0
+                })
+                .collect::<Vec<_>>();
+            assert!(
+                live.iter()
+                    .all(|p| diagnostic_counter(p, "custom.completed_profiles") == 0)
+            );
+            assert!(
+                live.windows(2)
+                    .all(|pair| pair[1].elapsed_ms > pair[0].elapsed_ms)
+            );
+            for pair in events.windows(2) {
+                assert!(pair[1].elapsed_ms >= pair[0].elapsed_ms);
+                for name in [
+                    "custom.raw_structural_decisions",
+                    "custom.canonical_states_retained",
+                    "custom.canonicalization_time_ns",
+                    "custom.algebra_time_ns",
+                    "custom.peak_memory_bytes",
+                ] {
+                    assert!(
+                        diagnostic_counter(&pair[1], name) >= diagnostic_counter(&pair[0], name),
+                        "{name} regressed with {worker_count} workers"
+                    );
+                }
+            }
+            // Ordered final root progress follows the heartbeats. The reporter
+            // must be joined before it can overwrite any of those final events.
+            assert!(
+                events
+                    .last()
+                    .unwrap()
+                    .custom
+                    .iter()
+                    .any(|d| d.name == "custom.profile")
+            );
+        }
+    }
+
+    fn diagnostic_counter(progress: &SolverProgress, name: &str) -> u64 {
+        let diagnostic = progress.custom.iter().find(|d| d.name == name).unwrap();
+        let solver_api::DiagnosticValue::Integer(value) = &diagnostic.value else {
+            panic!("expected an integer diagnostic");
+        };
+        value.parse().unwrap()
+    }
+
+    #[test]
     fn source_grain_lower_bound_skips_directly_to_seven_nodes() {
         let problem = problem(&[216], &[66, 150], 1_200);
         let cancel = AtomicBool::new(false);
@@ -1839,7 +2069,7 @@ mod tests {
     }
 
     #[test]
-    fn progress_and_incumbents_are_emitted_only_from_the_deterministic_coordinator() {
+    fn progress_identifies_root_obligations_and_incumbents_are_validated() {
         let problem = problem(&[6], &[6], 6);
         let events = Mutex::new(Vec::new());
         let result = solve_with_observer(

@@ -31,7 +31,14 @@ export function formatElapsed(milliseconds: number): string {
 }
 
 export function nodeCountLabel(count: number): string {
-  return `${count} ${count === 1 ? 'node' : 'nodes'}`;
+  return `${formatTelemetryNumber(count)} ${count === 1 ? 'node' : 'nodes'}`;
+}
+
+/** Group integer strings directly so u64 diagnostics never lose precision. */
+export function formatTelemetryNumber(value: number | string | null): string {
+  if (value == null) return '—';
+  const text = String(value);
+  return /^-?\d+$/.test(text) ? text.replace(/\B(?=(\d{3})+(?!\d))/g, "'") : text;
 }
 
 function phaseLabel(phase: string | null): string {
@@ -63,7 +70,12 @@ export function searchStageView(progress: SolverProgress | null): SearchStageVie
 }
 
 export function diagnosticText(entry: Diagnostic): string {
-  return `${String(entry.value.value)}${entry.unit ? ` ${entry.unit}` : ''}`;
+  const value = entry.value.type === 'integer'
+    ? formatTelemetryNumber(entry.value.value)
+    : entry.value.type === 'rate'
+      ? entry.value.value.split('/').map(formatTelemetryNumber).join('/')
+      : String(entry.value.value);
+  return `${value}${entry.unit ? ` ${entry.unit}` : ''}`;
 }
 
 /** A local profile count, never an estimate of overall solve completion. */

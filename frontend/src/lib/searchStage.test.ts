@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Diagnostic, JobSnapshot, SolverProgress } from '../types';
-import { diagnosticProgress, diagnosticText, formatElapsed, nodeCountLabel, ruledOutRangeLabel, searchHeadline, searchStageView, searchSubline, sizeSearchBody } from './searchStage';
+import { diagnosticProgress, diagnosticText, formatElapsed, formatTelemetryNumber, nodeCountLabel, ruledOutRangeLabel, searchHeadline, searchStageView, searchSubline, sizeSearchBody } from './searchStage';
 
 function progress(part: Partial<SolverProgress> = {}): SolverProgress {
   return { phase: 'searching', elapsedMs: 10, nodeCount: null, linkConstraint: null, nodeLowerBound: null, bestNodeCount: null, bestLinkCount: null, solutionsFound: 0, custom: [], ...part };
@@ -33,8 +33,17 @@ describe('shared search progress', () => {
     expect(searchStageView(progress()).linkCount).toBeNull();
   });
   it('retains integer precision and displays unknown diagnostics', () => {
-    expect(diagnosticText({ name: 'future.counter', label: 'Counter', value: { type: 'integer', value: '18446744073709551615' }, unit: 'items' })).toBe('18446744073709551615 items');
+    expect(diagnosticText({ name: 'future.counter', label: 'Counter', value: { type: 'integer', value: '18446744073709551615' }, unit: 'items' })).toBe("18'446'744'073'709'551'615 items");
     expect(diagnosticText({ name: 'future.flag', label: 'Flag', value: { type: 'boolean', value: false }, unit: null })).toBe('false');
+    expect(diagnosticText({ name: 'future.text', label: 'Text', value: { type: 'text', value: '123456' }, unit: null })).toBe('123456');
+    expect(diagnosticText({ name: 'future.rate', label: 'Rate', value: { type: 'rate', value: '12345/1000' }, unit: 'items/min' })).toBe("12'345/1'000 items/min");
+  });
+  it('groups telemetry integers with apostrophes', () => {
+    expect(formatTelemetryNumber(0)).toBe('0');
+    expect(formatTelemetryNumber(999)).toBe('999');
+    expect(formatTelemetryNumber(1000)).toBe("1'000");
+    expect(formatTelemetryNumber(-1234567)).toBe("-1'234'567");
+    expect(formatTelemetryNumber(null)).toBe('—');
   });
   it('describes only proved node bounds', () => {
     expect(ruledOutRangeLabel(searchStageView(progress({ nodeLowerBound: 6 })))).toBe('0–5');

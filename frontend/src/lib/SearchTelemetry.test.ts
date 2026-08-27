@@ -24,6 +24,22 @@ function renderTelemetry(overrides: Partial<ComponentProps<typeof SearchTelemetr
 }
 
 describe('SearchTelemetry', () => {
+  it('groups metric cards, profile counts, diagnostics, and collapsed found counts', () => {
+    const searchView = {
+      ...searchStageView(null),
+      lowerBound: 1234,
+      nodeCount: 5678,
+      custom: ['custom.completed_profiles', 'custom.total_profiles'].map((name, index) => ({
+        name, label: name, value: { type: 'integer' as const, value: index ? '20000' : '10000' }, unit: null
+      }))
+    };
+    const html = renderTelemetry({ searchView, foundCount: 12345, detailsExpanded: true });
+    for (const formatted of ["1'234", "5'678", "12'345", "10'000 / 20'000"]) {
+      expect(html).toContain(formatted);
+    }
+    expect(renderTelemetry({ foundCount: 12345 })).toContain("12'345");
+  });
+
   it.each([true, false])('defaults to collapsed with busy=%s, keeping the search summary visible', (busy) => {
     const html = renderTelemetry({ busy });
 
