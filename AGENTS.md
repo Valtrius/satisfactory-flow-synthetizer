@@ -1,0 +1,1 @@
+- Use conventional commits for commit messages and pull requests titles.
