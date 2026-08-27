@@ -148,10 +148,8 @@ pub fn profile_link_accountings(
         .checked_add(consumer_port_count(profile)?)
         .ok_or(ProfileArithmeticError::LinkCountOverflow)?;
 
-    if surplus.is_zero() {
-        if physical_link_count != link_count {
-            return Ok(Vec::new());
-        }
+    if surplus.is_zero() && physical_link_count != link_count {
+        return Ok(Vec::new());
     }
     let Some(discard_link_count) = physical_link_count.checked_sub(link_count) else {
         return Ok(Vec::new());
@@ -183,6 +181,11 @@ pub fn profile_link_accountings(
 /// Returns the smallest operator-link obligation admitted by one fixed profile.
 ///
 /// Call [`profile_link_accountings`] when every exact `L` obligation is required.
+///
+/// # Errors
+///
+/// Returns [`ProfileArithmeticError`] if a public `u32` physical count cannot represent an exact
+/// derived count.
 pub fn profile_link_accounting(
     profile: NodeProfile,
     input_count: u32,

@@ -1,7 +1,7 @@
 //! Exhaustive outer-solver differential coverage through two physical nodes.
 //!
 //! The reference solver deliberately shares none of the production search,
-//! propagation, SCC, memoization, component, lower-bound, or pruning machinery.
+//! propagation, SCC, memoization, lower-bound, or pruning machinery.
 //! Comparing complete public outcomes here therefore covers the outer
 //! lexicographic driver as well as every fixed profile it must exhaust before
 //! returning.  The matrix is finite and exhaustive over all positive ordered

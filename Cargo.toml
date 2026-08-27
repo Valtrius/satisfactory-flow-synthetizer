@@ -3,7 +3,6 @@ resolver = "3"
 members = [
     "crates/solver-api",
     "crates/solver-core",
-    "crates/solver-db",
     "crates/solver-reference",
     "crates/solver-z3",
     "crates/solver-validation",

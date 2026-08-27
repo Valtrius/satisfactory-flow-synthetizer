@@ -5,20 +5,14 @@ mod layout_identity;
 
 use std::{
     collections::HashMap,
-    fs,
     sync::{
-        Arc, Condvar, Mutex, RwLock,
+        Arc, Mutex, RwLock,
         atomic::{AtomicBool, Ordering},
     },
-    thread,
     time::{SystemTime, UNIX_EPOCH},
 };
 
 use serde::Serialize;
-use solver_db::{
-    ComponentDatabase, ComponentDatabaseConfig, DatabaseMode, PrewarmOptions, PrewarmPartialReason,
-    PrewarmResult, PrewarmScheduling,
-};
 use tauri::{AppHandle, Emitter, Manager, State};
 use uuid::Uuid;
 
@@ -30,84 +24,6 @@ const JOB_SNAPSHOT_EVENT: &str = "job-snapshot";
 
 struct AppState {
     jobs: Arc<RwLock<HashMap<Uuid, Arc<Job>>>>,
-    database: Arc<ComponentDatabase>,
-    work_priority: Arc<WorkPriority>,
-}
-
-#[derive(Default)]
-struct PriorityState {
-    live_jobs: usize,
-    shutdown: bool,
-}
-
-/// Live solves preempt optional component prewarming. Only complete prewarm cells are committed,
-/// so interruption changes performance but never solver semantics.
-#[derive(Default)]
-struct WorkPriority {
-    state: Mutex<PriorityState>,
-    idle: Condvar,
-    prewarm_cancel: AtomicBool,
-}
-
-struct LiveSolvePermit {
-    priority: Arc<WorkPriority>,
-}
-
-impl WorkPriority {
-    fn begin_live(self: &Arc<Self>) -> LiveSolvePermit {
-        let mut state = self.state.lock().expect("work-priority lock poisoned");
-        state.live_jobs = state.live_jobs.saturating_add(1);
-        self.prewarm_cancel.store(true, Ordering::Relaxed);
-        LiveSolvePermit {
-            priority: Arc::clone(self),
-        }
-    }
-
-    fn wait_for_prewarm(&self) -> bool {
-        let mut state = self.state.lock().expect("work-priority lock poisoned");
-        while state.live_jobs != 0 && !state.shutdown {
-            state = self
-                .idle
-                .wait(state)
-                .expect("work-priority lock poisoned while waiting");
-        }
-        if state.shutdown {
-            return false;
-        }
-        self.prewarm_cancel.store(false, Ordering::Relaxed);
-        true
-    }
-
-    fn finish_live(&self) {
-        let mut state = self.state.lock().expect("work-priority lock poisoned");
-        state.live_jobs = state
-            .live_jobs
-            .checked_sub(1)
-            .expect("live solve permit count underflow");
-        if state.live_jobs == 0 {
-            self.idle.notify_all();
-        }
-    }
-
-    fn shutdown(&self) {
-        let mut state = self.state.lock().expect("work-priority lock poisoned");
-        state.shutdown = true;
-        self.prewarm_cancel.store(true, Ordering::Relaxed);
-        self.idle.notify_all();
-    }
-
-    fn is_shutdown(&self) -> bool {
-        self.state
-            .lock()
-            .expect("work-priority lock poisoned")
-            .shutdown
-    }
-}
-
-impl Drop for LiveSolvePermit {
-    fn drop(&mut self) {
-        self.priority.finish_live();
-    }
 }
 
 pub(crate) struct Job {
@@ -293,14 +209,9 @@ fn create_job(
         .insert(id, Arc::clone(&job));
     let _ = app.emit(JOB_SNAPSHOT_EVENT, &job.current());
     let engine = request.engine;
-    let database = Arc::clone(&state.database);
-    let priority = Arc::clone(&state.work_priority);
-    tauri::async_runtime::spawn_blocking(move || {
-        let _live_permit = priority.begin_live();
-        match engine {
-            SolverEngine::Z3 => run_z3_job(&app, &job, &request),
-            SolverEngine::Custom => run_custom_job(&app, &job, &request, &database),
-        }
+    tauri::async_runtime::spawn_blocking(move || match engine {
+        SolverEngine::Z3 => run_z3_job(&app, &job, &request),
+        SolverEngine::Custom => run_custom_job(&app, &job, &request),
     });
 
     Ok(id)
@@ -328,7 +239,6 @@ fn cancel_job(
 }
 
 fn cancel_all_jobs(state: &AppState) {
-    state.work_priority.shutdown();
     for job in state.jobs.read().expect("jobs lock poisoned").values() {
         if matches!(
             job.current().status,
@@ -338,52 +248,6 @@ fn cancel_all_jobs(state: &AppState) {
             job.set_status(JobStatus::Cancelling);
         }
     }
-}
-
-fn component_options(scheduling: PrewarmScheduling) -> PrewarmOptions {
-    PrewarmOptions {
-        max_nodes: 1,
-        max_boundary_ports: None,
-        scheduling,
-    }
-}
-
-fn open_component_database(app: &AppHandle) -> Arc<ComponentDatabase> {
-    let Ok(app_data) = app.path().app_local_data_dir() else {
-        return Arc::new(ComponentDatabase::disabled());
-    };
-    let directory = app_data.join("exact-components-v1");
-    if fs::create_dir_all(&directory).is_err() {
-        return Arc::new(ComponentDatabase::disabled());
-    }
-    let config = ComponentDatabaseConfig {
-        mode: DatabaseMode::Path(directory.join("components.sqlite3")),
-        ..ComponentDatabaseConfig::default()
-    };
-    Arc::new(ComponentDatabase::open(&config).unwrap_or_else(|_| ComponentDatabase::disabled()))
-}
-
-fn start_background_prewarm(database: Arc<ComponentDatabase>, priority: Arc<WorkPriority>) {
-    if !database.is_enabled() {
-        return;
-    }
-    drop(thread::spawn(move || {
-        loop {
-            if !priority.wait_for_prewarm() {
-                return;
-            }
-            match database.prewarm_cancellable(
-                component_options(PrewarmScheduling::Background),
-                &priority.prewarm_cancel,
-            ) {
-                PrewarmResult::Partial {
-                    reason: PrewarmPartialReason::Cancelled,
-                    ..
-                } if !priority.is_shutdown() => {}
-                PrewarmResult::CompleteThrough { .. } | PrewarmResult::Partial { .. } => return,
-            }
-        }
-    }));
 }
 
 fn find_job(state: &AppState, id: Uuid) -> Result<Arc<Job>, String> {
@@ -424,13 +288,8 @@ pub fn run() {
             let store = history::init_history_store(app.handle())
                 .map_err(|error| -> Box<dyn std::error::Error> { error.into() })?;
             app.manage(store);
-            let database = open_component_database(app.handle());
-            let work_priority = Arc::new(WorkPriority::default());
-            start_background_prewarm(Arc::clone(&database), Arc::clone(&work_priority));
             app.manage(AppState {
                 jobs: Arc::new(RwLock::new(HashMap::new())),
-                database,
-                work_priority,
             });
             Ok(())
         })
@@ -451,29 +310,4 @@ pub fn run() {
                 cancel_all_jobs(&app.state::<AppState>());
             }
         });
-}
-
-#[cfg(test)]
-mod tests {
-    use std::{sync::mpsc, time::Duration};
-
-    use super::*;
-
-    #[test]
-    fn prewarm_waits_until_every_live_solver_finishes() {
-        let priority = Arc::new(WorkPriority::default());
-        let first = priority.begin_live();
-        let second = priority.begin_live();
-        let waiter_priority = Arc::clone(&priority);
-        let (sender, receiver) = mpsc::channel();
-        let waiter = thread::spawn(move || {
-            sender.send(waiter_priority.wait_for_prewarm()).unwrap();
-        });
-
-        drop(first);
-        assert!(receiver.recv_timeout(Duration::from_millis(20)).is_err());
-        drop(second);
-        assert!(receiver.recv_timeout(Duration::from_secs(2)).unwrap());
-        waiter.join().unwrap();
-    }
 }

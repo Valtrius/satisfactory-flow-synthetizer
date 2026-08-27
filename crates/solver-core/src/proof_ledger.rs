@@ -487,19 +487,8 @@ fn merge_stats(total: &mut ProfileSearchStats, child: &ProfileSearchStats) {
     target.lower_bound_prunes = target
         .lower_bound_prunes
         .saturating_add(source.lower_bound_prunes);
-    target.no_good_hits = target.no_good_hits.saturating_add(source.no_good_hits);
     target.scc_solves = target.scc_solves.saturating_add(source.scc_solves);
     target.scc_cache_hits = target.scc_cache_hits.saturating_add(source.scc_cache_hits);
-    target.component_hits = target.component_hits.saturating_add(source.component_hits);
-    target.component_optimizations = target
-        .component_optimizations
-        .saturating_add(source.component_optimizations);
-    target.component_db_lookups = target
-        .component_db_lookups
-        .saturating_add(source.component_db_lookups);
-    target.component_db_hits = target
-        .component_db_hits
-        .saturating_add(source.component_db_hits);
     target.canonicalization_time_ns = target
         .canonicalization_time_ns
         .saturating_add(source.canonicalization_time_ns);

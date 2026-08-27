@@ -2,10 +2,7 @@
 
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap},
-    sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
-    },
+    sync::atomic::{AtomicBool, Ordering},
     time::{Duration, Instant},
 };
 
@@ -19,20 +16,13 @@ use thiserror::Error;
 use crate::{
     algebra::sparse::Consistency,
     canonical::{
-        CanonicalFlowEndpoint, ConstructibilityCache, MarkedLinkCanonicalKey, PartialTopology,
-        SccSummaryKey, StateKey, canonicalize_local_decision_core_cancellable,
+        CanonicalFlowEndpoint, MarkedLinkCanonicalKey, PartialTopology, SccSummaryKey, StateKey,
         canonicalize_marked_link_cancellable,
         canonicalize_scc_summary_input_with_relabeling_cancellable, canonicalize_state_cancellable,
-        canonicalize_structural_decision_core_cancellable, canonicalize_witness_cancellable,
+        canonicalize_witness_cancellable,
     },
-    component_search::{ComponentResolver, discover_components},
-    components::Component,
     hotspot_profile,
     lower_bound::profile_impossibility,
-    no_good::{
-        CanonicalNoGoodKey, ConflictCore, ConflictRule, NoGoodScope, SolveLocalNoGoods,
-        StructuralNoGoodStore,
-    },
     problem::NormalizedProblem,
     profile::{ProfileArithmeticError, ProfileLinkAccounting, profile_link_accounting},
     propagation::{
@@ -41,20 +31,11 @@ use crate::{
     },
     reachability::{ReachabilityVerdict, analyze_reachability},
     scc::{SccError, detect_affected_sccs, summarize_open_scc},
-    topology::{
-        AppliedComponentBatch, ComponentAttachment, FlowVarId, TopologyDecision, TopologyState,
-    },
+    topology::{FlowVarId, TopologyDecision, TopologyState},
 };
 
 #[cfg(test)]
 use crate::canonical::canonicalize_state;
-
-/// Maximum induced decision subsets canonicalized during one no-good lookup.
-///
-/// Reaching this limit returns "no hit" and ordinary exhaustive search
-/// continues. It can therefore reduce acceleration but can never remove a
-/// completion or manufacture a proof.
-const MAX_NO_GOOD_SUBSET_PROJECTIONS: usize = 8_192;
 
 /// A complete fixed-profile witness that passed the independent exact validator.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -304,81 +285,7 @@ pub fn search_profile(
     profile: NodeProfile,
     cancel: &AtomicBool,
 ) -> ProfileSearchResult {
-    search_profile_with_features(
-        problem,
-        profile,
-        cancel,
-        &[],
-        SearchFeatures::WITHOUT_COMPONENTS,
-    )
-}
-
-/// Exhaustively searches one fixed profile with optional certified component
-/// macro transitions.
-///
-/// Components only add batch construction paths. Ordinary physical decisions
-/// remain enabled for every state, so an empty, cold, disabled, or incomplete
-/// catalog cannot affect completeness or the exact optimum.
-#[must_use]
-pub fn search_profile_with_components(
-    problem: &NormalizedProblem,
-    profile: NodeProfile,
-    cancel: &AtomicBool,
-    components: &[Component],
-) -> ProfileSearchResult {
-    search_profile_with_features(
-        problem,
-        profile,
-        cancel,
-        components,
-        SearchFeatures::OPTIMIZED,
-    )
-}
-
-/// Exhaustively searches one fixed profile with live component discovery.
-///
-/// The resolver may add proof-complete macro construction paths. Provider,
-/// repository, optimization, or recursive-work failures are treated as misses;
-/// the primitive physical transition loop remains the complete proof path.
-#[must_use]
-pub fn search_profile_with_component_resolver(
-    problem: &NormalizedProblem,
-    profile: NodeProfile,
-    cancel: &AtomicBool,
-    components: &[Component],
-    resolver: &dyn ComponentResolver,
-) -> ProfileSearchResult {
-    let structural_no_goods = Arc::new(StructuralNoGoodStore::default());
-    search_profile_with_component_resolver_and_no_goods(
-        problem,
-        profile,
-        cancel,
-        components,
-        resolver,
-        structural_no_goods,
-    )
-}
-
-/// Searches one profile while sharing only problem-independent structural
-/// no-goods with sibling profile obligations.
-#[must_use]
-pub(crate) fn search_profile_with_component_resolver_and_no_goods(
-    problem: &NormalizedProblem,
-    profile: NodeProfile,
-    cancel: &AtomicBool,
-    components: &[Component],
-    resolver: &dyn ComponentResolver,
-    structural_no_goods: Arc<StructuralNoGoodStore>,
-) -> ProfileSearchResult {
-    search_profile_with_features_and_resolver(
-        problem,
-        profile,
-        cancel,
-        components,
-        SearchFeatures::OPTIMIZED,
-        Some(resolver),
-        structural_no_goods,
-    )
+    search_profile_with_features(problem, profile, cancel, SearchFeatures::PRODUCTION)
 }
 
 /// Builds deterministic first-decision leaves for one fixed profile.
@@ -399,30 +306,20 @@ pub(crate) fn plan_profile_root_partitions(
     profile: NodeProfile,
     cancel: &AtomicBool,
 ) -> RootPartitionPlan {
-    plan_profile_root_partitions_with_cache(
-        problem,
-        profile,
-        cancel,
-        None,
-        &ConstructibilityCache::default(),
-    )
+    plan_profile_root_partitions_with_accounting(problem, profile, cancel, None)
 }
 
-pub(crate) fn plan_profile_root_partitions_with_cache(
+pub(crate) fn plan_profile_root_partitions_with_accounting(
     problem: &NormalizedProblem,
     profile: NodeProfile,
     cancel: &AtomicBool,
     accounting: Option<ProfileLinkAccounting>,
-    _constructibility_cache: &ConstructibilityCache,
 ) -> RootPartitionPlan {
     let initialized = initialize_profile_search(
         problem,
         profile,
         cancel,
-        &[],
-        SearchFeatures::WITHOUT_COMPONENTS,
-        None,
-        Arc::new(StructuralNoGoodStore::default()),
+        SearchFeatures::PRODUCTION,
         accounting,
     );
     let InitializedSearch {
@@ -507,45 +404,15 @@ pub(crate) fn plan_profile_root_partitions_with_cache(
 
 /// Exhausts exactly one canonical root-augmentation subtree.
 ///
-/// Each invocation owns its state cache and solve-local no-goods. Only proven
-/// problem-independent structural no-goods may be shared with sibling leaves.
-/// An `Exhausted` result therefore discharges this partition and no other one;
-/// `Incomplete` or `Failed` must remain visible to the parent proof ledger.
+/// Each invocation owns its state cache. An `Exhausted` result therefore
+/// discharges this partition and no other one; `Incomplete` or `Failed` must
+/// remain visible to the parent proof ledger.
 #[must_use]
 #[allow(clippy::too_many_arguments)]
-#[cfg(test)]
-pub(crate) fn search_profile_root_partition_with_component_resolver_and_no_goods(
+pub(crate) fn search_profile_root_partition(
     problem: &NormalizedProblem,
     profile: NodeProfile,
     cancel: &AtomicBool,
-    components: &[Component],
-    resolver: &dyn ComponentResolver,
-    structural_no_goods: Arc<StructuralNoGoodStore>,
-    partition: &RootPartition,
-) -> ProfileSearchResult {
-    search_profile_root_partition_with_caches(
-        problem,
-        profile,
-        cancel,
-        components,
-        resolver,
-        structural_no_goods,
-        Arc::new(ConstructibilityCache::default()),
-        None,
-        partition,
-        false,
-    )
-}
-
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn search_profile_root_partition_with_caches(
-    problem: &NormalizedProblem,
-    profile: NodeProfile,
-    cancel: &AtomicBool,
-    components: &[Component],
-    resolver: &dyn ComponentResolver,
-    structural_no_goods: Arc<StructuralNoGoodStore>,
-    constructibility_cache: Arc<ConstructibilityCache>,
     accounting: Option<ProfileLinkAccounting>,
     partition: &RootPartition,
     collect_all_witnesses: bool,
@@ -554,10 +421,7 @@ pub(crate) fn search_profile_root_partition_with_caches(
         problem,
         profile,
         cancel,
-        components,
         SearchFeatures::PRODUCTION,
-        Some(resolver),
-        structural_no_goods,
         accounting,
     );
     let InitializedSearch {
@@ -569,7 +433,6 @@ pub(crate) fn search_profile_root_partition_with_caches(
         Ok(initialized) => initialized,
         Err(result) => return *result,
     };
-    context.constructibility_cache = constructibility_cache;
     context.collect_all_witnesses = collect_all_witnesses;
 
     let result = match partition.first_decision {
@@ -636,23 +499,9 @@ fn augmentation_partition_key(marked_key: &MarkedLinkCanonicalKey) -> Vec<u8> {
 struct SearchFeatures {
     exact_propagation: bool,
     profile_lower_bounds: Option<ProfileBounds>,
-    no_goods: NoGoodMode,
     reachability: bool,
     dynamic_scc: bool,
     scc_cache: SccCacheMode,
-    component_macros: ComponentMacroMode,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum ComponentMacroMode {
-    Disabled,
-    Enabled,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum NoGoodMode {
-    Disabled,
-    Enabled,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -666,111 +515,57 @@ enum SccCacheMode {
 struct ProfileBounds;
 
 impl SearchFeatures {
-    const OPTIMIZED: Self = Self {
-        exact_propagation: true,
-        profile_lower_bounds: Some(ProfileBounds),
-        no_goods: NoGoodMode::Enabled,
-        reachability: true,
-        dynamic_scc: true,
-        scc_cache: SccCacheMode::Enabled,
-        component_macros: ComponentMacroMode::Enabled,
-    };
-
     const PRODUCTION: Self = Self {
         exact_propagation: true,
         profile_lower_bounds: Some(ProfileBounds),
-        no_goods: NoGoodMode::Disabled,
         reachability: true,
         dynamic_scc: true,
         scc_cache: SccCacheMode::Enabled,
-        component_macros: ComponentMacroMode::Disabled,
     };
 
     #[cfg(test)]
     const UNOPTIMIZED: Self = Self {
         exact_propagation: false,
         profile_lower_bounds: None,
-        no_goods: NoGoodMode::Disabled,
         reachability: false,
         dynamic_scc: false,
         scc_cache: SccCacheMode::Disabled,
-        component_macros: ComponentMacroMode::Disabled,
     };
 
     #[cfg(test)]
     const PROPAGATION_ONLY: Self = Self {
         exact_propagation: true,
         profile_lower_bounds: None,
-        no_goods: NoGoodMode::Disabled,
         reachability: false,
         dynamic_scc: false,
         scc_cache: SccCacheMode::Disabled,
-        component_macros: ComponentMacroMode::Disabled,
     };
 
     #[cfg(test)]
     const REACHABILITY_ONLY: Self = Self {
         exact_propagation: false,
         profile_lower_bounds: None,
-        no_goods: NoGoodMode::Disabled,
         reachability: true,
         dynamic_scc: false,
         scc_cache: SccCacheMode::Disabled,
-        component_macros: ComponentMacroMode::Disabled,
-    };
-
-    #[cfg(test)]
-    const NO_GOODS_ONLY: Self = Self {
-        exact_propagation: true,
-        profile_lower_bounds: None,
-        no_goods: NoGoodMode::Enabled,
-        reachability: false,
-        dynamic_scc: false,
-        scc_cache: SccCacheMode::Disabled,
-        component_macros: ComponentMacroMode::Disabled,
     };
 
     #[cfg(test)]
     const WITHOUT_SCC: Self = Self {
         exact_propagation: true,
         profile_lower_bounds: Some(ProfileBounds),
-        no_goods: NoGoodMode::Enabled,
         reachability: true,
         dynamic_scc: false,
         scc_cache: SccCacheMode::Disabled,
-        component_macros: ComponentMacroMode::Disabled,
-    };
-
-    #[cfg(test)]
-    const WITHOUT_NO_GOODS: Self = Self {
-        exact_propagation: true,
-        profile_lower_bounds: Some(ProfileBounds),
-        no_goods: NoGoodMode::Disabled,
-        reachability: true,
-        dynamic_scc: true,
-        scc_cache: SccCacheMode::Enabled,
-        component_macros: ComponentMacroMode::Disabled,
     };
 
     #[cfg(test)]
     const WITHOUT_SCC_CACHE: Self = Self {
         exact_propagation: true,
         profile_lower_bounds: Some(ProfileBounds),
-        no_goods: NoGoodMode::Enabled,
         reachability: true,
         dynamic_scc: true,
         scc_cache: SccCacheMode::Disabled,
-        component_macros: ComponentMacroMode::Disabled,
-    };
-
-    const WITHOUT_COMPONENTS: Self = Self {
-        exact_propagation: true,
-        profile_lower_bounds: Some(ProfileBounds),
-        no_goods: NoGoodMode::Enabled,
-        reachability: true,
-        dynamic_scc: true,
-        scc_cache: SccCacheMode::Enabled,
-        component_macros: ComponentMacroMode::Disabled,
     };
 }
 
@@ -778,39 +573,9 @@ fn search_profile_with_features(
     problem: &NormalizedProblem,
     profile: NodeProfile,
     cancel: &AtomicBool,
-    components: &[Component],
     features: SearchFeatures,
 ) -> ProfileSearchResult {
-    search_profile_with_features_and_resolver(
-        problem,
-        profile,
-        cancel,
-        components,
-        features,
-        None,
-        Arc::new(StructuralNoGoodStore::default()),
-    )
-}
-
-fn search_profile_with_features_and_resolver(
-    problem: &NormalizedProblem,
-    profile: NodeProfile,
-    cancel: &AtomicBool,
-    components: &[Component],
-    features: SearchFeatures,
-    resolver: Option<&dyn ComponentResolver>,
-    structural_no_goods: Arc<StructuralNoGoodStore>,
-) -> ProfileSearchResult {
-    let initialized = initialize_profile_search(
-        problem,
-        profile,
-        cancel,
-        components,
-        features,
-        resolver,
-        structural_no_goods,
-        None,
-    );
+    let initialized = initialize_profile_search(problem, profile, cancel, features, None);
     let InitializedSearch {
         mut context,
         mut state,
@@ -831,27 +596,15 @@ struct InitializedSearch<'a> {
     started: Instant,
 }
 
-#[allow(clippy::too_many_arguments)]
 fn initialize_profile_search<'a>(
     problem: &NormalizedProblem,
     profile: NodeProfile,
     cancel: &'a AtomicBool,
-    components: &[Component],
     features: SearchFeatures,
-    resolver: Option<&'a dyn ComponentResolver>,
-    structural_no_goods: Arc<StructuralNoGoodStore>,
     expected_accounting: Option<ProfileLinkAccounting>,
 ) -> Result<InitializedSearch<'a>, Box<ProfileSearchResult>> {
     let started = Instant::now();
-    let mut context = SearchContext::new_with_resolver(
-        problem,
-        profile,
-        cancel,
-        components,
-        features,
-        resolver,
-        structural_no_goods,
-    );
+    let mut context = SearchContext::new_with_features(problem, profile, cancel, features);
     if cancel.load(Ordering::Relaxed) {
         return Err(Box::new(
             context.incomplete(IncompleteReason::Cancelled, started),
@@ -950,57 +703,25 @@ struct SearchContext<'a> {
     cache: HashMap<StateKey, StateStatus>,
     scc_cache: HashMap<SccSummaryKey, CachedOpenSccSummary>,
     owned_cache_bytes: u64,
-    local_no_goods: SolveLocalNoGoods,
-    structural_no_goods: Arc<StructuralNoGoodStore>,
-    constructibility_cache: Arc<ConstructibilityCache>,
     best_witness: Option<ProfileWitness>,
     witnesses: BTreeMap<CanonicalGraphKey, ProfileWitness>,
     collect_all_witnesses: bool,
     stats: ProfileSearchStats,
     features: SearchFeatures,
-    components: Vec<Component>,
-    component_resolver: Option<&'a dyn ComponentResolver>,
 }
 
 impl<'a> SearchContext<'a> {
     #[cfg(test)]
     fn new(normalized: &NormalizedProblem, profile: NodeProfile, cancel: &'a AtomicBool) -> Self {
-        Self::new_with_features(normalized, profile, cancel, &[], SearchFeatures::OPTIMIZED)
+        Self::new_with_features(normalized, profile, cancel, SearchFeatures::PRODUCTION)
     }
 
-    #[cfg(test)]
     fn new_with_features(
         normalized: &NormalizedProblem,
         profile: NodeProfile,
         cancel: &'a AtomicBool,
-        components: &[Component],
         features: SearchFeatures,
     ) -> Self {
-        Self::new_with_resolver(
-            normalized,
-            profile,
-            cancel,
-            components,
-            features,
-            None,
-            Arc::new(StructuralNoGoodStore::default()),
-        )
-    }
-
-    fn new_with_resolver(
-        normalized: &NormalizedProblem,
-        profile: NodeProfile,
-        cancel: &'a AtomicBool,
-        components: &[Component],
-        features: SearchFeatures,
-        component_resolver: Option<&'a dyn ComponentResolver>,
-        structural_no_goods: Arc<StructuralNoGoodStore>,
-    ) -> Self {
-        let mut components = components.to_vec();
-        if let Some(resolver) = component_resolver {
-            components.extend(resolver.ordered_components());
-        }
-        canonicalize_component_catalog(&mut components);
         Self {
             problem: Problem {
                 inputs: normalized.inputs.as_slice().to_vec(),
@@ -1015,16 +736,11 @@ impl<'a> SearchContext<'a> {
             cache: HashMap::new(),
             scc_cache: HashMap::new(),
             owned_cache_bytes: 0,
-            local_no_goods: SolveLocalNoGoods::default(),
-            structural_no_goods,
-            constructibility_cache: Arc::new(ConstructibilityCache::default()),
             best_witness: None,
             witnesses: BTreeMap::new(),
             collect_all_witnesses: false,
             stats: ProfileSearchStats::default(),
             features,
-            components,
-            component_resolver,
         }
     }
 
@@ -1146,363 +862,8 @@ impl<'a> SearchContext<'a> {
     }
 }
 
-fn canonicalize_component_catalog(components: &mut Vec<Component>) {
-    components.sort_by(|left, right| left.canonical_key().cmp(right.canonical_key()));
-    components.dedup_by(|left, right| left.canonical_key() == right.canonical_key());
-}
-
-fn discover_live_components(
-    state: &TopologyState,
-    propagation: Option<&PropagationState>,
-    context: &mut SearchContext<'_>,
-) {
-    if context.features.component_macros != ComponentMacroMode::Enabled {
-        return;
-    }
-    let Some(resolver) = context.component_resolver else {
-        return;
-    };
-
-    // Other profiles may have completed work since this context was created.
-    // Adding their certified physical macros cannot change this state's
-    // completion set because every primitive link transition remains below.
-    context.components.extend(resolver.ordered_components());
-    let Some(propagation) = propagation else {
-        canonicalize_component_catalog(&mut context.components);
-        return;
-    };
-
-    for discovered in discover_components(state, propagation) {
-        if context.cancel.load(Ordering::Relaxed) {
-            return;
-        }
-        let resolution =
-            resolver.resolve(&discovered.component, &discovered.request, context.cancel);
-        context.stats.instrumentation.component_db_lookups = context
-            .stats
-            .instrumentation
-            .component_db_lookups
-            .saturating_add(resolution.source_lookups);
-        context.stats.instrumentation.component_db_hits = context
-            .stats
-            .instrumentation
-            .component_db_hits
-            .saturating_add(resolution.source_hits);
-        context.stats.instrumentation.component_optimizations = context
-            .stats
-            .instrumentation
-            .component_optimizations
-            .saturating_add(resolution.optimizations);
-        if let Some(component) = resolution.component {
-            context.components.push(component);
-        }
-    }
-    context.components.extend(resolver.ordered_components());
-    canonicalize_component_catalog(&mut context.components);
-}
-
-fn learn_local_no_good(
-    state: &TopologyState,
-    propagation: Option<&PropagationState>,
-    context: &mut SearchContext<'_>,
-    rule: ConflictRule,
-) -> Result<(), ProfileSearchError> {
-    if context.features.no_goods == NoGoodMode::Disabled {
-        return Ok(());
-    }
-    let snapshot = match propagation {
-        Some(propagation) => propagation
-            .partial_topology_with_known_link_flows(state)
-            .map_err(|error| propagation_error(&error))?,
-        None => state.partial_topology(),
-    };
-    let core = propagation
-        .and_then(PropagationState::conflict_provenance)
-        .map_or_else(
-            || {
-                // Dynamic-SCC contradictions currently arrive from the SCC
-                // analyzer rather than propagation's fact store. Its broad
-                // active-decision proof remains sound and solve-local.
-                ConflictCore::from_active_decisions(
-                    NoGoodScope::SolveLocal,
-                    rule,
-                    state.links().iter().map(|link| link.decision_id),
-                )
-            },
-            |provenance| {
-                // Exact propagation and capacity conflicts retain their proof
-                // parents as facts are derived. Recovering the core from that
-                // DAG avoids inventing an unrelated parent set at prune time.
-                ConflictCore::from_provenance(NoGoodScope::SolveLocal, rule, provenance)
-            },
-        );
-    let canonical_started = Instant::now();
-    let key = canonical_no_good_key(
-        state,
-        &snapshot,
-        &core,
-        NoGoodScope::SolveLocal,
-        context.cancel,
-    );
-    let elapsed = canonical_started.elapsed();
-    context.record_canonicalization(elapsed);
-    hotspot_profile::record_learn_no_good(elapsed);
-    let Some(key) = key else {
-        // A stale/malformed provenance reference disables this optional
-        // optimization. It is never converted into an impossibility proof.
-        // Cancellation also skips learning; the search frame already observes
-        // the same flag on the next interruptible seam.
-        return Ok(());
-    };
-    context.local_no_goods.learn(key, core);
-    Ok(())
-}
-
-fn learn_structural_no_good(
-    state: &TopologyState,
-    context: &mut SearchContext<'_>,
-    rule: ConflictRule,
-) {
-    if context.features.no_goods == NoGoodMode::Disabled {
-        return;
-    }
-    let core = ConflictCore::from_active_decisions(
-        NoGoodScope::GlobalStructural,
-        rule,
-        state.links().iter().map(|link| link.decision_id),
-    );
-    let snapshot = state.partial_topology();
-    let canonical_started = Instant::now();
-    let key = canonical_no_good_key(
-        state,
-        &snapshot,
-        &core,
-        NoGoodScope::GlobalStructural,
-        context.cancel,
-    );
-    let elapsed = canonical_started.elapsed();
-    context.record_canonicalization(elapsed);
-    hotspot_profile::record_learn_no_good(elapsed);
-    let Some(key) = key else {
-        return;
-    };
-    context.structural_no_goods.learn(key, core);
-}
-
-fn propagation_conflict_rule(conflict: &PropagationConflict) -> ConflictRule {
-    match conflict {
-        PropagationConflict::NonPositiveKnown { .. }
-        | PropagationConflict::CapacityExceeded { .. }
-        | PropagationConflict::NegativeRatio { .. }
-        | PropagationConflict::ExactBoundViolation { .. } => ConflictRule::ExactCapacity,
-        PropagationConflict::SparseInconsistency
-        | PropagationConflict::ExactConstraintContradiction => ConflictRule::ExactPropagation,
-    }
-}
-
-fn matches_structural_no_good(
-    state: &TopologyState,
-    context: &mut SearchContext<'_>,
-) -> Option<bool> {
-    if context.features.no_goods == NoGoodMode::Disabled || context.structural_no_goods.is_empty() {
-        return Some(false);
-    }
-    let snapshot = state.partial_topology();
-    let started = Instant::now();
-    let counts = context
-        .structural_no_goods
-        .decision_counts_through(snapshot.links.len());
-    let matched = matches_canonical_no_good(
-        &snapshot,
-        &counts,
-        NoGoodScope::GlobalStructural,
-        context.cancel,
-        |key| context.structural_no_goods.contains(key),
-    )?;
-    let elapsed = started.elapsed();
-    context.record_canonicalization(elapsed);
-    hotspot_profile::record_no_good_match(elapsed);
-    if matched {
-        increment(&mut context.stats.instrumentation.no_good_hits);
-        Some(true)
-    } else {
-        Some(false)
-    }
-}
-
-fn matches_local_no_good(
-    state: &TopologyState,
-    propagation: Option<&PropagationState>,
-    context: &mut SearchContext<'_>,
-) -> Result<Option<bool>, ProfileSearchError> {
-    if context.features.no_goods == NoGoodMode::Disabled || context.local_no_goods.is_empty() {
-        return Ok(Some(false));
-    }
-    let snapshot = match propagation {
-        Some(propagation) => propagation
-            .partial_topology_with_known_link_flows(state)
-            .map_err(|error| propagation_error(&error))?,
-        None => state.partial_topology(),
-    };
-    let started = Instant::now();
-    let counts = context
-        .local_no_goods
-        .decision_counts_through(snapshot.links.len());
-    let matched = matches_canonical_no_good(
-        &snapshot,
-        &counts,
-        NoGoodScope::SolveLocal,
-        context.cancel,
-        |key| context.local_no_goods.contains(key),
-    );
-    let elapsed = started.elapsed();
-    context.record_canonicalization(elapsed);
-    hotspot_profile::record_no_good_match(elapsed);
-    let Some(matched) = matched else {
-        return Ok(None);
-    };
-    if matched {
-        increment(&mut context.stats.instrumentation.no_good_hits);
-        Ok(Some(true))
-    } else {
-        Ok(Some(false))
-    }
-}
-
-fn canonical_no_good_key(
-    state: &TopologyState,
-    snapshot: &PartialTopology,
-    core: &ConflictCore,
-    scope: NoGoodScope,
-    cancel: &AtomicBool,
-) -> Option<CanonicalNoGoodKey> {
-    let selected_links = core
-        .decisions
-        .iter()
-        .map(|&decision| state.link_index_for(decision))
-        .collect::<Option<Vec<_>>>()?;
-    canonical_no_good_subset_key(snapshot, &selected_links, scope, cancel)?
-}
-
-/// Tests whether the current decisions contain an isomorphic proven core.
-///
-/// # Soundness
-///
-/// A solve-local core cites only its exact problem/profile scope axioms and the
-/// selected link decisions. Adding later decisions adds link equalities, node
-/// equations, and exact bounds; it never removes an equation or a consequence
-/// that established inconsistency, nonpositivity, or a capacity violation.
-/// Structural connectivity cores are learned only from the reachability
-/// analyzer's potential-boundary over-approximation, so even arbitrary future
-/// attachments cannot revive them. Port-completion cores have no legal future
-/// transition. Thus an isomorphic selected subset is a valid monotone reuse of
-/// the retained proof. Exact rates/capacity distinguish local keys, while the
-/// structural projection erases only semantics its proof scope forbids.
-///
-/// The subset budget is one-sided: exhaustion reports no match and leaves the
-/// ordinary exhaustive branch live.
-fn matches_canonical_no_good(
-    snapshot: &PartialTopology,
-    decision_counts: &[usize],
-    scope: NoGoodScope,
-    cancel: &AtomicBool,
-    mut contains: impl FnMut(&CanonicalNoGoodKey) -> bool,
-) -> Option<bool> {
-    let link_count = snapshot.links.len();
-    let mut examined = 0_usize;
-
-    // Preserve the old full-state fast path before considering proper subsets.
-    if decision_counts.binary_search(&link_count).is_ok() {
-        let all_links = (0..link_count).collect::<Vec<_>>();
-        examined = 1;
-        if cancel.load(Ordering::Relaxed) {
-            return None;
-        }
-        if canonical_no_good_subset_key(snapshot, &all_links, scope, cancel)?
-            .as_ref()
-            .is_some_and(&mut contains)
-        {
-            return Some(true);
-        }
-    }
-
-    for &decision_count in decision_counts {
-        if decision_count >= link_count {
-            continue;
-        }
-        let mut subset = (0..decision_count).collect::<Vec<_>>();
-        loop {
-            if cancel.load(Ordering::Relaxed) {
-                return None;
-            }
-            if examined >= MAX_NO_GOOD_SUBSET_PROJECTIONS {
-                return Some(false);
-            }
-            examined += 1;
-            if canonical_no_good_subset_key(snapshot, &subset, scope, cancel)?
-                .as_ref()
-                .is_some_and(&mut contains)
-            {
-                return Some(true);
-            }
-            if decision_count == 0 || !advance_combination(&mut subset, link_count) {
-                break;
-            }
-        }
-    }
-    Some(false)
-}
-
-// The outer option reports cancellation; the inner option reports that the
-// selected links do not form a valid core in the requested proof scope.
-#[allow(clippy::option_option)]
-fn canonical_no_good_subset_key(
-    snapshot: &PartialTopology,
-    selected_links: &[usize],
-    scope: NoGoodScope,
-    cancel: &AtomicBool,
-) -> Option<Option<CanonicalNoGoodKey>> {
-    let state = match scope {
-        NoGoodScope::SolveLocal => {
-            match canonicalize_local_decision_core_cancellable(snapshot, selected_links, cancel) {
-                Some(state) => state,
-                None if cancel.load(Ordering::Relaxed) => return None,
-                None => return Some(None),
-            }
-        }
-        NoGoodScope::GlobalStructural => {
-            match canonicalize_structural_decision_core_cancellable(
-                snapshot,
-                selected_links,
-                cancel,
-            ) {
-                Some(state) => state,
-                None if cancel.load(Ordering::Relaxed) => return None,
-                None => return Some(None),
-            }
-        }
-    };
-    Some(CanonicalNoGoodKey::new(selected_links.len(), state))
-}
-
-fn advance_combination(combination: &mut [usize], universe: usize) -> bool {
-    let size = combination.len();
-    let Some(pivot) = (0..size)
-        .rev()
-        .find(|&index| combination[index] < universe - size + index)
-    else {
-        return false;
-    };
-    combination[pivot] += 1;
-    for index in pivot + 1..size {
-        combination[index] = combination[index - 1] + 1;
-    }
-    true
-}
-
-// Keeping cache ownership, terminal handling, macro-first acceleration, and
-// primitive fallback in one frame makes the exhaustive-proof lifecycle
-// auditable; extracting any one loop would obscure when InProgress is removed.
+// Keep cache ownership, terminal handling, and physical decisions together so
+// every exit visibly discharges or removes the in-progress state.
 #[allow(clippy::too_many_lines)]
 fn search_state(
     state: &mut TopologyState,
@@ -1537,58 +898,6 @@ fn search_state(
     context.record_canonicalization(elapsed);
     hotspot_profile::record_state_canonicalize(elapsed);
 
-    if context.features.no_goods == NoGoodMode::Enabled {
-        if !context.local_no_goods.is_empty() {
-            let started = Instant::now();
-            let counts = context
-                .local_no_goods
-                .decision_counts_through(snapshot.links.len());
-            let matched = matches_canonical_no_good(
-                &snapshot,
-                &counts,
-                NoGoodScope::SolveLocal,
-                context.cancel,
-                |key| context.local_no_goods.contains(key),
-            );
-            let elapsed = started.elapsed();
-            context.record_canonicalization(elapsed);
-            hotspot_profile::record_no_good_match(elapsed);
-            match matched {
-                None => return DfsResult::Incomplete,
-                Some(true) => {
-                    increment(&mut context.stats.instrumentation.no_good_hits);
-                    return DfsResult::Exhausted(None);
-                }
-                Some(false) => {}
-            }
-        }
-        if !context.structural_no_goods.is_empty() {
-            let structural_snapshot = state.partial_topology();
-            let started = Instant::now();
-            let counts = context
-                .structural_no_goods
-                .decision_counts_through(structural_snapshot.links.len());
-            let matched = matches_canonical_no_good(
-                &structural_snapshot,
-                &counts,
-                NoGoodScope::GlobalStructural,
-                context.cancel,
-                |key| context.structural_no_goods.contains(key),
-            );
-            let elapsed = started.elapsed();
-            context.record_canonicalization(elapsed);
-            hotspot_profile::record_no_good_match(elapsed);
-            match matched {
-                None => return DfsResult::Incomplete,
-                Some(true) => {
-                    increment(&mut context.stats.instrumentation.no_good_hits);
-                    return DfsResult::Exhausted(None);
-                }
-                Some(false) => {}
-            }
-        }
-    }
-
     // A StateKey includes the complete colored partial incidence graph, exact
     // external semantics, open ports, and remaining node inventory. MRV's final
     // tie-break individualizes the open port canonically, and legal decisions are
@@ -1622,8 +931,6 @@ fn search_state(
         .peak_state_cache_size
         .max(u64::try_from(context.cache.len()).unwrap_or(u64::MAX));
 
-    discover_live_components(state, propagation.as_ref(), context);
-
     if state.is_complete() {
         return evaluate_complete_state(state, context, state_key);
     }
@@ -1639,7 +946,6 @@ fn search_state(
         // No open port means no future structural decision can attach a remaining
         // node or occupy a missing mandatory port. Since this state is not
         // complete, its completion set is empty.
-        learn_structural_no_good(state, context, ConflictRule::PortCompletionImpossibility);
         context.insert_state_status(state_key, StateStatus::ProvenDead);
         return DfsResult::Exhausted(None);
     };
@@ -1654,49 +960,6 @@ fn search_state(
 
     let mut best_key = None;
     let mut attempted_transition = false;
-    let mut macro_child_keys = BTreeSet::new();
-    if context.features.component_macros == ComponentMacroMode::Enabled {
-        let components = context.components.clone();
-        for component in &components {
-            if component.domain().is_proven_empty()
-                || !profile_contains(state.remaining_profile(), component.profile())
-            {
-                continue;
-            }
-            for attachment in TopologyState::component_attachments_for_orbit(component, &orbit) {
-                attempted_transition = true;
-                if context.cancel.load(Ordering::Relaxed) {
-                    context.remove_state_status(&state_key);
-                    return DfsResult::Incomplete;
-                }
-                increment(&mut context.stats.instrumentation.raw_structural_decisions);
-                match search_component(
-                    state,
-                    propagation,
-                    context,
-                    component,
-                    attachment,
-                    &mut macro_child_keys,
-                ) {
-                    DfsResult::Exhausted(child_key) => {
-                        retain_smallest_key(&mut best_key, child_key);
-                    }
-                    DfsResult::Incomplete => {
-                        context.remove_state_status(&state_key);
-                        return DfsResult::Incomplete;
-                    }
-                    DfsResult::Failed(error) => {
-                        context.remove_state_status(&state_key);
-                        return DfsResult::Failed(error);
-                    }
-                }
-            }
-        }
-    }
-
-    // Macro children run first so a catalog can accelerate discovery and seed
-    // cache entries. Every primitive decision is nevertheless exhausted below;
-    // component availability is never a completeness dependency.
     for decision in decisions {
         attempted_transition = true;
         if context.cancel.load(Ordering::Relaxed) {
@@ -1741,136 +1004,6 @@ fn operator_link_count(topology: &PartialTopology) -> u32 {
             .count(),
     )
     .unwrap_or(u32::MAX)
-}
-
-fn search_component(
-    state: &mut TopologyState,
-    propagation: &mut Option<PropagationState>,
-    context: &mut SearchContext<'_>,
-    component: &Component,
-    attachment: ComponentAttachment,
-    sibling_keys: &mut BTreeSet<StateKey>,
-) -> DfsResult {
-    let topology_checkpoint = state.checkpoint();
-    let propagation_checkpoint = propagation.as_ref().map(PropagationState::checkpoint);
-    let apply_started = Instant::now();
-    let batch = match state.apply_component(component, attachment) {
-        Ok(batch) => batch,
-        Err(error) => {
-            hotspot_profile::record_component_apply(apply_started.elapsed());
-            rollback_branch(
-                state,
-                propagation,
-                topology_checkpoint,
-                propagation_checkpoint,
-            );
-            return DfsResult::Failed(topology_error(&error));
-        }
-    };
-    hotspot_profile::record_component_apply(apply_started.elapsed());
-    increment(&mut context.stats.instrumentation.component_hits);
-
-    let result =
-        evaluate_component_child(state, propagation, context, component, &batch, sibling_keys);
-    rollback_branch(
-        state,
-        propagation,
-        topology_checkpoint,
-        propagation_checkpoint,
-    );
-    result
-}
-
-fn evaluate_component_child(
-    state: &mut TopologyState,
-    propagation: &mut Option<PropagationState>,
-    context: &mut SearchContext<'_>,
-    component: &Component,
-    batch: &AppliedComponentBatch,
-    sibling_keys: &mut BTreeSet<StateKey>,
-) -> DfsResult {
-    match matches_structural_no_good(state, context) {
-        None => return DfsResult::Incomplete,
-        Some(true) => return DfsResult::Exhausted(None),
-        Some(false) => {}
-    }
-    if let Some(propagation) = propagation.as_mut() {
-        let propagation_started = Instant::now();
-        let outcome = propagation.synchronize_after_component_batch(state, component, batch);
-        let elapsed = propagation_started.elapsed();
-        context.record_algebra(elapsed);
-        hotspot_profile::record_propagation_sync(elapsed);
-        let outcome = match outcome {
-            Ok(outcome) => outcome,
-            Err(error) => return DfsResult::Failed(propagation_error(&error)),
-        };
-        match matches_local_no_good(state, Some(propagation), context) {
-            Ok(None) => return DfsResult::Incomplete,
-            Ok(Some(true)) => return DfsResult::Exhausted(None),
-            Ok(Some(false)) => {}
-            Err(error) => return DfsResult::Failed(error),
-        }
-        if let PropagationOutcome::Pruned(conflict) = outcome {
-            context.record_propagation_prune(&conflict);
-            if let Err(error) = learn_local_no_good(
-                state,
-                Some(propagation),
-                context,
-                propagation_conflict_rule(&conflict),
-            ) {
-                return DfsResult::Failed(error);
-            }
-            return DfsResult::Exhausted(None);
-        }
-    }
-
-    if context.features.dynamic_scc {
-        match analyze_affected_dynamic_sccs(state, propagation.as_mut(), context, None) {
-            Ok(DynamicSccVerdict::Open) => {}
-            Ok(DynamicSccVerdict::ProvenDead) => return DfsResult::Exhausted(None),
-            Ok(DynamicSccVerdict::Cancelled) => return DfsResult::Incomplete,
-            Err(error) => return DfsResult::Failed(error),
-        }
-    }
-    if context.features.reachability {
-        let reachability_started = Instant::now();
-        let reachability = analyze_reachability(state);
-        hotspot_profile::record_reachability(reachability_started.elapsed());
-        if matches!(reachability.verdict, ReachabilityVerdict::ProvenDead(_)) {
-            increment(&mut context.stats.instrumentation.lower_bound_prunes);
-            learn_structural_no_good(state, context, ConflictRule::ConnectivityImpossibility);
-            return DfsResult::Exhausted(None);
-        }
-    }
-
-    // A multi-link macro has no single canonical removable augmentation. Its
-    // physical child is instead quotiented directly by the complete canonical
-    // StateKey. Primitive transitions remain the unconditional construction
-    // path and retain the single-link canonical-parent proof.
-    let snapshot = match propagation {
-        Some(propagation) => match propagation.partial_topology_with_known_link_flows(state) {
-            Ok(snapshot) => snapshot,
-            Err(error) => return DfsResult::Failed(propagation_error(&error)),
-        },
-        None => state.partial_topology(),
-    };
-    let canonical_started = Instant::now();
-    let Some(child_key) = canonicalize_state_cancellable(&snapshot, context.cancel) else {
-        return DfsResult::Incomplete;
-    };
-    let elapsed = canonical_started.elapsed();
-    context.record_canonicalization(elapsed);
-    hotspot_profile::record_state_canonicalize(elapsed);
-    if !sibling_keys.insert(child_key) {
-        increment(
-            &mut context
-                .stats
-                .instrumentation
-                .canonical_duplicates_eliminated,
-        );
-        return DfsResult::Exhausted(None);
-    }
-    search_state(state, propagation, context)
 }
 
 fn search_decision(
@@ -1922,11 +1055,6 @@ fn evaluate_applied_child(
     context: &mut SearchContext<'_>,
     link_index: usize,
 ) -> DfsResult {
-    match matches_structural_no_good(state, context) {
-        None => return DfsResult::Incomplete,
-        Some(true) => return DfsResult::Exhausted(None),
-        Some(false) => {}
-    }
     if let Some(propagation) = propagation.as_mut() {
         let propagation_started = Instant::now();
         let outcome = propagation.synchronize_after_topology_mutation(state);
@@ -1937,22 +1065,8 @@ fn evaluate_applied_child(
             Ok(outcome) => outcome,
             Err(error) => return DfsResult::Failed(propagation_error(&error)),
         };
-        match matches_local_no_good(state, Some(propagation), context) {
-            Ok(None) => return DfsResult::Incomplete,
-            Ok(Some(true)) => return DfsResult::Exhausted(None),
-            Ok(Some(false)) => {}
-            Err(error) => return DfsResult::Failed(error),
-        }
         if let PropagationOutcome::Pruned(conflict) = outcome {
             context.record_propagation_prune(&conflict);
-            if let Err(error) = learn_local_no_good(
-                state,
-                Some(propagation),
-                context,
-                propagation_conflict_rule(&conflict),
-            ) {
-                return DfsResult::Failed(error);
-            }
             return DfsResult::Exhausted(None);
         }
     }
@@ -1973,16 +1087,12 @@ fn evaluate_applied_child(
         hotspot_profile::record_reachability(reachability_started.elapsed());
         if matches!(reachability.verdict, ReachabilityVerdict::ProvenDead(_)) {
             increment(&mut context.stats.instrumentation.lower_bound_prunes);
-            learn_structural_no_good(state, context, ConflictRule::ConnectivityImpossibility);
             return DfsResult::Exhausted(None);
         }
     }
 
     // Canonical state memoization below removes equivalent construction
-    // histories directly. The former recursive canonical-last gate attempted
-    // to reject those histories before memoization, but proving that a reverse
-    // parent was itself constructible required dozens of full graph canons for
-    // every applied link.
+    // histories directly.
     search_state(state, propagation, context)
 }
 
@@ -2062,12 +1172,6 @@ fn analyze_affected_dynamic_sccs_inner(
             // links may make a larger graph-level SCC unique.
             if cached.consistency == Consistency::Inconsistent {
                 increment(&mut context.stats.instrumentation.propagation_contradictions);
-                learn_local_no_good(
-                    state,
-                    propagation.as_deref(),
-                    context,
-                    ConflictRule::DynamicSccInconsistency,
-                )?;
                 return Ok(DynamicSccVerdict::ProvenDead);
             }
 
@@ -2084,12 +1188,6 @@ fn analyze_affected_dynamic_sccs_inner(
             hotspot_profile::record_propagation_sync(elapsed);
             if let PropagationOutcome::Pruned(conflict) = update.outcome {
                 context.record_propagation_prune(&conflict);
-                learn_local_no_good(
-                    state,
-                    Some(propagation),
-                    context,
-                    propagation_conflict_rule(&conflict),
-                )?;
                 return Ok(DynamicSccVerdict::ProvenDead);
             }
             if update.changed {
@@ -2471,13 +1569,6 @@ fn checked_node_count(profile: NodeProfile) -> Option<u32> {
         .checked_add(profile.merger3)
 }
 
-fn profile_contains(remaining: crate::topology::RemainingProfile, required: NodeProfile) -> bool {
-    remaining.splitter2 >= required.splitter2
-        && remaining.splitter3 >= required.splitter3
-        && remaining.merger2 >= required.merger2
-        && remaining.merger3 >= required.merger3
-}
-
 fn topology_error(error: &impl ToString) -> ProfileSearchError {
     ProfileSearchError::Topology(error.to_string())
 }
@@ -2531,13 +1622,7 @@ mod tests {
     use crate::{
         Preparation,
         canonical::{PartialLink, PartialTopology},
-        component_application::ComponentApplicationRequest,
-        component_search::{ApplicationComponentRuntime, ComponentResolution, EmptyComponentStore},
         prepare_problem,
-        scc::{
-            DeclaredBoundaryInput, DeclaredBoundaryOutput, FrozenSubsystemAnalysis,
-            FrozenSubsystemDeclaration, analyze_frozen_subsystem,
-        },
     };
 
     fn problem(inputs: &[&str], outputs: &[&str], capacity: &str) -> Problem {
@@ -2564,92 +1649,6 @@ mod tests {
         }
     }
 
-    fn partial_link(producer: ProducerPortRef, consumer: ConsumerPortRef) -> PartialLink {
-        PartialLink {
-            producer,
-            consumer,
-            flow: None,
-        }
-    }
-
-    const fn splitter_output(node: u32) -> ProducerPortRef {
-        ProducerPortRef::Node {
-            node: NodeId(node),
-            port: 0,
-        }
-    }
-
-    const fn splitter_input(node: u32) -> ConsumerPortRef {
-        ConsumerPortRef::Node {
-            node: NodeId(node),
-            port: 0,
-        }
-    }
-
-    fn splitter_pair_partial(problem: &Problem, links: Vec<PartialLink>) -> PartialTopology {
-        PartialTopology {
-            discard_count: 0,
-            problem: normalized_problem(problem),
-            nodes: (0..2)
-                .map(|id| PhysicalNode {
-                    id: NodeId(id),
-                    node_type: NodeType::Splitter2,
-                })
-                .collect(),
-            links,
-            remaining_profile: NodeProfile::default(),
-        }
-    }
-
-    fn splitter_component(reverse_outputs: bool) -> Component {
-        let topology = TopologyState::from_partial_topology(&PartialTopology {
-            discard_count: 0,
-            problem: problem(&["2"], &["1", "1"], "10"),
-            nodes: vec![PhysicalNode {
-                id: NodeId(0),
-                node_type: NodeType::Splitter2,
-            }],
-            links: Vec::new(),
-            remaining_profile: NodeProfile::default(),
-        })
-        .unwrap();
-        let mut boundary_outputs = vec![
-            DeclaredBoundaryOutput {
-                port: ProducerPortRef::Node {
-                    node: NodeId(0),
-                    port: 0,
-                },
-            },
-            DeclaredBoundaryOutput {
-                port: ProducerPortRef::Node {
-                    node: NodeId(0),
-                    port: 1,
-                },
-            },
-        ];
-        if reverse_outputs {
-            boundary_outputs.reverse();
-        }
-        let analysis = analyze_frozen_subsystem(
-            &topology,
-            &FrozenSubsystemDeclaration {
-                nodes: vec![NodeId(0)],
-                boundary_inputs: vec![DeclaredBoundaryInput {
-                    port: ConsumerPortRef::Node {
-                        node: NodeId(0),
-                        port: 0,
-                    },
-                }],
-                boundary_outputs,
-            },
-        )
-        .unwrap();
-        let FrozenSubsystemAnalysis::Symbolic(frozen) = analysis else {
-            panic!("splitter must have a symbolic frozen contract");
-        };
-        Component::from_frozen(*frozen).unwrap()
-    }
-
     fn exhaustive_witness(result: ProfileSearchResult) -> Option<ProfileWitness> {
         exhausted_result(result).0
     }
@@ -2669,24 +1668,6 @@ mod tests {
 
     fn search(problem: &Problem, profile: NodeProfile) -> ProfileSearchResult {
         search_profile(&normalized(problem), profile, &AtomicBool::new(false))
-    }
-
-    #[derive(Clone, Copy, Debug, Default)]
-    struct NoComponents;
-
-    impl ComponentResolver for NoComponents {
-        fn ordered_components(&self) -> Vec<Component> {
-            Vec::new()
-        }
-
-        fn resolve(
-            &self,
-            _candidate: &Component,
-            _request: &ComponentApplicationRequest,
-            _cancel: &AtomicBool,
-        ) -> ComponentResolution {
-            ComponentResolution::default()
-        }
     }
 
     fn root_partitions(problem: &NormalizedProblem, profile: NodeProfile) -> Vec<RootPartition> {
@@ -2713,17 +1694,9 @@ mod tests {
             merger3: 2,
         };
         let cancel = AtomicBool::new(false);
-        let mut initialized = initialize_profile_search(
-            &problem,
-            profile,
-            &cancel,
-            &[],
-            SearchFeatures::WITHOUT_COMPONENTS,
-            None,
-            Arc::new(StructuralNoGoodStore::default()),
-            None,
-        )
-        .unwrap();
+        let mut initialized =
+            initialize_profile_search(&problem, profile, &cancel, SearchFeatures::PRODUCTION, None)
+                .unwrap();
         eprintln!(
             "hard-case root legal_decisions={}",
             initialized.state.legal_decisions().len()
@@ -2747,8 +1720,6 @@ mod tests {
         assert!(worker_count > 0);
         let results = Mutex::new(Vec::new());
         let cancel = AtomicBool::new(false);
-        let resolver = NoComponents;
-        let structural_no_goods = Arc::new(StructuralNoGoodStore::default());
         std::thread::scope(|scope| {
             for worker in 0..worker_count {
                 let assigned = schedule
@@ -2760,22 +1731,13 @@ mod tests {
                     })
                     .collect::<Vec<_>>();
                 let results = &results;
-                let structural_no_goods = Arc::clone(&structural_no_goods);
-                let resolver = &resolver;
                 let cancel = &cancel;
                 scope.spawn(move || {
                     for index in assigned {
                         let partition = &partitions[index];
-                        let result =
-                            search_profile_root_partition_with_component_resolver_and_no_goods(
-                                problem,
-                                profile,
-                                cancel,
-                                &[],
-                                resolver,
-                                Arc::clone(&structural_no_goods),
-                                partition,
-                            );
+                        let result = search_profile_root_partition(
+                            problem, profile, cancel, None, partition, false,
+                        );
                         let witness = match result {
                             ProfileSearchResult::Exhausted { best_witness, .. } => best_witness,
                             other => panic!("partition must exhaust in test: {other:?}"),
@@ -2949,14 +1911,12 @@ mod tests {
             &normalized,
             fixed_profile,
             &AtomicBool::new(false),
-            &[],
-            SearchFeatures::OPTIMIZED,
+            SearchFeatures::PRODUCTION,
         ));
         let unoptimized = exhaustive_witness(search_profile_with_features(
             &normalized,
             fixed_profile,
             &AtomicBool::new(false),
-            &[],
             SearchFeatures::UNOPTIMIZED,
         ));
         assert_eq!(optimized, reference);
@@ -2966,34 +1926,6 @@ mod tests {
         assert_eq!(witness.validation.discard_link_count, 2);
         assert_eq!(witness.validation.physical_link_count, 3);
         assert!(witness.graph.links.iter().all(|link| link.flow == 1.into()));
-    }
-
-    #[test]
-    fn component_macro_on_off_and_reference_agree_with_surplus_discard() {
-        let caller_problem = problem(&["1", "2"], &["1", "1"], "2");
-        let normalized = normalized(&caller_problem);
-        let canonical_problem = normalized_problem(&caller_problem);
-        let fixed_profile = profile(1, 0, 0, 0);
-        let component = splitter_component(false);
-        let reference = reference_fixed_profile(&canonical_problem, fixed_profile);
-        let (enabled, enabled_stats) = exhausted_result(search_profile_with_components(
-            &normalized,
-            fixed_profile,
-            &AtomicBool::new(false),
-            &[component],
-        ));
-        let disabled = exhaustive_witness(search_profile(
-            &normalized,
-            fixed_profile,
-            &AtomicBool::new(false),
-        ));
-        assert_eq!(enabled, reference);
-        assert_eq!(disabled, reference);
-        assert!(enabled_stats.instrumentation.component_hits > 0);
-        let witness = enabled.unwrap();
-        assert_eq!(witness.validation.link_count, 0);
-        assert_eq!(witness.validation.discard_link_count, 1);
-        assert_eq!(witness.validation.physical_link_count, 4);
     }
 
     #[test]
@@ -3010,10 +1942,8 @@ mod tests {
     }
 
     #[test]
-    fn splitter2_mrv_path_survives_the_admissible_canonical_last_gate() {
-        // MRV first attaches a splitter output to an external output. The later
-        // mandatory input-to-splitter link is canonical only among admissible
-        // reverse transitions, not among every physical link in the child.
+    fn splitter2_mrv_search_matches_reference() {
+        // Compare the complete MRV construction path with the independent oracle.
         let problem = problem(&["2"], &["1", "1"], "2");
         let profile = profile(1, 0, 0, 0);
         let production = exhaustive_witness(search(&problem, profile));
@@ -3053,14 +1983,12 @@ mod tests {
                 &normalized,
                 fixed_profile,
                 &AtomicBool::new(false),
-                &[],
-                SearchFeatures::OPTIMIZED,
+                SearchFeatures::PRODUCTION,
             ));
             let (without_scc, without_stats) = exhausted_result(search_profile_with_features(
                 &normalized,
                 fixed_profile,
                 &AtomicBool::new(false),
-                &[],
                 SearchFeatures::WITHOUT_SCC,
             ));
             let (without_cache, without_cache_stats) =
@@ -3068,7 +1996,6 @@ mod tests {
                     &normalized,
                     fixed_profile,
                     &AtomicBool::new(false),
-                    &[],
                     SearchFeatures::WITHOUT_SCC_CACHE,
                 ));
 
@@ -3390,97 +2317,12 @@ mod tests {
     }
 
     #[test]
-    fn component_macros_on_off_and_catalog_order_match_reference() {
-        let caller_problem = problem(&["2"], &["1", "1"], "2");
-        let normalized = normalized(&caller_problem);
-        let fixed_profile = profile(1, 0, 0, 0);
-        let reference =
-            reference_fixed_profile(&normalized_problem(&caller_problem), fixed_profile);
-        let left = splitter_component(false);
-        let right = splitter_component(true);
-        assert_eq!(left.canonical_key(), right.canonical_key());
-
-        let catalog_a = vec![left.clone(), right.clone()];
-        let catalog_b = vec![right, left];
-        let (enabled_a, stats_a) = exhausted_result(search_profile_with_components(
-            &normalized,
-            fixed_profile,
-            &AtomicBool::new(false),
-            &catalog_a,
-        ));
-        let (enabled_b, stats_b) = exhausted_result(search_profile_with_components(
-            &normalized,
-            fixed_profile,
-            &AtomicBool::new(false),
-            &catalog_b,
-        ));
-        let (disabled, disabled_stats) = exhausted_result(search_profile_with_features(
-            &normalized,
-            fixed_profile,
-            &AtomicBool::new(false),
-            &catalog_a,
-            SearchFeatures::WITHOUT_COMPONENTS,
-        ));
-
-        assert_eq!(enabled_a, reference);
-        assert_eq!(enabled_b, reference);
-        assert_eq!(disabled, reference);
-        assert!(stats_a.instrumentation.component_hits > 0);
-        assert_eq!(
-            stats_a.instrumentation.component_hits,
-            stats_b.instrumentation.component_hits
-        );
-        assert_eq!(
-            stats_a.instrumentation.raw_structural_decisions,
-            stats_b.instrumentation.raw_structural_decisions
-        );
-        assert_eq!(disabled_stats.instrumentation.component_hits, 0);
-        let witness = enabled_a.expect("splitter profile must be satisfiable");
-        validate_solution(&normalized_problem(&caller_problem), &witness.graph).unwrap();
-    }
-
-    #[test]
-    fn live_discovery_on_off_and_empty_sources_match_the_reference() {
-        let cases = [
-            (problem(&["2"], &["1", "1"], "2"), profile(1, 0, 0, 0)),
-            (problem(&["1", "1"], &["2"], "2"), profile(0, 0, 1, 0)),
-            (problem(&["2"], &["1"], "2"), profile(1, 0, 0, 0)),
-        ];
-        let mut observed_optimizations = 0_u64;
-        for (caller_problem, fixed_profile) in cases {
-            let normalized = normalized(&caller_problem);
-            let reference =
-                reference_fixed_profile(&normalized_problem(&caller_problem), fixed_profile);
-            let store = EmptyComponentStore;
-            let runtime = ApplicationComponentRuntime::new(&store, &store);
-            let (live, stats) = exhausted_result(search_profile_with_component_resolver(
-                &normalized,
-                fixed_profile,
-                &AtomicBool::new(false),
-                &[],
-                &runtime,
-            ));
-            let disabled = exhaustive_witness(search_profile(
-                &normalized,
-                fixed_profile,
-                &AtomicBool::new(false),
-            ));
-            assert_eq!(live, reference);
-            assert_eq!(disabled, reference);
-            observed_optimizations = observed_optimizations
-                .saturating_add(stats.instrumentation.component_optimizations);
-        }
-        assert!(observed_optimizations > 0);
-    }
-
-    #[test]
     fn every_pruning_layer_matches_reference_on_an_exhaustive_tiny_matrix() {
         let feature_sets = [
             ("none", SearchFeatures::UNOPTIMIZED),
             ("propagation", SearchFeatures::PROPAGATION_ONLY),
-            ("propagation + no-goods", SearchFeatures::NO_GOODS_ONLY),
             ("reachability", SearchFeatures::REACHABILITY_ONLY),
-            ("all", SearchFeatures::OPTIMIZED),
+            ("all", SearchFeatures::PRODUCTION),
         ];
 
         // Exhaust every positive ordered terminal-rate partition through total
@@ -3507,7 +2349,6 @@ mod tests {
                                     &normalized,
                                     profile,
                                     &AtomicBool::new(false),
-                                    &[],
                                     features,
                                 ));
                                 assert_eq!(
@@ -3520,359 +2361,6 @@ mod tests {
                 }
             }
         }
-    }
-
-    #[test]
-    fn proof_carrying_no_goods_preserve_reference_results() {
-        let cases = [
-            (problem(&["1"], &["1"], "1"), profile(1, 0, 1, 0)),
-            (problem(&["2", "3"], &["1", "4"], "5"), profile(1, 0, 1, 0)),
-            (problem(&["2"], &["1"], "2"), profile(1, 0, 0, 0)),
-            (problem(&["3"], &["1", "2"], "3"), profile(1, 0, 0, 0)),
-        ];
-        for (caller_problem, fixed_profile) in cases {
-            let normalized = normalized(&caller_problem);
-            let canonical_problem = normalized_problem(&caller_problem);
-            let reference = reference_fixed_profile(&canonical_problem, fixed_profile);
-            let (learned, _) = exhausted_result(search_profile_with_features(
-                &normalized,
-                fixed_profile,
-                &AtomicBool::new(false),
-                &[],
-                SearchFeatures::WITHOUT_COMPONENTS,
-            ));
-            let (disabled, _) = exhausted_result(search_profile_with_features(
-                &normalized,
-                fixed_profile,
-                &AtomicBool::new(false),
-                &[],
-                SearchFeatures::WITHOUT_NO_GOODS,
-            ));
-            assert_eq!(learned, reference);
-            assert_eq!(disabled, reference);
-        }
-    }
-
-    #[test]
-    fn propagation_no_good_keeps_the_retained_conflict_proof() {
-        let caller_problem = problem(&["1"], &["1"], "10");
-        let normalized = normalized(&caller_problem);
-        let state = TopologyState::from_partial_topology(&PartialTopology {
-            discard_count: 0,
-            problem: normalized_problem(&caller_problem),
-            nodes: vec![
-                PhysicalNode {
-                    id: NodeId(0),
-                    node_type: NodeType::Splitter2,
-                },
-                PhysicalNode {
-                    id: NodeId(1),
-                    node_type: NodeType::Splitter2,
-                },
-            ],
-            links: vec![
-                PartialLink {
-                    producer: ProducerPortRef::Node {
-                        node: NodeId(0),
-                        port: 0,
-                    },
-                    consumer: ConsumerPortRef::Node {
-                        node: NodeId(1),
-                        port: 0,
-                    },
-                    flow: None,
-                },
-                PartialLink {
-                    producer: ProducerPortRef::Node {
-                        node: NodeId(1),
-                        port: 0,
-                    },
-                    consumer: ConsumerPortRef::Node {
-                        node: NodeId(0),
-                        port: 0,
-                    },
-                    flow: None,
-                },
-            ],
-            remaining_profile: NodeProfile::default(),
-        })
-        .unwrap();
-        let propagation = PropagationState::new(&state, &normalized.max_link_rate).unwrap();
-        let PropagationOutcome::Pruned(conflict) = propagation.current_outcome() else {
-            panic!("closed splitter cycle must violate strict positivity");
-        };
-        let retained = propagation
-            .conflict_provenance()
-            .expect("propagation conflict has retained provenance");
-        let cancel = AtomicBool::new(false);
-        let mut context = SearchContext::new(&normalized, profile(2, 0, 0, 0), &cancel);
-
-        learn_local_no_good(
-            &state,
-            Some(&propagation),
-            &mut context,
-            propagation_conflict_rule(conflict),
-        )
-        .unwrap();
-        let snapshot = propagation
-            .partial_topology_with_known_link_flows(&state)
-            .unwrap();
-        let expected_core = ConflictCore::from_provenance(
-            NoGoodScope::SolveLocal,
-            propagation_conflict_rule(conflict),
-            retained.clone(),
-        );
-        let key = canonical_no_good_key(
-            &state,
-            &snapshot,
-            &expected_core,
-            NoGoodScope::SolveLocal,
-            &cancel,
-        )
-        .unwrap();
-        let learned = context
-            .local_no_goods
-            .get(&key)
-            .expect("the canonical conflict core was learned");
-        assert_eq!(learned.core.provenance, retained);
-        assert_eq!(learned.core.decisions, retained.decisions());
-        assert_eq!(
-            matches_local_no_good(&state, Some(&propagation), &mut context).unwrap(),
-            Some(true)
-        );
-    }
-
-    #[test]
-    fn canonical_core_no_good_prunes_a_proper_superset_but_not_a_sibling() {
-        let caller_problem = problem(&["1"], &["1"], "10");
-        let normalized = normalized(&caller_problem);
-        let fixed_profile = profile(2, 0, 0, 0);
-        let cycle = splitter_pair_partial(
-            &caller_problem,
-            vec![
-                partial_link(splitter_output(0), splitter_input(1)),
-                partial_link(splitter_output(1), splitter_input(0)),
-            ],
-        );
-        let cycle_state = TopologyState::from_partial_topology(&cycle).unwrap();
-        let cycle_propagation =
-            PropagationState::new(&cycle_state, &normalized.max_link_rate).unwrap();
-        let PropagationOutcome::Pruned(conflict) = cycle_propagation.current_outcome() else {
-            panic!("the selected core must be an exact zero-flow splitter cycle");
-        };
-        let cancel = AtomicBool::new(false);
-        let mut context = SearchContext::new(&normalized, fixed_profile, &cancel);
-        learn_local_no_good(
-            &cycle_state,
-            Some(&cycle_propagation),
-            &mut context,
-            propagation_conflict_rule(conflict),
-        )
-        .unwrap();
-
-        let mut superset = cycle.clone();
-        superset.links.insert(
-            0,
-            partial_link(
-                ProducerPortRef::Input(InputTerminalIndex(0)),
-                ConsumerPortRef::Output(OutputTerminalIndex(0)),
-            ),
-        );
-        let mut superset_state = TopologyState::from_partial_topology(&superset).unwrap();
-        let mut superset_propagation =
-            Some(PropagationState::new(&superset_state, &normalized.max_link_rate).unwrap());
-        assert!(matches!(
-            search_state(&mut superset_state, &mut superset_propagation, &mut context),
-            DfsResult::Exhausted(None)
-        ));
-        assert_eq!(context.stats.instrumentation.no_good_hits, 1);
-
-        let mut disabled_state = TopologyState::from_partial_topology(&superset).unwrap();
-        let mut disabled_propagation =
-            Some(PropagationState::new(&disabled_state, &normalized.max_link_rate).unwrap());
-        let mut disabled_context = SearchContext::new_with_features(
-            &normalized,
-            fixed_profile,
-            &cancel,
-            &[],
-            SearchFeatures::PROPAGATION_ONLY,
-        );
-        assert!(matches!(
-            search_state(
-                &mut disabled_state,
-                &mut disabled_propagation,
-                &mut disabled_context,
-            ),
-            DfsResult::Exhausted(None)
-        ));
-        assert_eq!(disabled_context.stats.instrumentation.no_good_hits, 0);
-
-        let sibling = splitter_pair_partial(
-            &caller_problem,
-            vec![
-                partial_link(
-                    ProducerPortRef::Input(InputTerminalIndex(0)),
-                    splitter_input(0),
-                ),
-                partial_link(splitter_output(0), splitter_input(1)),
-                partial_link(
-                    splitter_output(1),
-                    ConsumerPortRef::Output(OutputTerminalIndex(0)),
-                ),
-            ],
-        );
-        let sibling_state = TopologyState::from_partial_topology(&sibling).unwrap();
-        let sibling_propagation =
-            PropagationState::new(&sibling_state, &normalized.max_link_rate).unwrap();
-        assert_eq!(
-            matches_local_no_good(&sibling_state, Some(&sibling_propagation), &mut context)
-                .unwrap(),
-            Some(false)
-        );
-        assert_eq!(context.stats.instrumentation.no_good_hits, 1);
-    }
-
-    #[test]
-    fn zero_decision_core_is_explicit_and_core_identity_survives_rollback() {
-        let caller_problem = problem(&["2"], &["1", "1"], "2");
-        let normalized = normalized(&caller_problem);
-        let fixed_profile = profile(1, 0, 0, 0);
-        let mut state = TopologyState::new(&normalized, fixed_profile).unwrap();
-        let root_snapshot = state.partial_topology();
-        let cancel = AtomicBool::new(false);
-        let empty_key =
-            canonical_no_good_subset_key(&root_snapshot, &[], NoGoodScope::SolveLocal, &cancel)
-                .unwrap()
-                .unwrap();
-        assert_eq!(
-            matches_canonical_no_good(
-                &root_snapshot,
-                &[0],
-                NoGoodScope::SolveLocal,
-                &cancel,
-                |candidate| candidate == &empty_key,
-            ),
-            Some(true)
-        );
-
-        let checkpoint = state.checkpoint();
-        let decision = state
-            .legal_decisions()
-            .into_iter()
-            .find(|decision| {
-                matches!(
-                    decision.producer,
-                    crate::topology::ProducerChoice::NewNode { .. }
-                ) || matches!(
-                    decision.consumer,
-                    crate::topology::ConsumerChoice::NewNode { .. }
-                )
-            })
-            .expect("the input frontier can materialize the splitter");
-        let first_decision = state.apply(decision).unwrap();
-        let first_snapshot = state.partial_topology();
-        let first_core = ConflictCore::from_active_decisions(
-            NoGoodScope::SolveLocal,
-            ConflictRule::ExactPropagation,
-            [first_decision],
-        );
-        let first_key = canonical_no_good_key(
-            &state,
-            &first_snapshot,
-            &first_core,
-            NoGoodScope::SolveLocal,
-            &cancel,
-        )
-        .unwrap();
-
-        state.rollback(checkpoint);
-        assert!(
-            canonical_no_good_key(
-                &state,
-                &state.partial_topology(),
-                &first_core,
-                NoGoodScope::SolveLocal,
-                &cancel,
-            )
-            .is_none()
-        );
-        let replayed_decision = state.apply(decision).unwrap();
-        assert_eq!(replayed_decision, first_decision);
-        let replayed_core = ConflictCore::from_active_decisions(
-            NoGoodScope::SolveLocal,
-            ConflictRule::ExactPropagation,
-            [replayed_decision],
-        );
-        assert_eq!(
-            canonical_no_good_key(
-                &state,
-                &state.partial_topology(),
-                &replayed_core,
-                NoGoodScope::SolveLocal,
-                &cancel,
-            ),
-            Some(first_key)
-        );
-    }
-
-    #[test]
-    fn a_proven_structural_conflict_is_learned_and_hit_canonically() {
-        let caller_problem = problem(&["1"], &["1"], "1");
-        let normalized = normalized(&caller_problem);
-        let state = TopologyState::from_partial_topology(&PartialTopology {
-            problem: normalized_problem(&caller_problem),
-            nodes: vec![
-                PhysicalNode {
-                    id: NodeId(0),
-                    node_type: NodeType::Merger2,
-                },
-                PhysicalNode {
-                    id: NodeId(1),
-                    node_type: NodeType::Merger2,
-                },
-            ],
-            links: vec![
-                PartialLink {
-                    producer: ProducerPortRef::Node {
-                        node: NodeId(0),
-                        port: 0,
-                    },
-                    consumer: ConsumerPortRef::Node {
-                        node: NodeId(1),
-                        port: 0,
-                    },
-                    flow: None,
-                },
-                PartialLink {
-                    producer: ProducerPortRef::Node {
-                        node: NodeId(1),
-                        port: 0,
-                    },
-                    consumer: ConsumerPortRef::Node {
-                        node: NodeId(0),
-                        port: 0,
-                    },
-                    flow: None,
-                },
-            ],
-            discard_count: 0,
-            remaining_profile: NodeProfile::default(),
-        })
-        .unwrap();
-        assert!(matches!(
-            analyze_reachability(&state).verdict,
-            ReachabilityVerdict::ProvenDead(_)
-        ));
-        let cancel = AtomicBool::new(false);
-        let mut context = SearchContext::new(&normalized, profile(0, 0, 2, 0), &cancel);
-        learn_structural_no_good(
-            &state,
-            &mut context,
-            ConflictRule::ConnectivityImpossibility,
-        );
-        assert_eq!(context.structural_no_goods.len(), 1);
-        assert_eq!(matches_structural_no_good(&state, &mut context), Some(true));
-        assert_eq!(context.stats.instrumentation.no_good_hits, 1);
     }
 
     #[test]
@@ -3889,14 +2377,12 @@ mod tests {
                 &normalized,
                 fixed_profile,
                 &AtomicBool::new(false),
-                &[],
-                SearchFeatures::WITHOUT_COMPONENTS,
+                SearchFeatures::PRODUCTION,
             ));
             let unbounded = exhaustive_witness(search_profile_with_features(
                 &normalized,
                 fixed_profile,
                 &AtomicBool::new(false),
-                &[],
                 SearchFeatures::UNOPTIMIZED,
             ));
             assert_eq!(bounded, reference);
@@ -3919,14 +2405,12 @@ mod tests {
             &capacity_normalized,
             fixed_profile,
             &AtomicBool::new(false),
-            &[],
-            SearchFeatures::OPTIMIZED,
+            SearchFeatures::PRODUCTION,
         ));
         let (unoptimized_witness, _) = exhausted_result(search_profile_with_features(
             &capacity_normalized,
             fixed_profile,
             &AtomicBool::new(false),
-            &[],
             SearchFeatures::UNOPTIMIZED,
         ));
 
@@ -4003,15 +2487,13 @@ mod tests {
             &normalized,
             profile,
             &AtomicBool::new(false),
-            &[],
-            SearchFeatures::OPTIMIZED,
+            SearchFeatures::PRODUCTION,
         ));
         let (unoptimized_witness, unoptimized_stats) =
             exhausted_result(search_profile_with_features(
                 &normalized,
                 profile,
                 &AtomicBool::new(false),
-                &[],
                 SearchFeatures::UNOPTIMIZED,
             ));
 

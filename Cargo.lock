@@ -2819,7 +2819,6 @@ dependencies = [
  "serde_json",
  "solver-api",
  "solver-core",
- "solver-db",
  "solver-z3",
  "tauri",
  "tauri-build",
@@ -3168,19 +3167,6 @@ dependencies = [
  "solver-reference",
  "solver-validation",
  "solver-z3",
- "thiserror 2.0.20",
-]
-
-[[package]]
-name = "solver-db"
-version = "0.1.0"
-dependencies = [
- "rusqlite",
- "sha2",
- "solver-api",
- "solver-core",
- "solver-reference",
- "tempfile",
  "thiserror 2.0.20",
 ]
 

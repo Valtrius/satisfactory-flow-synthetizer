@@ -8,11 +8,7 @@ use custom_solver_adapter::{
     presentation::{PresentedSolveOutcome, present_best_known_solution, present_solve_result},
 };
 use solver_api::{IncompleteReason, SolveResult, SolverEvent};
-use solver_core::{
-    SolveOptions, enumerate_with_component_resolver_and_observer,
-    solve_with_component_resolver_and_observer,
-};
-use solver_db::{ComponentDatabase, PrewarmOptions, PrewarmScheduling};
+use solver_core::{SolveOptions, enumerate_with_observer, solve_with_observer};
 use tauri::AppHandle;
 
 use crate::{
@@ -21,12 +17,7 @@ use crate::{
     layout_identity,
 };
 
-pub fn run_custom_job(
-    app: &AppHandle,
-    job: &Job,
-    request: &SolveRequest,
-    database: &ComponentDatabase,
-) {
+pub fn run_custom_job(app: &AppHandle, job: &Job, request: &SolveRequest) {
     let prepared = match request.to_custom_app().prepare() {
         Ok(prepared) => prepared,
         Err(error) => {
@@ -44,11 +35,6 @@ pub fn run_custom_job(
         worker_count: thread::available_parallelism().map_or(1, std::num::NonZero::get),
     };
 
-    let (runtime, _catalog_load) = database.application_component_runtime(PrewarmOptions {
-        max_nodes: 1,
-        max_boundary_ports: None,
-        scheduling: PrewarmScheduling::Live,
-    });
     let presentation_failure = Mutex::new(None);
     let observer = |event| {
         if let Err(error) = on_custom_event(app, job, request, &prepared, event) {
@@ -62,21 +48,9 @@ pub fn run_custom_job(
         }
     };
     let result = if request.enumerate_all_at_n {
-        enumerate_with_component_resolver_and_observer(
-            &prepared.problem,
-            &options,
-            &job.cancel,
-            &runtime,
-            &observer,
-        )
+        enumerate_with_observer(&prepared.problem, &options, &job.cancel, &observer)
     } else {
-        solve_with_component_resolver_and_observer(
-            &prepared.problem,
-            &options,
-            &job.cancel,
-            &runtime,
-            &observer,
-        )
+        solve_with_observer(&prepared.problem, &options, &job.cancel, &observer)
     };
 
     if let Some(error) = presentation_failure

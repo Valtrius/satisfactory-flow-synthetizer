@@ -63,7 +63,7 @@ pub enum ReferenceError {
 /// Exhaustively solve a small problem for the minimum physical operator count.
 ///
 /// This oracle deliberately uses no production lower bounds, partial-state cache,
-/// pruning, components, propagation, or no-goods. At a fixed equal-link group it
+/// pruning, or propagation. At a fixed equal-link group it
 /// enumerates every complete physical topology, deduplicates only completed graph
 /// isomorphs, and finishes the whole group before choosing its smallest canonical
 /// validated witness.

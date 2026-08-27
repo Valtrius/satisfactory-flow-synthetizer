@@ -80,8 +80,6 @@ function customPhaseLabel(phase: string): string {
       return 'Searching profiles';
     case 'validating_witness':
       return 'Validating witness';
-    case 'prewarming_components':
-      return 'Prewarming components';
     default:
       return phase;
   }

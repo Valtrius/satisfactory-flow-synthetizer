@@ -19,7 +19,6 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0.151"
 solver-api = { path = "../crates/solver-api" }
 solver-core = { path = "../crates/solver-core" }
-solver-db = { path = "../crates/solver-db" }
 solver-z3 = { path = "../crates/solver-z3" }
 tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"

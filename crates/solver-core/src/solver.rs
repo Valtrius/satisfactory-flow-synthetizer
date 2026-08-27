@@ -3,13 +3,13 @@
 use std::{
     collections::BTreeMap,
     panic::{AssertUnwindSafe, catch_unwind},
-    sync::{
-        Arc,
-        atomic::{AtomicBool, AtomicUsize, Ordering},
-    },
+    sync::atomic::{AtomicBool, AtomicUsize, Ordering},
     thread,
     time::Instant,
 };
+
+#[cfg(test)]
+use std::sync::Arc;
 
 use solver_api::{
     BestKnownSolution, ConsumerPortRef, IncompleteReason, IncompleteResult, InputTerminalIndex,
@@ -21,10 +21,8 @@ use thiserror::Error;
 
 use crate::{
     acyclic_incumbent::find_small_acyclic_witness,
-    canonical::{ConstructibilityCache, canonicalize_witness_cancellable},
-    component_search::{ApplicationComponentRuntime, ComponentResolver, EmptyComponentStore},
+    canonical::canonicalize_witness_cancellable,
     lower_bound::{LowerBoundError, baseline_lower_bounds},
-    no_good::StructuralNoGoodStore,
     problem::{InvalidProblem, NormalizedProblem, Preparation, prepare_problem},
     profile::{
         AccountedProfile, ProfileArithmeticError, ProfileLinkAccounting,
@@ -36,8 +34,8 @@ use crate::{
     },
     search::{
         ProfileSearchError, ProfileSearchResult, ProfileSearchStats, ProfileWitness, RootPartition,
-        RootPartitionPlan, plan_profile_root_partitions_with_cache,
-        search_profile_root_partition_with_caches,
+        RootPartitionPlan, plan_profile_root_partitions_with_accounting,
+        search_profile_root_partition,
     },
 };
 
@@ -193,112 +191,14 @@ pub fn solve_with_observer(
     cancel: &AtomicBool,
     observer: &dyn SolveObserver,
 ) -> Result<SolveResult, SolverError> {
-    let store = EmptyComponentStore;
-    let runtime = ApplicationComponentRuntime::new(&store, &store);
-    solve_with_component_resolver_and_observer(problem, options, cancel, &runtime, observer)
-}
-
-/// Solves with a reusable live component engine.
-///
-/// The resolver may discover, optimize, load, and persist component macros.
-/// None of those operations carries a parent-search pruning right. The outer
-/// proof still exhausts every fixed profile through primitive port matching,
-/// and the independent validator remains the return gate.
-///
-/// # Errors
-///
-/// Returns the same input and internal errors as [`solve`]. Resolver misses or
-/// failures remain optional acceleration failures and do not become solver
-/// errors.
-#[allow(clippy::too_many_lines)]
-pub fn solve_with_component_resolver(
-    problem: &Problem,
-    options: &SolveOptions,
-    cancel: &AtomicBool,
-    resolver: &dyn ComponentResolver,
-) -> Result<SolveResult, SolverError> {
-    solve_with_component_resolver_and_observer(problem, options, cancel, resolver, &|_| {})
-}
-
-/// Feature-gated helpers for determinism tests in dependent crates.
-///
-/// The default build has no scheduling control. This module exists only when
-/// the `test-hooks` feature is selected by a development dependency.
-#[cfg(feature = "test-hooks")]
-#[doc(hidden)]
-pub mod test_support {
-    use std::sync::atomic::AtomicBool;
-
-    use solver_api::{Problem, SolveResult};
-
-    use crate::component_search::ComponentResolver;
-
-    use super::{
-        RootTaskSchedule, SolveOptions, SolverError,
-        solve_with_component_resolver_and_observer_ordered,
-    };
-
-    /// Deterministic permutations of the complete canonical root-task list.
-    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-    pub enum TestRootSchedule {
-        /// Search roots in canonical `(profile, partition)` order.
-        Canonical,
-        /// Search the same roots in reverse canonical order.
-        ReverseCanonical,
-    }
-
-    /// Solves with a test-only root-task permutation.
-    ///
-    /// Both schedules register and exhaust the same proof leaves. The hook
-    /// changes only their static assignment to workers.
-    ///
-    /// # Errors
-    ///
-    /// Returns the same errors as the production component-resolver entry point.
-    pub fn solve_with_component_resolver_and_root_schedule(
-        problem: &Problem,
-        options: &SolveOptions,
-        cancel: &AtomicBool,
-        resolver: &dyn ComponentResolver,
-        schedule: TestRootSchedule,
-    ) -> Result<SolveResult, SolverError> {
-        let schedule = match schedule {
-            TestRootSchedule::Canonical => RootTaskSchedule::Canonical,
-            TestRootSchedule::ReverseCanonical => RootTaskSchedule::ReverseCanonical,
-        };
-        solve_with_component_resolver_and_observer_ordered(
-            problem,
-            options,
-            cancel,
-            resolver,
-            &|_| {},
-            schedule,
-            false,
-        )
-    }
-}
-
-/// Solves with a reusable component engine and a live observer.
-///
-/// # Errors
-///
-/// Returns the same exact input or internal failures as [`solve`].
-#[allow(clippy::too_many_lines)]
-pub fn solve_with_component_resolver_and_observer(
-    problem: &Problem,
-    options: &SolveOptions,
-    cancel: &AtomicBool,
-    resolver: &dyn ComponentResolver,
-    observer: &dyn SolveObserver,
-) -> Result<SolveResult, SolverError> {
-    solve_with_component_resolver_and_observer_ordered(
+    solve_internal(
         problem,
         options,
         cancel,
-        resolver,
         observer,
-        RootTaskSchedule::Canonical,
         false,
+        #[cfg(test)]
+        None,
     )
 }
 
@@ -310,52 +210,32 @@ pub fn solve_with_component_resolver_and_observer(
 ///
 /// # Errors
 ///
-/// Returns the same errors as [`solve_with_component_resolver_and_observer`].
-#[allow(clippy::too_many_lines)]
-pub fn enumerate_with_component_resolver_and_observer(
-    problem: &Problem,
-    options: &SolveOptions,
-    cancel: &AtomicBool,
-    resolver: &dyn ComponentResolver,
-    observer: &dyn SolveObserver,
-) -> Result<SolveResult, SolverError> {
-    solve_with_component_resolver_and_observer_ordered(
-        problem,
-        options,
-        cancel,
-        resolver,
-        observer,
-        RootTaskSchedule::Canonical,
-        true,
-    )
-}
-
-/// Enumerates every distinct validated topology at the minimum physical node count without a
-/// persistent component store.
-///
-/// # Errors
-///
-/// Returns the same errors as [`enumerate_with_component_resolver_and_observer`].
+/// Returns the same errors as [`solve_with_observer`].
 pub fn enumerate_with_observer(
     problem: &Problem,
     options: &SolveOptions,
     cancel: &AtomicBool,
     observer: &dyn SolveObserver,
 ) -> Result<SolveResult, SolverError> {
-    let store = EmptyComponentStore;
-    let runtime = ApplicationComponentRuntime::new(&store, &store);
-    enumerate_with_component_resolver_and_observer(problem, options, cancel, &runtime, observer)
+    solve_internal(
+        problem,
+        options,
+        cancel,
+        observer,
+        true,
+        #[cfg(test)]
+        None,
+    )
 }
 
 #[allow(clippy::too_many_lines)]
-fn solve_with_component_resolver_and_observer_ordered(
+fn solve_internal(
     problem: &Problem,
     options: &SolveOptions,
     cancel: &AtomicBool,
-    resolver: &dyn ComponentResolver,
     observer: &dyn SolveObserver,
-    root_task_schedule: RootTaskSchedule,
     enumerate_all_at_n: bool,
+    #[cfg(test)] panic_next_root_worker: Option<&AtomicBool>,
 ) -> Result<SolveResult, SolverError> {
     if options.worker_count == 0 {
         return Err(SolverError::InvalidWorkerCount);
@@ -434,7 +314,6 @@ fn solve_with_component_resolver_and_observer_ordered(
     let mut preferred = None;
     let mut winning_node = None;
     let mut node_count = bounds.combined_nodes;
-    let structural_no_goods = Arc::new(StructuralNoGoodStore::default());
     let mut proof_ledger = ProofLedger::default();
 
     loop {
@@ -555,10 +434,9 @@ fn solve_with_component_resolver_and_observer_ordered(
                 link_count: group.link_count,
                 requested_workers: options.worker_count,
                 cancel,
-                resolver,
-                structural_no_goods: &structural_no_goods,
-                root_task_schedule,
                 collect_all_witnesses: enumerate_all_at_n,
+                #[cfg(test)]
+                panic_next_root_worker,
             }
             .run(group.profiles, &mut proof_ledger)?;
             let mut group_best = None;
@@ -852,25 +730,6 @@ struct RootTask {
     partition: RootPartition,
 }
 
-#[derive(Clone, Copy, Debug)]
-enum RootTaskSchedule {
-    Canonical,
-    #[cfg(feature = "test-hooks")]
-    ReverseCanonical,
-}
-
-impl RootTaskSchedule {
-    fn apply(self, tasks: &mut [RootTask]) {
-        match self {
-            Self::Canonical => {
-                let _ = tasks;
-            }
-            #[cfg(feature = "test-hooks")]
-            Self::ReverseCanonical => tasks.reverse(),
-        }
-    }
-}
-
 #[derive(Debug)]
 struct RootTaskOutput {
     profile_index: usize,
@@ -892,10 +751,9 @@ struct ProfileGroupRun<'a> {
     link_count: u32,
     requested_workers: usize,
     cancel: &'a AtomicBool,
-    resolver: &'a dyn ComponentResolver,
-    structural_no_goods: &'a Arc<StructuralNoGoodStore>,
-    root_task_schedule: RootTaskSchedule,
     collect_all_witnesses: bool,
+    #[cfg(test)]
+    panic_next_root_worker: Option<&'a AtomicBool>,
 }
 
 /// Proves one equal-link group with deterministic, static profile assignment.
@@ -915,11 +773,8 @@ impl ProfileGroupRun<'_> {
             self.link_count,
             profiles.iter().map(|accounted| accounted.profile),
         )?;
-        let constructibility_cache = Arc::new(ConstructibilityCache::default());
-        let (mut root_tasks, mut root_outputs) =
-            self.plan_roots(&profiles, ledger, &constructibility_cache)?;
-        self.root_task_schedule.apply(&mut root_tasks);
-        root_outputs.extend(self.execute_roots(&root_tasks, &constructibility_cache));
+        let (root_tasks, mut root_outputs) = self.plan_roots(&profiles, ledger)?;
+        root_outputs.extend(self.execute_roots(&root_tasks));
         root_outputs.sort_unstable_by_key(|task| (task.profile_index, task.partition));
         let mut completions = self.record_roots(&profiles, root_outputs, ledger)?;
         self.fold_profiles(profiles, &mut completions, ledger)
@@ -929,7 +784,6 @@ impl ProfileGroupRun<'_> {
         &self,
         profiles: &[AccountedProfile],
         ledger: &mut ProofLedger,
-        constructibility_cache: &Arc<ConstructibilityCache>,
     ) -> Result<(Vec<RootTask>, Vec<RootTaskOutput>), SolverError> {
         let mut tasks = Vec::new();
         let mut immediate = Vec::new();
@@ -944,12 +798,11 @@ impl ProfileGroupRun<'_> {
                 immediate.push(cancelled_root_output(profile_index, 0));
                 continue;
             }
-            match plan_profile_root_partitions_with_cache(
+            match plan_profile_root_partitions_with_accounting(
                 self.problem,
                 accounted.profile,
                 self.cancel,
                 Some(accounted.accounting),
-                constructibility_cache,
             ) {
                 RootPartitionPlan::Partitions(partitions) => {
                     ledger.register_profile_partitions(
@@ -982,19 +835,13 @@ impl ProfileGroupRun<'_> {
         Ok((tasks, immediate))
     }
 
-    fn execute_roots(
-        &self,
-        tasks: &[RootTask],
-        constructibility_cache: &Arc<ConstructibilityCache>,
-    ) -> Vec<RootTaskOutput> {
+    fn execute_roots(&self, tasks: &[RootTask]) -> Vec<RootTaskOutput> {
         let worker_count = self.requested_workers.min(tasks.len());
         let next_task = AtomicUsize::new(0);
         thread::scope(|scope| {
             let mut handles = Vec::with_capacity(worker_count);
             for _ in 0..worker_count {
                 let next_task = &next_task;
-                let shared_no_goods = Arc::clone(self.structural_no_goods);
-                let constructibility_cache = Arc::clone(constructibility_cache);
                 let handle = scope.spawn(move || {
                     let mut completed = Vec::new();
                     loop {
@@ -1007,11 +854,7 @@ impl ProfileGroupRun<'_> {
                         let Some(task) = tasks.get(index) else {
                             break;
                         };
-                        completed.push(self.execute_root(
-                            task,
-                            &shared_no_goods,
-                            Arc::clone(&constructibility_cache),
-                        ));
+                        completed.push(self.execute_root(task));
                     }
                     completed
                 });
@@ -1021,22 +864,20 @@ impl ProfileGroupRun<'_> {
         })
     }
 
-    fn execute_root(
-        &self,
-        task: &RootTask,
-        structural_no_goods: &Arc<StructuralNoGoodStore>,
-        constructibility_cache: Arc<ConstructibilityCache>,
-    ) -> RootTaskOutput {
+    fn execute_root(&self, task: &RootTask) -> RootTaskOutput {
         let partition = task.partition.id().ordinal();
         let result = catch_unwind(AssertUnwindSafe(|| {
-            search_profile_root_partition_with_caches(
+            #[cfg(test)]
+            assert!(
+                !self
+                    .panic_next_root_worker
+                    .is_some_and(|flag| flag.swap(false, Ordering::Relaxed)),
+                "injected worker failure"
+            );
+            search_profile_root_partition(
                 self.problem,
                 task.accounted.profile,
                 self.cancel,
-                &[],
-                self.resolver,
-                Arc::clone(structural_no_goods),
-                constructibility_cache,
                 Some(task.accounted.accounting),
                 &task.partition,
                 self.collect_all_witnesses,
@@ -1392,19 +1233,8 @@ fn merge_instrumentation(total: &mut SearchInstrumentation, profile: &SearchInst
     total.lower_bound_prunes = total
         .lower_bound_prunes
         .saturating_add(profile.lower_bound_prunes);
-    total.no_good_hits = total.no_good_hits.saturating_add(profile.no_good_hits);
     total.scc_solves = total.scc_solves.saturating_add(profile.scc_solves);
     total.scc_cache_hits = total.scc_cache_hits.saturating_add(profile.scc_cache_hits);
-    total.component_hits = total.component_hits.saturating_add(profile.component_hits);
-    total.component_optimizations = total
-        .component_optimizations
-        .saturating_add(profile.component_optimizations);
-    total.component_db_lookups = total
-        .component_db_lookups
-        .saturating_add(profile.component_db_lookups);
-    total.component_db_hits = total
-        .component_db_hits
-        .saturating_add(profile.component_db_hits);
     total.canonicalization_time_ns = total
         .canonicalization_time_ns
         .saturating_add(profile.canonicalization_time_ns);
@@ -1462,9 +1292,6 @@ mod tests {
 
     use super::*;
     use crate::{
-        component_application::ComponentApplicationRequest,
-        component_search::ComponentResolution,
-        components::Component,
         profile::{enumerate_profile_groups, profile_link_accounting},
         search::search_profile,
     };
@@ -2153,31 +1980,19 @@ mod tests {
 
     #[test]
     fn panicking_profile_worker_returns_internal_error() {
-        struct PanickingResolver;
-
-        impl ComponentResolver for PanickingResolver {
-            fn ordered_components(&self) -> Vec<Component> {
-                panic!("injected worker failure");
-            }
-
-            fn resolve(
-                &self,
-                _candidate: &Component,
-                _request: &ComponentApplicationRequest,
-                _cancel: &AtomicBool,
-            ) -> ComponentResolution {
-                unreachable!("ordered component discovery fails first")
-            }
-        }
-
-        let error = solve_with_component_resolver(
-            &problem(&[1], &[1], 1),
+        // Direct-link optima never spawn root workers; use a one-node profile so
+        // execute_root is reached and the injected panic is observed.
+        let panic_next_root_worker = AtomicBool::new(true);
+        let error = solve_internal(
+            &problem(&[2], &[1, 1], 2),
             &SolveOptions {
-                max_nodes: Some(0),
+                max_nodes: Some(1),
                 worker_count: 2,
             },
             &AtomicBool::new(false),
-            &PanickingResolver,
+            &|_| {},
+            false,
+            Some(&panic_next_root_worker),
         )
         .unwrap_err();
         assert_eq!(

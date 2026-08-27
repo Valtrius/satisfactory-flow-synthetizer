@@ -42,7 +42,7 @@ Every physical belt, including discard belts, must carry a positive flow that do
 
 ### Solvers
 
-- **Custom** — deterministic exact topology search with proof accounting, independent validation, incremental incumbents, complete minimum-node enumeration, and an optional verified SQLite component accelerator.
+- **Custom** — deterministic exact topology search with proof accounting, independent validation, incremental incumbents, and complete minimum-node enumeration.
 - **Z3** — portfolio SMT solver with parallel attempts, progress telemetry, feedback verification, cancellation, and minimum-node enumeration.
 
 Both solvers optimize lexicographically by physical splitter/merger count, then by non-discard operator-to-operator link count. Custom proves that order with its link-group ledger. Z3 Opt finds any min-N layout, streams improving `best_known` incumbents under a strict belt cap, then proves nothing better exists. Returned witnesses pass an independent validator before they reach the UI.
@@ -79,11 +79,10 @@ Benchmarks from a development build are not representative. Use a release build 
 - `frontend` — Svelte 5 UI, queue/history model, solver telemetry, topology graph, edit history, and export tools
 - `src-tauri` — desktop lifecycle, IPC job snapshots, engine dispatch, cancellation, and SQLite history
 - `solver-z3` — Z3 implementation
-- `solver-core` — Custom exact search, proof ledger, SCC/component machinery, and parallel coordinator
+- `solver-core` — Custom exact search, proof ledger, SCC analysis, and parallel coordinator
 - `solver-api` — public problem, result, proof, validation, and progress types
 - `solver-validation` — independent exact validation firewall
 - `solver-reference` — simple exhaustive differential oracle for small cases
-- `solver-db` — optional verified SQLite component persistence and background prewarming
 - `custom-solver-adapter` (under `crates/synthetizer-app`) — request preparation and graph presentation for Custom
 
 ### Development

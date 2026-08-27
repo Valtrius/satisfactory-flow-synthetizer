@@ -7,10 +7,7 @@
 
 use std::{
     collections::{BTreeMap, BTreeSet},
-    sync::{
-        RwLock,
-        atomic::{AtomicBool, Ordering},
-    },
+    sync::atomic::{AtomicBool, Ordering},
     time::Instant,
 };
 
@@ -22,10 +19,7 @@ use solver_api::{
     ProducerPortRef, Rational,
 };
 
-use crate::{
-    hotspot_profile,
-    topology::{OpenPortRef, TopologyState},
-};
+use crate::{hotspot_profile, topology::OpenPortRef};
 
 /// One structural connection in a partial topology.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -70,8 +64,7 @@ pub struct PartialTopology {
 /// selection minimizes topology plus algebra together, so topology automorphisms
 /// cannot leak arbitrary labels into the semantic order. A propagated link value
 /// contributes only an equality row; raw `None`/`Some` coloring and algebra row
-/// insertion order never enter the key. Component R/T/K rows are certified exact
-/// summaries of the same flattened primitive row space and add no provenance.
+/// insertion order never enter the key.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct StateKey(Vec<u8>);
 
@@ -170,15 +163,6 @@ impl CanonicalOpenPortKey {
     pub fn as_bytes(&self) -> &[u8] {
         &self.0
     }
-}
-
-/// One automorphism orbit of physical links in a partial topology.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct MarkedLinkOrbit {
-    /// Canonical identity shared by every link in the orbit.
-    pub key: MarkedLinkCanonicalKey,
-    /// Original snapshot indices belonging to this orbit, in ascending order.
-    pub link_indices: Vec<usize>,
 }
 
 /// Computes the exact canonical state key used by per-profile memoization.
@@ -302,151 +286,6 @@ fn canonicalize_scc_summary_input_with_relabeling_inner(
         producer_relabeling,
         consumer_relabeling,
     })
-}
-
-/// Computes a problem-independent canonical key for structural no-goods.
-///
-/// Exact terminal rates, capacity, and propagated flows are erased while node
-/// types, terminal side/count, discard count, occupied ports, and remaining
-/// inventory are preserved. This projection may only index contradictions whose
-/// proof is itself independent of rates and capacity (for example a closed
-/// unreachable region). Using it for an algebraic conflict would be unsound.
-#[must_use]
-pub fn canonicalize_structural_state(topology: &PartialTopology) -> StateKey {
-    let mut structural = topology.clone();
-    structural.problem.inputs.fill(Rational::one());
-    structural.problem.outputs.fill(Rational::one());
-    structural.problem.max_link_rate = Rational::one();
-    for link in &mut structural.links {
-        link.flow = None;
-    }
-    canonicalize_state(&structural)
-}
-
-pub(crate) fn canonicalize_structural_state_cancellable(
-    topology: &PartialTopology,
-    cancel: &AtomicBool,
-) -> Option<StateKey> {
-    let mut structural = topology.clone();
-    structural.problem.inputs.fill(Rational::one());
-    structural.problem.outputs.fill(Rational::one());
-    structural.problem.max_link_rate = Rational::one();
-    for link in &mut structural.links {
-        link.flow = None;
-    }
-    canonicalize_state_cancellable(&structural, cancel)
-}
-
-/// Canonicalizes one solve-local conflict core selected by physical link index.
-///
-/// Only links named by the proof core and their incident typed nodes remain
-/// materialized. Every omitted materialized node is returned to anonymous
-/// `remaining_profile` inventory. Consequently the key describes the decisions
-/// that proved the contradiction, rather than the incidental full search state
-/// in which they were observed. Exact terminal rates, capacity, and propagated
-/// values on selected links remain part of this solve-local identity.
-///
-/// Returns `None` if an index is out of range, a selected endpoint references an
-/// undeclared node, or returning omitted nodes would overflow the profile.
-#[must_use]
-pub fn canonicalize_local_decision_core(
-    topology: &PartialTopology,
-    selected_links: &[usize],
-) -> Option<StateKey> {
-    decision_core_projection(topology, selected_links).map(|core| canonicalize_state(&core))
-}
-
-pub(crate) fn canonicalize_local_decision_core_cancellable(
-    topology: &PartialTopology,
-    selected_links: &[usize],
-    cancel: &AtomicBool,
-) -> Option<StateKey> {
-    let core = decision_core_projection(topology, selected_links)?;
-    canonicalize_state_cancellable(&core, cancel)
-}
-
-/// Canonicalizes one problem-independent structural conflict core.
-///
-/// This uses the same induced decision projection as
-/// [`canonicalize_local_decision_core`] and additionally erases rates,
-/// capacity, and propagated flows. Terminal side/count, discard count, typed
-/// incident nodes, selected occupied ports, and total profile inventory remain
-/// encoded, so equality proves structural-core isomorphism without depending on
-/// the current numerical problem.
-#[must_use]
-pub fn canonicalize_structural_decision_core(
-    topology: &PartialTopology,
-    selected_links: &[usize],
-) -> Option<StateKey> {
-    decision_core_projection(topology, selected_links)
-        .map(|core| canonicalize_structural_state(&core))
-}
-
-pub(crate) fn canonicalize_structural_decision_core_cancellable(
-    topology: &PartialTopology,
-    selected_links: &[usize],
-    cancel: &AtomicBool,
-) -> Option<StateKey> {
-    let core = decision_core_projection(topology, selected_links)?;
-    canonicalize_structural_state_cancellable(&core, cancel)
-}
-
-fn decision_core_projection(
-    topology: &PartialTopology,
-    selected_links: &[usize],
-) -> Option<PartialTopology> {
-    let selected = selected_links.iter().copied().collect::<BTreeSet<_>>();
-    if selected
-        .last()
-        .is_some_and(|&index| index >= topology.links.len())
-    {
-        return None;
-    }
-
-    let mut incident_nodes = BTreeSet::new();
-    for &index in &selected {
-        let link = &topology.links[index];
-        if let ProducerPortRef::Node { node, .. } = link.producer {
-            incident_nodes.insert(node);
-        }
-        if let ConsumerPortRef::Node { node, .. } = link.consumer {
-            incident_nodes.insert(node);
-        }
-    }
-    if incident_nodes
-        .iter()
-        .any(|node| !topology.nodes.iter().any(|candidate| candidate.id == *node))
-    {
-        return None;
-    }
-
-    let mut remaining_profile = topology.remaining_profile;
-    for node in &topology.nodes {
-        if !incident_nodes.contains(&node.id) {
-            give_back_profile_node(&mut remaining_profile, node.node_type)?;
-        }
-    }
-    Some(PartialTopology {
-        problem: topology.problem.clone(),
-        nodes: topology
-            .nodes
-            .iter()
-            .filter(|node| incident_nodes.contains(&node.id))
-            .cloned()
-            .collect(),
-        links: selected
-            .into_iter()
-            .map(|index| topology.links[index].clone())
-            .collect(),
-        discard_count: topology.discard_count,
-        remaining_profile,
-    })
-}
-
-/// Alias that emphasizes the partial-topology input.
-#[must_use]
-pub fn canonicalize_partial(topology: &PartialTopology) -> StateKey {
-    canonicalize_state(topology)
 }
 
 /// Canonicalizes a complete physical witness using the shared authoritative byte protocol.
@@ -610,384 +449,6 @@ fn canonicalize_open_port_inner(
         .map(|selected| CanonicalOpenPortKey(selected.bytes))
 }
 
-/// Partitions all physical links into exact automorphism orbits.
-#[must_use]
-pub fn marked_link_orbits(topology: &PartialTopology) -> Vec<MarkedLinkOrbit> {
-    let mut groups = BTreeMap::<MarkedLinkCanonicalKey, Vec<usize>>::new();
-    for link in 0..topology.links.len() {
-        groups
-            .entry(canonicalize_marked_link(topology, link))
-            .or_default()
-            .push(link);
-    }
-    groups
-        .into_iter()
-        .map(|(key, link_indices)| MarkedLinkOrbit { key, link_indices })
-        .collect()
-}
-
-/// Partitions only links whose exact reverse is a valid lazy-construction parent transition.
-#[must_use]
-pub fn admissible_marked_link_orbits(topology: &PartialTopology) -> Vec<MarkedLinkOrbit> {
-    let mut groups = BTreeMap::<MarkedLinkCanonicalKey, Vec<usize>>::new();
-    for link in admissible_link_indices(topology) {
-        groups
-            .entry(canonicalize_marked_link(topology, link))
-            .or_default()
-            .push(link);
-    }
-    groups
-        .into_iter()
-        .map(|(key, link_indices)| MarkedLinkOrbit { key, link_indices })
-        .collect()
-}
-
-/// Returns whether deleting `link` gives a parent whose selected MRV orbit can
-/// recreate the same marked child transition from a recursively constructible
-/// parent.
-///
-/// When deletion isolates one endpoint node, reversing the forward lazy-node
-/// attachment also dematerializes that node and restores its profile count.
-/// The reduced parent is canonically relabeled before deterministic MRV is
-/// evaluated. Consequently this predicate depends only on the colored child
-/// isomorphism class, never on insertion order, worker provenance, or labels.
-#[must_use]
-pub fn is_admissible_reverse_transition(topology: &PartialTopology, link: usize) -> bool {
-    if link >= topology.links.len() {
-        return false;
-    }
-    let structural_child = structural_projection(topology);
-    admissible_reverse_transition(&structural_child, link, &mut BTreeMap::new())
-}
-
-/// Returns whether `link` belongs to the invariant canonical last-link orbit.
-///
-/// Canonical augmentation minimizes only over admissible reverse transitions,
-/// not over every physical link. Each admissible reduction reconstructs a valid
-/// parent and proves that the parent's canonical deterministic MRV orbit can
-/// add the marked transition. Admissibility and marked keys are isomorphism
-/// invariants, so their minimum selects one entire link orbit. Every retained
-/// child therefore has an accepted construction parent, and rejecting other
-/// eligible or ineligible links removes construction histories rather than
-/// physical witnesses. This is equivalence pruning, not an impossibility guess.
-#[must_use]
-pub fn is_canonical_last_link(topology: &PartialTopology, link: usize) -> bool {
-    let cache = ConstructibilityCache::default();
-    is_canonical_last_link_with_cache(topology, link, &cache, &AtomicBool::new(false))
-        .unwrap_or(false)
-}
-
-/// Solve-local completed constructibility facts shared by canonical workers.
-///
-/// Only final booleans enter this cache. Recursive provisional `false` values
-/// remain call-local, so a concurrent reader can never mistake in-progress work
-/// for a proof that a canonical parent is not constructible.
-#[derive(Debug, Default)]
-pub(crate) struct ConstructibilityCache {
-    completed: RwLock<BTreeMap<StateKey, bool>>,
-}
-
-/// Cached, cancellation-aware form of [`is_canonical_last_link`].
-///
-/// `None` reports cancellation and must propagate as an incomplete proof, never
-/// as an equivalence rejection.
-pub(crate) fn is_canonical_last_link_with_cache(
-    topology: &PartialTopology,
-    link: usize,
-    cache: &ConstructibilityCache,
-    cancel: &AtomicBool,
-) -> Option<bool> {
-    if cancel.load(Ordering::Relaxed) {
-        return None;
-    }
-    if link >= topology.links.len() {
-        return Some(false);
-    }
-    let admissible_started = Instant::now();
-    let Some(admissible) = admissible_link_indices_with_cache(topology, cache, cancel) else {
-        hotspot_profile::record_cl_admissible(admissible_started.elapsed());
-        return None;
-    };
-    hotspot_profile::record_cl_admissible(admissible_started.elapsed());
-    if !admissible.contains(&link) {
-        return Some(false);
-    }
-    let min_started = Instant::now();
-    let Some(candidate) = canonicalize_marked_link_cancellable(topology, link, cancel) else {
-        hotspot_profile::record_cl_min_select(min_started.elapsed());
-        return None;
-    };
-    let mut minimum = None;
-    for index in admissible {
-        let Some(key) = canonicalize_marked_link_cancellable(topology, index, cancel) else {
-            hotspot_profile::record_cl_min_select(min_started.elapsed());
-            return None;
-        };
-        if minimum.as_ref().is_none_or(|current| key < *current) {
-            minimum = Some(key);
-        }
-    }
-    hotspot_profile::record_cl_min_select(min_started.elapsed());
-    Some(minimum.is_some_and(|minimum| candidate == minimum))
-}
-
-fn admissible_link_indices(topology: &PartialTopology) -> Vec<usize> {
-    // Construction eligibility is structural. This prevents later exact flow
-    // propagation from changing which histories exist; exact flow still colors
-    // the marked keys used to choose among eligible link orbits.
-    let structural_child = structural_projection(topology);
-    let mut memo = BTreeMap::new();
-    (0..topology.links.len())
-        .filter(|&link| admissible_reverse_transition(&structural_child, link, &mut memo))
-        .collect()
-}
-
-fn admissible_link_indices_with_cache(
-    topology: &PartialTopology,
-    cache: &ConstructibilityCache,
-    cancel: &AtomicBool,
-) -> Option<Vec<usize>> {
-    let structural_child = structural_projection(topology);
-    let mut local_memo = BTreeMap::new();
-    let mut admissible = Vec::new();
-    for link in 0..topology.links.len() {
-        if cancel.load(Ordering::Relaxed) {
-            return None;
-        }
-        if admissible_reverse_transition_with_cache(
-            &structural_child,
-            link,
-            &mut local_memo,
-            cache,
-            cancel,
-        )? {
-            admissible.push(link);
-        }
-    }
-    Some(admissible)
-}
-
-fn admissible_reverse_transition_with_cache(
-    structural_child: &PartialTopology,
-    link: usize,
-    local_memo: &mut BTreeMap<StateKey, bool>,
-    cache: &ConstructibilityCache,
-    cancel: &AtomicBool,
-) -> Option<bool> {
-    if cancel.load(Ordering::Relaxed) {
-        return None;
-    }
-    hotspot_profile::record_cl_reverse_check();
-    let target_started = Instant::now();
-    let Some(target) = canonicalize_marked_link_cancellable(structural_child, link, cancel) else {
-        hotspot_profile::record_cl_reverse_target(target_started.elapsed());
-        return None;
-    };
-    hotspot_profile::record_cl_reverse_target(target_started.elapsed());
-    let Some(parent) = reverse_parent(structural_child, link) else {
-        return Some(false);
-    };
-    let parent_started = Instant::now();
-    let Some(canonical_parent) = canonical_partial_topology_cancellable(&parent, cancel) else {
-        hotspot_profile::record_cl_reverse_parent_canon(parent_started.elapsed());
-        return None;
-    };
-    hotspot_profile::record_cl_reverse_parent_canon(parent_started.elapsed());
-    Some(
-        recursively_constructible_with_cache(&canonical_parent, local_memo, cache, cancel)?
-            && parent_can_recreate_marked_child_cancellable(&canonical_parent, &target, cancel)?,
-    )
-}
-
-fn recursively_constructible_with_cache(
-    topology: &PartialTopology,
-    local_memo: &mut BTreeMap<StateKey, bool>,
-    cache: &ConstructibilityCache,
-    cancel: &AtomicBool,
-) -> Option<bool> {
-    if cancel.load(Ordering::Relaxed) {
-        return None;
-    }
-    let lookup_started = Instant::now();
-    let Some(canonical) = canonical_partial_topology_cancellable(topology, cancel) else {
-        hotspot_profile::record_cl_constructible_lookup(lookup_started.elapsed());
-        return None;
-    };
-    let Some(key) = canonicalize_state_cancellable(&canonical, cancel) else {
-        hotspot_profile::record_cl_constructible_lookup(lookup_started.elapsed());
-        return None;
-    };
-    if let Some(&known) = local_memo.get(&key) {
-        hotspot_profile::record_cl_constructible_lookup(lookup_started.elapsed());
-        hotspot_profile::record_cl_constructible_hit();
-        return Some(known);
-    }
-    if let Some(&known) = cache.completed.read().ok()?.get(&key) {
-        hotspot_profile::record_cl_constructible_lookup(lookup_started.elapsed());
-        hotspot_profile::record_cl_constructible_hit();
-        local_memo.insert(key, known);
-        return Some(known);
-    }
-    hotspot_profile::record_cl_constructible_lookup(lookup_started.elapsed());
-    let miss_started = Instant::now();
-    let constructible = if canonical.nodes.is_empty() && canonical.links.is_empty() {
-        Some(true)
-    } else if canonical.links.is_empty() {
-        Some(false)
-    } else {
-        // Link count strictly decreases, so this provisional value is needed
-        // only by this call and is never published to another worker.
-        local_memo.insert(key.clone(), false);
-        let mut found = false;
-        for link in 0..canonical.links.len() {
-            match admissible_reverse_transition_with_cache(
-                &canonical, link, local_memo, cache, cancel,
-            ) {
-                Some(true) => {
-                    found = true;
-                    break;
-                }
-                Some(false) => {}
-                None => {
-                    hotspot_profile::record_cl_constructible_miss(miss_started.elapsed());
-                    return None;
-                }
-            }
-        }
-        Some(found)
-    };
-    let Some(constructible) = constructible else {
-        hotspot_profile::record_cl_constructible_miss(miss_started.elapsed());
-        return None;
-    };
-    local_memo.insert(key.clone(), constructible);
-    cache.completed.write().ok()?.insert(key, constructible);
-    hotspot_profile::record_cl_constructible_miss(miss_started.elapsed());
-    Some(constructible)
-}
-
-fn admissible_reverse_transition(
-    structural_child: &PartialTopology,
-    link: usize,
-    constructible_memo: &mut BTreeMap<StateKey, bool>,
-) -> bool {
-    let target = canonicalize_marked_link(structural_child, link);
-    let Some(parent) = reverse_parent(structural_child, link) else {
-        return false;
-    };
-    let canonical_parent = canonical_partial_topology(&parent);
-    recursively_constructible(&canonical_parent, constructible_memo)
-        && parent_can_recreate_marked_child(&canonical_parent, &target)
-}
-
-fn recursively_constructible(
-    topology: &PartialTopology,
-    memo: &mut BTreeMap<StateKey, bool>,
-) -> bool {
-    let canonical = canonical_partial_topology(topology);
-    let key = canonicalize_state(&canonical);
-    if let Some(&known) = memo.get(&key) {
-        return known;
-    }
-    if canonical.nodes.is_empty() && canonical.links.is_empty() {
-        memo.insert(key, true);
-        return true;
-    }
-    if canonical.links.is_empty() {
-        memo.insert(key, false);
-        return false;
-    }
-
-    // Link count strictly decreases in every recursive call. Storing false
-    // before descent also makes the termination invariant explicit.
-    memo.insert(key.clone(), false);
-    let constructible = (0..canonical.links.len())
-        .any(|link| admissible_reverse_transition(&canonical, link, memo));
-    memo.insert(key, constructible);
-    constructible
-}
-
-fn parent_can_recreate_marked_child(
-    canonical_parent: &PartialTopology,
-    target: &MarkedLinkCanonicalKey,
-) -> bool {
-    let Ok(mut state) = TopologyState::from_partial_topology(canonical_parent) else {
-        return false;
-    };
-    for decision in state.legal_decisions() {
-        let checkpoint = state.checkpoint();
-        let recreated = state
-            .apply(decision)
-            .ok()
-            .and_then(|decision_id| state.link_index_for(decision_id))
-            .is_some_and(|added_link| {
-                canonicalize_marked_link(&state.partial_topology(), added_link) == *target
-            });
-        state.rollback(checkpoint);
-        if recreated {
-            return true;
-        }
-    }
-    false
-}
-
-fn parent_can_recreate_marked_child_cancellable(
-    canonical_parent: &PartialTopology,
-    target: &MarkedLinkCanonicalKey,
-    cancel: &AtomicBool,
-) -> Option<bool> {
-    let recreate_started = Instant::now();
-    let result =
-        parent_can_recreate_marked_child_cancellable_inner(canonical_parent, target, cancel);
-    hotspot_profile::record_cl_recreate(recreate_started.elapsed());
-    result
-}
-
-fn parent_can_recreate_marked_child_cancellable_inner(
-    canonical_parent: &PartialTopology,
-    target: &MarkedLinkCanonicalKey,
-    cancel: &AtomicBool,
-) -> Option<bool> {
-    let Ok(mut state) = TopologyState::from_partial_topology(canonical_parent) else {
-        return Some(false);
-    };
-    let legal_started = Instant::now();
-    let Some(decisions) = state.legal_decisions_cancellable(cancel) else {
-        hotspot_profile::record_cl_recreate_legal(legal_started.elapsed());
-        return None;
-    };
-    hotspot_profile::record_cl_recreate_legal(legal_started.elapsed());
-    for decision in decisions {
-        if cancel.load(Ordering::Relaxed) {
-            return None;
-        }
-        let checkpoint = state.checkpoint();
-        let recreated = if let Ok(decision_id) = state.apply_legal_decision(decision) {
-            if let Some(added_link) = state.link_index_for(decision_id) {
-                canonicalize_marked_link_cancellable(&state.partial_topology(), added_link, cancel)?
-                    == *target
-            } else {
-                false
-            }
-        } else {
-            false
-        };
-        state.rollback(checkpoint);
-        if recreated {
-            return Some(true);
-        }
-    }
-    Some(false)
-}
-
-fn structural_projection(topology: &PartialTopology) -> PartialTopology {
-    let mut structural = topology.clone();
-    for link in &mut structural.links {
-        link.flow = None;
-    }
-    structural
-}
-
 fn open_port_is_declared(topology: &PartialTopology, port: OpenPortRef) -> bool {
     match port {
         OpenPortRef::Producer(ProducerPortRef::Input(index)) => {
@@ -1021,56 +482,6 @@ fn open_port_is_unused(topology: &PartialTopology, port: OpenPortRef) -> bool {
     }
 }
 
-fn reverse_parent(topology: &PartialTopology, link: usize) -> Option<PartialTopology> {
-    let removed = topology.links.get(link)?;
-    let mut parent = topology.clone();
-    parent.links.remove(link);
-
-    let isolated = parent
-        .nodes
-        .iter()
-        .filter(|node| {
-            !parent
-                .links
-                .iter()
-                .any(|edge| link_touches_node(edge, node.id))
-        })
-        .map(|node| node.id)
-        .collect::<Vec<_>>();
-    match isolated.as_slice() {
-        [] => {}
-        [node_id] if link_touches_node(removed, *node_id) => {
-            let position = parent.nodes.iter().position(|node| node.id == *node_id)?;
-            let node = parent.nodes.remove(position);
-            give_back_profile_node(&mut parent.remaining_profile, node.node_type)?;
-        }
-        _ => return None,
-    }
-    Some(parent)
-}
-
-fn canonical_partial_topology(topology: &PartialTopology) -> PartialTopology {
-    let selected = select_canonical(topology, None, EncodingKind::State);
-    selected.topology.into_partial_topology(
-        topology.problem.clone(),
-        topology.discard_count,
-        topology.remaining_profile,
-    )
-}
-
-fn canonical_partial_topology_cancellable(
-    topology: &PartialTopology,
-    cancel: &AtomicBool,
-) -> Option<PartialTopology> {
-    select_canonical_cancellable(topology, None, EncodingKind::State, cancel).map(|selected| {
-        selected.topology.into_partial_topology(
-            topology.problem.clone(),
-            topology.discard_count,
-            topology.remaining_profile,
-        )
-    })
-}
-
 fn discard_count_from_links(links: &[PhysicalLink]) -> u32 {
     let indices = links
         .iter()
@@ -1085,22 +496,6 @@ fn discard_count_from_links(links: &[PhysicalLink]) -> u32 {
         "discard terminal identifiers must be contiguous"
     );
     count
-}
-
-fn link_touches_node(link: &PartialLink, node: NodeId) -> bool {
-    matches!(link.producer, ProducerPortRef::Node { node: owner, .. } if owner == node)
-        || matches!(link.consumer, ConsumerPortRef::Node { node: owner, .. } if owner == node)
-}
-
-fn give_back_profile_node(profile: &mut NodeProfile, node_type: NodeType) -> Option<()> {
-    let count = match node_type {
-        NodeType::Splitter2 => &mut profile.splitter2,
-        NodeType::Splitter3 => &mut profile.splitter3,
-        NodeType::Merger2 => &mut profile.merger2,
-        NodeType::Merger3 => &mut profile.merger3,
-    };
-    *count = count.checked_add(1)?;
-    Some(())
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1138,29 +533,6 @@ struct CanonicalPartialTopology {
 }
 
 impl CanonicalPartialTopology {
-    fn into_partial_topology(
-        self,
-        problem: Problem,
-        discard_count: u32,
-        remaining_profile: NodeProfile,
-    ) -> PartialTopology {
-        PartialTopology {
-            problem,
-            nodes: self.nodes,
-            links: self
-                .links
-                .into_iter()
-                .map(|link| PartialLink {
-                    producer: link.producer,
-                    consumer: link.consumer,
-                    flow: link.flow,
-                })
-                .collect(),
-            discard_count,
-            remaining_profile,
-        }
-    }
-
     fn into_physical_graph(self) -> Option<PhysicalGraph> {
         let links = self
             .links
@@ -2440,10 +1812,8 @@ fn primitive_equality_basis(
             surplus,
         ));
     } else {
-        // Production rejects an input deficit before search. Canonicalization
-        // also serves standalone component projections whose artificial terminal
-        // colors need not conserve flow, so represent that impossible global
-        // balance by the unique contradiction row instead of panicking.
+        // Production rejects input deficits before search. Represent an invalid
+        // balance passed directly to canonicalization by a contradiction row.
         rows.push(sum_assignment_row(variable_count, &[], Rational::one()));
     }
 
@@ -2558,35 +1928,6 @@ fn conservation_row(
         row[producer] = &row[producer] - Rational::one();
     }
     row
-}
-
-/// Returns the unique exact RREF basis of a homogeneous rational row space.
-///
-/// This crate-private bridge lets component propagation verify that a compact
-/// R/T/K certificate spans exactly the same physical endpoint equations as its
-/// flattened primitive witness. It accepts only dense rows of the declared
-/// width; raw topology or flow-variable identifiers never participate.
-pub(crate) fn canonical_homogeneous_row_space(
-    variable_count: usize,
-    rows: Vec<Vec<Rational>>,
-) -> Option<Vec<Vec<Rational>>> {
-    if rows.iter().any(|row| row.len() != variable_count) {
-        return None;
-    }
-    let augmented = rows
-        .into_iter()
-        .map(|mut row| {
-            row.push(Rational::zero());
-            row
-        })
-        .collect();
-    let mut basis = rational_rref(augmented, variable_count);
-    for row in &mut basis {
-        if !row.pop().is_some_and(|rhs| rhs.is_zero()) {
-            return None;
-        }
-    }
-    Some(basis)
 }
 
 fn rational_rref(mut rows: Vec<Vec<Rational>>, variable_count: usize) -> Vec<Vec<Rational>> {
@@ -2803,8 +2144,10 @@ fn write_u32(bytes: &mut Vec<u8>, value: u32) {
 
 #[cfg(test)]
 mod tests {
+    use crate::topology::TopologyState;
+
     use super::*;
-    use crate::{Preparation, prepare_problem, propagation::PropagationState};
+    use crate::propagation::PropagationState;
     use solver_reference::canonicalize_graph;
 
     fn rational(value: &str) -> Rational {
@@ -3123,130 +2466,6 @@ mod tests {
     }
 
     #[test]
-    fn structural_no_good_key_erases_only_problem_dependent_semantics() {
-        let mut left = PartialTopology {
-            discard_count: 0,
-            problem: problem(&["2"], &["2"]),
-            nodes: Vec::new(),
-            links: vec![partial_link(input(0), output(0), Some("2"))],
-            remaining_profile: NodeProfile::default(),
-        };
-        let mut right = left.clone();
-        right.problem = problem(&["7"], &["7"]);
-        right.problem.max_link_rate = rational("9");
-        right.links[0].flow = Some(rational("7"));
-        assert_ne!(canonicalize_state(&left), canonicalize_state(&right));
-        assert_eq!(
-            canonicalize_structural_state(&left),
-            canonicalize_structural_state(&right)
-        );
-
-        left.discard_count = 1;
-        assert_ne!(
-            canonicalize_structural_state(&left),
-            canonicalize_structural_state(&right),
-            "structural terminal and port inventory remains part of the key"
-        );
-    }
-
-    #[test]
-    fn decision_core_keys_survive_relabeling_and_scope_numerical_semantics_exactly() {
-        let specification = problem(&["2"], &["1", "1"]);
-        let left = PartialTopology {
-            discard_count: 0,
-            problem: specification.clone(),
-            nodes: vec![node(40, NodeType::Splitter2), node(9, NodeType::Splitter2)],
-            links: vec![
-                partial_link(input(0), consumer(40, 0), Some("2")),
-                partial_link(producer(40, 0), output(0), Some("1")),
-                partial_link(producer(40, 1), consumer(9, 0), Some("1")),
-                partial_link(producer(9, 0), output(1), None),
-            ],
-            remaining_profile: NodeProfile {
-                merger2: 1,
-                ..NodeProfile::default()
-            },
-        };
-        let right = PartialTopology {
-            discard_count: 0,
-            problem: specification,
-            nodes: vec![node(3, NodeType::Splitter2), node(700, NodeType::Splitter2)],
-            links: vec![
-                partial_link(producer(700, 0), output(0), Some("1")),
-                partial_link(producer(700, 1), consumer(3, 0), Some("1")),
-                partial_link(input(0), consumer(700, 0), Some("2")),
-                partial_link(producer(3, 1), output(1), None),
-            ],
-            remaining_profile: NodeProfile {
-                merger2: 1,
-                ..NodeProfile::default()
-            },
-        };
-
-        let left_local = canonicalize_local_decision_core(&left, &[0, 1]).unwrap();
-        let right_local = canonicalize_local_decision_core(&right, &[2, 0]).unwrap();
-        assert_eq!(left_local, right_local);
-        assert_eq!(
-            canonicalize_structural_decision_core(&left, &[0, 1]),
-            canonicalize_structural_decision_core(&right, &[2, 0])
-        );
-
-        let mut different_rates = right.clone();
-        different_rates.problem.inputs[0] = rational("3");
-        assert_ne!(
-            left_local,
-            canonicalize_local_decision_core(&different_rates, &[2, 0]).unwrap()
-        );
-        assert_eq!(
-            canonicalize_structural_decision_core(&left, &[0, 1]),
-            canonicalize_structural_decision_core(&different_rates, &[2, 0])
-        );
-
-        let mut different_capacity = right;
-        different_capacity.problem.max_link_rate = rational("7");
-        assert_ne!(
-            left_local,
-            canonicalize_local_decision_core(&different_capacity, &[2, 0]).unwrap()
-        );
-        assert_eq!(
-            canonicalize_structural_decision_core(&left, &[0, 1]),
-            canonicalize_structural_decision_core(&different_capacity, &[2, 0])
-        );
-    }
-
-    #[test]
-    fn empty_decision_core_returns_every_materialized_node_to_inventory() {
-        let specification = problem(&["1"], &["1"]);
-        let with_nodes = PartialTopology {
-            discard_count: 0,
-            problem: specification.clone(),
-            nodes: vec![node(40, NodeType::Splitter2), node(9, NodeType::Merger3)],
-            links: vec![partial_link(input(0), output(0), Some("1"))],
-            remaining_profile: NodeProfile {
-                splitter3: 1,
-                ..NodeProfile::default()
-            },
-        };
-        let anonymous = PartialTopology {
-            discard_count: 0,
-            problem: specification,
-            nodes: Vec::new(),
-            links: Vec::new(),
-            remaining_profile: NodeProfile {
-                splitter2: 1,
-                splitter3: 1,
-                merger3: 1,
-                ..NodeProfile::default()
-            },
-        };
-        assert_eq!(
-            canonicalize_local_decision_core(&with_nodes, &[]),
-            Some(canonicalize_state(&anonymous))
-        );
-        assert!(canonicalize_local_decision_core(&with_nodes, &[99]).is_none());
-    }
-
-    #[test]
     fn exact_known_link_equalities_are_normalized_without_exposing_labels() {
         let specification = problem(&["2"], &["1", "1"]);
         let left = PartialTopology {
@@ -3476,36 +2695,6 @@ mod tests {
     }
 
     #[test]
-    fn marked_link_keys_identify_invariant_parallel_link_orbits() {
-        let problem = problem(&["1"], &["1"]);
-        let topology = PartialTopology {
-            discard_count: 0,
-            problem,
-            nodes: vec![node(8, NodeType::Splitter2), node(2, NodeType::Merger2)],
-            links: vec![
-                partial_link(input(0), consumer(8, 0), None),
-                partial_link(producer(8, 0), consumer(2, 0), None),
-                partial_link(producer(8, 1), consumer(2, 1), None),
-                partial_link(producer(2, 0), output(0), None),
-            ],
-            remaining_profile: NodeProfile::default(),
-        };
-
-        assert_eq!(
-            canonicalize_marked_link(&topology, 1),
-            canonicalize_marked_link(&topology, 2)
-        );
-        let mut orbit_sizes = marked_link_orbits(&topology)
-            .into_iter()
-            .map(|orbit| orbit.link_indices.len())
-            .collect::<Vec<_>>();
-        orbit_sizes.sort_unstable();
-        assert_eq!(orbit_sizes, vec![1, 1, 2]);
-        assert!((0..topology.links.len()).any(|link| is_canonical_last_link(&topology, link)));
-        assert!(!is_canonical_last_link(&topology, topology.links.len()));
-    }
-
-    #[test]
     fn marked_link_orbits_survive_full_relabeling_and_link_reordering() {
         let problem = problem(&["1"], &["1"]);
         let left = PartialTopology {
@@ -3715,127 +2904,6 @@ mod tests {
     }
 
     #[test]
-    fn reversing_a_first_attachment_dematerializes_the_isolated_node() {
-        let problem = problem(&["2"], &["1", "1"]);
-        let normalized = match prepare_problem(&problem).unwrap() {
-            Preparation::Prepared(problem) => problem,
-            Preparation::GloballyUnsat(proof) => panic!("unexpected proof: {proof:?}"),
-        };
-        let mut state = TopologyState::new(
-            &normalized,
-            NodeProfile {
-                splitter2: 1,
-                ..NodeProfile::default()
-            },
-        )
-        .unwrap();
-        let decision = state
-            .legal_decisions()
-            .into_iter()
-            .find(|decision| {
-                matches!(
-                    decision.producer,
-                    crate::topology::ProducerChoice::NewNode { .. }
-                ) || matches!(
-                    decision.consumer,
-                    crate::topology::ConsumerChoice::NewNode { .. }
-                )
-            })
-            .unwrap();
-        let decision_id = state.apply(decision).unwrap();
-        let link = state.link_index_for(decision_id).unwrap();
-        let child = state.partial_topology();
-
-        let parent = reverse_parent(&child, link).expect("first attachment has a lazy parent");
-        assert!(parent.nodes.is_empty());
-        assert!(parent.links.is_empty());
-        assert_eq!(parent.remaining_profile.splitter2, 1);
-        assert!(is_admissible_reverse_transition(&child, link));
-        assert!(is_canonical_last_link(&child, link));
-    }
-
-    #[test]
-    fn reversing_one_link_cannot_dematerialize_two_isolated_nodes() {
-        let child = PartialTopology {
-            discard_count: 0,
-            problem: problem(&["1"], &["1"]),
-            nodes: vec![node(3, NodeType::Splitter2), node(8, NodeType::Merger2)],
-            links: vec![partial_link(producer(3, 0), consumer(8, 0), None)],
-            remaining_profile: NodeProfile::default(),
-        };
-
-        assert!(reverse_parent(&child, 0).is_none());
-        assert!(!is_admissible_reverse_transition(&child, 0));
-        assert!(!is_canonical_last_link(&child, 0));
-    }
-
-    #[test]
-    fn admissible_canonical_last_orbit_survives_all_relabelings() {
-        let problem = problem(&["2"], &["1", "1"]);
-        let left = PartialTopology {
-            discard_count: 0,
-            problem: problem.clone(),
-            nodes: vec![node(0, NodeType::Splitter2)],
-            links: vec![
-                partial_link(input(0), consumer(0, 0), None),
-                partial_link(producer(0, 0), output(0), None),
-                partial_link(producer(0, 1), output(1), None),
-            ],
-            remaining_profile: NodeProfile::default(),
-        };
-        let right = PartialTopology {
-            discard_count: 0,
-            problem,
-            nodes: vec![node(91, NodeType::Splitter2)],
-            links: vec![
-                partial_link(producer(91, 0), output(1), None),
-                partial_link(input(0), consumer(91, 0), None),
-                partial_link(producer(91, 1), output(0), None),
-            ],
-            remaining_profile: NodeProfile::default(),
-        };
-        let selected = |topology: &PartialTopology| {
-            (0..topology.links.len())
-                .filter(|&link| is_canonical_last_link(topology, link))
-                .map(|link| canonicalize_marked_link(topology, link))
-                .collect::<BTreeSet<_>>()
-        };
-
-        let left_selected = selected(&left);
-        assert!(!left_selected.is_empty());
-        assert_eq!(left_selected, selected(&right));
-
-        let cache = ConstructibilityCache::default();
-        let cancel = AtomicBool::new(false);
-        let cached_selected = |topology: &PartialTopology| {
-            (0..topology.links.len())
-                .filter(|&link| {
-                    is_canonical_last_link_with_cache(topology, link, &cache, &cancel) == Some(true)
-                })
-                .map(|link| canonicalize_marked_link(topology, link))
-                .collect::<BTreeSet<_>>()
-        };
-        assert_eq!(left_selected, cached_selected(&left));
-        assert_eq!(left_selected, cached_selected(&right));
-
-        cancel.store(true, Ordering::Relaxed);
-        assert_eq!(
-            is_canonical_last_link_with_cache(&left, 0, &cache, &cancel),
-            None
-        );
-        assert_eq!(
-            admissible_marked_link_orbits(&left)
-                .iter()
-                .map(|orbit| orbit.key.clone())
-                .collect::<BTreeSet<_>>(),
-            admissible_marked_link_orbits(&right)
-                .iter()
-                .map(|orbit| orbit.key.clone())
-                .collect::<BTreeSet<_>>()
-        );
-    }
-
-    #[test]
     fn complete_graph_can_be_snapshotted_without_changing_state_semantics() {
         let problem = problem(&["1"], &["1"]);
         let graph = PhysicalGraph {
@@ -3946,5 +3014,31 @@ mod tests {
         let huge = rational("123456789012345678901234567890/98765432109876543210987654321");
         let huge_basis = rational_rref(vec![assignment_row(1, 0, huge.clone())], 1);
         assert_eq!(huge_basis[0][1], huge);
+    }
+
+    #[test]
+    fn marked_link_keys_identify_invariant_parallel_link_orbits() {
+        let problem = problem(&["1"], &["1"]);
+        let topology = PartialTopology {
+            discard_count: 0,
+            problem,
+            nodes: vec![node(8, NodeType::Splitter2), node(2, NodeType::Merger2)],
+            links: vec![
+                partial_link(input(0), consumer(8, 0), None),
+                partial_link(producer(8, 0), consumer(2, 0), None),
+                partial_link(producer(8, 1), consumer(2, 1), None),
+                partial_link(producer(2, 0), output(0), None),
+            ],
+            remaining_profile: NodeProfile::default(),
+        };
+
+        assert_eq!(
+            canonicalize_marked_link(&topology, 1),
+            canonicalize_marked_link(&topology, 2)
+        );
+        let distinct_keys = (0..topology.links.len())
+            .map(|link| canonicalize_marked_link(&topology, link))
+            .collect::<BTreeSet<_>>();
+        assert_eq!(distinct_keys.len(), 3);
     }
 }

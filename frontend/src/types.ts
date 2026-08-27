@@ -108,8 +108,7 @@ export type CustomSolvePhase =
   | 'global_checks'
   | 'computing_lower_bound'
   | 'searching'
-  | 'validating_witness'
-  | 'prewarming_components';
+  | 'validating_witness';
 
 export interface ProofObligation {
   nodeCount: number;
@@ -125,13 +124,8 @@ export interface SearchInstrumentation {
   propagationContradictions: number;
   capacityPrunes: number;
   lowerBoundPrunes: number;
-  noGoodHits: number;
   sccSolves: number;
   sccCacheHits: number;
-  componentHits: number;
-  componentOptimizations: number;
-  componentDbLookups: number;
-  componentDbHits: number;
   canonicalizationTimeNs: number;
   algebraTimeNs: number;
   peakStateCacheSize: number;

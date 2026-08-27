@@ -2739,7 +2739,8 @@ mod tests {
             .expect("enumerated layouts");
         assert_eq!(opt.stats.belt_count, min_belts);
         assert!(
-            all.iter().any(|solution| solution.stats.belt_count > min_belts)
+            all.iter()
+                .any(|solution| solution.stats.belt_count > min_belts)
                 || streamed.len() == 1,
             "either enumeration has suboptimal L at Nmin (improve can matter) or the first witness was already Lmin"
         );

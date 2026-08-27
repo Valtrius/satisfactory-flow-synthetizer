@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{BestKnownSolution, NodeProfile};
 
-/// Current high-level phase of a live solve or component prewarm operation.
+/// Current high-level phase of a live solve.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SolvePhase {
@@ -16,8 +16,6 @@ pub enum SolvePhase {
     Searching,
     /// Flattening and independently validating a candidate witness.
     ValidatingWitness,
-    /// Exhaustively generating bounded reusable components.
-    PrewarmingComponents,
 }
 
 /// Hierarchical finite proof obligation currently assigned to a worker.
@@ -38,7 +36,7 @@ pub struct ProofObligation {
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SearchInstrumentation {
-    /// Structural edge or component decisions attempted.
+    /// Structural edge decisions attempted.
     pub raw_structural_decisions: u64,
     /// Canonical states retained for search.
     pub canonical_states_retained: u64,
@@ -50,20 +48,10 @@ pub struct SearchInstrumentation {
     pub capacity_prunes: u64,
     /// Branches killed by proven lower bounds.
     pub lower_bound_prunes: u64,
-    /// Stored no-goods that matched a state.
-    pub no_good_hits: u64,
     /// Exact SCC algebra solves performed.
     pub scc_solves: u64,
     /// Reusable SCC summaries found in cache.
     pub scc_cache_hits: u64,
-    /// Component macro applications used.
-    pub component_hits: u64,
-    /// Synchronous component optimizations requested by live search.
-    pub component_optimizations: u64,
-    /// Component database lookups attempted.
-    pub component_db_lookups: u64,
-    /// Component database lookups that found an applicable record.
-    pub component_db_hits: u64,
     /// Nanoseconds spent canonicalizing topology and algebra.
     pub canonicalization_time_ns: u64,
     /// Nanoseconds spent in exact algebra.
@@ -78,14 +66,6 @@ pub struct SearchInstrumentation {
     pub peak_memory_bytes: u64,
     /// End-to-end wall-clock duration in milliseconds.
     pub wall_time_ms: u64,
-}
-
-impl SearchInstrumentation {
-    /// Returns the exact database hit ratio as `(hits, lookups)` without floating point.
-    #[must_use]
-    pub const fn component_db_hit_ratio(&self) -> (u64, u64) {
-        (self.component_db_hits, self.component_db_lookups)
-    }
 }
 
 /// A serializable snapshot of deterministic proof progress.
@@ -114,19 +94,4 @@ pub enum SolverEvent {
     Incumbent(BestKnownSolution),
     /// A distinct validated layout found during complete minimum-N enumeration.
     SolutionFound(BestKnownSolution),
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn instrumentation_reports_an_exact_hit_ratio() {
-        let counters = SearchInstrumentation {
-            component_db_lookups: 3,
-            component_db_hits: 1,
-            ..SearchInstrumentation::default()
-        };
-        assert_eq!(counters.component_db_hit_ratio(), (1, 3));
-    }
 }

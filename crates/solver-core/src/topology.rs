@@ -1,7 +1,7 @@
 //! Mutable lazy-materialized physical topology with undo-log rollback.
 
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::BTreeMap,
     sync::atomic::{AtomicBool, Ordering},
 };
 
@@ -17,7 +17,6 @@ use crate::{
         canonicalize_marked_link, canonicalize_marked_link_cancellable, canonicalize_open_port,
         canonicalize_open_port_cancellable,
     },
-    components::Component,
     problem::NormalizedProblem,
 };
 
@@ -25,7 +24,7 @@ use crate::{
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct LinkId(pub u32);
 
-/// Stable structural decision identifier used by proof provenance.
+/// Stable identifier of an applied structural decision.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct DecisionId(pub u64);
 
@@ -190,85 +189,6 @@ pub struct TopologyDecision {
     pub consumer: ConsumerChoice,
 }
 
-/// One canonical component boundary attached to the currently selected frontier.
-///
-/// A macro initially makes exactly one parent/component attachment. All other
-/// declared component boundaries remain ordinary open physical ports, so a
-/// later link may place the expanded subsystem inside a larger graph SCC.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum ComponentAttachment {
-    ExistingProducerToInput {
-        producer: ProducerPortRef,
-        component_input: usize,
-    },
-    OutputToExistingConsumer {
-        component_output: usize,
-        consumer: ConsumerPortRef,
-    },
-}
-
-/// Exact physical footprint appended by one component macro transition.
-///
-/// Boundary vectors and internal-link indices use the component's canonical
-/// coordinate order. They are therefore safe for transactional R/T/K
-/// registration without pairing unrelated sorted collections.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct AppliedComponentBatch {
-    pub node_start: usize,
-    pub node_count: usize,
-    pub link_start: usize,
-    pub link_count: usize,
-    pub internal_link_indices: Vec<usize>,
-    pub anchor_link_index: usize,
-    pub boundary_inputs: Vec<ConsumerPortRef>,
-    pub boundary_outputs: Vec<ProducerPortRef>,
-    pub consumed_profile: NodeProfile,
-    pub internal_link_count: u32,
-}
-
-/// One rollback-tracked frozen component instance in the current physical state.
-///
-/// The physical nodes and links remain flattened for canonicalization and final
-/// witness reconstruction. Dynamic SCC algebra may instead contract this exact
-/// node set to one quotient vertex and use the component's immutable projected
-/// `R/T/K` contract. Later links may attach only to `boundary_inputs` and
-/// `boundary_outputs`, including feedback through arbitrary outside structure.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct SealedMacroInstance {
-    component: Component,
-    nodes: Vec<NodeId>,
-    internal_link_indices: Vec<usize>,
-    boundary_inputs: Vec<ConsumerPortRef>,
-    boundary_outputs: Vec<ProducerPortRef>,
-}
-
-impl SealedMacroInstance {
-    #[must_use]
-    pub(crate) const fn component(&self) -> &Component {
-        &self.component
-    }
-
-    #[must_use]
-    pub(crate) fn nodes(&self) -> &[NodeId] {
-        &self.nodes
-    }
-
-    #[must_use]
-    pub(crate) fn internal_link_indices(&self) -> &[usize] {
-        &self.internal_link_indices
-    }
-
-    #[must_use]
-    pub(crate) fn boundary_inputs(&self) -> &[ConsumerPortRef] {
-        &self.boundary_inputs
-    }
-
-    #[must_use]
-    pub(crate) fn boundary_outputs(&self) -> &[ProducerPortRef] {
-        &self.boundary_outputs
-    }
-}
-
 /// Opaque undo-log checkpoint.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Checkpoint {
@@ -308,12 +228,6 @@ pub enum TopologyError {
     NonCanonicalDecision,
     #[error("canonical partial topology nodes are not contiguous and index ordered")]
     NonContiguousNodes,
-    #[error("component profile is not available in the remaining fixed profile")]
-    ComponentProfileUnavailable,
-    #[error("component attachment is not anchored at the selected open-port orbit")]
-    NonCanonicalComponentAttachment,
-    #[error("component expansion certificate is malformed: {0}")]
-    MalformedComponent(&'static str),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -325,7 +239,6 @@ enum Undo {
     Materialized {
         node: PhysicalNode,
     },
-    SealedMacroRegistered,
 }
 
 /// Mutable fixed-profile topology search state.
@@ -337,7 +250,6 @@ pub struct TopologyState {
     producer_ports: BTreeMap<ProducerPortRef, Port>,
     consumer_ports: BTreeMap<ConsumerPortRef, Port>,
     links: Vec<Link>,
-    sealed_macros: Vec<SealedMacroInstance>,
     undo: Vec<Undo>,
     next_decision: u64,
     next_flow_var: u32,
@@ -377,7 +289,6 @@ impl TopologyState {
             producer_ports: BTreeMap::new(),
             consumer_ports: BTreeMap::new(),
             links: Vec::new(),
-            sealed_macros: Vec::new(),
             undo: Vec::new(),
             next_decision: 0,
             next_flow_var: 0,
@@ -434,10 +345,11 @@ impl TopologyState {
         Ok(state)
     }
 
-    /// Reconstructs a canonical partial state for admissible reverse-transition checks.
+    /// Reconstructs a topology state from a partial snapshot for tests.
     ///
     /// Canonicalization supplies contiguous node identifiers. Existing links are
     /// loaded as committed history; the returned undo log starts at that parent.
+    #[cfg(test)]
     #[allow(clippy::too_many_lines)]
     pub(crate) fn from_partial_topology(topology: &PartialTopology) -> Result<Self, TopologyError> {
         let mut state = Self {
@@ -447,7 +359,6 @@ impl TopologyState {
             producer_ports: BTreeMap::new(),
             consumer_ports: BTreeMap::new(),
             links: Vec::new(),
-            sealed_macros: Vec::new(),
             undo: Vec::new(),
             next_decision: 0,
             next_flow_var: 0,
@@ -609,11 +520,6 @@ impl TopologyState {
                     }
                     self.remaining.give_back(node.node_type);
                 }
-                Undo::SealedMacroRegistered => {
-                    self.sealed_macros
-                        .pop()
-                        .expect("sealed-macro undo owns the last instance");
-                }
             }
         }
         self.next_decision = checkpoint.next_decision;
@@ -650,16 +556,7 @@ impl TopologyState {
         &self.consumer_ports
     }
 
-    /// Borrows immutable component contractions registered on this proof path.
-    ///
-    /// This metadata is not part of physical canonical identity. Each contract
-    /// was certified equivalent to the flattened rows, so primitive construction
-    /// of the same physical state has the same completion set.
-    #[must_use]
-    pub(crate) fn sealed_macro_instances(&self) -> &[SealedMacroInstance] {
-        &self.sealed_macros
-    }
-
+    /// Returns true when every remaining port is connected and the profile inventory is empty.
     #[must_use]
     pub fn is_complete(&self) -> bool {
         self.remaining.is_empty()
@@ -892,254 +789,8 @@ impl TopologyState {
         self.connect(producer, consumer)
     }
 
-    /// Lists the canonical boundary coordinates that can attach `component`
-    /// to the currently selected physical frontier.
-    ///
-    /// The list is deliberately not quotiented by component automorphisms.
-    /// Search removes equivalent macro children by their full physical
-    /// [`crate::canonical::StateKey`], which is a stronger and label-invariant
-    /// equivalence test.
+    /// Pairs each legal physical decision with its canonical marked-child key.
     #[must_use]
-    pub fn component_attachments(&self, component: &Component) -> Vec<ComponentAttachment> {
-        let Some(orbit) = self.selected_open_orbit() else {
-            return Vec::new();
-        };
-        Self::component_attachments_for_orbit(component, &orbit)
-    }
-
-    pub(crate) fn component_attachments_for_orbit(
-        component: &Component,
-        orbit: &OpenPortOrbit,
-    ) -> Vec<ComponentAttachment> {
-        match orbit.representative {
-            OpenPortRef::Producer(producer) => (0..component.boundary().input_count())
-                .map(
-                    |component_input| ComponentAttachment::ExistingProducerToInput {
-                        producer,
-                        component_input,
-                    },
-                )
-                .collect(),
-            OpenPortRef::Consumer(consumer) => (0..component.boundary().output_count())
-                .map(
-                    |component_output| ComponentAttachment::OutputToExistingConsumer {
-                        component_output,
-                        consumer,
-                    },
-                )
-                .collect(),
-        }
-    }
-
-    /// Atomically expands one certified component and attaches one boundary to
-    /// the selected MRV frontier.
-    ///
-    /// The flattened physical nodes and internal links are appended in the
-    /// component witness's canonical order. Every undeclared component port is
-    /// required to be occupied by exactly one internal link; declared but
-    /// unattached boundaries stay open. Any error restores the exact pre-batch
-    /// state, including compact identifier counters.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error for a malformed expansion certificate, unavailable
-    /// fixed-profile inventory, stale/non-MRV anchor, occupied endpoint, or
-    /// compact identifier overflow.
-    pub fn apply_component(
-        &mut self,
-        component: &Component,
-        attachment: ComponentAttachment,
-    ) -> Result<AppliedComponentBatch, TopologyError> {
-        self.prevalidate_component(component, attachment)?;
-        let checkpoint = self.checkpoint();
-        let result = self.apply_component_prevalidated(component, attachment);
-        if result.is_err() {
-            self.rollback(checkpoint);
-        }
-        result
-    }
-
-    fn apply_component_prevalidated(
-        &mut self,
-        component: &Component,
-        attachment: ComponentAttachment,
-    ) -> Result<AppliedComponentBatch, TopologyError> {
-        let witness = component.canonical_witness();
-        let node_start = self.nodes.len();
-        let link_start = self.links.len();
-        for local in &witness.nodes {
-            let materialized = self.materialize(local.node_type)?;
-            debug_assert_eq!(
-                usize::try_from(materialized.id.0).expect("u32 fits usize"),
-                node_start + usize::try_from(local.id.0).expect("u32 fits usize")
-            );
-        }
-
-        let boundary_inputs = witness
-            .boundary_inputs
-            .iter()
-            .copied()
-            .map(|port| remap_component_consumer(port, node_start))
-            .collect::<Result<Vec<_>, _>>()?;
-        let boundary_outputs = witness
-            .boundary_outputs
-            .iter()
-            .copied()
-            .map(|port| remap_component_producer(port, node_start))
-            .collect::<Result<Vec<_>, _>>()?;
-
-        let mut internal_link_indices = Vec::with_capacity(witness.internal_links.len());
-        for link in &witness.internal_links {
-            let producer = remap_component_producer(link.producer, node_start)?;
-            let consumer = remap_component_consumer(link.consumer, node_start)?;
-            internal_link_indices.push(self.links.len());
-            self.connect(producer, consumer)?;
-        }
-
-        let anchor_link_index = self.links.len();
-        match attachment {
-            ComponentAttachment::ExistingProducerToInput {
-                producer,
-                component_input,
-            } => {
-                self.connect(producer, boundary_inputs[component_input])?;
-            }
-            ComponentAttachment::OutputToExistingConsumer {
-                component_output,
-                consumer,
-            } => {
-                self.connect(boundary_outputs[component_output], consumer)?;
-            }
-        }
-
-        let batch = AppliedComponentBatch {
-            node_start,
-            node_count: witness.nodes.len(),
-            link_start,
-            link_count: witness.internal_links.len() + 1,
-            internal_link_indices,
-            anchor_link_index,
-            boundary_inputs,
-            boundary_outputs,
-            consumed_profile: component.profile(),
-            internal_link_count: component.internal_link_count(),
-        };
-        let nodes = self.nodes[node_start..]
-            .iter()
-            .map(|node| node.id)
-            .collect::<Vec<_>>();
-        self.sealed_macros.push(SealedMacroInstance {
-            component: component.clone(),
-            nodes,
-            internal_link_indices: batch.internal_link_indices.clone(),
-            boundary_inputs: batch.boundary_inputs.clone(),
-            boundary_outputs: batch.boundary_outputs.clone(),
-        });
-        self.undo.push(Undo::SealedMacroRegistered);
-
-        Ok(batch)
-    }
-
-    fn prevalidate_component(
-        &self,
-        component: &Component,
-        attachment: ComponentAttachment,
-    ) -> Result<(), TopologyError> {
-        let witness = component.canonical_witness();
-        if !remaining_contains(self.remaining, component.profile()) {
-            return Err(TopologyError::ComponentProfileUnavailable);
-        }
-        validate_component_witness(component)?;
-        self.prevalidate_component_capacity(witness)?;
-
-        let selected = self
-            .selected_open_orbit()
-            .ok_or(TopologyError::NonCanonicalComponentAttachment)?
-            .representative;
-        match attachment {
-            ComponentAttachment::ExistingProducerToInput {
-                producer,
-                component_input,
-            } => {
-                if selected != OpenPortRef::Producer(producer)
-                    || component_input >= witness.boundary_inputs.len()
-                {
-                    return Err(TopologyError::NonCanonicalComponentAttachment);
-                }
-                if self
-                    .producer_ports
-                    .get(&producer)
-                    .ok_or(TopologyError::MissingProducer(producer))?
-                    .connection
-                    .is_some()
-                {
-                    return Err(TopologyError::ProducerAlreadyConnected(producer));
-                }
-            }
-            ComponentAttachment::OutputToExistingConsumer {
-                component_output,
-                consumer,
-            } => {
-                if selected != OpenPortRef::Consumer(consumer)
-                    || component_output >= witness.boundary_outputs.len()
-                {
-                    return Err(TopologyError::NonCanonicalComponentAttachment);
-                }
-                if self
-                    .consumer_ports
-                    .get(&consumer)
-                    .ok_or(TopologyError::MissingConsumer(consumer))?
-                    .connection
-                    .is_some()
-                {
-                    return Err(TopologyError::ConsumerAlreadyConnected(consumer));
-                }
-            }
-        }
-        Ok(())
-    }
-
-    fn prevalidate_component_capacity(
-        &self,
-        witness: &crate::components::CanonicalComponentWitness,
-    ) -> Result<(), TopologyError> {
-        let node_end = self
-            .nodes
-            .len()
-            .checked_add(witness.nodes.len())
-            .ok_or(TopologyError::NodeCountOverflow)?;
-        if node_end > 0 {
-            u32::try_from(node_end - 1).map_err(|_| TopologyError::NodeCountOverflow)?;
-        }
-        let new_ports = witness.nodes.iter().try_fold(0_u32, |count, node| {
-            count
-                .checked_add(u32::from(node.node_type.input_port_count()))
-                .and_then(|value| value.checked_add(u32::from(node.node_type.output_port_count())))
-                .ok_or(TopologyError::FlowVariableOverflow)
-        })?;
-        self.next_flow_var
-            .checked_add(new_ports)
-            .ok_or(TopologyError::FlowVariableOverflow)?;
-
-        let added_links = witness
-            .internal_links
-            .len()
-            .checked_add(1)
-            .ok_or(TopologyError::LinkCountOverflow)?;
-        let link_end = self
-            .links
-            .len()
-            .checked_add(added_links)
-            .ok_or(TopologyError::LinkCountOverflow)?;
-        if link_end > 0 {
-            u32::try_from(link_end - 1).map_err(|_| TopologyError::LinkCountOverflow)?;
-        }
-        self.next_decision
-            .checked_add(u64::try_from(added_links).map_err(|_| TopologyError::DecisionOverflow)?)
-            .ok_or(TopologyError::DecisionOverflow)?;
-        Ok(())
-    }
-
     fn keyed_decisions_for(
         &mut self,
         anchor: OpenPortRef,
@@ -1441,174 +1092,10 @@ const NODE_TYPES: [NodeType; 4] = [
     NodeType::Merger3,
 ];
 
-fn remaining_contains(remaining: RemainingProfile, required: NodeProfile) -> bool {
-    remaining.splitter2 >= required.splitter2
-        && remaining.splitter3 >= required.splitter3
-        && remaining.merger2 >= required.merger2
-        && remaining.merger3 >= required.merger3
-}
-
 // The certificate checks are deliberately contiguous: every physical port must
 // appear exactly once as either an internal endpoint or a declared boundary.
 // Splitting this proof across helpers would make that partition harder to audit.
 #[allow(clippy::too_many_lines)]
-fn validate_component_witness(component: &Component) -> Result<(), TopologyError> {
-    let witness = component.canonical_witness();
-    if witness.nodes.is_empty() {
-        return Err(TopologyError::MalformedComponent(
-            "the physical witness has no nodes",
-        ));
-    }
-    if witness.internal_links.len()
-        != usize::try_from(component.internal_link_count())
-            .map_err(|_| TopologyError::LinkCountOverflow)?
-        || component.internal_flow_map().row_count() != witness.internal_links.len()
-    {
-        return Err(TopologyError::MalformedComponent(
-            "internal links do not align with K rows",
-        ));
-    }
-    let input_count = witness.boundary_inputs.len();
-    let output_count = witness.boundary_outputs.len();
-    if input_count != component.boundary().input_count()
-        || output_count != component.boundary().output_count()
-        || component.transfer().column_count() != input_count
-        || component.transfer().row_count() != output_count
-        || component.internal_flow_map().column_count() != input_count
-        || component.domain().input_count() != input_count
-    {
-        return Err(TopologyError::MalformedComponent(
-            "boundary and matrix dimensions disagree",
-        ));
-    }
-
-    let mut observed_profile = NodeProfile::default();
-    let mut all_producers = BTreeSet::new();
-    let mut all_consumers = BTreeSet::new();
-    for (index, node) in witness.nodes.iter().enumerate() {
-        if usize::try_from(node.id.0).expect("u32 fits usize") != index {
-            return Err(TopologyError::MalformedComponent(
-                "local node identifiers are not contiguous",
-            ));
-        }
-        increment_profile(&mut observed_profile, node.node_type)?;
-        for port in 0..node.node_type.output_port_count() {
-            all_producers.insert(ProducerPortRef::Node {
-                node: node.id,
-                port,
-            });
-        }
-        for port in 0..node.node_type.input_port_count() {
-            all_consumers.insert(ConsumerPortRef::Node {
-                node: node.id,
-                port,
-            });
-        }
-    }
-    if observed_profile != component.profile() {
-        return Err(TopologyError::MalformedComponent(
-            "witness node profile disagrees with component cost",
-        ));
-    }
-
-    let mut used_producers = BTreeSet::new();
-    let mut used_consumers = BTreeSet::new();
-    for (index, link) in witness.internal_links.iter().enumerate() {
-        if !all_producers.contains(&link.producer)
-            || !all_consumers.contains(&link.consumer)
-            || direct_self_link(link.producer, link.consumer)
-        {
-            return Err(TopologyError::MalformedComponent(
-                "internal link has an invalid physical endpoint",
-            ));
-        }
-        if !used_producers.insert(link.producer) || !used_consumers.insert(link.consumer) {
-            return Err(TopologyError::MalformedComponent(
-                "an internal endpoint is used more than once",
-            ));
-        }
-        let Some(coefficients) = component.internal_flow_map().row(index) else {
-            return Err(TopologyError::MalformedComponent(
-                "internal link has no matching K row",
-            ));
-        };
-        if coefficients != link.coefficients {
-            return Err(TopologyError::MalformedComponent(
-                "internal link order does not match K",
-            ));
-        }
-    }
-    for &producer in &witness.boundary_outputs {
-        if !all_producers.contains(&producer) || !used_producers.insert(producer) {
-            return Err(TopologyError::MalformedComponent(
-                "boundary output is invalid or occupied internally",
-            ));
-        }
-    }
-    for &consumer in &witness.boundary_inputs {
-        if !all_consumers.contains(&consumer) || !used_consumers.insert(consumer) {
-            return Err(TopologyError::MalformedComponent(
-                "boundary input is invalid or occupied internally",
-            ));
-        }
-    }
-    if used_producers != all_producers || used_consumers != all_consumers {
-        return Err(TopologyError::MalformedComponent(
-            "an undeclared physical port is not occupied internally",
-        ));
-    }
-    Ok(())
-}
-
-fn increment_profile(profile: &mut NodeProfile, node_type: NodeType) -> Result<(), TopologyError> {
-    let count = match node_type {
-        NodeType::Splitter2 => &mut profile.splitter2,
-        NodeType::Splitter3 => &mut profile.splitter3,
-        NodeType::Merger2 => &mut profile.merger2,
-        NodeType::Merger3 => &mut profile.merger3,
-    };
-    *count = count
-        .checked_add(1)
-        .ok_or(TopologyError::NodeCountOverflow)?;
-    Ok(())
-}
-
-fn remap_component_producer(
-    reference: ProducerPortRef,
-    node_start: usize,
-) -> Result<ProducerPortRef, TopologyError> {
-    let ProducerPortRef::Node { node, port } = reference else {
-        return Err(TopologyError::MalformedComponent(
-            "component producer endpoint is external",
-        ));
-    };
-    let global = node_start
-        .checked_add(usize::try_from(node.0).expect("u32 fits usize"))
-        .ok_or(TopologyError::NodeCountOverflow)?;
-    Ok(ProducerPortRef::Node {
-        node: NodeId(u32::try_from(global).map_err(|_| TopologyError::NodeCountOverflow)?),
-        port,
-    })
-}
-
-fn remap_component_consumer(
-    reference: ConsumerPortRef,
-    node_start: usize,
-) -> Result<ConsumerPortRef, TopologyError> {
-    let ConsumerPortRef::Node { node, port } = reference else {
-        return Err(TopologyError::MalformedComponent(
-            "component consumer endpoint is external",
-        ));
-    };
-    let global = node_start
-        .checked_add(usize::try_from(node.0).expect("u32 fits usize"))
-        .ok_or(TopologyError::NodeCountOverflow)?;
-    Ok(ConsumerPortRef::Node {
-        node: NodeId(u32::try_from(global).map_err(|_| TopologyError::NodeCountOverflow)?),
-        port,
-    })
-}
-
 fn direct_self_link(producer: ProducerPortRef, consumer: ConsumerPortRef) -> bool {
     matches!(
         (producer, consumer),
@@ -1621,24 +1108,10 @@ fn direct_self_link(producer: ProducerPortRef, consumer: ConsumerPortRef) -> boo
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        collections::BTreeMap,
-        sync::atomic::{AtomicBool, Ordering},
-    };
+    use std::sync::atomic::{AtomicBool, Ordering};
 
     use super::*;
-    use crate::{
-        Preparation,
-        algebra::sparse::Consistency,
-        canonical::{canonicalize_state, is_canonical_last_link},
-        components::Component,
-        prepare_problem,
-        scc::{
-            DeclaredBoundaryInput, DeclaredBoundaryOutput, FrozenSubsystemAnalysis,
-            FrozenSubsystemDeclaration, analyze_frozen_subsystem, detect_affected_sccs,
-            summarize_open_scc,
-        },
-    };
+    use crate::{Preparation, canonical::canonicalize_state, prepare_problem};
 
     fn normalized(inputs: &[&str], outputs: &[&str]) -> NormalizedProblem {
         let problem = Problem {
@@ -1659,289 +1132,6 @@ mod tests {
             merger2: m2,
             merger3: m3,
         }
-    }
-
-    fn splitter_component(reverse_outputs: bool) -> Component {
-        let physical = TopologyState::from_partial_topology(&PartialTopology {
-            discard_count: 0,
-            problem: Problem {
-                inputs: vec!["2".parse().unwrap()],
-                outputs: vec!["1".parse().unwrap(), "1".parse().unwrap()],
-                max_link_rate: "10".parse().unwrap(),
-            },
-            nodes: vec![PhysicalNode {
-                id: NodeId(0),
-                node_type: NodeType::Splitter2,
-            }],
-            links: Vec::new(),
-            remaining_profile: NodeProfile::default(),
-        })
-        .unwrap();
-        let mut boundary_outputs = vec![
-            DeclaredBoundaryOutput {
-                port: ProducerPortRef::Node {
-                    node: NodeId(0),
-                    port: 0,
-                },
-            },
-            DeclaredBoundaryOutput {
-                port: ProducerPortRef::Node {
-                    node: NodeId(0),
-                    port: 1,
-                },
-            },
-        ];
-        if reverse_outputs {
-            boundary_outputs.reverse();
-        }
-        let analysis = analyze_frozen_subsystem(
-            &physical,
-            &FrozenSubsystemDeclaration {
-                nodes: vec![NodeId(0)],
-                boundary_inputs: vec![DeclaredBoundaryInput {
-                    port: ConsumerPortRef::Node {
-                        node: NodeId(0),
-                        port: 0,
-                    },
-                }],
-                boundary_outputs,
-            },
-        )
-        .unwrap();
-        let FrozenSubsystemAnalysis::Symbolic(frozen) = analysis else {
-            panic!("splitter must have a symbolic frozen contract");
-        };
-        Component::from_frozen(*frozen).unwrap()
-    }
-
-    fn merge_split_component() -> Component {
-        let physical = TopologyState::from_partial_topology(&PartialTopology {
-            discard_count: 0,
-            problem: Problem {
-                inputs: vec!["1".parse().unwrap(), "1".parse().unwrap()],
-                outputs: vec!["1".parse().unwrap(), "1".parse().unwrap()],
-                max_link_rate: "10".parse().unwrap(),
-            },
-            nodes: vec![
-                PhysicalNode {
-                    id: NodeId(0),
-                    node_type: NodeType::Merger2,
-                },
-                PhysicalNode {
-                    id: NodeId(1),
-                    node_type: NodeType::Splitter2,
-                },
-            ],
-            links: vec![PartialLink {
-                producer: ProducerPortRef::Node {
-                    node: NodeId(0),
-                    port: 0,
-                },
-                consumer: ConsumerPortRef::Node {
-                    node: NodeId(1),
-                    port: 0,
-                },
-                flow: None,
-            }],
-            remaining_profile: NodeProfile::default(),
-        })
-        .unwrap();
-        let analysis = analyze_frozen_subsystem(
-            &physical,
-            &FrozenSubsystemDeclaration {
-                nodes: vec![NodeId(0), NodeId(1)],
-                boundary_inputs: vec![
-                    DeclaredBoundaryInput {
-                        port: ConsumerPortRef::Node {
-                            node: NodeId(0),
-                            port: 0,
-                        },
-                    },
-                    DeclaredBoundaryInput {
-                        port: ConsumerPortRef::Node {
-                            node: NodeId(0),
-                            port: 1,
-                        },
-                    },
-                ],
-                boundary_outputs: vec![
-                    DeclaredBoundaryOutput {
-                        port: ProducerPortRef::Node {
-                            node: NodeId(1),
-                            port: 0,
-                        },
-                    },
-                    DeclaredBoundaryOutput {
-                        port: ProducerPortRef::Node {
-                            node: NodeId(1),
-                            port: 1,
-                        },
-                    },
-                ],
-            },
-        )
-        .unwrap();
-        let FrozenSubsystemAnalysis::Symbolic(frozen) = analysis else {
-            panic!("merge-split component must be uniquely solvable");
-        };
-        Component::from_frozen(*frozen).unwrap()
-    }
-
-    fn parallel_identity_component() -> Component {
-        let mut links = Vec::new();
-        for (splitter, merger) in [(0_u32, 1_u32), (2, 3)] {
-            for port in 0..2 {
-                links.push(PartialLink {
-                    producer: ProducerPortRef::Node {
-                        node: NodeId(splitter),
-                        port,
-                    },
-                    consumer: ConsumerPortRef::Node {
-                        node: NodeId(merger),
-                        port,
-                    },
-                    flow: None,
-                });
-            }
-        }
-        let physical = TopologyState::from_partial_topology(&PartialTopology {
-            discard_count: 0,
-            problem: Problem {
-                inputs: vec!["1".parse().unwrap(), "1".parse().unwrap()],
-                outputs: vec!["1".parse().unwrap(), "1".parse().unwrap()],
-                max_link_rate: "10".parse().unwrap(),
-            },
-            nodes: vec![
-                PhysicalNode {
-                    id: NodeId(0),
-                    node_type: NodeType::Splitter2,
-                },
-                PhysicalNode {
-                    id: NodeId(1),
-                    node_type: NodeType::Merger2,
-                },
-                PhysicalNode {
-                    id: NodeId(2),
-                    node_type: NodeType::Splitter2,
-                },
-                PhysicalNode {
-                    id: NodeId(3),
-                    node_type: NodeType::Merger2,
-                },
-            ],
-            links,
-            remaining_profile: NodeProfile::default(),
-        })
-        .unwrap();
-        let analysis = analyze_frozen_subsystem(
-            &physical,
-            &FrozenSubsystemDeclaration {
-                nodes: vec![NodeId(0), NodeId(1), NodeId(2), NodeId(3)],
-                boundary_inputs: vec![
-                    DeclaredBoundaryInput {
-                        port: ConsumerPortRef::Node {
-                            node: NodeId(0),
-                            port: 0,
-                        },
-                    },
-                    DeclaredBoundaryInput {
-                        port: ConsumerPortRef::Node {
-                            node: NodeId(2),
-                            port: 0,
-                        },
-                    },
-                ],
-                boundary_outputs: vec![
-                    DeclaredBoundaryOutput {
-                        port: ProducerPortRef::Node {
-                            node: NodeId(1),
-                            port: 0,
-                        },
-                    },
-                    DeclaredBoundaryOutput {
-                        port: ProducerPortRef::Node {
-                            node: NodeId(3),
-                            port: 0,
-                        },
-                    },
-                ],
-            },
-        )
-        .unwrap();
-        let FrozenSubsystemAnalysis::Symbolic(frozen) = analysis else {
-            panic!("parallel identity component must be uniquely solvable");
-        };
-        Component::from_frozen(*frozen).unwrap()
-    }
-
-    fn feedback_identity_component() -> Component {
-        let physical = TopologyState::from_partial_topology(&PartialTopology {
-            discard_count: 0,
-            problem: Problem {
-                inputs: vec!["1".parse().unwrap()],
-                outputs: vec!["1".parse().unwrap()],
-                max_link_rate: "10".parse().unwrap(),
-            },
-            nodes: vec![
-                PhysicalNode {
-                    id: NodeId(0),
-                    node_type: NodeType::Splitter2,
-                },
-                PhysicalNode {
-                    id: NodeId(1),
-                    node_type: NodeType::Merger2,
-                },
-            ],
-            links: vec![
-                PartialLink {
-                    producer: ProducerPortRef::Node {
-                        node: NodeId(1),
-                        port: 0,
-                    },
-                    consumer: ConsumerPortRef::Node {
-                        node: NodeId(0),
-                        port: 0,
-                    },
-                    flow: None,
-                },
-                PartialLink {
-                    producer: ProducerPortRef::Node {
-                        node: NodeId(0),
-                        port: 0,
-                    },
-                    consumer: ConsumerPortRef::Node {
-                        node: NodeId(1),
-                        port: 0,
-                    },
-                    flow: None,
-                },
-            ],
-            remaining_profile: NodeProfile::default(),
-        })
-        .unwrap();
-        let analysis = analyze_frozen_subsystem(
-            &physical,
-            &FrozenSubsystemDeclaration {
-                nodes: vec![NodeId(0), NodeId(1)],
-                boundary_inputs: vec![DeclaredBoundaryInput {
-                    port: ConsumerPortRef::Node {
-                        node: NodeId(1),
-                        port: 1,
-                    },
-                }],
-                boundary_outputs: vec![DeclaredBoundaryOutput {
-                    port: ProducerPortRef::Node {
-                        node: NodeId(0),
-                        port: 1,
-                    },
-                }],
-            },
-        )
-        .unwrap();
-        let FrozenSubsystemAnalysis::Symbolic(frozen) = analysis else {
-            panic!("feedback identity component must be uniquely solvable");
-        };
-        Component::from_frozen(*frozen).unwrap()
     }
 
     #[test]
@@ -2078,257 +1268,6 @@ mod tests {
     }
 
     #[test]
-    fn component_batch_expands_physical_witness_and_rolls_back_exactly() {
-        let component = splitter_component(false);
-        let mut state =
-            TopologyState::new(&normalized(&["2"], &["1", "1"]), profile(1, 0, 0, 0)).unwrap();
-        let original = state.clone();
-        let checkpoint = state.checkpoint();
-        let attachments = state.component_attachments(&component);
-        assert!(!attachments.is_empty());
-        let batch = state.apply_component(&component, attachments[0]).unwrap();
-
-        assert_eq!(batch.node_start, 0);
-        assert_eq!(batch.node_count, 1);
-        assert_eq!(batch.link_start, 0);
-        assert_eq!(batch.link_count, 1);
-        assert!(batch.internal_link_indices.is_empty());
-        assert_eq!(batch.anchor_link_index, 0);
-        assert_eq!(batch.consumed_profile, profile(1, 0, 0, 0));
-        assert_eq!(batch.internal_link_count, 0);
-        assert!(state.remaining_profile().is_empty());
-        assert_eq!(state.nodes().len(), 1);
-        assert_eq!(state.links().len(), 1);
-        assert_eq!(state.sealed_macro_instances().len(), 1);
-        assert_eq!(state.sealed_macro_instances()[0].nodes(), &[NodeId(0)]);
-        let connected_boundaries = batch
-            .boundary_inputs
-            .iter()
-            .filter(|port| state.consumer_ports()[port].connection.is_some())
-            .count()
-            + batch
-                .boundary_outputs
-                .iter()
-                .filter(|port| state.producer_ports()[port].connection.is_some())
-                .count();
-        assert_eq!(connected_boundaries, 1);
-
-        state.rollback(checkpoint);
-        assert!(state.sealed_macro_instances().is_empty());
-        assert_eq!(state, original);
-    }
-
-    #[test]
-    fn sealed_internal_cycle_is_contracted_and_only_declared_boundaries_remain_open() {
-        let component = feedback_identity_component();
-        let mut state =
-            TopologyState::new(&normalized(&["1"], &["1"]), profile(1, 0, 1, 0)).unwrap();
-        let original = state.clone();
-        let checkpoint = state.checkpoint();
-        let attachment = state.component_attachments(&component)[0];
-        let batch = state.apply_component(&component, attachment).unwrap();
-
-        let quotient = detect_affected_sccs(&state, None).unwrap();
-        assert_eq!(quotient.regions.len(), 1);
-        assert_eq!(quotient.regions[0].nodes.len(), 2);
-        assert!(
-            !quotient.regions[0].cyclic,
-            "the certified internal feedback is not a dynamic quotient cycle"
-        );
-        let flattened = TopologyState::from_partial_topology(&state.partial_topology()).unwrap();
-        assert!(
-            detect_affected_sccs(&flattened, None)
-                .unwrap()
-                .regions
-                .iter()
-                .any(|region| region.cyclic),
-            "the reconstruction still contains the physical internal cycle"
-        );
-
-        let declared_inputs = batch
-            .boundary_inputs
-            .iter()
-            .copied()
-            .collect::<BTreeSet<_>>();
-        let declared_outputs = batch
-            .boundary_outputs
-            .iter()
-            .copied()
-            .collect::<BTreeSet<_>>();
-        assert!(state.consumer_ports().iter().all(|(reference, port)| {
-            !matches!(reference, ConsumerPortRef::Node { .. })
-                || port.connection.is_some()
-                || declared_inputs.contains(reference)
-        }));
-        assert!(state.producer_ports().iter().all(|(reference, port)| {
-            !matches!(reference, ProducerPortRef::Node { .. })
-                || port.connection.is_some()
-                || declared_outputs.contains(reference)
-        }));
-        let internal = &state.links()[batch.internal_link_indices[0]];
-        assert!(matches!(
-            state.connect(
-                internal.producer,
-                ConsumerPortRef::Output(OutputTerminalIndex(0))
-            ),
-            Err(TopologyError::ProducerAlreadyConnected(_))
-        ));
-
-        state.rollback(checkpoint);
-        assert_eq!(detect_affected_sccs(&state, None).unwrap().regions.len(), 0);
-        assert_eq!(state, original);
-    }
-
-    #[test]
-    fn later_declared_boundary_feedback_is_a_singular_quotient_cycle() {
-        let component = parallel_identity_component();
-        let mut state =
-            TopologyState::new(&normalized(&["1"], &["1"]), profile(2, 0, 2, 0)).unwrap();
-        let original = state.clone();
-        let checkpoint = state.checkpoint();
-        let attachment = state.component_attachments(&component)[0];
-        let batch = state.apply_component(&component, attachment).unwrap();
-        let one = Rational::one();
-        let zero = Rational::zero();
-        let (free_input, matching_output) = component
-            .transfer()
-            .rows()
-            .enumerate()
-            .find_map(|(output, row)| {
-                (state.producer_ports()[&batch.boundary_outputs[output]]
-                    .connection
-                    .is_none())
-                .then(|| {
-                    batch
-                        .boundary_inputs
-                        .iter()
-                        .enumerate()
-                        .find(|(input, port)| {
-                            state.consumer_ports()[port].connection.is_none()
-                                && row.iter().enumerate().all(|(index, coefficient)| {
-                                    coefficient == if index == *input { &one } else { &zero }
-                                })
-                        })
-                        .map(|(input, _)| (input, output))
-                })
-                .flatten()
-            })
-            .unwrap();
-        state
-            .connect(
-                batch.boundary_outputs[matching_output],
-                batch.boundary_inputs[free_input],
-            )
-            .unwrap();
-        let feedback_index = state.links().len() - 1;
-
-        let partition = detect_affected_sccs(&state, Some(feedback_index)).unwrap();
-        let region = partition
-            .affected_regions()
-            .find(|region| region.cyclic)
-            .unwrap();
-        assert_eq!(region.nodes.len(), batch.node_count);
-        let summary = summarize_open_scc(&state, region, &BTreeMap::new()).unwrap();
-        assert_eq!(summary.contracted_macro_count, 1);
-        assert_eq!(summary.algebra.consistency, Consistency::Consistent);
-        assert!(
-            !summary.algebra.is_unique(),
-            "a growable singular macro-level SCC remains live"
-        );
-
-        state.rollback(checkpoint);
-        assert_eq!(state, original);
-    }
-
-    #[test]
-    fn larger_macro_scc_matches_the_separately_flattened_primitive_rowspace_and_rolls_back() {
-        let component = merge_split_component();
-        let mut state =
-            TopologyState::new(&normalized(&["1"], &["1"]), profile(2, 0, 1, 0)).unwrap();
-        let original = state.clone();
-        let checkpoint = state.checkpoint();
-        let attachment = state.component_attachments(&component)[0];
-        let batch = state.apply_component(&component, attachment).unwrap();
-        let free_input = batch
-            .boundary_inputs
-            .iter()
-            .copied()
-            .find(|port| state.consumer_ports()[port].connection.is_none())
-            .unwrap();
-        let free_output = batch
-            .boundary_outputs
-            .iter()
-            .copied()
-            .find(|port| state.producer_ports()[port].connection.is_none())
-            .unwrap();
-        let outside = state.materialize(NodeType::Splitter2).unwrap();
-        state
-            .connect(
-                free_output,
-                ConsumerPortRef::Node {
-                    node: outside.id,
-                    port: 0,
-                },
-            )
-            .unwrap();
-        state
-            .connect(
-                ProducerPortRef::Node {
-                    node: outside.id,
-                    port: 0,
-                },
-                free_input,
-            )
-            .unwrap();
-        let feedback_index = state.links().len() - 1;
-
-        let quotient = detect_affected_sccs(&state, Some(feedback_index)).unwrap();
-        let quotient_region = quotient
-            .affected_regions()
-            .find(|region| region.cyclic)
-            .unwrap();
-        assert_eq!(quotient_region.nodes.len(), batch.node_count + 1);
-        assert!(quotient_region.nodes.contains(&outside.id));
-        let quotient_summary =
-            summarize_open_scc(&state, quotient_region, &BTreeMap::new()).unwrap();
-        assert_eq!(quotient_summary.contracted_macro_count, 1);
-        assert!(!quotient_summary.algebra.known_values.is_empty());
-
-        let flattened = TopologyState::from_partial_topology(&state.partial_topology()).unwrap();
-        let flattened_partition = detect_affected_sccs(&flattened, Some(feedback_index)).unwrap();
-        let flattened_region = flattened_partition
-            .affected_regions()
-            .find(|region| region.cyclic)
-            .unwrap();
-        assert_eq!(quotient_region.nodes, flattened_region.nodes);
-        let flattened_summary =
-            summarize_open_scc(&flattened, flattened_region, &BTreeMap::new()).unwrap();
-        assert_eq!(flattened_summary.contracted_macro_count, 0);
-        assert_eq!(quotient_summary.algebra, flattened_summary.algebra);
-
-        state.rollback(checkpoint);
-        assert_eq!(detect_affected_sccs(&state, None).unwrap().regions.len(), 0);
-        assert_eq!(state, original);
-    }
-
-    #[test]
-    fn unavailable_component_profile_fails_without_mutation() {
-        let component = splitter_component(false);
-        let mut state =
-            TopologyState::new(&normalized(&["1"], &["1"]), profile(0, 0, 0, 0)).unwrap();
-        let original = state.clone();
-        let attachment = ComponentAttachment::ExistingProducerToInput {
-            producer: ProducerPortRef::Input(InputTerminalIndex(0)),
-            component_input: 0,
-        };
-        assert_eq!(
-            state.apply_component(&component, attachment),
-            Err(TopologyError::ComponentProfileUnavailable)
-        );
-        assert_eq!(state, original);
-    }
-
-    #[test]
     fn repeated_deterministic_mutation_and_rollback_is_lossless() {
         let mut state =
             TopologyState::new(&normalized(&["3"], &["1", "2"]), profile(1, 0, 1, 0)).unwrap();
@@ -2396,7 +1335,7 @@ mod tests {
     }
 
     #[test]
-    fn admissible_canonical_paths_cover_splitter_and_merger() {
+    fn legal_decision_paths_cover_splitter_and_merger() {
         fn walk(state: &mut TopologyState, depth: usize) -> usize {
             if state.is_complete() {
                 assert!(depth > 0);
@@ -2405,12 +1344,8 @@ mod tests {
             let mut total = 0;
             for decision in state.legal_decisions() {
                 let checkpoint = state.checkpoint();
-                let id = state.apply(decision).unwrap();
-                let link = state.link_index_for(id).unwrap();
-                let accepted = is_canonical_last_link(&state.partial_topology(), link);
-                if accepted {
-                    total += walk(state, depth + 1);
-                }
+                state.apply(decision).unwrap();
+                total += walk(state, depth + 1);
                 state.rollback(checkpoint);
             }
             total

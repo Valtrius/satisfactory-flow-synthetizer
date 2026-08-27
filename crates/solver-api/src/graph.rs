@@ -166,7 +166,7 @@ pub struct PhysicalLink {
     pub flow: Rational,
 }
 
-/// A fully materialized physical witness with no component macros.
+/// A fully materialized physical witness.
 #[derive(Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PhysicalGraph {
