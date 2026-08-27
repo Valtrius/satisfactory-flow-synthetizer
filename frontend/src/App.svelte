@@ -324,6 +324,28 @@
     }
   }
 
+  async function deleteAllHistory(): Promise<void> {
+    graph.flushChrome();
+    const running = partitionEntries(historyEntries).running;
+    if (running?.jobId) {
+      try {
+        await queue.cancel();
+      } catch {
+        /* best-effort; still wipe local history */
+      }
+    }
+    queue.dispose();
+    historyEntries = [];
+    selectedEntryId = null;
+    graph.clearView();
+    sortColumns = [...DEFAULT_SORT_COLUMNS];
+    try {
+      await persist.flushNow([], null);
+    } catch (error) {
+      errorMessage = `Could not clear history: ${error instanceof Error ? error.message : String(error)}`;
+    }
+  }
+
   function copyEntryToForm(id: string): void {
     const entry = historyEntries.find((item) => item.id === id);
     if (!entry) return;
@@ -467,6 +489,7 @@
           onExportEntry={(id) => void exportEntry(id)}
           onExportAll={() => void exportAll()}
           onImport={() => void importHistory()}
+          onDeleteAll={() => void deleteAllHistory()}
         />
       </div>
 

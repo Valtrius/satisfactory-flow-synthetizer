@@ -79,6 +79,7 @@
     onExportEntry: (id: string) => void;
     onExportAll: () => void;
     onImport: () => void;
+    onDeleteAll: () => void;
   };
 
   let {
@@ -96,13 +97,16 @@
     onCopyToNew,
     onExportEntry,
     onExportAll,
-    onImport
+    onImport,
+    onDeleteAll
   }: Props = $props();
 
   let renamingId = $state<string | null>(null);
   let renameDraft = $state('');
   let renameIgnoreBlur = false;
   let menuId = $state<string | null>(null);
+  let headerMenuOpen = $state(false);
+  let confirmDeleteAll = $state(false);
   const savedToolbar = readUiPrefs().history;
   let query = $state(savedToolbar.query);
   let openPanel = $state<ToolbarPanel | null>(null);
@@ -182,7 +186,29 @@
   function togglePanel(panel: ToolbarPanel, event: MouseEvent): void {
     event.stopPropagation();
     menuId = null;
+    headerMenuOpen = false;
     openPanel = openPanel === panel ? null : panel;
+  }
+
+  function toggleHeaderMenu(event: MouseEvent): void {
+    event.stopPropagation();
+    menuId = null;
+    openPanel = null;
+    headerMenuOpen = !headerMenuOpen;
+  }
+
+  function closeConfirmDeleteAll(): void {
+    confirmDeleteAll = false;
+  }
+
+  function requestDeleteAll(): void {
+    headerMenuOpen = false;
+    confirmDeleteAll = true;
+  }
+
+  function confirmDeleteAllHistory(): void {
+    confirmDeleteAll = false;
+    onDeleteAll();
   }
 
   function clearFilters(): void {
@@ -429,6 +455,7 @@
     if (event.button !== 0 || isInteractiveTarget(event.target) || renamingId === id) return;
     event.preventDefault();
     menuId = null;
+    headerMenuOpen = false;
     openPanel = null;
     const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
     const source = band === 'queued' ? filteredQueued : filteredHistory;
@@ -519,6 +546,7 @@
 
   function startRename(entry: HistoryEntry): void {
     menuId = null;
+    headerMenuOpen = false;
     openPanel = null;
     renameIgnoreBlur = false;
     renamingId = entry.id;
@@ -539,6 +567,7 @@
   function toggleMenu(id: string, event: MouseEvent): void {
     event.stopPropagation();
     openPanel = null;
+    headerMenuOpen = false;
     menuId = menuId === id ? null : id;
   }
 
@@ -559,16 +588,23 @@
 <svelte:window
   onclick={() => {
     menuId = null;
+    headerMenuOpen = false;
     openPanel = null;
   }}
   onkeydown={(event) => {
     if (event.key === 'Escape') {
+      if (confirmDeleteAll) {
+        event.preventDefault();
+        closeConfirmDeleteAll();
+        return;
+      }
       if (dragFromId) {
         event.preventDefault();
         cancelDrag();
         return;
       }
       menuId = null;
+      headerMenuOpen = false;
       openPanel = null;
     }
   }}
@@ -583,28 +619,67 @@
       <History class="size-[1.05rem] text-accent" strokeWidth={2.2} aria-hidden="true" />
       History
     </h2>
-    <div class="flex gap-1">
+    <div class="relative">
       <Button
         size="small"
         square
         type="button"
-        title="Import history"
-        aria-label="Import history"
-        onclick={() => onImport()}
+        title="History actions"
+        aria-label="History actions"
+        aria-expanded={headerMenuOpen}
+        aria-haspopup="menu"
+        class={iconBtnClass(headerMenuOpen)}
+        onclick={toggleHeaderMenu}
       >
-        <Upload class="size-3.5" />
+        ⋯
       </Button>
-      <Button
-        size="small"
-        square
-        type="button"
-        title="Export all history"
-        aria-label="Export all history"
-        disabled={listEmpty}
-        onclick={() => onExportAll()}
-      >
-        <Download class="size-3.5" />
-      </Button>
+      {#if headerMenuOpen}
+        <div
+          class="absolute top-[calc(100%+0.25rem)] right-0 z-20 min-w-48 rounded-lg border border-line bg-panel py-1 shadow-[0_14px_32px_rgb(0_0_0/45%)]"
+          role="menu"
+          tabindex="-1"
+          onkeydown={(event) => event.stopPropagation()}
+          onclick={(event) => event.stopPropagation()}
+          onpointerdown={(event) => event.stopPropagation()}
+        >
+          <button
+            type="button"
+            class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-[#152833]"
+            role="menuitem"
+            onclick={() => {
+              headerMenuOpen = false;
+              onImport();
+            }}
+          >
+            <Upload class="size-3.5 text-muted" />
+            Import history…
+          </button>
+          <button
+            type="button"
+            class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-[#152833] disabled:cursor-not-allowed disabled:opacity-50"
+            role="menuitem"
+            disabled={listEmpty}
+            onclick={() => {
+              headerMenuOpen = false;
+              onExportAll();
+            }}
+          >
+            <Download class="size-3.5 text-muted" />
+            Export all…
+          </button>
+          <div class="my-1 border-t border-line" role="separator"></div>
+          <button
+            type="button"
+            class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-danger hover:bg-[#152833] disabled:cursor-not-allowed disabled:opacity-50"
+            role="menuitem"
+            disabled={listEmpty}
+            onclick={() => requestDeleteAll()}
+          >
+            <Trash2 class="size-3.5" />
+            Delete all history…
+          </button>
+        </div>
+      {/if}
     </div>
   </div>
 
@@ -818,6 +893,38 @@
     {/if}
   </div>
 </Panel>
+
+{#if confirmDeleteAll}
+  <div
+    class="fixed inset-0 z-90 flex items-center justify-center bg-[#040a0f]/70 p-4"
+    role="presentation"
+    onclick={closeConfirmDeleteAll}
+  >
+    <div
+      class="w-full max-w-md rounded-xl border border-line bg-panel p-5 shadow-[0_24px_48px_rgb(0_0_0/55%)]"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="delete-all-history-title"
+      tabindex="-1"
+      onclick={(event) => event.stopPropagation()}
+      onkeydown={(event) => event.stopPropagation()}
+    >
+      <h3 id="delete-all-history-title" class="m-0 text-base font-bold tracking-tight text-ink">
+        Delete all history?
+      </h3>
+      <p class="mt-2 mb-0 text-sm leading-relaxed text-muted">
+        This permanently clears your entire history database — including entries that took a very
+        long time to solve — and cannot be undone. Any running job will be cancelled.
+      </p>
+      <div class="mt-5 flex justify-end gap-2">
+        <Button size="small" type="button" onclick={closeConfirmDeleteAll}>Cancel</Button>
+        <Button size="small" variant="danger" type="button" onclick={confirmDeleteAllHistory}>
+          Delete all
+        </Button>
+      </div>
+    </div>
+  </div>
+{/if}
 
 {#if dragActive && dragEntry && dragBand}
   <div
