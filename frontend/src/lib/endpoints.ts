@@ -18,22 +18,16 @@ export function endpointSlots(endpoints: EndpointRow[]): number {
   return endpoints.reduce((total, endpoint) => total + parseMultiplier(endpoint.multiplier), 0);
 }
 
-export function createEndpointRow(
-  collection: EndpointCollection,
-  id: number
-): EndpointRow {
+export function createEndpointRow(collection: EndpointCollection, id: number): EndpointRow {
   return {
     id: `${collection === 'inputs' ? 'input' : 'output'}-${id}`,
     name: '',
     rate: '60',
-    multiplier: '1'
+    multiplier: '1',
   };
 }
 
-export function expandEndpoints(
-  endpoints: EndpointRow[],
-  max = MAX_ENDPOINTS
-): EndpointInput[] {
+export function expandEndpoints(endpoints: EndpointRow[], max = MAX_ENDPOINTS): EndpointInput[] {
   let remaining = max;
   return endpoints.flatMap((endpoint) => {
     const count = Math.min(parseMultiplier(endpoint.multiplier), Math.max(0, remaining));
@@ -42,7 +36,7 @@ export function expandEndpoints(
     return Array.from({ length: count }, (_, copyIndex) => ({
       id: count === 1 ? endpoint.id : `${endpoint.id}-${copyIndex + 1}`,
       name: endpoint.name,
-      rate: endpoint.rate
+      rate: endpoint.rate,
     }));
   });
 }
@@ -52,13 +46,13 @@ export function buildSolveRequest(
   outputs: EndpointRow[],
   beltRate: string,
   enumerateAllAtN: boolean,
-  engine: SolverEngine = 'custom'
+  engine: SolverEngine = 'custom',
 ): SolveRequest {
   return {
     inputs: expandEndpoints(inputs),
     outputs: expandEndpoints(outputs),
     beltRate,
     enumerateAllAtN,
-    engine
+    engine,
   };
 }

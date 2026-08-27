@@ -35,7 +35,7 @@ export async function getJob(jobId: string): Promise<JobSnapshot> {
 export async function watchJob(
   jobId: string,
   onSnapshot: (snapshot: JobSnapshot) => void,
-  onError: () => void
+  onError: () => void,
 ): Promise<JobWatch> {
   let closed = false;
   let unlisten: UnlistenFn | undefined;
@@ -58,7 +58,7 @@ export async function watchJob(
       closed = true;
       unlisten?.();
       unlisten = undefined;
-    }
+    },
   };
 }
 

@@ -10,10 +10,15 @@
     "build": "tauri build",
     "check": "npm run check -w frontend",
     "test": "npm run test -w frontend",
+    "format": "cargo fmt --all && prettier --write .",
+    "format:check": "cargo fmt --all -- --check && prettier --check .",
     "release:version": "node scripts/release-version.mjs",
     "tauri": "tauri"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "^2.11.4"
+    "@tauri-apps/cli": "^2.11.4",
+    "prettier": "^3.9.6",
+    "prettier-plugin-svelte": "^4.1.1",
+    "prettier-plugin-tailwindcss": "^0.8.1"
   }
 }

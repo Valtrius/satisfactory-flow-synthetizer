@@ -13,7 +13,7 @@ import {
   partitionEntries,
   reorderWithinBand,
   type FormSnapshot,
-  type HistoryEntry
+  type HistoryEntry,
 } from './historyModel';
 
 const form: FormSnapshot = {
@@ -21,26 +21,26 @@ const form: FormSnapshot = {
   outputs: [
     { id: 'out-1', name: '', rate: '40', multiplier: '1' },
     { id: 'out-2', name: '', rate: '40', multiplier: '1' },
-    { id: 'out-3', name: '', rate: '40', multiplier: '1' }
+    { id: 'out-3', name: '', rate: '40', multiplier: '1' },
   ],
   beltRate: '1200',
   enumerateAllAtN: true,
-  engine: 'custom'
+  engine: 'custom',
 };
 
 const request: SolveRequest = {
   inputs: [
     { id: 'in-1-1', name: '', rate: '60' },
-    { id: 'in-1-2', name: '', rate: '60' }
+    { id: 'in-1-2', name: '', rate: '60' },
   ],
   outputs: [
     { id: 'out-1', name: '', rate: '40' },
     { id: 'out-2', name: '', rate: '40' },
-    { id: 'out-3', name: '', rate: '40' }
+    { id: 'out-3', name: '', rate: '40' },
   ],
   beltRate: '1200',
   enumerateAllAtN: true,
-  engine: 'custom'
+  engine: 'custom',
 };
 
 function completed(partial: Partial<HistoryEntry> & Pick<HistoryEntry, 'id'>): HistoryEntry {
@@ -51,7 +51,7 @@ function completed(partial: Partial<HistoryEntry> & Pick<HistoryEntry, 'id'>): H
     status: partial.status ?? 'completed',
     enumerationComplete: partial.enumerationComplete ?? true,
     result: partial.result ?? null,
-    results: partial.results ?? []
+    results: partial.results ?? [],
   };
 }
 
@@ -77,7 +77,7 @@ describe('entryOutcomeLine', () => {
             mergers: 1,
             feedbackLoops: 0,
             linkCount: 4,
-            checkedThrough: 5
+            checkedThrough: 5,
           },
           totalInput: { exact: '120', decimal: '120' },
           totalOutput: { exact: '120', decimal: '120' },
@@ -85,7 +85,7 @@ describe('entryOutcomeLine', () => {
           beltRate: { exact: '1200', decimal: '1200' },
           nodes: [],
           edges: [],
-          buildSteps: []
+          buildSteps: [],
         },
         {
           engine: 'custom',
@@ -97,7 +97,7 @@ describe('entryOutcomeLine', () => {
             mergers: 1,
             feedbackLoops: 0,
             linkCount: 5,
-            checkedThrough: 5
+            checkedThrough: 5,
           },
           totalInput: { exact: '120', decimal: '120' },
           totalOutput: { exact: '120', decimal: '120' },
@@ -105,9 +105,9 @@ describe('entryOutcomeLine', () => {
           beltRate: { exact: '1200', decimal: '1200' },
           nodes: [],
           edges: [],
-          buildSteps: []
-        }
-      ]
+          buildSteps: [],
+        },
+      ],
     });
     expect(entryOutcomeLine(entry)).toBe('All layouts · N=5 · 2 · Custom');
   });
@@ -127,7 +127,7 @@ describe('entryOutcomeLine', () => {
           mergers: 0,
           feedbackLoops: 0,
           linkCount: 3,
-          checkedThrough: 4
+          checkedThrough: 4,
         },
         totalInput: { exact: '60', decimal: '60' },
         totalOutput: { exact: '60', decimal: '60' },
@@ -135,8 +135,8 @@ describe('entryOutcomeLine', () => {
         beltRate: { exact: '1200', decimal: '1200' },
         nodes: [],
         edges: [],
-        buildSteps: []
-      }
+        buildSteps: [],
+      },
     });
     expect(entryOutcomeLine(single)).toBe('Optimal · N=4 · Custom');
 
@@ -144,7 +144,7 @@ describe('entryOutcomeLine', () => {
       id: 'c',
       status: 'cancelled',
       enumerationComplete: false,
-      results: [single.result!]
+      results: [single.result!],
     });
     expect(entryOutcomeLine(cancelled)).toBe('Cancelled · 1 layout · N=4');
   });
@@ -174,7 +174,7 @@ describe('entryHistoryMetrics', () => {
             mergers: 1,
             feedbackLoops: 0,
             linkCount: 4,
-            checkedThrough: 5
+            checkedThrough: 5,
           },
           totalInput: { exact: '120', decimal: '120' },
           totalOutput: { exact: '120', decimal: '120' },
@@ -182,7 +182,7 @@ describe('entryHistoryMetrics', () => {
           beltRate: { exact: '1200', decimal: '1200' },
           nodes: [],
           edges: [],
-          buildSteps: []
+          buildSteps: [],
         },
         {
           engine: 'custom',
@@ -194,7 +194,7 @@ describe('entryHistoryMetrics', () => {
             mergers: 1,
             feedbackLoops: 0,
             linkCount: 5,
-            checkedThrough: 5
+            checkedThrough: 5,
           },
           totalInput: { exact: '120', decimal: '120' },
           totalOutput: { exact: '120', decimal: '120' },
@@ -202,15 +202,15 @@ describe('entryHistoryMetrics', () => {
           beltRate: { exact: '1200', decimal: '1200' },
           nodes: [],
           edges: [],
-          buildSteps: []
-        }
-      ]
+          buildSteps: [],
+        },
+      ],
     });
     expect(entryHistoryMetrics(entry)).toEqual({
       search: { value: 'All', tip: 'Search: Find all layouts at N' },
       engine: { value: 'Custom', tip: 'Engine: Custom' },
       nodes: { value: 'N=5', tip: 'Node count N = 5' },
-      layouts: { value: '2', tip: '2 layouts found' }
+      layouts: { value: '2', tip: '2 layouts found' },
     });
     expect(entryStatusCaption(entry)).toBe('Best known');
   });
@@ -218,13 +218,13 @@ describe('entryHistoryMetrics', () => {
   it('uses placeholders for queued jobs', () => {
     const entry = createQueuedEntry(
       { ...form, enumerateAllAtN: false, engine: 'z3' },
-      { ...request, enumerateAllAtN: false, engine: 'z3' }
+      { ...request, enumerateAllAtN: false, engine: 'z3' },
     );
     expect(entryHistoryMetrics(entry)).toEqual({
       search: { value: 'Opt', tip: 'Search: Find optimal layout' },
       engine: { value: 'Z3', tip: 'Engine: Z3' },
       nodes: { value: 'N=—', tip: 'Node count unknown until solved' },
-      layouts: { value: '0', tip: 'No layouts yet' }
+      layouts: { value: '0', tip: 'No layouts yet' },
     });
     expect(entryStatusCaption(entry)).toBe('Queued');
   });
@@ -249,7 +249,7 @@ describe('mergeImportedPayload', () => {
     const payload = {
       kind: 'history-entry',
       version: 1,
-      entry: completed({ id: 'incoming', title: 'Friend share' })
+      entry: completed({ id: 'incoming', title: 'Friend share' }),
     };
     const { entries, importedIds } = mergeImportedPayload([existing], payload);
     expect(entries).toHaveLength(2);
@@ -266,7 +266,7 @@ describe('entryElapsedMs', () => {
       id: 'a',
       startedAtMs: 1000,
       finishedAtMs: 2500,
-      updatedAtMs: 9000
+      updatedAtMs: 9000,
     });
     expect(entryElapsedMs(entry)).toBe(1500);
   });
@@ -276,7 +276,7 @@ describe('entryElapsedMs', () => {
       ...createQueuedEntry(form, request),
       status: 'running' as const,
       startedAtMs: 1000,
-      finishedAtMs: null
+      finishedAtMs: null,
     };
     expect(entryElapsedMs(entry, 1600)).toBe(600);
   });
@@ -284,36 +284,60 @@ describe('entryElapsedMs', () => {
 
 describe('saved common progress', () => {
   const progress: SolverProgress = {
-    phase: 'optimizing_links', elapsedMs: 100, nodeCount: 2,
-    linkConstraint: { kind: 'at_most', value: 1 }, nodeLowerBound: 2,
-    bestNodeCount: 2, bestLinkCount: 2, solutionsFound: 0,
-    custom: [{ name: 'z3.profiles_total', label: 'Profiles', value: { type: 'integer', value: '18446744073709551615' }, unit: null }]
+    phase: 'optimizing_links',
+    elapsedMs: 100,
+    nodeCount: 2,
+    linkConstraint: { kind: 'at_most', value: 1 },
+    nodeLowerBound: 2,
+    bestNodeCount: 2,
+    bestLinkCount: 2,
+    solutionsFound: 0,
+    custom: [
+      {
+        name: 'z3.profiles_total',
+        label: 'Profiles',
+        value: { type: 'integer', value: '18446744073709551615' },
+        unit: null,
+      },
+    ],
   };
   const proof = { minimumNodeCount: 2, minimumLinkCount: null };
   it('retains progress, proof, and sequence across save/load and import', () => {
-    const entry = completed({ id: 'entry', status: 'cancelled', progress, proof, sequence: 8 });
+    const entry = completed({
+      id: 'entry',
+      status: 'cancelled',
+      progress,
+      proof,
+      sequence: 8,
+    });
     const saved = persistableEntries([entry]);
     const [loaded] = parseHistoryDocument(JSON.parse(JSON.stringify({ entries: saved }))).entries;
     expect(loaded.progress).toEqual(progress);
     expect(loaded.proof).toEqual(proof);
     expect(loaded.sequence).toBe(8);
-    const imported = mergeImportedPayload([], { kind: 'history-entry', entry: loaded }).entries[0];
+    const imported = mergeImportedPayload([], {
+      kind: 'history-entry',
+      entry: loaded,
+    }).entries[0];
     expect(imported.progress).toEqual(progress);
     expect(imported.proof).toEqual(proof);
   });
   it('ignores old or incomplete telemetry without discarding the saved graph', () => {
     const graph = {
-      engine: 'z3', status: 'best_known', nodes: [{ id: 'kept' }], edges: []
+      engine: 'z3',
+      status: 'best_known',
+      nodes: [{ id: 'kept' }],
+      edges: [],
     };
     for (const oldProgress of [
       { engine: 'custom', phase: 'searching', instrumentation: {} },
       { engine: 'z3', kind: 'checking', nodeCount: 2 },
       { phase: 'searching', custom: [] },
-      { ...progress, custom: [{ name: 'broken', label: 'Missing value' }] }
+      { ...progress, custom: [{ name: 'broken', label: 'Missing value' }] },
     ]) {
-      const [loaded] = parseHistoryDocument({ entries: [
-        { ...completed({ id: 'old' }), progress: oldProgress, result: graph }
-      ] }).entries;
+      const [loaded] = parseHistoryDocument({
+        entries: [{ ...completed({ id: 'old' }), progress: oldProgress, result: graph }],
+      }).entries;
       expect(loaded.progress).toBeNull();
       expect(loaded.result).toEqual(graph);
     }

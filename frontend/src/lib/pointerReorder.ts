@@ -1,8 +1,6 @@
 export type ReorderAxis = 'x' | 'y';
 
-export type VisualSlot<T> =
-  | { kind: 'item'; item: T; index: number }
-  | { kind: 'ghost' };
+export type VisualSlot<T> = { kind: 'item'; item: T; index: number } | { kind: 'ghost' };
 
 export function prefersReducedMotion(): boolean {
   try {
@@ -16,7 +14,7 @@ export function prefersReducedMotion(): boolean {
 export function insertIndexFromClient(
   elements: Array<Pick<HTMLElement, 'getBoundingClientRect'>>,
   client: number,
-  axis: ReorderAxis
+  axis: ReorderAxis,
 ): number {
   let insertAt = elements.length;
   for (let index = 0; index < elements.length; index += 1) {
@@ -38,19 +36,17 @@ export function visualReorderSlots<T>(
   items: T[],
   fromIndex: number,
   insertAt: number | null,
-  active: boolean
+  active: boolean,
 ): VisualSlot<T>[] {
   if (!active || fromIndex < 0 || fromIndex >= items.length) {
     return items.map((item, index) => ({ kind: 'item', item, index }));
   }
-  const without = items
-    .map((item, index) => ({ item, index }))
-    .filter((entry) => entry.index !== fromIndex);
+  const without = items.map((item, index) => ({ item, index })).filter((entry) => entry.index !== fromIndex);
   const at = Math.max(0, Math.min(without.length, insertAt ?? fromIndex));
   return [
     ...without.slice(0, at).map(({ item, index }) => ({ kind: 'item' as const, item, index })),
     { kind: 'ghost' },
-    ...without.slice(at).map(({ item, index }) => ({ kind: 'item' as const, item, index }))
+    ...without.slice(at).map(({ item, index }) => ({ kind: 'item' as const, item, index })),
   ];
 }
 

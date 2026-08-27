@@ -27,57 +27,57 @@
       class: '-top-10.5 -left-10.5',
       label: 'Swap top and left ports',
       icon: MoveDiagonal,
-      action: (event: MouseEvent) => swapPorts('top', 'left', event)
+      action: (event: MouseEvent) => swapPorts('top', 'left', event),
     },
     {
       area: 'tr',
       class: '-top-10.5 -right-10.5',
       label: 'Swap top and right ports',
       icon: MoveDiagonal2,
-      action: (event: MouseEvent) => swapPorts('top', 'right', event)
+      action: (event: MouseEvent) => swapPorts('top', 'right', event),
     },
     {
       area: 'bl',
       class: '-bottom-10.5 -left-10.5',
       label: 'Swap bottom and left ports',
       icon: MoveDiagonal2,
-      action: (event: MouseEvent) => swapPorts('bottom', 'left', event)
+      action: (event: MouseEvent) => swapPorts('bottom', 'left', event),
     },
     {
       area: 'br',
       class: '-right-10.5 -bottom-10.5',
       label: 'Swap bottom and right ports',
       icon: MoveDiagonal,
-      action: (event: MouseEvent) => swapPorts('bottom', 'right', event)
+      action: (event: MouseEvent) => swapPorts('bottom', 'right', event),
     },
     {
       area: 'rotate-ccw',
       class: '-top-14 left-[calc(50%-2.5rem)]',
       label: 'Rotate ports counter-clockwise',
       icon: RotateCcw,
-      action: (event: MouseEvent) => rotatePorts('ccw', event)
+      action: (event: MouseEvent) => rotatePorts('ccw', event),
     },
     {
       area: 'rotate-cw',
       class: '-top-14 left-[calc(50%+.25rem)]',
       label: 'Rotate ports clockwise',
       icon: RotateCw,
-      action: (event: MouseEvent) => rotatePorts('cw', event)
+      action: (event: MouseEvent) => rotatePorts('cw', event),
     },
     {
       area: 'horizontal',
       class: '-bottom-14 left-[calc(50%-2.5rem)]',
       label: 'Swap left and right ports',
       icon: ArrowLeftRight,
-      action: (event: MouseEvent) => swapPorts('left', 'right', event)
+      action: (event: MouseEvent) => swapPorts('left', 'right', event),
     },
     {
       area: 'vertical',
       class: '-bottom-14 left-[calc(50%+.25rem)]',
       label: 'Swap top and bottom ports',
       icon: ArrowUpDown,
-      action: (event: MouseEvent) => swapPorts('top', 'bottom', event)
-    }
+      action: (event: MouseEvent) => swapPorts('top', 'bottom', event),
+    },
   ];
 
   $effect(() => {
@@ -120,7 +120,7 @@
       {@const Icon = control.icon}
       <Button
         square
-        class={`pointer-events-auto absolute !size-9 border-[#547083] bg-[#10232d] text-[#dce8ed] shadow-lg hover:border-flow hover:bg-[#173542] ${control.class}`}
+        class={`hover:border-flow pointer-events-auto absolute !size-9 border-[#547083] bg-[#10232d] text-[#dce8ed] shadow-lg hover:bg-[#173542] ${control.class}`}
         type="button"
         title={control.label}
         aria-label={control.label}

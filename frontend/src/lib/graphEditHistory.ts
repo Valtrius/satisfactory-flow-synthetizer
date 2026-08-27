@@ -18,7 +18,7 @@ export function cloneGraphNodes(nodes: Node[]): Node[] {
     return {
       ...node,
       position: { ...node.position },
-      data
+      data,
     };
   });
 }
@@ -30,23 +30,18 @@ export function cloneGraphEdges(edges: Edge[]): Edge[] {
 export function captureGraphSnapshot(nodes: Node[], edges: Edge[]): GraphSnapshot {
   return {
     nodes: cloneGraphNodes(nodes),
-    edges: cloneGraphEdges(edges)
+    edges: cloneGraphEdges(edges),
   };
 }
 
-export function pushGraphUndo(
-  past: GraphSnapshot[],
-  snapshot: GraphSnapshot
-): GraphSnapshot[] {
+export function pushGraphUndo(past: GraphSnapshot[], snapshot: GraphSnapshot): GraphSnapshot[] {
   const next = [...past, snapshot];
   if (next.length <= MAX_STACK) return next;
   return next.slice(next.length - MAX_STACK);
 }
 
 export function snapshotsEqual(left: GraphSnapshot, right: GraphSnapshot): boolean {
-  return (
-    JSON.stringify(positionsAndPorts(left)) === JSON.stringify(positionsAndPorts(right))
-  );
+  return JSON.stringify(positionsAndPorts(left)) === JSON.stringify(positionsAndPorts(right));
 }
 
 function positionsAndPorts(snapshot: GraphSnapshot): unknown {
@@ -55,14 +50,14 @@ function positionsAndPorts(snapshot: GraphSnapshot): unknown {
       id: node.id,
       position: node.position,
       inputPositions: (node.data as Record<string, unknown>).inputPositions ?? null,
-      outputPositions: (node.data as Record<string, unknown>).outputPositions ?? null
+      outputPositions: (node.data as Record<string, unknown>).outputPositions ?? null,
     })),
     edges: snapshot.edges.map((edge) => ({
       id: edge.id,
       source: edge.source,
       target: edge.target,
       sourceHandle: edge.sourceHandle,
-      targetHandle: edge.targetHandle
-    }))
+      targetHandle: edge.targetHandle,
+    })),
   };
 }

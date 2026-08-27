@@ -10,13 +10,13 @@ export type SortColumn = {
 export const DEFAULT_SORT_COLUMNS: SortColumn[] = [
   { key: 'belts', dir: 'asc' },
   { key: 'peak', dir: 'asc' },
-  { key: 'feedbacks', dir: 'asc' }
+  { key: 'feedbacks', dir: 'asc' },
 ];
 
 export const SORT_LABELS: Record<SortKey, string> = {
   belts: 'Belts',
   peak: 'Peak',
-  feedbacks: 'Feedbacks'
+  feedbacks: 'Feedbacks',
 };
 
 function peakValue(exact: string): number {
@@ -38,7 +38,7 @@ export function metricValue(
       internalMaxThroughput?: { exact: string } | null;
     };
   },
-  key: SortKey
+  key: SortKey,
 ): number {
   switch (key) {
     case 'belts':
@@ -53,7 +53,7 @@ export function metricValue(
 export function compareSolutions(
   left: Parameters<typeof metricValue>[0],
   right: Parameters<typeof metricValue>[0],
-  columns: SortColumn[]
+  columns: SortColumn[],
 ): number {
   for (const column of columns) {
     const delta = metricValue(left, column.key) - metricValue(right, column.key);
@@ -62,27 +62,18 @@ export function compareSolutions(
   return 0;
 }
 
-export function sortSolutions<T extends Parameters<typeof metricValue>[0]>(
-  solutions: T[],
-  columns: SortColumn[]
-): T[] {
+export function sortSolutions<T extends Parameters<typeof metricValue>[0]>(solutions: T[], columns: SortColumn[]): T[] {
   return [...solutions].sort((left, right) => compareSolutions(left, right, columns));
 }
 
 export function flipColumnDir(columns: SortColumn[], key: SortKey): SortColumn[] {
   return columns.map((column) =>
-    column.key === key
-      ? { ...column, dir: column.dir === 'asc' ? 'desc' : 'asc' }
-      : column
+    column.key === key ? { ...column, dir: column.dir === 'asc' ? 'desc' : 'asc' } : column,
   );
 }
 
 /** Move `fromIndex` column to `toIndex`; order is primary → tertiary. */
-export function reorderColumns(
-  columns: SortColumn[],
-  fromIndex: number,
-  toIndex: number
-): SortColumn[] {
+export function reorderColumns(columns: SortColumn[], fromIndex: number, toIndex: number): SortColumn[] {
   if (
     fromIndex === toIndex ||
     fromIndex < 0 ||

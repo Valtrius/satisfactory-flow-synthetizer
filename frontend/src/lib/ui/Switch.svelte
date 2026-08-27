@@ -22,7 +22,7 @@
 >
   <span
     class={`pointer-events-none absolute top-1/2 size-3.5 -translate-y-1/2 rounded-full shadow-sm transition-[left,background-color] duration-150 ${
-      checked ? 'left-[calc(100%-0.975rem)] bg-on-accent' : 'left-0.5 bg-ink'
+      checked ? 'bg-on-accent left-[calc(100%-0.975rem)]' : 'bg-ink left-0.5'
     }`}
   ></span>
 </button>

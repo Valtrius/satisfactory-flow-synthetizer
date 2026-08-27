@@ -29,10 +29,7 @@ function isSemver(value) {
     return false;
   }
 
-  const match =
-    /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([^+]+))?(?:\+(.+))?$/.exec(
-      value,
-    );
+  const match = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([^+]+))?(?:\+(.+))?$/.exec(value);
   if (!match) {
     return false;
   }
@@ -51,12 +48,7 @@ function validIdentifiers(value, rejectLeadingZero) {
       return false;
     }
 
-    return !(
-      rejectLeadingZero &&
-      /^\d+$/.test(identifier) &&
-      identifier.length > 1 &&
-      identifier.startsWith('0')
-    );
+    return !(rejectLeadingZero && /^\d+$/.test(identifier) && identifier.length > 1 && identifier.startsWith('0'));
   });
 }
 
@@ -80,9 +72,7 @@ async function updateVersion(nextVersion) {
       normalizeLineEndings(await readFile(resolve(rootDir, path), 'utf8')),
     ]),
   );
-  const files = Object.fromEntries(
-    entries.map(([key, path, contents]) => [key, { path, contents }]),
-  );
+  const files = Object.fromEntries(entries.map(([key, path, contents]) => [key, { path, contents }]));
 
   const packageJson = parseJson(files.package);
   const packageLock = parseJson(files.packageLock);
@@ -91,72 +81,36 @@ async function updateVersion(nextVersion) {
   const tauriConfig = parseJson(files.tauri);
 
   if (!packageLock.packages?.['']) {
-    throw new Error(
-      'package-lock.json does not contain a root packages[""] entry',
-    );
+    throw new Error('package-lock.json does not contain a root packages[""] entry');
   }
   if (!packageLock.packages?.frontend) {
-    throw new Error(
-      'package-lock.json does not contain a packages["frontend"] entry',
-    );
+    throw new Error('package-lock.json does not contain a packages["frontend"] entry');
   }
   if (!frontendPackageLock.packages?.['']) {
-    throw new Error(
-      'frontend/package-lock.json does not contain a root packages[""] entry',
-    );
+    throw new Error('frontend/package-lock.json does not contain a root packages[""] entry');
   }
 
   assertVersion(packageJson.version, files.package.path);
   assertVersion(packageLock.version, files.packageLock.path);
-  assertVersion(
-    packageLock.packages[''].version,
-    'package-lock.json packages[""]',
-  );
-  assertVersion(
-    packageLock.packages.frontend.version,
-    'package-lock.json packages["frontend"]',
-  );
+  assertVersion(packageLock.packages[''].version, 'package-lock.json packages[""]');
+  assertVersion(packageLock.packages.frontend.version, 'package-lock.json packages["frontend"]');
   assertVersion(frontendPackageJson.version, files.frontendPackage.path);
   assertVersion(frontendPackageLock.version, files.frontendPackageLock.path);
-  assertVersion(
-    frontendPackageLock.packages[''].version,
-    'frontend/package-lock.json packages[""]',
-  );
+  assertVersion(frontendPackageLock.packages[''].version, 'frontend/package-lock.json packages[""]');
   assertVersion(tauriConfig.version, files.tauri.path);
 
   const updates = [
-    [
-      files.package,
-      replaceJsonVersion(
-        files.package.contents,
-        files.package.path,
-        nextVersion,
-      ),
-    ],
-    [
-      files.packageLock,
-      updateRootPackageLockVersion(files.packageLock.contents, nextVersion),
-    ],
+    [files.package, replaceJsonVersion(files.package.contents, files.package.path, nextVersion)],
+    [files.packageLock, updateRootPackageLockVersion(files.packageLock.contents, nextVersion)],
     [
       files.frontendPackage,
-      replaceJsonVersion(
-        files.frontendPackage.contents,
-        files.frontendPackage.path,
-        nextVersion,
-      ),
+      replaceJsonVersion(files.frontendPackage.contents, files.frontendPackage.path, nextVersion),
     ],
     [
       files.frontendPackageLock,
-      updatePackageLockVersion(
-        files.frontendPackageLock.contents,
-        nextVersion,
-        files.frontendPackageLock.path,
-      ),
+      updatePackageLockVersion(files.frontendPackageLock.contents, nextVersion, files.frontendPackageLock.path),
     ],
-    [
-      files.tauri,
-      replaceJsonVersion(files.tauri.contents, files.tauri.path, nextVersion),
-    ],
+    [files.tauri, replaceJsonVersion(files.tauri.contents, files.tauri.path, nextVersion)],
     [
       files.cargoWorkspace,
       updateSectionVersion(
@@ -168,36 +122,15 @@ async function updateVersion(nextVersion) {
     ],
     [
       files.cargoSolverApi,
-      updateSectionVersion(
-        files.cargoSolverApi.contents,
-        '[package]',
-        nextVersion,
-        files.cargoSolverApi.path,
-      ),
+      updateSectionVersion(files.cargoSolverApi.contents, '[package]', nextVersion, files.cargoSolverApi.path),
     ],
-    [
-      files.cargoLock,
-      updateCargoLockVersions(files.cargoLock.contents, nextVersion),
-    ],
-    [
-      files.readme,
-      updateReadmeVersion(
-        files.readme.contents,
-        nextVersion,
-        files.readme.path,
-      ),
-    ],
+    [files.cargoLock, updateCargoLockVersions(files.cargoLock.contents, nextVersion)],
+    [files.readme, updateReadmeVersion(files.readme.contents, nextVersion, files.readme.path)],
   ];
 
-  await Promise.all(
-    updates.map(([file, contents]) =>
-      writeFile(resolve(rootDir, file.path), contents),
-    ),
-  );
+  await Promise.all(updates.map(([file, contents]) => writeFile(resolve(rootDir, file.path), contents)));
 
-  console.log(
-    `Set satisfactory-flow-synthetizer version to ${nextVersion} in:`,
-  );
+  console.log(`Set satisfactory-flow-synthetizer version to ${nextVersion} in:`);
   for (const [file] of updates) {
     console.log(`- ${file.path}`);
   }
@@ -208,9 +141,7 @@ function updateReadmeVersion(contents, nextVersion, path) {
     /(\[!\[Version\]\(https:\/\/img\.shields\.io\/badge\/version-)[^/\s]+(-blue\.svg\)\]\(package\.json\))/;
   const matches = [...contents.matchAll(new RegExp(pattern.source, 'g'))];
   if (matches.length !== 1) {
-    throw new Error(
-      `Expected one version badge in ${path}, found ${matches.length}`,
-    );
+    throw new Error(`Expected one version badge in ${path}, found ${matches.length}`);
   }
 
   return contents.replace(pattern, `$1${nextVersion}$2`);
@@ -259,24 +190,14 @@ function updatePackageLockVersion(contents, nextVersion, path) {
   }
 
   const rootPackage = contents.slice(rootStart, rootEnd);
-  const updatedRootPackage = replaceJsonVersion(
-    rootPackage,
-    `${path} packages[""]`,
-    nextVersion,
-    '      ',
-  );
-  const updatedContents =
-    contents.slice(0, rootStart) + updatedRootPackage + contents.slice(rootEnd);
+  const updatedRootPackage = replaceJsonVersion(rootPackage, `${path} packages[""]`, nextVersion, '      ');
+  const updatedContents = contents.slice(0, rootStart) + updatedRootPackage + contents.slice(rootEnd);
 
   return replaceJsonVersion(updatedContents, path, nextVersion);
 }
 
 function updateRootPackageLockVersion(contents, nextVersion) {
-  let updated = updatePackageLockVersion(
-    contents,
-    nextVersion,
-    'package-lock.json',
-  );
+  let updated = updatePackageLockVersion(contents, nextVersion, 'package-lock.json');
 
   const frontendMarker = '    "frontend": {';
   const frontendStart = updated.indexOf(frontendMarker);
@@ -284,14 +205,9 @@ function updateRootPackageLockVersion(contents, nextVersion) {
     throw new Error('Could not find packages["frontend"] in package-lock.json');
   }
 
-  const frontendEnd = updated.indexOf(
-    '\n    "',
-    frontendStart + frontendMarker.length,
-  );
+  const frontendEnd = updated.indexOf('\n    "', frontendStart + frontendMarker.length);
   if (frontendEnd === -1) {
-    throw new Error(
-      'Could not find the end of packages["frontend"] in package-lock.json',
-    );
+    throw new Error('Could not find the end of packages["frontend"] in package-lock.json');
   }
 
   const frontendPackage = updated.slice(frontendStart, frontendEnd);
@@ -302,11 +218,7 @@ function updateRootPackageLockVersion(contents, nextVersion) {
     '      ',
   );
 
-  return (
-    updated.slice(0, frontendStart) +
-    updatedFrontendPackage +
-    updated.slice(frontendEnd)
-  );
+  return updated.slice(0, frontendStart) + updatedFrontendPackage + updated.slice(frontendEnd);
 }
 
 function updateSectionVersion(contents, header, nextVersion, path) {
@@ -325,15 +237,10 @@ function updateSectionVersion(contents, header, nextVersion, path) {
   function replaceOneVersion(value, label) {
     const matches = [...value.matchAll(/^version\s*=\s*"[^"]+"$/gm)];
     if (matches.length !== 1) {
-      throw new Error(
-        `Expected one package version in ${label}, found ${matches.length}`,
-      );
+      throw new Error(`Expected one package version in ${label}, found ${matches.length}`);
     }
 
-    return value.replace(
-      /^version\s*=\s*"[^"]+"$/m,
-      `version = "${nextVersion}"`,
-    );
+    return value.replace(/^version\s*=\s*"[^"]+"$/m, `version = "${nextVersion}"`);
   }
 }
 
@@ -348,14 +255,9 @@ function updateCargoLockVersions(contents, nextVersion) {
 }
 
 function updateCargoLockPackageVersion(contents, packageName, nextVersion) {
-  const starts = [...contents.matchAll(/^\[\[package\]\]$/gm)].map(
-    (match) => match.index,
-  );
+  const starts = [...contents.matchAll(/^\[\[package\]\]$/gm)].map((match) => match.index);
   const matchingBlocks = [];
-  const namePattern = new RegExp(
-    `^name\\s*=\\s*"${escapeRegExp(packageName)}"$`,
-    'm',
-  );
+  const namePattern = new RegExp(`^name\\s*=\\s*"${escapeRegExp(packageName)}"$`, 'm');
 
   for (let index = 0; index < starts.length; index += 1) {
     const start = starts[index];
@@ -367,23 +269,16 @@ function updateCargoLockPackageVersion(contents, packageName, nextVersion) {
   }
 
   if (matchingBlocks.length !== 1) {
-    throw new Error(
-      `Expected one ${packageName} package in Cargo.lock, found ${matchingBlocks.length}`,
-    );
+    throw new Error(`Expected one ${packageName} package in Cargo.lock, found ${matchingBlocks.length}`);
   }
 
   const [{ start, end, block }] = matchingBlocks;
   const versionMatches = [...block.matchAll(/^version\s*=\s*"[^"]+"$/gm)];
   if (versionMatches.length !== 1) {
-    throw new Error(
-      `Expected one ${packageName} version in Cargo.lock, found ${versionMatches.length}`,
-    );
+    throw new Error(`Expected one ${packageName} version in Cargo.lock, found ${versionMatches.length}`);
   }
 
-  const updated = block.replace(
-    /^version\s*=\s*"[^"]+"$/m,
-    `version = "${nextVersion}"`,
-  );
+  const updated = block.replace(/^version\s*=\s*"[^"]+"$/m, `version = "${nextVersion}"`);
   return contents.slice(0, start) + updated + contents.slice(end);
 }
 

@@ -6,7 +6,7 @@ import {
   createEndpointRow,
   endpointSlots,
   expandEndpoints,
-  parseMultiplier
+  parseMultiplier,
 } from './endpoints';
 
 describe('endpoints', () => {
@@ -27,8 +27,8 @@ describe('endpoints', () => {
     expect(
       endpointSlots([
         { id: 'a', name: '', rate: '60', multiplier: '2' },
-        { id: 'b', name: '', rate: '60', multiplier: '3' }
-      ])
+        { id: 'b', name: '', rate: '60', multiplier: '3' },
+      ]),
     ).toBe(5);
   });
 
@@ -37,7 +37,7 @@ describe('endpoints', () => {
       id: 'input-4',
       name: '',
       rate: '60',
-      multiplier: '1'
+      multiplier: '1',
     });
     expect(createEndpointRow('outputs', 1).id).toBe('output-1');
   });
@@ -45,18 +45,15 @@ describe('endpoints', () => {
   it('expands rows and respects the global cap', () => {
     const expanded = expandEndpoints([
       { id: 'in-1', name: 'Iron', rate: '60', multiplier: '2' },
-      { id: 'in-2', name: '', rate: '120', multiplier: '1' }
+      { id: 'in-2', name: '', rate: '120', multiplier: '1' },
     ]);
     expect(expanded).toEqual([
       { id: 'in-1-1', name: 'Iron', rate: '60' },
       { id: 'in-1-2', name: 'Iron', rate: '60' },
-      { id: 'in-2', name: '', rate: '120' }
+      { id: 'in-2', name: '', rate: '120' },
     ]);
 
-    const capped = expandEndpoints(
-      [{ id: 'big', name: '', rate: '60', multiplier: '100' }],
-      3
-    );
+    const capped = expandEndpoints([{ id: 'big', name: '', rate: '60', multiplier: '100' }], 3);
     expect(capped).toHaveLength(3);
     expect(capped[0]?.id).toBe('big-1');
   });
@@ -64,13 +61,7 @@ describe('endpoints', () => {
   it('serializes the selected engine into the solve request', () => {
     const custom = buildSolveRequest([], [{ id: 'o', name: '', rate: '60', multiplier: '1' }], '1200', true);
     expect(custom.engine).toBe('custom');
-    const z3 = buildSolveRequest(
-      [],
-      [{ id: 'o', name: '', rate: '60', multiplier: '1' }],
-      '1200',
-      false,
-      'z3'
-    );
+    const z3 = buildSolveRequest([], [{ id: 'o', name: '', rate: '60', multiplier: '1' }], '1200', false, 'z3');
     expect(z3.engine).toBe('z3');
     expect(z3.enumerateAllAtN).toBe(false);
   });

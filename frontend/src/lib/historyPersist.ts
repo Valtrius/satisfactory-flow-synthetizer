@@ -4,7 +4,7 @@ import {
   parseHistoryDocument,
   persistableEntries,
   type HistoryDocument,
-  type HistoryEntry
+  type HistoryEntry,
 } from './historyModel';
 
 export async function loadHistoryDocument(): Promise<HistoryDocument> {
@@ -13,10 +13,7 @@ export async function loadHistoryDocument(): Promise<HistoryDocument> {
   return parseHistoryDocument(raw);
 }
 
-export async function saveHistoryDocument(
-  entries: HistoryEntry[],
-  selectedEntryId: string | null
-): Promise<void> {
+export async function saveHistoryDocument(entries: HistoryEntry[], selectedEntryId: string | null): Promise<void> {
   if (!isTauri()) return;
   const persisted = persistableEntries(entries);
   const document: HistoryDocument = {
@@ -25,7 +22,7 @@ export async function saveHistoryDocument(
     selectedEntryId:
       selectedEntryId && persisted.some((entry) => entry.id === selectedEntryId)
         ? selectedEntryId
-        : persisted[0]?.id ?? null
+        : (persisted[0]?.id ?? null),
   };
   await invoke('save_history', { document });
 }

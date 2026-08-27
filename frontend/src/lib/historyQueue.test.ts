@@ -5,26 +5,56 @@ import { HistoryQueue } from './historyQueue';
 import { createJob, getJob, watchJob } from './api';
 
 vi.mock('./api', () => ({
-  createJob: vi.fn(), getJob: vi.fn(), watchJob: vi.fn(), cancelJob: vi.fn()
+  createJob: vi.fn(),
+  getJob: vi.fn(),
+  watchJob: vi.fn(),
+  cancelJob: vi.fn(),
 }));
 vi.mock('./historyPersist', () => ({ saveHistoryDocument: vi.fn() }));
 
-const request: SolveRequest = { inputs: [], outputs: [{ id: 'out', name: '', rate: '1' }], beltRate: '1200', engine: 'z3' };
+const request: SolveRequest = {
+  inputs: [],
+  outputs: [{ id: 'out', name: '', rate: '1' }],
+  beltRate: '1200',
+  engine: 'z3',
+};
 const rate = { exact: '1', decimal: '1' };
 const solution: Solution = {
-  engine: 'z3', status: 'best_known', modelVersion: 1,
-  stats: { nodeCount: 2, linkCount: 2, splitters: 1, mergers: 1, feedbackLoops: 0 },
-  totalInput: rate, totalOutput: rate, discardRate: rate, beltRate: rate,
-  nodes: [], edges: [], buildSteps: []
+  engine: 'z3',
+  status: 'best_known',
+  modelVersion: 1,
+  stats: {
+    nodeCount: 2,
+    linkCount: 2,
+    splitters: 1,
+    mergers: 1,
+    feedbackLoops: 0,
+  },
+  totalInput: rate,
+  totalOutput: rate,
+  discardRate: rate,
+  beltRate: rate,
+  nodes: [],
+  edges: [],
+  buildSteps: [],
 };
 let queue: HistoryQueue;
-afterEach(() => { queue?.dispose(); vi.resetAllMocks(); });
+afterEach(() => {
+  queue?.dispose();
+  vi.resetAllMocks();
+});
 
 async function setup() {
-  const queued = createQueuedEntry({
-    ...request, inputs: [], outputs: request.outputs.map(o => ({ ...o, multiplier: '1' })),
-    enumerateAllAtN: true, engine: 'z3'
-  }, request);
+  const queued = createQueuedEntry(
+    {
+      ...request,
+      inputs: [],
+      outputs: request.outputs.map((o) => ({ ...o, multiplier: '1' })),
+      enumerateAllAtN: true,
+      engine: 'z3',
+    },
+    request,
+  );
   let entries: HistoryEntry[] = [queued];
   let receive!: (snapshot: JobSnapshot) => void;
   vi.mocked(createJob).mockResolvedValue('job');
@@ -34,11 +64,18 @@ async function setup() {
   });
   queue = new HistoryQueue({
     getEntries: () => entries,
-    setEntries: value => { entries = value; },
-    patchEntry: (id, patch) => { entries = entries.map(e => e.id === id ? { ...e, ...patch } : e); },
+    setEntries: (value) => {
+      entries = value;
+    },
+    patchEntry: (id, patch) => {
+      entries = entries.map((e) => (e.id === id ? { ...e, ...patch } : e));
+    },
     getSelectedId: () => queued.id,
     isHistoryReady: () => false,
-    flushSelectedChrome: vi.fn(), syncViewIfSelected: vi.fn(), setError: vi.fn(), setElapsedMs: vi.fn()
+    flushSelectedChrome: vi.fn(),
+    syncViewIfSelected: vi.fn(),
+    setError: vi.fn(),
+    setElapsedMs: vi.fn(),
   });
   await queue.pump();
   return { receive, entry: () => entries[0] };
@@ -46,8 +83,15 @@ async function setup() {
 
 function snapshot(overrides: Partial<JobSnapshot> = {}): JobSnapshot {
   return {
-    jobId: 'job', status: 'running', startedAtMs: 1, progress: null,
-    result: null, results: [], enumerationComplete: false, error: null, ...overrides
+    jobId: 'job',
+    status: 'running',
+    startedAtMs: 1,
+    progress: null,
+    result: null,
+    results: [],
+    enumerationComplete: false,
+    error: null,
+    ...overrides,
   };
 }
 
@@ -64,12 +108,23 @@ describe('common solver snapshot mapping', () => {
 
   it('recovers a missed append from a full snapshot at the same sequence', async () => {
     const state = await setup();
-    const full = snapshot({ sequence: 5, result: solution, results: [solution] });
+    const full = snapshot({
+      sequence: 5,
+      result: solution,
+      results: [solution],
+    });
     vi.mocked(getJob).mockResolvedValue(full);
     state.receive(snapshot({ sequence: 5, resultsOmitted: true, resultsLen: 1 }));
     await vi.waitFor(() => expect(state.entry().results).toEqual([solution]));
     expect(getJob).toHaveBeenCalledWith('job');
-    state.receive(snapshot({ sequence: 4, resultAppended: true, result: solution, resultsLen: 1 }));
+    state.receive(
+      snapshot({
+        sequence: 4,
+        resultAppended: true,
+        result: solution,
+        resultsLen: 1,
+      }),
+    );
     expect(state.entry().sequence).toBe(5);
     expect(state.entry().results).toHaveLength(1);
   });

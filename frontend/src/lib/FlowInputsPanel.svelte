@@ -47,13 +47,13 @@
     onCommitOutputMultiplier,
     onEnumerateChange,
     onEngineChange,
-    onSolve
+    onSolve,
   }: Props = $props();
 </script>
 
 <Panel
   element="section"
-  class="grid shrink-0 grid-cols-1 items-stretch divide-y divide-line md:grid-cols-3 md:divide-x md:divide-y-0"
+  class="divide-line grid shrink-0 grid-cols-1 items-stretch divide-y md:grid-cols-3 md:divide-x md:divide-y-0"
   aria-label="Flow inputs"
 >
   <EndpointListPanel

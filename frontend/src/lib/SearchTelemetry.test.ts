@@ -16,7 +16,7 @@ const props: ComponentProps<typeof SearchTelemetry> = {
   foundCount: 2,
   showFound: true,
   showDetails: true,
-  collapsible: true
+  collapsible: true,
 };
 
 function renderTelemetry(overrides: Partial<ComponentProps<typeof SearchTelemetry>> = {}): string {
@@ -30,10 +30,17 @@ describe('SearchTelemetry', () => {
       lowerBound: 1234,
       nodeCount: 5678,
       custom: ['custom.completed_profiles', 'custom.total_profiles'].map((name, index) => ({
-        name, label: name, value: { type: 'integer' as const, value: index ? '20000' : '10000' }, unit: null
-      }))
+        name,
+        label: name,
+        value: { type: 'integer' as const, value: index ? '20000' : '10000' },
+        unit: null,
+      })),
     };
-    const html = renderTelemetry({ searchView, foundCount: 12345, detailsExpanded: true });
+    const html = renderTelemetry({
+      searchView,
+      foundCount: 12345,
+      detailsExpanded: true,
+    });
     for (const formatted of ["1'234", "5'678", "12'345", "10'000 / 20'000"]) {
       expect(html).toContain(formatted);
     }

@@ -8,7 +8,7 @@ import {
   cloneGraphNodes,
   pushGraphUndo,
   snapshotsEqual,
-  type GraphSnapshot
+  type GraphSnapshot,
 } from './graphEditHistory';
 import {
   layoutSolution,
@@ -17,7 +17,7 @@ import {
   solutionLayoutKey,
   swapDeviceSides,
   type PortSide,
-  type RotateDirection
+  type RotateDirection,
 } from './graph';
 import type { CachedGraphLayout, HistoryEntry } from './historyModel';
 import { DEFAULT_SORT_COLUMNS } from './solutionSort';
@@ -41,12 +41,7 @@ export type GraphSessionHost = {
   patchEntry: (id: string, patch: Partial<HistoryEntry>) => void;
   setError: (message: string) => void;
   /** Called when undo/redo availability or fit/fullscreen chrome changes. */
-  onChromeChange?: (chrome: {
-    fitRevision: number;
-    fullscreen: boolean;
-    canUndo: boolean;
-    canRedo: boolean;
-  }) => void;
+  onChromeChange?: (chrome: { fitRevision: number; fullscreen: boolean; canUndo: boolean; canRedo: boolean }) => void;
 };
 
 export type GraphSession = {
@@ -114,7 +109,7 @@ export function createGraphSession(host: GraphSessionHost): GraphSession {
     applySolution,
     hydrateFromEntry,
     syncLiveResults,
-    handleKeydown
+    handleKeydown,
   };
 
   function notifyChrome(): void {
@@ -122,7 +117,7 @@ export function createGraphSession(host: GraphSessionHost): GraphSession {
       fitRevision,
       fullscreen,
       canUndo,
-      canRedo
+      canRedo,
     });
   }
 
@@ -153,10 +148,10 @@ export function createGraphSession(host: GraphSessionHost): GraphSession {
           (node.data.inputPositions as PortSide[] | undefined) ?? [],
           (node.data.outputPositions as PortSide[] | undefined) ?? [],
           first,
-          second
+          second,
         );
         return { ...node, data: { ...node.data, ...positions } };
-      })
+      }),
     );
     persistLiveLayout();
   }
@@ -169,10 +164,10 @@ export function createGraphSession(host: GraphSessionHost): GraphSession {
         const positions = rotateDevicePorts(
           (node.data.inputPositions as PortSide[] | undefined) ?? [],
           (node.data.outputPositions as PortSide[] | undefined) ?? [],
-          direction
+          direction,
         );
         return { ...node, data: { ...node.data, ...positions } };
-      })
+      }),
     );
     persistLiveLayout();
   }
@@ -180,7 +175,11 @@ export function createGraphSession(host: GraphSessionHost): GraphSession {
   function stampNodeCallbacks(list: Node[]): Node[] {
     return list.map((node) => ({
       ...node,
-      data: { ...node.data, onSwapSides: swapSides, onRotatePorts: rotatePorts }
+      data: {
+        ...node.data,
+        onSwapSides: swapSides,
+        onRotatePorts: rotatePorts,
+      },
     }));
   }
 
@@ -193,14 +192,14 @@ export function createGraphSession(host: GraphSessionHost): GraphSession {
     sourceIndex: number,
     key: string,
     nodeList: Node[],
-    edgeList: Edge[]
+    edgeList: Edge[],
   ): Record<string, CachedGraphLayout> {
     const layouts = layoutsForSelected();
     if (!key || nodeList.length === 0) return layouts;
     layouts[String(sourceIndex)] = {
       layoutKey: key,
       nodes: cloneGraphNodes(nodeList),
-      edges: cloneGraphEdges(edgeList)
+      edges: cloneGraphEdges(edgeList),
     };
     return layouts;
   }
@@ -209,7 +208,7 @@ export function createGraphSession(host: GraphSessionHost): GraphSession {
     const id = host.getSelectedEntryId();
     if (!id || !key || nodeList.length === 0) return;
     host.patchEntry(id, {
-      layouts: buildLayoutSnapshot(sourceIndex, key, nodeList, edgeList)
+      layouts: buildLayoutSnapshot(sourceIndex, key, nodeList, edgeList),
     });
   }
 
@@ -230,7 +229,7 @@ export function createGraphSession(host: GraphSessionHost): GraphSession {
     host.patchEntry(id, {
       selectedSourceIndex: sourceIndex,
       sortColumns: host.getSortColumns().map((column) => ({ ...column })),
-      layouts
+      layouts,
     });
   }
 
@@ -247,8 +246,8 @@ export function createGraphSession(host: GraphSessionHost): GraphSession {
       snapshot.nodes.map((node) => ({
         ...node,
         position: { ...node.position },
-        data: { ...(node.data as Record<string, unknown>) }
-      }))
+        data: { ...(node.data as Record<string, unknown>) },
+      })),
     );
     host.nodes.set(nextNodes);
     host.edges.set(cloneGraphEdges(snapshot.edges));
@@ -290,11 +289,7 @@ export function createGraphSession(host: GraphSessionHost): GraphSession {
     return true;
   }
 
-  async function restoreLayout(
-    next: Solution,
-    sourceIndex: number,
-    cached: CachedGraphLayout
-  ): Promise<void> {
+  async function restoreLayout(next: Solution, sourceIndex: number, cached: CachedGraphLayout): Promise<void> {
     host.setSolution(next);
     const ticket = ++layoutTicket;
     const nextNodes = stampNodeCallbacks(cloneGraphNodes(cached.nodes));
@@ -310,11 +305,7 @@ export function createGraphSession(host: GraphSessionHost): GraphSession {
   async function applySolution(next: Solution, options: { force?: boolean } = {}): Promise<void> {
     host.setSolution(next);
     const nextLayoutKey = solutionLayoutKey(next);
-    if (
-      !options.force &&
-      nextLayoutKey === layoutKey &&
-      committedSourceIndex === host.getSelectedSourceIndex()
-    ) {
+    if (!options.force && nextLayoutKey === layoutKey && committedSourceIndex === host.getSelectedSourceIndex()) {
       return;
     }
     const ticket = ++layoutTicket;
@@ -332,7 +323,7 @@ export function createGraphSession(host: GraphSessionHost): GraphSession {
       host.setError(
         `The result is valid, but its graph could not be laid out: ${
           error instanceof Error ? error.message : String(error)
-        }`
+        }`,
       );
     }
   }
@@ -357,9 +348,7 @@ export function createGraphSession(host: GraphSessionHost): GraphSession {
         undoStack = undoStack.slice(0, -1);
         syncEditFlags();
       }
-      host.setError(
-        `The graph could not be reset: ${error instanceof Error ? error.message : String(error)}`
-      );
+      host.setError(`The graph could not be reset: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
@@ -404,18 +393,13 @@ export function createGraphSession(host: GraphSessionHost): GraphSession {
                 id: 'auto',
                 name: '',
                 rate: solution.totalInput.exact,
-                multiplier: '1'
-              }
+                multiplier: '1',
+              },
             ];
-      await saveSvgFile(
-        svg,
-        defaultSvgFileName(exportInputs, outputs, solution.stats.nodeCount)
-      );
+      await saveSvgFile(svg, defaultSvgFileName(exportInputs, outputs, solution.stats.nodeCount));
     } catch (error) {
       host.setError(
-        `The factory graph could not be exported: ${
-          error instanceof Error ? error.message : String(error)
-        }`
+        `The factory graph could not be exported: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
   }
@@ -444,11 +428,7 @@ export function createGraphSession(host: GraphSessionHost): GraphSession {
     if (!next) return;
     const selectedSourceIndex = host.getSelectedSourceIndex();
     if (sourceIndex === selectedSourceIndex) {
-      if (
-        committedSourceIndex === sourceIndex &&
-        layoutKey === solutionLayoutKey(next) &&
-        get(host.nodes).length > 0
-      ) {
+      if (committedSourceIndex === sourceIndex && layoutKey === solutionLayoutKey(next) && get(host.nodes).length > 0) {
         return;
       }
       await applySolution(next, { force: true });
@@ -481,16 +461,13 @@ export function createGraphSession(host: GraphSessionHost): GraphSession {
 
   async function hydrateFromEntry(entry: HistoryEntry): Promise<void> {
     host.setSortColumns(
-      entry.sortColumns.length > 0
-        ? entry.sortColumns.map((column) => ({ ...column }))
-        : [...DEFAULT_SORT_COLUMNS]
+      entry.sortColumns.length > 0 ? entry.sortColumns.map((column) => ({ ...column })) : [...DEFAULT_SORT_COLUMNS],
     );
     host.setSelectedSourceIndex(entry.selectedSourceIndex);
     const enumerate = Boolean(entry.request.enumerateAllAtN);
     if (enumerate) {
       host.setSolutions(entry.results);
-      const chosen =
-        entry.results[entry.selectedSourceIndex] ?? entry.results[0] ?? null;
+      const chosen = entry.results[entry.selectedSourceIndex] ?? entry.results[0] ?? null;
       host.setSolution(chosen);
       if (chosen) {
         const cached = entry.layouts[String(entry.selectedSourceIndex)];

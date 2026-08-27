@@ -1,10 +1,5 @@
 import { isTauri } from '@tauri-apps/api/core';
-import {
-  exportBundlePayload,
-  exportEntryPayload,
-  type HistoryEntry,
-  type HistoryExportPayload
-} from './historyModel';
+import { exportBundlePayload, exportEntryPayload, type HistoryEntry, type HistoryExportPayload } from './historyModel';
 
 function downloadJson(contents: string, fileName: string): void {
   const blob = new Blob([contents], { type: 'application/json;charset=utf-8' });
@@ -34,7 +29,7 @@ async function saveJson(payload: HistoryExportPayload, fileName: string): Promis
     const { writeTextFile } = await import('@tauri-apps/plugin-fs');
     const path = await save({
       defaultPath: fileName,
-      filters: [{ name: 'JSON', extensions: ['json'] }]
+      filters: [{ name: 'JSON', extensions: ['json'] }],
     });
     if (!path) return;
     await writeTextFile(path, contents);
@@ -49,7 +44,7 @@ export async function importHistoryPayload(): Promise<unknown | null> {
     const { readTextFile } = await import('@tauri-apps/plugin-fs');
     const path = await open({
       multiple: false,
-      filters: [{ name: 'JSON', extensions: ['json'] }]
+      filters: [{ name: 'JSON', extensions: ['json'] }],
     });
     if (!path || Array.isArray(path)) return null;
     return JSON.parse(await readTextFile(path));

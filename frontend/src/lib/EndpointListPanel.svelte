@@ -43,7 +43,7 @@
     onAdd,
     onRemove,
     onUpdate,
-    onCommitMultiplier
+    onCommitMultiplier,
   }: Props = $props();
 </script>
 
@@ -51,7 +51,7 @@
   <div class="flex items-center justify-between gap-4">
     <h2 class="m-0 flex items-center gap-2 text-lg font-bold tracking-tight">
       {#if TitleIcon}
-        <TitleIcon class="size-[1.05rem] shrink-0 text-accent" strokeWidth={2.2} aria-hidden="true" />
+        <TitleIcon class="text-accent size-[1.05rem] shrink-0" strokeWidth={2.2} aria-hidden="true" />
       {/if}
       {title}
     </h2>
@@ -82,7 +82,7 @@
             onblur={() => onCommitMultiplier(index)}
             aria-label={`${labelPrefix} ${index + 1} count`}
           />
-          <span class="font-bold text-muted" aria-hidden="true">x</span>
+          <span class="text-muted font-bold" aria-hidden="true">x</span>
         </label>
         <label>
           <span class="sr-only">Items / min</span>
@@ -109,7 +109,7 @@
     {/each}
     {#if endpoints.length === 0 && emptyTitle && emptyBody}
       <div
-        class="grid min-h-17.5 content-center gap-1.5 rounded-control border border-dashed border-[#375866] bg-[#0a1c25]/55 px-4 py-3 text-[#a9bec7]"
+        class="rounded-control grid min-h-17.5 content-center gap-1.5 border border-dashed border-[#375866] bg-[#0a1c25]/55 px-4 py-3 text-[#a9bec7]"
       >
         <strong class="text-sm text-[#d5e3e8]">{emptyTitle}</strong>
         <span class="text-xs leading-relaxed">{emptyBody}</span>

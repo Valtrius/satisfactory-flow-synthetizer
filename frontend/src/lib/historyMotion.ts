@@ -32,9 +32,9 @@ export function createHistoryEntrance(initialIds: Iterable<string>): Action<HTML
     const animation = node.animate(
       [
         { opacity: 0, transform: 'translateY(-12px)' },
-        { opacity: 1, transform: 'translateY(0)' }
+        { opacity: 1, transform: 'translateY(0)' },
       ],
-      { duration: 300, easing: 'cubic-bezier(0.22, 1, 0.36, 1)' }
+      { duration: 300, easing: 'cubic-bezier(0.22, 1, 0.36, 1)' },
     );
     const preference = window.matchMedia('(prefers-reduced-motion: reduce)');
     const onPreferenceChange = () => {
@@ -50,7 +50,7 @@ export function createHistoryEntrance(initialIds: Iterable<string>): Action<HTML
       destroy() {
         stopListening();
         animation.cancel();
-      }
+      },
     };
   };
 }

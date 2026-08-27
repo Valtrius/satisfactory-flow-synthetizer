@@ -1,10 +1,5 @@
 import { cancelJob, createJob, getJob, watchJob, type JobWatch } from './api';
-import {
-  assembleEntries,
-  isTerminalJobStatus,
-  partitionEntries,
-  type HistoryEntry
-} from './historyModel';
+import { assembleEntries, isTerminalJobStatus, partitionEntries, type HistoryEntry } from './historyModel';
 import { saveHistoryDocument } from './historyPersist';
 import type { JobSnapshot, SolveRequest } from '../types';
 
@@ -120,10 +115,7 @@ export class HistoryQueue {
     const appended = Boolean(snapshot.resultAppended);
 
     if (appended && snapshot.result) {
-      if (
-        isTerminalJobStatus(previous.status) ||
-        isTerminalJobStatus(snapshot.status)
-      ) {
+      if (isTerminalJobStatus(previous.status) || isTerminalJobStatus(snapshot.status)) {
         return;
       }
       const next = snapshot.result;
@@ -140,7 +132,7 @@ export class HistoryQueue {
           results,
           enumerationComplete: snapshot.enumerationComplete,
           error: snapshot.error,
-          startedAtMs: snapshot.startedAtMs
+          startedAtMs: snapshot.startedAtMs,
         });
         const updated = this.host.getEntries().find((entry) => entry.id === entryId);
         if (updated) this.host.syncViewIfSelected(entryId, updated);
@@ -160,10 +152,12 @@ export class HistoryQueue {
     }
 
     if (omitted && (snapshot.resultsLen ?? 0) > previous.results.length) {
-      void getJob(snapshot.jobId).then((full) => this.acceptSnapshot(full)).catch(() => this.host.setError('Lost live updates from the solver.'));
+      void getJob(snapshot.jobId)
+        .then((full) => this.acceptSnapshot(full))
+        .catch(() => this.host.setError('Lost live updates from the solver.'));
     }
     const results = omitted ? previous.results : snapshot.results;
-    const result = omitted ? previous.result ?? snapshot.result : snapshot.result;
+    const result = omitted ? (previous.result ?? snapshot.result) : snapshot.result;
     const terminal = isTerminalJobStatus(snapshot.status);
     this.host.patchEntry(entryId, {
       status: snapshot.status,
@@ -176,7 +170,7 @@ export class HistoryQueue {
       error: snapshot.error,
       startedAtMs: snapshot.startedAtMs,
       finishedAtMs: terminal ? (previous.finishedAtMs ?? Date.now()) : previous.finishedAtMs,
-      jobId: terminal ? previous.jobId : snapshot.jobId
+      jobId: terminal ? previous.jobId : snapshot.jobId,
     });
 
     if (!omitted) {
@@ -184,10 +178,7 @@ export class HistoryQueue {
       if (updated) this.host.syncViewIfSelected(entryId, updated);
     }
 
-    if (
-      (snapshot.status === 'failed' || snapshot.status === 'unsat') &&
-      this.host.getSelectedId() === entryId
-    ) {
+    if ((snapshot.status === 'failed' || snapshot.status === 'unsat') && this.host.getSelectedId() === entryId) {
       this.host.setError(snapshot.error ?? 'The solver failed.');
     }
 
@@ -197,13 +188,9 @@ export class HistoryQueue {
       const parts = partitionEntries(this.host.getEntries());
       this.host.setEntries(assembleEntries(parts.queued, parts.running, parts.history));
       if (this.host.isHistoryReady()) {
-        void saveHistoryDocument(this.host.getEntries(), this.host.getSelectedId()).catch(
-          (error) => {
-            this.host.setError(
-              `Could not save history: ${error instanceof Error ? error.message : String(error)}`
-            );
-          }
-        );
+        void saveHistoryDocument(this.host.getEntries(), this.host.getSelectedId()).catch((error) => {
+          this.host.setError(`Could not save history: ${error instanceof Error ? error.message : String(error)}`);
+        });
       }
       void this.pump();
     }
@@ -237,9 +224,9 @@ export class HistoryQueue {
               proof: null,
               sequence: undefined,
               error: null,
-              updatedAtMs
+              updatedAtMs,
             }
-          : item
+          : item,
       );
       const parts = partitionEntries(nextEntries);
       this.host.setEntries(assembleEntries(parts.queued, parts.running, parts.history));
@@ -260,7 +247,7 @@ export class HistoryQueue {
           if (running?.jobId === jobId) {
             this.host.setError('Lost live updates from the solver.');
           }
-        }
+        },
       );
       const stillRunning = partitionEntries(this.host.getEntries()).running;
       if (stillRunning?.jobId === jobId) this.jobWatch = watch;
@@ -271,7 +258,7 @@ export class HistoryQueue {
         this.host.patchEntry(entryId, {
           status: 'failed',
           finishedAtMs: Date.now(),
-          error: error instanceof Error ? error.message : String(error)
+          error: error instanceof Error ? error.message : String(error),
         });
       }
       this.host.setError(error instanceof Error ? error.message : String(error));

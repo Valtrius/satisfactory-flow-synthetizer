@@ -79,12 +79,11 @@
     onToggleFullscreen,
     onFlowError,
     onNodeDragStart,
-    onNodeDragStop
+    onNodeDragStop,
   }: Props = $props();
 
   const graphSubtitle = $derived.by(() => {
-    const linkCount =
-      selectedSolution.stats.linkCount ?? selectedSolution.stats.beltCount ?? '—';
+    const linkCount = selectedSolution.stats.linkCount ?? selectedSolution.stats.beltCount ?? '—';
     const peak = selectedSolution.stats.internalMaxThroughput?.exact;
     return peak != null
       ? `Selected: ${linkCount} belts · peak ${peak} · ${selectedSolution.stats.feedbackLoops} feedback${selectedSolution.stats.feedbackLoops === 1 ? '' : 's'}`
@@ -116,14 +115,8 @@
     <div
       class="grid min-h-0 flex-1 grid-cols-1 items-stretch max-xl:grid-rows-[minmax(16rem,50vh)_minmax(16rem,50vh)] xl:grid-cols-[minmax(280px,360px)_minmax(0,1fr)]"
     >
-      <div class="min-h-0 border-b border-line xl:border-r xl:border-b-0">
-        <SolutionsTable
-          {solutions}
-          {selectedIndex}
-          columns={sortColumns}
-          {onSelect}
-          {onColumnsChange}
-        />
+      <div class="border-line min-h-0 border-b xl:border-r xl:border-b-0">
+        <SolutionsTable {solutions} {selectedIndex} columns={sortColumns} {onSelect} {onColumnsChange} />
       </div>
       <TopologyGraphPanel
         {nodes}
@@ -131,9 +124,7 @@
         {fitRevision}
         {fullscreen}
         subtitle={graphSubtitle}
-        class={`min-h-0 ${
-          fullscreen ? 'fixed inset-0 z-100 !h-dvh !min-h-0 bg-[#08141c]' : ''
-        }`}
+        class={`min-h-0 ${fullscreen ? 'fixed inset-0 z-100 !h-dvh !min-h-0 bg-[#08141c]' : ''}`}
         {onRotate}
         {canUndo}
         {canRedo}

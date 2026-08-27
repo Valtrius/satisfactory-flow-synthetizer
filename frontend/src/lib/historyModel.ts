@@ -6,7 +6,7 @@ import type {
   SolverEngine,
   SolverProgress,
   OptimalityProof,
-  JobSnapshot
+  JobSnapshot,
 } from '../types';
 import { DEFAULT_SORT_COLUMNS, type SortColumn } from './solutionSort';
 
@@ -15,14 +15,7 @@ export const HISTORY_DOCUMENT_VERSION = 1;
 export type HistoryBand = 'queued' | 'running' | 'history';
 
 export type HistoryEntryStatus =
-  | 'queued'
-  | 'running'
-  | 'cancelling'
-  | 'completed'
-  | 'cancelled'
-  | 'incomplete'
-  | 'unsat'
-  | 'failed';
+  'queued' | 'running' | 'cancelling' | 'completed' | 'cancelled' | 'incomplete' | 'unsat' | 'failed';
 
 export interface FormSnapshot {
   inputs: EndpointRow[];
@@ -82,7 +75,7 @@ export function entryToJobSnapshot(entry: HistoryEntry): JobSnapshot {
     result: entry.result,
     results: entry.results,
     enumerationComplete: entry.enumerationComplete,
-    error: entry.error
+    error: entry.error,
   };
 }
 
@@ -111,14 +104,14 @@ export function snapshotForm(
   outputs: EndpointRow[],
   beltRate: string,
   enumerateAllAtN: boolean,
-  engine: SolverEngine = 'custom'
+  engine: SolverEngine = 'custom',
 ): FormSnapshot {
   return {
     inputs: inputs.map((row) => ({ ...row })),
     outputs: outputs.map((row) => ({ ...row })),
     beltRate,
     enumerateAllAtN,
-    engine
+    engine,
   };
 }
 
@@ -132,7 +125,7 @@ export function cloneForm(form: FormSnapshot): FormSnapshot {
     outputs: form.outputs.map((row) => ({ ...row })),
     beltRate: form.beltRate,
     enumerateAllAtN: form.enumerateAllAtN,
-    engine: form.engine ?? 'custom'
+    engine: form.engine ?? 'custom',
   };
 }
 
@@ -156,7 +149,7 @@ export function createQueuedEntry(form: FormSnapshot, request: SolveRequest): Hi
     error: null,
     selectedSourceIndex: 0,
     sortColumns: [...DEFAULT_SORT_COLUMNS],
-    layouts: {}
+    layouts: {},
   };
 }
 
@@ -190,7 +183,7 @@ export function partitionEntries(entries: HistoryEntry[]): {
 export function assembleEntries(
   queued: HistoryEntry[],
   running: HistoryEntry | null,
-  history: HistoryEntry[]
+  history: HistoryEntry[],
 ): HistoryEntry[] {
   return running ? [...queued, running, ...history] : [...queued, ...history];
 }
@@ -199,7 +192,7 @@ export function reorderWithinBand(
   entries: HistoryEntry[],
   band: 'queued' | 'history',
   fromId: string,
-  toId: string
+  toId: string,
 ): HistoryEntry[] {
   if (fromId === toId) return entries;
   const parts = partitionEntries(entries);
@@ -212,7 +205,7 @@ export function reorderWithinBand(
   return assembleEntries(
     band === 'queued' ? list : parts.queued,
     parts.running,
-    band === 'history' ? list : parts.history
+    band === 'history' ? list : parts.history,
   );
 }
 
@@ -236,8 +229,7 @@ export function entryLayoutCount(entry: HistoryEntry): number {
 }
 
 export function entryNodeCount(entry: HistoryEntry): number | null {
-  const fromResult =
-    entry.results[0]?.stats.nodeCount ?? entry.result?.stats.nodeCount ?? null;
+  const fromResult = entry.results[0]?.stats.nodeCount ?? entry.result?.stats.nodeCount ?? null;
   if (fromResult != null) return fromResult;
   const progress = entry.progress;
   if (!progress) return null;
@@ -266,23 +258,20 @@ export function entryHistoryMetrics(entry: HistoryEntry): HistoryMetrics {
   return {
     search: {
       value: allLayouts ? 'All' : 'Opt',
-      tip: allLayouts ? 'Search: Find all layouts at N' : 'Search: Find optimal layout'
+      tip: allLayouts ? 'Search: Find all layouts at N' : 'Search: Find optimal layout',
     },
     engine: {
       value: engine,
-      tip: `Engine: ${engine}`
+      tip: `Engine: ${engine}`,
     },
     nodes: {
       value: nodeCount != null ? `N=${nodeCount}` : 'N=—',
-      tip: nodeCount != null ? `Node count N = ${nodeCount}` : 'Node count unknown until solved'
+      tip: nodeCount != null ? `Node count N = ${nodeCount}` : 'Node count unknown until solved',
     },
     layouts: {
       value: String(layoutCount),
-      tip:
-        layoutCount === 0
-          ? 'No layouts yet'
-          : `${layoutCount} layout${layoutCount === 1 ? '' : 's'} found`
-    }
+      tip: layoutCount === 0 ? 'No layouts yet' : `${layoutCount} layout${layoutCount === 1 ? '' : 's'} found`,
+    },
   };
 }
 
@@ -324,9 +313,7 @@ export function entryOutcomeLine(entry: HistoryEntry): string {
     return entry.status === 'cancelling' ? 'Stopping…' : '';
   }
   if (entry.status === 'failed') {
-    return layoutCount > 0
-      ? `Failed · ${layoutCount} layout${layoutCount === 1 ? '' : 's'} kept`
-      : 'Failed';
+    return layoutCount > 0 ? `Failed · ${layoutCount} layout${layoutCount === 1 ? '' : 's'} kept` : 'Failed';
   }
   if (entry.status === 'unsat') {
     return 'Globally impossible';
@@ -360,18 +347,31 @@ export function entryOutcomeLine(entry: HistoryEntry): string {
 }
 
 export function emptyDocument(): HistoryDocument {
-  return { version: HISTORY_DOCUMENT_VERSION, entries: [], selectedEntryId: null };
+  return {
+    version: HISTORY_DOCUMENT_VERSION,
+    entries: [],
+    selectedEntryId: null,
+  };
 }
 
 /** Old engine-specific telemetry is not compatible with the common snapshot. */
 function savedProgress(progress: SolverProgress | null | undefined): SolverProgress | null {
-  return progress && typeof progress.phase === 'string' &&
-    Number.isFinite(progress.elapsedMs) && Array.isArray(progress.custom) &&
-    progress.custom.every(entry => entry && typeof entry.name === 'string' &&
-      typeof entry.label === 'string' && entry.value &&
-      (entry.value.type === 'boolean' ? typeof entry.value.value === 'boolean' :
-        ['integer', 'text', 'rate'].includes(entry.value.type) && typeof entry.value.value === 'string'))
-    ? progress : null;
+  return progress &&
+    typeof progress.phase === 'string' &&
+    Number.isFinite(progress.elapsedMs) &&
+    Array.isArray(progress.custom) &&
+    progress.custom.every(
+      (entry) =>
+        entry &&
+        typeof entry.name === 'string' &&
+        typeof entry.label === 'string' &&
+        entry.value &&
+        (entry.value.type === 'boolean'
+          ? typeof entry.value.value === 'boolean'
+          : ['integer', 'text', 'rate'].includes(entry.value.type) && typeof entry.value.value === 'string'),
+    )
+    ? progress
+    : null;
 }
 
 /** Entries safe to write across sessions (no live/queued work). */
@@ -385,7 +385,7 @@ export function persistableEntries(entries: HistoryEntry[]): HistoryEntry[] {
       form: cloneForm(entry.form),
       sortColumns: entry.sortColumns.map((column) => ({ ...column })),
       // JSON round-trip: layouts must be IPC-serializable (no proxies / functions).
-      layouts: jsonClone(entry.layouts)
+      layouts: jsonClone(entry.layouts),
     }));
 }
 
@@ -406,7 +406,7 @@ export function parseHistoryDocument(raw: unknown): HistoryDocument {
     selectedEntryId:
       typeof doc.selectedEntryId === 'string' && entries.some((entry) => entry.id === doc.selectedEntryId)
         ? doc.selectedEntryId
-        : entries[0]?.id ?? null
+        : (entries[0]?.id ?? null),
   };
 }
 
@@ -420,7 +420,7 @@ function normalizeEntry(entry: HistoryEntry): HistoryEntry {
     status: entry.status ?? 'completed',
     request: {
       ...entry.request,
-      engine
+      engine,
     },
     form: entry.form
       ? cloneForm({ ...entry.form, engine: entry.form.engine ?? engine })
@@ -429,7 +429,7 @@ function normalizeEntry(entry: HistoryEntry): HistoryEntry {
           outputs: [],
           beltRate: entry.request?.beltRate ?? '1200',
           enumerateAllAtN: Boolean(entry.request?.enumerateAllAtN),
-          engine
+          engine,
         },
     jobId: null,
     startedAtMs: entry.startedAtMs ?? null,
@@ -447,10 +447,8 @@ function normalizeEntry(entry: HistoryEntry): HistoryEntry {
     error: entry.error ?? null,
     selectedSourceIndex: entry.selectedSourceIndex ?? 0,
     sortColumns:
-      Array.isArray(entry.sortColumns) && entry.sortColumns.length > 0
-        ? entry.sortColumns
-        : [...DEFAULT_SORT_COLUMNS],
-    layouts: entry.layouts && typeof entry.layouts === 'object' ? entry.layouts : {}
+      Array.isArray(entry.sortColumns) && entry.sortColumns.length > 0 ? entry.sortColumns : [...DEFAULT_SORT_COLUMNS],
+    layouts: entry.layouts && typeof entry.layouts === 'object' ? entry.layouts : {},
   };
 }
 
@@ -463,7 +461,7 @@ export function exportEntryPayload(entry: HistoryEntry): HistoryExportPayload {
   return {
     kind: 'history-entry',
     version: HISTORY_DOCUMENT_VERSION,
-    entry: cleaned
+    entry: cleaned,
   };
 }
 
@@ -471,24 +469,27 @@ export function exportBundlePayload(entries: HistoryEntry[]): HistoryExportPaylo
   return {
     kind: 'history-bundle',
     version: HISTORY_DOCUMENT_VERSION,
-    entries: persistableEntries(entries)
+    entries: persistableEntries(entries),
   };
 }
 
 export function mergeImportedPayload(
   current: HistoryEntry[],
-  payload: unknown
+  payload: unknown,
 ): { entries: HistoryEntry[]; importedIds: string[] } {
   const imported = extractImportEntries(payload).map((entry) => remapEntry(entry));
   return {
     entries: [...current, ...imported],
-    importedIds: imported.map((entry) => entry.id)
+    importedIds: imported.map((entry) => entry.id),
   };
 }
 
 function extractImportEntries(payload: unknown): HistoryEntry[] {
   if (!payload || typeof payload !== 'object') return [];
-  const data = payload as Partial<HistoryExportPayload> & { entries?: HistoryEntry[]; entry?: HistoryEntry };
+  const data = payload as Partial<HistoryExportPayload> & {
+    entries?: HistoryEntry[];
+    entry?: HistoryEntry;
+  };
   if (data.kind === 'history-entry' && data.entry) return [normalizeEntry(data.entry)];
   if (data.kind === 'history-bundle' && Array.isArray(data.entries)) {
     return data.entries.map((entry) => normalizeEntry(entry));
@@ -508,6 +509,6 @@ function remapEntry(entry: HistoryEntry): HistoryEntry {
     createdAtMs: now,
     updatedAtMs: now,
     jobId: null,
-    status: entryBand(entry.status) === 'history' ? entry.status : 'completed'
+    status: entryBand(entry.status) === 'history' ? entry.status : 'completed',
   };
 }

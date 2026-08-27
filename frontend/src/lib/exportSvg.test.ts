@@ -16,7 +16,7 @@ const solution: Solution = {
     linkCount: 0,
     checkedThrough: 1,
     beltCount: 0,
-    internalMaxThroughput: { exact: '0', decimal: '0' }
+    internalMaxThroughput: { exact: '0', decimal: '0' },
   },
   totalInput: { exact: '120', decimal: '120' },
   totalOutput: { exact: '120', decimal: '120' },
@@ -26,7 +26,7 @@ const solution: Solution = {
     { id: 'input-0', kind: 'input', label: 'Input 1 · 120 /min' },
     { id: 'splitter-0', kind: 'splitter2', label: 'Splitter 1' },
     { id: 'output-0', kind: 'output', label: 'Output 1 · 60 /min' },
-    { id: 'output-1', kind: 'output', label: 'Output 2 · 60 /min' }
+    { id: 'output-1', kind: 'output', label: 'Output 2 · 60 /min' },
   ],
   edges: [
     {
@@ -37,7 +37,7 @@ const solution: Solution = {
       targetPort: 0,
       rate: { exact: '120', decimal: '120' },
       feedback: false,
-      discarded: false
+      discarded: false,
     },
     {
       id: 'edge-1',
@@ -47,7 +47,7 @@ const solution: Solution = {
       targetPort: 0,
       rate: { exact: '60', decimal: '60' },
       feedback: false,
-      discarded: false
+      discarded: false,
     },
     {
       id: 'edge-2',
@@ -57,13 +57,18 @@ const solution: Solution = {
       targetPort: 0,
       rate: { exact: '60', decimal: '60' },
       feedback: false,
-      discarded: false
-    }
+      discarded: false,
+    },
   ],
-  buildSteps: []
+  buildSteps: [],
 };
 
-function parseViewBox(svg: string): { x: number; y: number; width: number; height: number } {
+function parseViewBox(svg: string): {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+} {
   const match = svg.match(/viewBox="([^"]+)"/);
   expect(match).not.toBeNull();
   const [x, y, width, height] = match![1].split(' ').map(Number);
@@ -99,8 +104,12 @@ describe('graphToSvg', () => {
         height: 76,
         sourcePosition: Position.Right,
         targetPosition: Position.Left,
-        data: { label: 'S1', inputPositions: ['left'], outputPositions: ['right'] },
-        class: 'factory-node factory-node--splitter2'
+        data: {
+          label: 'S1',
+          inputPositions: ['left'],
+          outputPositions: ['right'],
+        },
+        class: 'factory-node factory-node--splitter2',
       },
       {
         id: 'b',
@@ -109,9 +118,13 @@ describe('graphToSvg', () => {
         height: 76,
         sourcePosition: Position.Right,
         targetPosition: Position.Left,
-        data: { label: 'M1', inputPositions: ['left'], outputPositions: ['right'] },
-        class: 'factory-node factory-node--merger2'
-      }
+        data: {
+          label: 'M1',
+          inputPositions: ['left'],
+          outputPositions: ['right'],
+        },
+        class: 'factory-node factory-node--merger2',
+      },
     ];
     const edges: Edge[] = [
       {
@@ -121,8 +134,8 @@ describe('graphToSvg', () => {
         sourceHandle: 'source-0',
         targetHandle: 'target-0',
         label: '30',
-        class: 'factory-edge factory-edge--feedback'
-      }
+        class: 'factory-edge factory-edge--feedback',
+      },
     ];
 
     const svg = graphToSvg(nodes, edges);
@@ -139,8 +152,12 @@ describe('graphToSvg', () => {
         height: 76,
         sourcePosition: Position.Right,
         targetPosition: Position.Left,
-        data: { label: 'A & B < 1', outputPositions: ['right'], inputPositions: [] },
-        class: 'factory-node factory-node--input'
+        data: {
+          label: 'A & B < 1',
+          outputPositions: ['right'],
+          inputPositions: [],
+        },
+        class: 'factory-node factory-node--input',
       },
       {
         id: 'b',
@@ -150,8 +167,8 @@ describe('graphToSvg', () => {
         sourcePosition: Position.Right,
         targetPosition: Position.Left,
         data: { label: 'out', inputPositions: ['left'], outputPositions: [] },
-        class: 'factory-node factory-node--output'
-      }
+        class: 'factory-node factory-node--output',
+      },
     ];
     const edges: Edge[] = [
       {
@@ -159,8 +176,8 @@ describe('graphToSvg', () => {
         source: 'a',
         target: 'b',
         label: '1 < 2 & 3',
-        class: 'factory-edge'
-      }
+        class: 'factory-edge',
+      },
     ];
 
     const svg = graphToSvg(nodes, edges);
@@ -177,11 +194,11 @@ describe('defaultSvgFileName', () => {
       defaultSvgFileName(
         [
           { id: 'in-1', name: '', rate: '10', multiplier: '2' },
-          { id: 'in-2', name: '', rate: '30', multiplier: '1' }
+          { id: 'in-2', name: '', rate: '30', multiplier: '1' },
         ],
         [{ id: 'out-1', name: '', rate: '12.5', multiplier: '4' }],
-        9
-      )
+        9,
+      ),
     ).toBe('2x10-30_to_4x12.5_n-9.svg');
   });
 
@@ -194,8 +211,8 @@ describe('defaultSvgFileName', () => {
       defaultSvgFileName(
         [{ id: 'in-1', name: '', rate: '1/3', multiplier: '3' }],
         [{ id: 'out-1', name: '', rate: '1/3', multiplier: '3' }],
-        2
-      )
+        2,
+      ),
     ).toBe('3x1p3_to_3x1p3_n-2.svg');
   });
 });

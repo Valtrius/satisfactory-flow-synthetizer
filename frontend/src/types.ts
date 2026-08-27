@@ -25,14 +25,7 @@ export interface DisplayRate {
   decimal: string;
 }
 
-export type GraphNodeKind =
-  | 'input'
-  | 'splitter2'
-  | 'splitter3'
-  | 'merger2'
-  | 'merger3'
-  | 'output'
-  | 'discard';
+export type GraphNodeKind = 'input' | 'splitter2' | 'splitter3' | 'merger2' | 'merger3' | 'output' | 'discard';
 
 export interface GraphNode {
   id: string;
@@ -103,11 +96,17 @@ export interface Solution {
   buildSteps: string[];
 }
 
-export type SolvePhase = 'normalizing' | 'global_checks' | 'computing_lower_bound' | 'searching' | 'validating_witness' | 'optimizing_links' | 'enumerating';
+export type SolvePhase =
+  | 'normalizing'
+  | 'global_checks'
+  | 'computing_lower_bound'
+  | 'searching'
+  | 'validating_witness'
+  | 'optimizing_links'
+  | 'enumerating';
 
 export type DiagnosticValue =
-  | { type: 'integer' | 'text' | 'rate'; value: string }
-  | { type: 'boolean'; value: boolean };
+  { type: 'integer' | 'text' | 'rate'; value: string } | { type: 'boolean'; value: boolean };
 
 export interface Diagnostic {
   name: string;
@@ -133,14 +132,7 @@ export interface OptimalityProof {
   minimumLinkCount: number | null;
 }
 
-export type JobStatus =
-  | 'running'
-  | 'cancelling'
-  | 'completed'
-  | 'cancelled'
-  | 'incomplete'
-  | 'unsat'
-  | 'failed';
+export type JobStatus = 'running' | 'cancelling' | 'completed' | 'cancelled' | 'incomplete' | 'unsat' | 'failed';
 
 export interface GlobalUnsatProof {
   reason: unknown;

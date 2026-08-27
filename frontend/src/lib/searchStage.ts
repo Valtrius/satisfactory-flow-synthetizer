@@ -43,14 +43,22 @@ export function formatTelemetryNumber(value: number | string | null): string {
 
 function phaseLabel(phase: string | null): string {
   switch (phase) {
-    case 'normalizing': return 'Normalizing rates';
-    case 'global_checks': return 'Running global checks';
-    case 'computing_lower_bound': return 'Computing lower bound';
-    case 'validating_witness': return 'Validating witness';
-    case 'optimizing_links': return 'Improving operator belt count';
-    case 'enumerating': return 'Enumerating layouts';
-    case 'searching': return 'Searching layouts';
-    default: return 'Preparing the exact model';
+    case 'normalizing':
+      return 'Normalizing rates';
+    case 'global_checks':
+      return 'Running global checks';
+    case 'computing_lower_bound':
+      return 'Computing lower bound';
+    case 'validating_witness':
+      return 'Validating witness';
+    case 'optimizing_links':
+      return 'Improving operator belt count';
+    case 'enumerating':
+      return 'Enumerating layouts';
+    case 'searching':
+      return 'Searching layouts';
+    default:
+      return 'Preparing the exact model';
   }
 }
 
@@ -65,16 +73,17 @@ export function searchStageView(progress: SolverProgress | null): SearchStageVie
     bestNodeCount: progress?.bestNodeCount ?? null,
     bestLinkCount: progress?.bestLinkCount ?? null,
     ruledOutThrough: lowerBound != null && lowerBound > 0 ? lowerBound - 1 : null,
-    custom: progress?.custom ?? []
+    custom: progress?.custom ?? [],
   };
 }
 
 export function diagnosticText(entry: Diagnostic): string {
-  const value = entry.value.type === 'integer'
-    ? formatTelemetryNumber(entry.value.value)
-    : entry.value.type === 'rate'
-      ? entry.value.value.split('/').map(formatTelemetryNumber).join('/')
-      : String(entry.value.value);
+  const value =
+    entry.value.type === 'integer'
+      ? formatTelemetryNumber(entry.value.value)
+      : entry.value.type === 'rate'
+        ? entry.value.value.split('/').map(formatTelemetryNumber).join('/')
+        : String(entry.value.value);
   return `${value}${entry.unit ? ` ${entry.unit}` : ''}`;
 }
 
@@ -86,19 +95,21 @@ export function diagnosticProgress(entries: Diagnostic[]): {
   percent: number;
 } | null {
   const counter = (name: string): bigint | null => {
-    const value = entries.find(entry => entry.name === name)?.value;
+    const value = entries.find((entry) => entry.name === name)?.value;
     return value?.type === 'integer' && /^\d+$/.test(value.value) ? BigInt(value.value) : null;
   };
   for (const [closedName, totalName, label] of [
     ['custom.completed_profiles', 'custom.total_profiles', 'Profiles closed in this L group'],
-    ['z3.profiles_unsat', 'z3.profiles_total', 'Profiles proved UNSAT in this search']
+    ['z3.profiles_unsat', 'z3.profiles_total', 'Profiles proved UNSAT in this search'],
   ]) {
     const closed = counter(closedName);
     const total = counter(totalName);
     if (closed == null || total == null || total === 0n || closed > total) continue;
     return {
-      label, closed: closed.toString(), total: total.toString(),
-      percent: Number(closed * 10_000n / total) / 100
+      label,
+      closed: closed.toString(),
+      total: total.toString(),
+      percent: Number((closed * 10_000n) / total) / 100,
     };
   }
   return null;
@@ -110,7 +121,8 @@ export function ruledOutRangeLabel(view: SearchStageView): string {
 
 export function sizeSearchBody(snapshot: JobSnapshot, view: SearchStageView): string {
   const stopped = ['cancelled', 'failed', 'incomplete', 'unsat'].includes(snapshot.status);
-  if (view.nodeCount == null) return `${stopped ? 'Stopped during' : ''} ${phaseLabel(view.phase).toLowerCase()}.`.trim();
+  if (view.nodeCount == null)
+    return `${stopped ? 'Stopped during' : ''} ${phaseLabel(view.phase).toLowerCase()}.`.trim();
   const link = view.linkCount == null ? '' : ` · L${view.linkKind === 'at_most' ? '≤' : '='}${view.linkCount}`;
   return `${stopped ? 'Stopped while searching' : 'Searching'} N=${view.nodeCount}${link}.`;
 }
@@ -129,20 +141,23 @@ export function searchHeadline(snapshot: JobSnapshot, context: SearchCopyContext
   if (progress?.phase === 'optimizing_links' && progress.bestLinkCount != null) {
     return `Improving below ${progress.bestLinkCount} belts at N=${progress.nodeCount}`;
   }
-  if (searchEnumerate && solutionsLength > 0) return `Enumerating layouts at N = ${firstNodeCount ?? progress?.nodeCount ?? '?'}`;
+  if (searchEnumerate && solutionsLength > 0)
+    return `Enumerating layouts at N = ${firstNodeCount ?? progress?.nodeCount ?? '?'}`;
   if (progress?.nodeCount != null) return `Checking ${nodeCountLabel(progress.nodeCount)}`;
   return phaseLabel(progress?.phase ?? null);
 }
 
 export function searchSubline(snapshot: JobSnapshot, view: SearchStageView, context: SearchCopyContext): string {
-  if (snapshot.status === 'cancelling') return `Waiting for ${context.engine === 'custom' ? 'Custom' : 'Z3'} workers to stop.`;
+  if (snapshot.status === 'cancelling')
+    return `Waiting for ${context.engine === 'custom' ? 'Custom' : 'Z3'} workers to stop.`;
   if (snapshot.status === 'unsat') return 'Finite proof that no capacity-safe network satisfies these rates.';
   if (['cancelled', 'incomplete', 'failed'].includes(snapshot.status)) {
     return snapshot.proof?.minimumNodeCount != null
       ? `Minimum N=${snapshot.proof.minimumNodeCount} proved. Partial results kept; unfinished proofs remain incomplete.`
       : 'Last progress and any validated witnesses kept. The requested proof did not finish.';
   }
-  if (context.searchEnumerate && snapshot.enumerationComplete) return `${context.solutionsLength} distinct layouts · exact · complete`;
+  if (context.searchEnumerate && snapshot.enumerationComplete)
+    return `${context.solutionsLength} distinct layouts · exact · complete`;
   if (view.lowerBound == null) return `${phaseLabel(view.phase)}.`;
   return `Lower bound is ${view.lowerBound} nodes. ${context.searchEnumerate ? 'Collecting every layout at the minimum size.' : 'Proving minimum nodes, then minimum operator belts.'}`;
 }

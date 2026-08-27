@@ -1,17 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import type { Edge, Node } from '@xyflow/svelte';
-import {
-  captureGraphSnapshot,
-  pushGraphUndo,
-  snapshotsEqual
-} from './graphEditHistory';
+import { captureGraphSnapshot, pushGraphUndo, snapshotsEqual } from './graphEditHistory';
 
 function node(id: string, x: number, y: number): Node {
   return {
     id,
     position: { x, y },
     data: { inputPositions: ['left'], outputPositions: ['right'] },
-    type: 'factory'
+    type: 'factory',
   };
 }
 
@@ -26,9 +22,9 @@ describe('graphEditHistory', () => {
           inputPositions: ['left'],
           outputPositions: ['right'],
           onSwapSides: () => {},
-          onRotatePorts: () => {}
-        }
-      }
+          onRotatePorts: () => {},
+        },
+      },
     ];
     const snap = captureGraphSnapshot(nodes, edges);
     expect(snap.nodes[0].data.onSwapSides).toBeUndefined();

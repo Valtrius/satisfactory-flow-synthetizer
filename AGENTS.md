@@ -1,1 +1,2 @@
 - Use conventional commits for commit messages and pull requests titles.
+- Use `npm run format` to format code before committing.

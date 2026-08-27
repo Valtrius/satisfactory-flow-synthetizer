@@ -21,7 +21,7 @@ describe('history animation order', () => {
       ['ghost-history', 'a'],
       ['a', 'ghost-history'],
       ['a', 'b'],
-      []
+      [],
     ];
     let previous = stabilizeOrder([]);
     for (const keys of orders) {

@@ -85,9 +85,7 @@ export function createPersistController(options: PersistOptions): PersistControl
       timer = setTimeout(() => {
         timer = null;
         void saveHistoryDocument(entries, selectedEntryId).catch((error) => {
-          options.onError(
-            `Could not save history: ${error instanceof Error ? error.message : String(error)}`
-          );
+          options.onError(`Could not save history: ${error instanceof Error ? error.message : String(error)}`);
         });
       }, delayMs);
     },
@@ -98,7 +96,7 @@ export function createPersistController(options: PersistOptions): PersistControl
     },
     dispose() {
       clearTimer();
-    }
+    },
   };
 }
 
@@ -111,7 +109,7 @@ export async function loadHistoryOrEmpty(): Promise<
   } catch (error) {
     return {
       ok: false,
-      error: `Could not load history: ${error instanceof Error ? error.message : String(error)}`
+      error: `Could not load history: ${error instanceof Error ? error.message : String(error)}`,
     };
   }
 }

@@ -25,7 +25,7 @@
     entryLayoutCount,
     entryNodeCount,
     entryStatusCaption,
-    type HistoryEntry
+    type HistoryEntry,
   } from './historyModel';
   import {
     readUiPrefs,
@@ -33,16 +33,12 @@
     type HistoryEngineFilter,
     type HistorySearchFilter,
     type HistorySortPref,
-    type HistoryStatusFilter
+    type HistoryStatusFilter,
   } from './uiPrefs';
   import { flip } from 'svelte/animate';
   import { untrack } from 'svelte';
   import { createHistoryEntrance, createHistoryOrder, historyMotionDuration } from './historyMotion';
-  import {
-    insertIndexFromClient,
-    setListDragging,
-    visualReorderSlots
-  } from './pointerReorder';
+  import { insertIndexFromClient, setListDragging, visualReorderSlots } from './pointerReorder';
 
   type StatusFilter = HistoryStatusFilter;
   type EngineFilter = HistoryEngineFilter;
@@ -50,9 +46,7 @@
   type ToolbarPanel = 'sort' | 'filter';
   type HistorySort = HistorySortPref;
   type DragBand = 'queued' | 'history';
-  type VisualItem =
-    | { kind: 'entry'; entry: HistoryEntry }
-    | { kind: 'ghost'; key: string };
+  type VisualItem = { kind: 'entry'; entry: HistoryEntry } | { kind: 'ghost'; key: string };
 
   type VisualRow =
     | {
@@ -98,7 +92,7 @@
     onExportEntry,
     onExportAll,
     onImport,
-    onDeleteAll
+    onDeleteAll,
   }: Props = $props();
 
   let renamingId = $state<string | null>(null);
@@ -134,17 +128,17 @@
     { value: 'failed', label: 'Failed' },
     { value: 'cancelled', label: 'Cancelled' },
     { value: 'incomplete', label: 'Incomplete' },
-    { value: 'unsat', label: 'Impossible' }
+    { value: 'unsat', label: 'Impossible' },
   ];
 
   const engineOptions: { value: EngineFilter; label: string }[] = [
     { value: 'custom', label: 'Custom' },
-    { value: 'z3', label: 'Z3' }
+    { value: 'z3', label: 'Z3' },
   ];
 
   const searchOptions: { value: SearchFilter; label: string }[] = [
     { value: 'opt', label: 'Optimal' },
-    { value: 'all', label: 'All layouts' }
+    { value: 'all', label: 'All layouts' },
   ];
 
   const sortOptions: { value: HistorySort; label: string; tip: string }[] = [
@@ -153,18 +147,18 @@
     { value: 'oldest', label: 'Oldest', tip: 'Oldest created first' },
     { value: 'name-asc', label: 'Name A-Z', tip: 'Alphabetical by title' },
     { value: 'name-desc', label: 'Name Z-A', tip: 'Reverse alphabetical' },
-    { value: 'layouts-desc', label: 'Most layouts', tip: 'Highest layout count first' },
-    { value: 'nodes-asc', label: 'Fewest nodes', tip: 'Smallest N first' }
+    {
+      value: 'layouts-desc',
+      label: 'Most layouts',
+      tip: 'Highest layout count first',
+    },
+    { value: 'nodes-asc', label: 'Fewest nodes', tip: 'Smallest N first' },
   ];
 
   const listEmpty = $derived(queued.length === 0 && !running && history.length === 0);
   const historyDraggable = $derived(sort === 'manual');
-  const allEntries = $derived(
-    running ? [...queued, running, ...history] : [...queued, ...history]
-  );
-  const filtersActive = $derived(
-    statusFilters.length > 0 || engineFilters.length > 0 || searchFilters.length > 0
-  );
+  const allEntries = $derived(running ? [...queued, running, ...history] : [...queued, ...history]);
+  const filtersActive = $derived(statusFilters.length > 0 || engineFilters.length > 0 || searchFilters.length > 0);
   const sortActive = $derived(sort !== 'manual');
 
   $effect(() => {
@@ -174,14 +168,12 @@
         sort,
         statusFilters,
         engineFilters,
-        searchFilters
-      }
+        searchFilters,
+      },
     });
   });
 
-  const enterHistoryRow = createHistoryEntrance(
-    untrack(() => allEntries.map((entry) => entry.id))
-  );
+  const enterHistoryRow = createHistoryEntrance(untrack(() => allEntries.map((entry) => entry.id)));
 
   function togglePanel(panel: ToolbarPanel, event: MouseEvent): void {
     event.stopPropagation();
@@ -265,9 +257,7 @@
   }
 
   function matchesFilter(entry: HistoryEntry): boolean {
-    return (
-      matchesStatusFilters(entry) && matchesEngineFilters(entry) && matchesSearchFilters(entry)
-    );
+    return matchesStatusFilters(entry) && matchesEngineFilters(entry) && matchesSearchFilters(entry);
   }
 
   function matchesEntry(entry: HistoryEntry): boolean {
@@ -278,10 +268,7 @@
   function countStatus(value: StatusFilter): number {
     return allEntries.filter(
       (entry) =>
-        matchesQuery(entry) &&
-        matchesEngineFilters(entry) &&
-        matchesSearchFilters(entry) &&
-        entry.status === value
+        matchesQuery(entry) && matchesEngineFilters(entry) && matchesSearchFilters(entry) && entry.status === value,
     ).length;
   }
 
@@ -291,7 +278,7 @@
         matchesQuery(entry) &&
         matchesStatusFilters(entry) &&
         matchesSearchFilters(entry) &&
-        entryEngine(entry) === value
+        entryEngine(entry) === value,
     ).length;
   }
 
@@ -301,7 +288,7 @@
         matchesQuery(entry) &&
         matchesStatusFilters(entry) &&
         matchesEngineFilters(entry) &&
-        entrySearch(entry) === value
+        entrySearch(entry) === value,
     ).length;
   }
 
@@ -312,9 +299,13 @@
       case 'oldest':
         return a.createdAtMs - b.createdAtMs;
       case 'name-asc':
-        return displayTitle(a).localeCompare(displayTitle(b), undefined, { sensitivity: 'base' });
+        return displayTitle(a).localeCompare(displayTitle(b), undefined, {
+          sensitivity: 'base',
+        });
       case 'name-desc':
-        return displayTitle(b).localeCompare(displayTitle(a), undefined, { sensitivity: 'base' });
+        return displayTitle(b).localeCompare(displayTitle(a), undefined, {
+          sensitivity: 'base',
+        });
       case 'layouts-desc':
         return entryLayoutCount(b) - entryLayoutCount(a);
       case 'nodes-asc': {
@@ -333,23 +324,16 @@
   const filteredQueued = $derived(queued.filter(matchesEntry));
   const filteredRunning = $derived(running && matchesEntry(running) ? running : null);
   const filteredHistory = $derived(
-    sort === 'manual'
-      ? history.filter(matchesEntry)
-      : history.filter(matchesEntry).slice().sort(compareHistory)
+    sort === 'manual' ? history.filter(matchesEntry) : history.filter(matchesEntry).slice().sort(compareHistory),
   );
   const noMatches = $derived(
-    !listEmpty &&
-      filteredQueued.length === 0 &&
-      filteredRunning == null &&
-      filteredHistory.length === 0
+    !listEmpty && filteredQueued.length === 0 && filteredRunning == null && filteredHistory.length === 0,
   );
 
   const dragEntry = $derived(
     dragFromId
-      ? (queued.find((entry) => entry.id === dragFromId) ??
-        history.find((entry) => entry.id === dragFromId) ??
-        null)
-      : null
+      ? (queued.find((entry) => entry.id === dragFromId) ?? history.find((entry) => entry.id === dragFromId) ?? null)
+      : null,
   );
 
   function visualList(entries: HistoryEntry[], band: DragBand): VisualItem[] {
@@ -358,9 +342,7 @@
     }
     const fromIndex = entries.findIndex((entry) => entry.id === dragFromId);
     return visualReorderSlots(entries, fromIndex, dragInsertAt, true).map((slot) =>
-      slot.kind === 'ghost'
-        ? { kind: 'ghost', key: `ghost-${band}` }
-        : { kind: 'entry', entry: slot.item }
+      slot.kind === 'ghost' ? { kind: 'ghost', key: `ghost-${band}` } : { kind: 'entry', entry: slot.item },
     );
   }
 
@@ -373,7 +355,12 @@
     for (const item of visualQueued) {
       if (item.kind === 'ghost') rows.push({ kind: 'ghost', key: item.key });
       else {
-        rows.push({ kind: 'entry', entry: item.entry, band: 'queued', draggable: true });
+        rows.push({
+          kind: 'entry',
+          entry: item.entry,
+          band: 'queued',
+          draggable: true,
+        });
       }
     }
     if (filteredRunning) {
@@ -381,7 +368,7 @@
         kind: 'entry',
         entry: filteredRunning,
         band: 'running',
-        draggable: false
+        draggable: false,
       });
     }
     for (const item of visualHistory) {
@@ -391,7 +378,7 @@
           kind: 'entry',
           entry: item.entry,
           band: 'history',
-          draggable: historyDraggable
+          draggable: historyDraggable,
         });
       }
     }
@@ -401,16 +388,12 @@
   // Svelte restarts FLIP on each list reconciliation. Job snapshots must update
   // the row contents without reconciling an unchanged order mid-animation.
   const visualRowsByKey = $derived(
-    new Map(visualRows.map((item) => [item.kind === 'ghost' ? item.key : item.entry.id, item]))
+    new Map(visualRows.map((item) => [item.kind === 'ghost' ? item.key : item.entry.id, item])),
   );
   const stabilizeOrder = createHistoryOrder();
   const visualOrder = $derived(stabilizeOrder([...visualRowsByKey.keys()]));
 
-  function dropTargetId(
-    entries: HistoryEntry[],
-    fromId: string,
-    insertAt: number
-  ): string | null {
+  function dropTargetId(entries: HistoryEntry[], fromId: string, insertAt: number): string | null {
     const fromIndex = entries.findIndex((entry) => entry.id === fromId);
     if (fromIndex < 0) return null;
     const without = entries.filter((entry) => entry.id !== fromId);
@@ -443,11 +426,7 @@
 
   function updateDropTarget(clientY: number): void {
     if (!dragBand || !dragFromId) return;
-    const entryEls = [
-      ...document.querySelectorAll<HTMLElement>(
-        `[data-history-band="${dragBand}"][data-history-id]`
-      )
-    ];
+    const entryEls = [...document.querySelectorAll<HTMLElement>(`[data-history-band="${dragBand}"][data-history-id]`)];
     dragInsertAt = insertIndexFromClient(entryEls, clientY, 'y');
   }
 
@@ -478,10 +457,7 @@
   function onWindowPointerMove(event: PointerEvent): void {
     if (dragPointerId == null || event.pointerId !== dragPointerId || !dragFromId) return;
     if (!dragActive) {
-      if (
-        Math.abs(event.clientX - dragOriginX) <= 4 &&
-        Math.abs(event.clientY - dragOriginY) <= 4
-      ) {
+      if (Math.abs(event.clientX - dragOriginX) <= 4 && Math.abs(event.clientY - dragOriginY) <= 4) {
         return;
       }
       dragActive = true;
@@ -498,12 +474,7 @@
     const band = dragBand;
     const insertAt = dragInsertAt;
     const active = dragActive;
-    const source =
-      band === 'queued'
-        ? filteredQueued
-        : band === 'history'
-          ? filteredHistory
-          : [];
+    const source = band === 'queued' ? filteredQueued : band === 'history' ? filteredHistory : [];
     clearDragState();
     if (active && band && insertAt != null) {
       const toId = dropTargetId(source, fromId, insertAt);
@@ -578,8 +549,7 @@
     }
     const status = entryStatusCaption(entry);
     if (band === 'queued') return status;
-    const elapsed =
-      entry.startedAtMs != null ? formatElapsed(entryElapsedMs(entry)) : '';
+    const elapsed = entry.startedAtMs != null ? formatElapsed(entryElapsedMs(entry)) : '';
     if (elapsed && status) return `${elapsed} · ${status}`;
     return status || elapsed;
   }
@@ -610,13 +580,10 @@
   }}
 />
 
-<Panel
-  element="aside"
-  class="flex h-[calc(100dvh-2rem)] min-h-140 flex-col overflow-hidden"
->
-  <div class="flex items-center justify-between gap-2 border-b border-line px-4 py-3">
+<Panel element="aside" class="flex h-[calc(100dvh-2rem)] min-h-140 flex-col overflow-hidden">
+  <div class="border-line flex items-center justify-between gap-2 border-b px-4 py-3">
     <h2 class="m-0 flex items-center gap-2 text-lg font-bold tracking-tight">
-      <History class="size-[1.05rem] text-accent" strokeWidth={2.2} aria-hidden="true" />
+      <History class="text-accent size-[1.05rem]" strokeWidth={2.2} aria-hidden="true" />
       History
     </h2>
     <div class="relative">
@@ -635,7 +602,7 @@
       </Button>
       {#if headerMenuOpen}
         <div
-          class="absolute top-[calc(100%+0.25rem)] right-0 z-20 min-w-48 rounded-lg border border-line bg-panel py-1 shadow-[0_14px_32px_rgb(0_0_0/45%)]"
+          class="border-line bg-panel absolute top-[calc(100%+0.25rem)] right-0 z-20 min-w-48 rounded-lg border py-1 shadow-[0_14px_32px_rgb(0_0_0/45%)]"
           role="menu"
           tabindex="-1"
           onkeydown={(event) => event.stopPropagation()}
@@ -651,7 +618,7 @@
               onImport();
             }}
           >
-            <Upload class="size-3.5 text-muted" />
+            <Upload class="text-muted size-3.5" />
             Import history…
           </button>
           <button
@@ -664,13 +631,13 @@
               onExportAll();
             }}
           >
-            <Download class="size-3.5 text-muted" />
+            <Download class="text-muted size-3.5" />
             Export all…
           </button>
-          <div class="my-1 border-t border-line" role="separator"></div>
+          <div class="border-line my-1 border-t" role="separator"></div>
           <button
             type="button"
-            class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-danger hover:bg-[#152833] disabled:cursor-not-allowed disabled:opacity-50"
+            class="text-danger flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-[#152833] disabled:cursor-not-allowed disabled:opacity-50"
             role="menuitem"
             disabled={listEmpty}
             onclick={() => requestDeleteAll()}
@@ -683,7 +650,7 @@
     </div>
   </div>
 
-  <div class="relative shrink-0 border-b border-line px-3 py-2">
+  <div class="border-line relative shrink-0 border-b px-3 py-2">
     <div class="flex items-center gap-1.5">
       <Input
         type="search"
@@ -723,7 +690,7 @@
 
     {#if openPanel === 'sort'}
       <div
-        class="absolute inset-x-2 top-[calc(100%-0.15rem)] z-20 rounded-control border border-line bg-panel-2 py-1.5 shadow-[0_14px_32px_rgb(0_0_0/45%)]"
+        class="rounded-control border-line bg-panel-2 absolute inset-x-2 top-[calc(100%-0.15rem)] z-20 border py-1.5 shadow-[0_14px_32px_rgb(0_0_0/45%)]"
         role="dialog"
         aria-label="Sort history"
         tabindex="-1"
@@ -731,9 +698,7 @@
         onpointerdown={(event) => event.stopPropagation()}
         onkeydown={(event) => event.stopPropagation()}
       >
-        <p class="m-0 px-3 pt-1 pb-1.5 text-[0.65rem] font-bold tracking-[0.08em] text-dim uppercase">
-          Sort by
-        </p>
+        <p class="text-dim m-0 px-3 pt-1 pb-1.5 text-[0.65rem] font-bold tracking-[0.08em] uppercase">Sort by</p>
         <div class="flex flex-col gap-0.5 px-1.5 pb-1" role="listbox" aria-label="Sort options">
           {#each sortOptions as option (option.value)}
             <button
@@ -741,21 +706,23 @@
               role="option"
               aria-selected={sort === option.value}
               class={`rounded-control border px-2.5 py-2 text-left transition-colors ${
-                sort === option.value
-                  ? 'border-accent/70 bg-selected'
-                  : 'border-transparent hover:bg-well-hover/70'
+                sort === option.value ? 'border-accent/70 bg-selected' : 'hover:bg-well-hover/70 border-transparent'
               }`}
               onclick={() => chooseSort(option.value)}
             >
-              <span class="block text-xs font-bold text-ink">{option.label}</span>
-              <span class="mt-0.5 block text-[0.68rem] text-muted">{option.tip}</span>
+              <span class="text-ink block text-xs font-bold">
+                {option.label}
+              </span>
+              <span class="text-muted mt-0.5 block text-[0.68rem]">
+                {option.tip}
+              </span>
             </button>
           {/each}
         </div>
       </div>
     {:else if openPanel === 'filter'}
       <div
-        class="absolute inset-x-2 top-[calc(100%-0.15rem)] z-20 max-h-[min(28rem,70dvh)] overflow-y-auto rounded-control border border-line bg-panel-2 px-3 py-2.5 shadow-[0_14px_32px_rgb(0_0_0/45%)]"
+        class="rounded-control border-line bg-panel-2 absolute inset-x-2 top-[calc(100%-0.15rem)] z-20 max-h-[min(28rem,70dvh)] overflow-y-auto border px-3 py-2.5 shadow-[0_14px_32px_rgb(0_0_0/45%)]"
         role="dialog"
         aria-label="Filter history"
         tabindex="-1"
@@ -764,10 +731,10 @@
         onkeydown={(event) => event.stopPropagation()}
       >
         <div class="mb-2.5 flex items-center justify-between gap-2">
-          <p class="m-0 text-[0.65rem] font-bold tracking-[0.08em] text-dim uppercase">Filter</p>
+          <p class="text-dim m-0 text-[0.65rem] font-bold tracking-[0.08em] uppercase">Filter</p>
           <button
             type="button"
-            class="cursor-pointer border-0 bg-transparent p-0 text-xs font-semibold text-accent hover:text-accent-bright disabled:cursor-default disabled:text-dim"
+            class="text-accent hover:text-accent-bright disabled:text-dim cursor-pointer border-0 bg-transparent p-0 text-xs font-semibold disabled:cursor-default"
             disabled={!filtersActive}
             onclick={() => clearFilters()}
           >
@@ -777,7 +744,7 @@
 
         <div class="flex flex-col gap-3">
           <div>
-            <p class="m-0 mb-1.5 text-[0.7rem] font-semibold text-muted">Status</p>
+            <p class="text-muted m-0 mb-1.5 text-[0.7rem] font-semibold">Status</p>
             <div class="flex flex-wrap gap-1.5" role="group" aria-label="Status filters">
               <button
                 type="button"
@@ -798,14 +765,16 @@
                   onclick={() => toggleStatus(option.value)}
                 >
                   {option.label}
-                  <span class="ml-1 font-medium text-dim tabular-nums">{count}</span>
+                  <span class="text-dim ml-1 font-medium tabular-nums">
+                    {count}
+                  </span>
                 </button>
               {/each}
             </div>
           </div>
 
           <div>
-            <p class="m-0 mb-1.5 text-[0.7rem] font-semibold text-muted">Engine</p>
+            <p class="text-muted m-0 mb-1.5 text-[0.7rem] font-semibold">Engine</p>
             <div class="flex flex-wrap gap-1.5" role="group" aria-label="Engine filters">
               <button
                 type="button"
@@ -826,14 +795,16 @@
                   onclick={() => toggleEngine(option.value)}
                 >
                   {option.label}
-                  <span class="ml-1 font-medium text-dim tabular-nums">{count}</span>
+                  <span class="text-dim ml-1 font-medium tabular-nums">
+                    {count}
+                  </span>
                 </button>
               {/each}
             </div>
           </div>
 
           <div>
-            <p class="m-0 mb-1.5 text-[0.7rem] font-semibold text-muted">Search</p>
+            <p class="text-muted m-0 mb-1.5 text-[0.7rem] font-semibold">Search</p>
             <div class="flex flex-wrap gap-1.5" role="group" aria-label="Search filters">
               <button
                 type="button"
@@ -854,7 +825,9 @@
                   onclick={() => toggleSearch(option.value)}
                 >
                   {option.label}
-                  <span class="ml-1 font-medium text-dim tabular-nums">{count}</span>
+                  <span class="text-dim ml-1 font-medium tabular-nums">
+                    {count}
+                  </span>
                 </button>
               {/each}
             </div>
@@ -866,9 +839,9 @@
 
   <div class="min-h-0 flex-1 overflow-y-auto" role="listbox" aria-label="Job history">
     {#if listEmpty}
-      <p class="m-0 px-3 py-3 text-xs text-dim">Solve a problem to build history.</p>
+      <p class="text-dim m-0 px-3 py-3 text-xs">Solve a problem to build history.</p>
     {:else if noMatches}
-      <p class="m-0 px-3 py-3 text-xs text-dim">
+      <p class="text-dim m-0 px-3 py-3 text-xs">
         No entries match{query.trim() ? ` “${query.trim()}”` : ' these filters'}.
       </p>
     {:else}
@@ -877,11 +850,7 @@
           {@const item = visualRowsByKey.get(key)!}
           <div class="relative" animate:flip={{ duration: historyMotionDuration }}>
             {#if item.kind === 'ghost'}
-              <div
-                class="history-drag-ghost"
-                style={`height: ${dragHeight}px`}
-                aria-hidden="true"
-              ></div>
+              <div class="history-drag-ghost" style={`height: ${dragHeight}px`} aria-hidden="true"></div>
             {:else}
               <div use:enterHistoryRow={{ id: item.entry.id, band: item.band }}>
                 {@render row(item.entry, item.band, item.draggable)}
@@ -901,7 +870,7 @@
     onclick={closeConfirmDeleteAll}
   >
     <div
-      class="w-full max-w-md rounded-xl border border-line bg-panel p-5 shadow-[0_24px_48px_rgb(0_0_0/55%)]"
+      class="border-line bg-panel w-full max-w-md rounded-xl border p-5 shadow-[0_24px_48px_rgb(0_0_0/55%)]"
       role="dialog"
       aria-modal="true"
       aria-labelledby="delete-all-history-title"
@@ -909,18 +878,14 @@
       onclick={(event) => event.stopPropagation()}
       onkeydown={(event) => event.stopPropagation()}
     >
-      <h3 id="delete-all-history-title" class="m-0 text-base font-bold tracking-tight text-ink">
-        Delete all history?
-      </h3>
-      <p class="mt-2 mb-0 text-sm leading-relaxed text-muted">
-        This permanently clears your entire history database — including entries that took a very
-        long time to solve — and cannot be undone. Any running job will be cancelled.
+      <h3 id="delete-all-history-title" class="text-ink m-0 text-base font-bold tracking-tight">Delete all history?</h3>
+      <p class="text-muted mt-2 mb-0 text-sm leading-relaxed">
+        This permanently clears your entire history database — including entries that took a very long time to solve —
+        and cannot be undone. Any running job will be cancelled.
       </p>
       <div class="mt-5 flex justify-end gap-2">
         <Button size="small" type="button" onclick={closeConfirmDeleteAll}>Cancel</Button>
-        <Button size="small" variant="danger" type="button" onclick={confirmDeleteAllHistory}>
-          Delete all
-        </Button>
+        <Button size="small" variant="danger" type="button" onclick={confirmDeleteAllHistory}>Delete all</Button>
       </div>
     </div>
   </div>
@@ -936,12 +901,7 @@
   </div>
 {/if}
 
-{#snippet row(
-  entry: HistoryEntry,
-  band: 'queued' | 'running' | 'history',
-  draggable: boolean,
-  floating = false
-)}
+{#snippet row(entry: HistoryEntry, band: 'queued' | 'running' | 'history', draggable: boolean, floating = false)}
   {@const selected = entry.id === selectedEntryId}
   {@const metrics = entryHistoryMetrics(entry)}
   {@const allLayouts = Boolean(entry.request.enumerateAllAtN)}
@@ -952,19 +912,17 @@
     aria-selected={selected}
     data-history-id={floating ? undefined : entry.id}
     data-history-band={floating ? undefined : band}
-    class={`relative grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-2 gap-y-1 border-y border-solid border-t-transparent border-b-line px-3 py-2.5 transition-opacity duration-150 motion-reduce:transition-none ${
+    class={`border-b-line relative grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-2 gap-y-1 border-y border-solid border-t-transparent px-3 py-2.5 transition-opacity duration-150 motion-reduce:transition-none ${
       band === 'queued' && !floating && filteredRunning
         ? 'opacity-[0.52] hover:opacity-[0.88] aria-selected:opacity-[0.88]'
         : ''
     } ${
       selected && band !== 'running' ? 'bg-selected shadow-[inset_3px_0_0_var(--color-accent)]' : ''
     } ${selected && band === 'running' ? 'shadow-[inset_3px_0_0_var(--color-accent)]' : ''} ${
-      !selected && band !== 'running' && !floating ? 'bg-transparent hover:bg-well-hover/55' : ''
+      !selected && band !== 'running' && !floating ? 'hover:bg-well-hover/55 bg-transparent' : ''
     } ${band === 'running' ? 'history-entry-running cursor-pointer' : ''} ${
       selected && band === 'running' ? 'history-entry-running--selected' : ''
-    } ${draggable && !floating ? 'cursor-grab' : ''} ${
-      floating ? 'history-drag-float-card border-solid' : ''
-    }`}
+    } ${draggable && !floating ? 'cursor-grab' : ''} ${floating ? 'history-drag-float-card border-solid' : ''}`}
     onpointerdown={draggable && !floating && (band === 'queued' || band === 'history')
       ? (event) => onCardPointerDown(band, entry.id, event)
       : undefined}
@@ -983,7 +941,7 @@
     <div class="min-w-0">
       {#if renamingId === entry.id && !floating}
         <input
-          class="w-full rounded border border-accent bg-[#08141c] px-1.5 py-0.5 text-sm font-bold text-ink"
+          class="border-accent text-ink w-full rounded border bg-[#08141c] px-1.5 py-0.5 text-sm font-bold"
           bind:value={renameDraft}
           aria-label="Rename history entry"
           onclick={(event) => event.stopPropagation()}
@@ -1007,9 +965,13 @@
           }}
         />
       {:else}
-        <p class="m-0 text-sm leading-snug font-bold wrap-break-word">{displayTitle(entry)}</p>
+        <p class="m-0 text-sm leading-snug font-bold wrap-break-word">
+          {displayTitle(entry)}
+        </p>
       {/if}
-      <p class="mt-0.5 m-0 text-[0.7rem] tabular-nums text-muted">{subtitle(entry, band)}</p>
+      <p class="text-muted m-0 mt-0.5 text-[0.7rem] tabular-nums">
+        {subtitle(entry, band)}
+      </p>
     </div>
 
     <div class="flex items-start">
@@ -1072,31 +1034,31 @@
 
     <ul class="col-span-2 m-0 grid list-none grid-cols-2 gap-x-2 gap-y-0.5 p-0">
       <li
-        class="inline-flex min-w-0 items-center gap-1 text-[0.68rem] font-semibold text-muted tabular-nums"
+        class="text-muted inline-flex min-w-0 items-center gap-1 text-[0.68rem] font-semibold tabular-nums"
         title={metrics.search.tip}
         aria-label={metrics.search.tip}
       >
         {#if allLayouts}
-          <LayoutGrid class="size-3 shrink-0 text-accent-bright" strokeWidth={2.2} aria-hidden="true" />
+          <LayoutGrid class="text-accent-bright size-3 shrink-0" strokeWidth={2.2} aria-hidden="true" />
         {:else}
-          <Target class="size-3 shrink-0 text-accent-bright" strokeWidth={2.2} aria-hidden="true" />
+          <Target class="text-accent-bright size-3 shrink-0" strokeWidth={2.2} aria-hidden="true" />
         {/if}
         <span class="truncate">{metrics.search.value}</span>
       </li>
       <li
-        class="inline-flex min-w-0 items-center gap-1 text-[0.68rem] font-semibold text-muted tabular-nums"
+        class="text-muted inline-flex min-w-0 items-center gap-1 text-[0.68rem] font-semibold tabular-nums"
         title={metrics.engine.tip}
         aria-label={metrics.engine.tip}
       >
         {#if engineZ3}
-          <Zap class="size-3 shrink-0 text-flow" strokeWidth={2.2} aria-hidden="true" />
+          <Zap class="text-flow size-3 shrink-0" strokeWidth={2.2} aria-hidden="true" />
         {:else}
-          <Cpu class="size-3 shrink-0 text-flow" strokeWidth={2.2} aria-hidden="true" />
+          <Cpu class="text-flow size-3 shrink-0" strokeWidth={2.2} aria-hidden="true" />
         {/if}
         <span class="truncate">{metrics.engine.value}</span>
       </li>
       <li
-        class="inline-flex min-w-0 items-center gap-1 text-[0.68rem] font-semibold text-muted tabular-nums"
+        class="text-muted inline-flex min-w-0 items-center gap-1 text-[0.68rem] font-semibold tabular-nums"
         title={metrics.nodes.tip}
         aria-label={metrics.nodes.tip}
       >
@@ -1104,18 +1066,18 @@
         <span class="truncate">{metrics.nodes.value}</span>
       </li>
       <li
-        class="inline-flex min-w-0 items-center gap-1 text-[0.68rem] font-semibold text-muted tabular-nums"
+        class="text-muted inline-flex min-w-0 items-center gap-1 text-[0.68rem] font-semibold tabular-nums"
         title={metrics.layouts.tip}
         aria-label={metrics.layouts.tip}
       >
-        <Table2 class="size-3 shrink-0 text-warning" strokeWidth={2.2} aria-hidden="true" />
+        <Table2 class="text-warning size-3 shrink-0" strokeWidth={2.2} aria-hidden="true" />
         <span class="truncate">{metrics.layouts.value}</span>
       </li>
     </ul>
 
     {#if menuId === entry.id && !floating}
       <div
-        class="absolute top-9 right-1 z-5 min-w-44 rounded-lg border border-line bg-panel py-1 shadow-[0_14px_32px_rgb(0_0_0/45%)]"
+        class="border-line bg-panel absolute top-9 right-1 z-5 min-w-44 rounded-lg border py-1 shadow-[0_14px_32px_rgb(0_0_0/45%)]"
         role="menu"
         tabindex="-1"
         onkeydown={(event) => event.stopPropagation()}
@@ -1128,7 +1090,7 @@
           role="menuitem"
           onclick={() => startRename(entry)}
         >
-          <Pencil class="size-3.5 text-muted" />
+          <Pencil class="text-muted size-3.5" />
           Rename
         </button>
         <button
@@ -1140,7 +1102,7 @@
             onCopyToNew(entry.id);
           }}
         >
-          <Copy class="size-3.5 text-muted" />
+          <Copy class="text-muted size-3.5" />
           Copy to New problem
         </button>
         <button
@@ -1152,12 +1114,12 @@
             onExportEntry(entry.id);
           }}
         >
-          <Download class="size-3.5 text-muted" />
+          <Download class="text-muted size-3.5" />
           Export entry…
         </button>
         <button
           type="button"
-          class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-danger hover:bg-[#152833]"
+          class="text-danger flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-[#152833]"
           role="menuitem"
           onclick={() => {
             menuId = null;

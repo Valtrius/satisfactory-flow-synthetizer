@@ -6,7 +6,7 @@ import {
   layoutSolution,
   rotateDevicePorts,
   rotateFlowGraph,
-  swapDeviceSides
+  swapDeviceSides,
 } from './graph';
 import type { Solution } from '../types';
 
@@ -22,7 +22,7 @@ const solution: Solution = {
     linkCount: 0,
     checkedThrough: 1,
     beltCount: 0,
-    internalMaxThroughput: { exact: '0', decimal: '0' }
+    internalMaxThroughput: { exact: '0', decimal: '0' },
   },
   totalInput: { exact: '120', decimal: '120' },
   totalOutput: { exact: '120', decimal: '120' },
@@ -32,7 +32,7 @@ const solution: Solution = {
     { id: 'input-0', kind: 'input', label: 'Input 1 · 120 /min' },
     { id: 'splitter-0', kind: 'splitter2', label: 'Splitter 1' },
     { id: 'output-0', kind: 'output', label: 'Output 1 · 60 /min' },
-    { id: 'output-1', kind: 'output', label: 'Output 2 · 60 /min' }
+    { id: 'output-1', kind: 'output', label: 'Output 2 · 60 /min' },
   ],
   edges: [
     {
@@ -43,7 +43,7 @@ const solution: Solution = {
       targetPort: 0,
       rate: { exact: '120', decimal: '120' },
       feedback: false,
-      discarded: false
+      discarded: false,
     },
     {
       id: 'edge-1',
@@ -53,7 +53,7 @@ const solution: Solution = {
       targetPort: 0,
       rate: { exact: '60', decimal: '60' },
       feedback: false,
-      discarded: false
+      discarded: false,
     },
     {
       id: 'edge-2',
@@ -63,10 +63,10 @@ const solution: Solution = {
       targetPort: 0,
       rate: { exact: '60', decimal: '60' },
       feedback: false,
-      discarded: false
-    }
+      discarded: false,
+    },
   ],
-  buildSteps: []
+  buildSteps: [],
 };
 
 describe('endpointNodeDimensions', () => {
@@ -86,32 +86,26 @@ describe('layoutSolution', () => {
   it('swaps only the requested physical port sides', () => {
     const inputs = ['left'] as const;
     const outputs = ['right', 'bottom'] as const;
-    expect(swapDeviceSides(
-      [...inputs],
-      [...outputs],
-      'left',
-      'bottom'
-    )).toEqual({ inputPositions: ['bottom'], outputPositions: ['right', 'left'] });
+    expect(swapDeviceSides([...inputs], [...outputs], 'left', 'bottom')).toEqual({
+      inputPositions: ['bottom'],
+      outputPositions: ['right', 'left'],
+    });
     expect(inputs).toEqual(['left']);
     expect(outputs).toEqual(['right', 'bottom']);
   });
 
   it('moves a link onto an empty side', () => {
-    expect(swapDeviceSides(
-      ['left'],
-      ['right', 'bottom'],
-      'left',
-      'top'
-    )).toEqual({ inputPositions: ['top'], outputPositions: ['right', 'bottom'] });
+    expect(swapDeviceSides(['left'], ['right', 'bottom'], 'left', 'top')).toEqual({
+      inputPositions: ['top'],
+      outputPositions: ['right', 'bottom'],
+    });
   });
 
   it('swaps any pair of sides including empty ones', () => {
-    expect(swapDeviceSides(
-      ['left'],
-      ['right', 'bottom'],
-      'top',
-      'right'
-    )).toEqual({ inputPositions: ['left'], outputPositions: ['top', 'bottom'] });
+    expect(swapDeviceSides(['left'], ['right', 'bottom'], 'top', 'right')).toEqual({
+      inputPositions: ['left'],
+      outputPositions: ['top', 'bottom'],
+    });
   });
 
   it('switches interchangeable handles to the closest non-crossing sides', () => {
@@ -120,15 +114,15 @@ describe('layoutSolution', () => {
     expect(
       choosePortSides('output', bounds, [
         { port: 0, other: { x: 138, y: 300 } },
-        { port: 1, other: { x: 300, y: 138 } }
-      ])
+        { port: 1, other: { x: 300, y: 138 } },
+      ]),
     ).toEqual(['bottom', 'right']);
     expect(
       choosePortSides('input', bounds, [
         { port: 0, other: { x: 138, y: 300 } },
         { port: 1, other: { x: 138, y: 0 } },
-        { port: 2, other: { x: 0, y: 138 } }
-      ])
+        { port: 2, other: { x: 0, y: 138 } },
+      ]),
     ).toEqual(['bottom', 'top', 'left']);
   });
 
@@ -153,7 +147,7 @@ describe('layoutSolution', () => {
     expect(input).toMatchObject({
       width: inputSize.width,
       height: inputSize.height,
-      style: `width: ${inputSize.width}px; height: ${inputSize.height}px;`
+      style: `width: ${inputSize.width}px; height: ${inputSize.height}px;`,
     });
     expect(outputs.every((node) => node.width === outputSize.width)).toBe(true);
     expect(outputs.every((node) => node.height === outputSize.height)).toBe(true);
@@ -168,8 +162,8 @@ describe('layoutSolution', () => {
           typeof edge.markerEnd === 'object' &&
           edge.markerEnd !== null &&
           'type' in edge.markerEnd &&
-          edge.markerEnd.type === MarkerType.ArrowClosed
-      )
+          edge.markerEnd.type === MarkerType.ArrowClosed,
+      ),
     ).toBe(true);
     expect(graph.edges[0].class).toBe('factory-edge');
   });
@@ -180,25 +174,35 @@ describe('layoutSolution', () => {
       stats: {
         ...solution.stats,
         splitters: 0,
-        mergers: 1
+        mergers: 1,
       },
       nodes: [
         { id: 'input-0', kind: 'input', label: 'Input 1' },
         { id: 'input-1', kind: 'input', label: 'Input 2' },
         { id: 'merger-0', kind: 'merger2', label: '2-way merger 1' },
-        { id: 'output-0', kind: 'output', label: 'Output 1' }
+        { id: 'output-0', kind: 'output', label: 'Output 1' },
       ],
       edges: [
-        { ...solution.edges[0], id: 'edge-0', source: 'input-0', target: 'merger-0' },
+        {
+          ...solution.edges[0],
+          id: 'edge-0',
+          source: 'input-0',
+          target: 'merger-0',
+        },
         {
           ...solution.edges[0],
           id: 'edge-1',
           source: 'input-1',
           target: 'merger-0',
-          targetPort: 1
+          targetPort: 1,
         },
-        { ...solution.edges[0], id: 'edge-2', source: 'merger-0', target: 'output-0' }
-      ]
+        {
+          ...solution.edges[0],
+          id: 'edge-2',
+          source: 'merger-0',
+          target: 'output-0',
+        },
+      ],
     };
 
     const graph = await layoutSolution(mergerSolution);
@@ -219,20 +223,30 @@ describe('layoutSolution', () => {
         { id: 'input-0', kind: 'input', label: 'Input' },
         { id: 'splitter-0', kind: 'splitter3', label: 'Splitter' },
         { id: 'merger-0', kind: 'merger3', label: 'Merger' },
-        { id: 'output-0', kind: 'output', label: 'Output' }
+        { id: 'output-0', kind: 'output', label: 'Output' },
       ],
       edges: [
-        { ...solution.edges[0], id: 'edge-in', source: 'input-0', target: 'splitter-0' },
+        {
+          ...solution.edges[0],
+          id: 'edge-in',
+          source: 'input-0',
+          target: 'splitter-0',
+        },
         ...[2, 0, 1].map((targetPort, sourcePort) => ({
           ...solution.edges[0],
           id: `edge-parallel-${sourcePort}`,
           source: 'splitter-0',
           target: 'merger-0',
           sourcePort,
-          targetPort
+          targetPort,
         })),
-        { ...solution.edges[0], id: 'edge-out', source: 'merger-0', target: 'output-0' }
-      ]
+        {
+          ...solution.edges[0],
+          id: 'edge-out',
+          source: 'merger-0',
+          target: 'output-0',
+        },
+      ],
     };
 
     const graph = await layoutSolution(parallelSolution);
@@ -257,16 +271,47 @@ describe('layoutSolution', () => {
         { id: 'splitter-2', kind: 'splitter2', label: 'Splitter 3' },
         { id: 'splitter-3', kind: 'splitter2', label: 'Splitter 4' },
         { id: 'output-0', kind: 'output', label: 'Output 1' },
-        { id: 'output-1', kind: 'output', label: 'Output 2' }
+        { id: 'output-1', kind: 'output', label: 'Output 2' },
       ],
       edges: [
-        { ...solution.edges[0], id: 'edge-in', source: 'input-0', target: 'splitter-0' },
-        { ...solution.edges[0], id: 'edge-short', source: 'splitter-0', target: 'splitter-1' },
-        { ...solution.edges[0], id: 'edge-chain-0', source: 'splitter-0', target: 'splitter-2', sourcePort: 1 },
-        { ...solution.edges[0], id: 'edge-chain-1', source: 'splitter-2', target: 'splitter-3' },
-        { ...solution.edges[0], id: 'edge-short-out', source: 'splitter-1', target: 'output-0' },
-        { ...solution.edges[0], id: 'edge-chain-out', source: 'splitter-3', target: 'output-1' }
-      ]
+        {
+          ...solution.edges[0],
+          id: 'edge-in',
+          source: 'input-0',
+          target: 'splitter-0',
+        },
+        {
+          ...solution.edges[0],
+          id: 'edge-short',
+          source: 'splitter-0',
+          target: 'splitter-1',
+        },
+        {
+          ...solution.edges[0],
+          id: 'edge-chain-0',
+          source: 'splitter-0',
+          target: 'splitter-2',
+          sourcePort: 1,
+        },
+        {
+          ...solution.edges[0],
+          id: 'edge-chain-1',
+          source: 'splitter-2',
+          target: 'splitter-3',
+        },
+        {
+          ...solution.edges[0],
+          id: 'edge-short-out',
+          source: 'splitter-1',
+          target: 'output-0',
+        },
+        {
+          ...solution.edges[0],
+          id: 'edge-chain-out',
+          source: 'splitter-3',
+          target: 'output-1',
+        },
+      ],
     };
 
     const graph = await layoutSolution(chainSolution);
@@ -280,7 +325,7 @@ describe('layoutSolution', () => {
   it('rotates every occupied port 90 degrees', () => {
     expect(rotateDevicePorts(['left'], ['right', 'bottom'], 'cw')).toEqual({
       inputPositions: ['top'],
-      outputPositions: ['bottom', 'left']
+      outputPositions: ['bottom', 'left'],
     });
   });
 
@@ -288,15 +333,15 @@ describe('layoutSolution', () => {
     const graph = await layoutSolution(solution);
     const inputBefore = graph.nodes.find((node) => node.id === 'input-0')!;
     const outputBefore = graph.nodes.find((node) => node.id === 'output-0')!;
-    const dx = (outputBefore.position.x - inputBefore.position.x);
-    const dy = (outputBefore.position.y - inputBefore.position.y);
+    const dx = outputBefore.position.x - inputBefore.position.x;
+    const dy = outputBefore.position.y - inputBefore.position.y;
     const rotated = rotateFlowGraph(graph.nodes, graph.edges, 'cw');
     const inputAfter = rotated.nodes.find((node) => node.id === 'input-0')!;
     const outputAfter = rotated.nodes.find((node) => node.id === 'output-0')!;
     expect(outputAfter.position.x - inputAfter.position.x).toBeCloseTo(-dy);
     expect(outputAfter.position.y - inputAfter.position.y).toBeCloseTo(dx);
     expect(rotated.nodes.find((node) => node.id === 'splitter-0')!.data.outputPositions).not.toEqual(
-      graph.nodes.find((node) => node.id === 'splitter-0')!.data.outputPositions
+      graph.nodes.find((node) => node.id === 'splitter-0')!.data.outputPositions,
     );
     const restored = rotateFlowGraph(rotated.nodes, rotated.edges, 'ccw');
     for (const node of restored.nodes) {

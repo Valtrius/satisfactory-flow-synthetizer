@@ -6,15 +6,9 @@
     prefersReducedMotion,
     setListDragging,
     toIndexFromInsertAt,
-    visualReorderSlots
+    visualReorderSlots,
   } from './pointerReorder';
-  import {
-    SORT_LABELS,
-    type SortColumn,
-    type SortKey,
-    flipColumnDir,
-    reorderColumns
-  } from './solutionSort';
+  import { SORT_LABELS, type SortColumn, type SortKey, flipColumnDir, reorderColumns } from './solutionSort';
 
   type Props = {
     solutions: Solution[];
@@ -24,13 +18,7 @@
     onColumnsChange: (columns: SortColumn[]) => void;
   };
 
-  let {
-    solutions,
-    selectedIndex,
-    columns,
-    onSelect,
-    onColumnsChange
-  }: Props = $props();
+  let { solutions, selectedIndex, columns, onSelect, onColumnsChange }: Props = $props();
 
   let dragFrom = $state<number | null>(null);
   let dragInsertAt = $state<number | null>(null);
@@ -47,12 +35,10 @@
   let dragReduceMotion = false;
 
   const dragColumn = $derived(
-    dragFrom != null && dragFrom >= 0 && dragFrom < columns.length ? columns[dragFrom] : null
+    dragFrom != null && dragFrom >= 0 && dragFrom < columns.length ? columns[dragFrom] : null,
   );
   const flipDuration = $derived(dragReduceMotion || !dragActive ? 0 : 220);
-  const visualColumns = $derived(
-    visualReorderSlots(columns, dragFrom ?? -1, dragInsertAt, dragActive)
-  );
+  const visualColumns = $derived(visualReorderSlots(columns, dragFrom ?? -1, dragInsertAt, dragActive));
 
   function clearDragState(): void {
     dragFrom = null;
@@ -81,9 +67,7 @@
   }
 
   function updateDropTarget(clientX: number): void {
-    const headers = [
-      ...document.querySelectorAll<HTMLElement>('th[data-col-source-index]')
-    ];
+    const headers = [...document.querySelectorAll<HTMLElement>('th[data-col-source-index]')];
     dragInsertAt = insertIndexFromClient(headers, clientX, 'x');
   }
 
@@ -111,10 +95,7 @@
   function onWindowPointerMove(event: PointerEvent): void {
     if (dragPointerId == null || event.pointerId !== dragPointerId || dragFrom == null) return;
     if (!dragActive) {
-      if (
-        Math.abs(event.clientX - dragOriginX) <= 4 &&
-        Math.abs(event.clientY - dragOriginY) <= 4
-      ) {
+      if (Math.abs(event.clientX - dragOriginX) <= 4 && Math.abs(event.clientY - dragOriginY) <= 4) {
         return;
       }
       dragActive = true;
@@ -182,7 +163,7 @@
               data-col-source-index={item.kind === 'item' ? item.index : undefined}
               class={item.kind === 'ghost'
                 ? 'list-drag-ghost list-drag-ghost--x sticky top-0 z-1'
-                : 'sticky top-0 z-1 select-none border-b border-[#1a2c36] bg-[#101f2a] px-2 py-2.5 text-left text-[0.7rem] font-bold tracking-wide text-muted uppercase'}
+                : 'text-muted sticky top-0 z-1 border-b border-[#1a2c36] bg-[#101f2a] px-2 py-2.5 text-left text-[0.7rem] font-bold tracking-wide uppercase select-none'}
               style={item.kind === 'ghost'
                 ? `width: ${dragWidth}px; min-width: ${dragWidth}px; height: ${dragHeight}px`
                 : undefined}
@@ -204,7 +185,7 @@
                   </button>
                   <button
                     type="button"
-                    class="inline-flex cursor-pointer items-center gap-1 border-0 bg-transparent p-0 font-bold tracking-wide text-muted uppercase"
+                    class="text-muted inline-flex cursor-pointer items-center gap-1 border-0 bg-transparent p-0 font-bold tracking-wide uppercase"
                     title="Click to flip sort direction"
                     onclick={() => headerClick(column.key)}
                   >
@@ -214,7 +195,9 @@
                       {visualIndex + 1}
                     </span>
                     {SORT_LABELS[column.key]}
-                    <span class="text-accent">{column.dir === 'asc' ? '↑' : '↓'}</span>
+                    <span class="text-accent">
+                      {column.dir === 'asc' ? '↑' : '↓'}
+                    </span>
                   </button>
                 </div>
               {/if}
@@ -235,10 +218,8 @@
               <td
                 class={item.kind === 'ghost'
                   ? 'list-drag-ghost list-drag-ghost--x'
-                  : `px-3 py-2.5 ${rowIndex === selectedIndex && columnIndex === 0 ? 'font-bold text-accent' : 'text-[#dfe9ed]'}`}
-                style={item.kind === 'ghost'
-                  ? `width: ${dragWidth}px; min-width: ${dragWidth}px`
-                  : undefined}
+                  : `px-3 py-2.5 ${rowIndex === selectedIndex && columnIndex === 0 ? 'text-accent font-bold' : 'text-[#dfe9ed]'}`}
+                style={item.kind === 'ghost' ? `width: ${dragWidth}px; min-width: ${dragWidth}px` : undefined}
                 aria-hidden={item.kind === 'ghost' ? true : undefined}
               >
                 {#if item.kind === 'item'}
@@ -260,18 +241,20 @@
     aria-hidden="true"
   >
     <div
-      class="list-drag-float-card rounded-sm border border-[#1a2c36] bg-[#101f2a] px-2 py-2.5 text-left text-[0.7rem] font-bold tracking-wide text-muted uppercase"
+      class="list-drag-float-card text-muted rounded-sm border border-[#1a2c36] bg-[#101f2a] px-2 py-2.5 text-left text-[0.7rem] font-bold tracking-wide uppercase"
     >
       <div class="flex items-center gap-1.5">
         <span class="px-0.5 text-base leading-none text-[#5d7180]">⠿</span>
-        <span class="inline-flex items-center gap-1 font-bold tracking-wide text-muted uppercase">
+        <span class="text-muted inline-flex items-center gap-1 font-bold tracking-wide uppercase">
           <span
             class={`inline-grid size-4 place-items-center rounded-sm text-[0.65rem] font-extrabold ${priorityClass(dragInsertAt ?? dragFrom ?? 0)}`}
           >
             {(dragInsertAt ?? dragFrom ?? 0) + 1}
           </span>
           {SORT_LABELS[dragColumn.key]}
-          <span class="text-accent">{dragColumn.dir === 'asc' ? '↑' : '↓'}</span>
+          <span class="text-accent">
+            {dragColumn.dir === 'asc' ? '↑' : '↓'}
+          </span>
         </span>
       </div>
     </div>

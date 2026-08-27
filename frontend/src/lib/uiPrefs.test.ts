@@ -4,7 +4,7 @@ import {
   DEFAULT_HISTORY_TOOLBAR_PREFS,
   parseFormDraftPrefs,
   parseHistoryToolbarPrefs,
-  parseUiPrefs
+  parseUiPrefs,
 } from './uiPrefs';
 
 describe('parseHistoryToolbarPrefs', () => {
@@ -15,14 +15,14 @@ describe('parseHistoryToolbarPrefs', () => {
         sort: 'newest',
         statusFilters: ['completed', 'bogus', 'failed', 'completed'],
         engineFilters: ['z3'],
-        searchFilters: ['all']
-      })
+        searchFilters: ['all'],
+      }),
     ).toEqual({
       query: '60',
       sort: 'newest',
       statusFilters: ['completed', 'failed'],
       engineFilters: ['z3'],
-      searchFilters: ['all']
+      searchFilters: ['all'],
     });
   });
 
@@ -41,15 +41,15 @@ describe('parseFormDraftPrefs', () => {
         beltRate: '780',
         enumerateAllAtN: false,
         engine: 'z3',
-        nextEndpointId: 9
-      })
+        nextEndpointId: 9,
+      }),
     ).toEqual({
       inputs: [{ id: 'input-1', name: '', rate: '120', multiplier: '2' }],
       outputs: [{ id: 'output-1', name: '', rate: '40', multiplier: '1' }],
       beltRate: '780',
       enumerateAllAtN: false,
       engine: 'z3',
-      nextEndpointId: 9
+      nextEndpointId: 9,
     });
   });
 
@@ -66,7 +66,7 @@ describe('parseUiPrefs', () => {
     const parsed = parseUiPrefs({
       version: 1,
       history: { query: 'x', sort: 'oldest' },
-      form: { beltRate: '600', engine: 'z3', enumerateAllAtN: false }
+      form: { beltRate: '600', engine: 'z3', enumerateAllAtN: false },
     });
     expect(parsed.history.query).toBe('x');
     expect(parsed.history.sort).toBe('oldest');

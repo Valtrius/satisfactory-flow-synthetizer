@@ -1,13 +1,5 @@
 <script lang="ts">
-  import {
-    Background,
-    BackgroundVariant,
-    Controls,
-    MiniMap,
-    SvelteFlow,
-    type Edge,
-    type Node
-  } from '@xyflow/svelte';
+  import { Background, BackgroundVariant, Controls, MiniMap, SvelteFlow, type Edge, type Node } from '@xyflow/svelte';
   import Download from '@lucide/svelte/icons/download';
   import Maximize2 from '@lucide/svelte/icons/maximize-2';
   import Minimize2 from '@lucide/svelte/icons/minimize-2';
@@ -59,7 +51,7 @@
     onToggleFullscreen,
     onFlowError,
     onNodeDragStart,
-    onNodeDragStop
+    onNodeDragStop,
   }: Props = $props();
 
   // Svelte 5 does not auto-subscribe `$store` on props. Bridge writables → $state.raw
@@ -100,23 +92,26 @@
 
 <div class={`flex flex-col overflow-hidden ${className}`}>
   <div
-    class="flex flex-col items-start justify-between gap-3 border-b border-line px-5 py-2 md:flex-row md:items-center"
+    class="border-line flex flex-col items-start justify-between gap-3 border-b px-5 py-2 md:flex-row md:items-center"
   >
     <div>
       <h3 class="mb-1 text-lg font-bold">Topology graph</h3>
-      <p class="m-0 text-xs text-muted">{subtitle}</p>
+      <p class="text-muted m-0 text-xs">{subtitle}</p>
     </div>
     <div class="flex w-full items-start justify-between gap-4 md:w-auto md:items-center">
-      <div class="flex flex-wrap gap-4.5 text-xs text-muted" aria-label="Graph legend">
-        <span class="flex items-center gap-1.5"
-          ><i class="block h-0.75 w-5.5 bg-flow"></i> Main flow</span
-        >
-        <span class="flex items-center gap-1.5"
-          ><i class="legend-line-feedback block h-0.75 w-5.5"></i> Feedback</span
-        >
-        <span class="flex items-center gap-1.5"
-          ><i class="legend-line-discard block h-0.75 w-5.5"></i> Discard</span
-        >
+      <div class="text-muted flex flex-wrap gap-4.5 text-xs" aria-label="Graph legend">
+        <span class="flex items-center gap-1.5">
+          <i class="bg-flow block h-0.75 w-5.5"></i>
+          Main flow
+        </span>
+        <span class="flex items-center gap-1.5">
+          <i class="legend-line-feedback block h-0.75 w-5.5"></i>
+          Feedback
+        </span>
+        <span class="flex items-center gap-1.5">
+          <i class="legend-line-discard block h-0.75 w-5.5"></i>
+          Discard
+        </span>
       </div>
       <div class="flex flex-col items-end gap-1">
         <div class="flex gap-1.5" aria-label="Graph tools">
@@ -127,7 +122,9 @@
             title="Rotate graph 90° counter-clockwise"
             aria-label="Rotate graph 90 degrees counter-clockwise"
             onclick={() => onRotate('ccw')}
-          >↺</Button>
+          >
+            ↺
+          </Button>
           <Button
             size="small"
             square
@@ -135,15 +132,10 @@
             title="Rotate graph 90° clockwise"
             aria-label="Rotate graph 90 degrees clockwise"
             onclick={() => onRotate('cw')}
-          >↻</Button>
-          <Button
-            size="small"
-            square
-            type="button"
-            title="Export SVG"
-            aria-label="Export SVG"
-            onclick={onExport}
           >
+            ↻
+          </Button>
+          <Button size="small" square type="button" title="Export SVG" aria-label="Export SVG" onclick={onExport}>
             <Download size={16} strokeWidth={2.2} aria-hidden="true" />
           </Button>
           <Button

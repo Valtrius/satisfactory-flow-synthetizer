@@ -3,24 +3,12 @@ import type { EndpointRow, SolverEngine } from '../types';
 export const UI_PREFS_STORAGE_KEY = 'sfs.ui-prefs.v1';
 export const UI_PREFS_VERSION = 1 as const;
 
-export type HistoryStatusFilter =
-  | 'completed'
-  | 'failed'
-  | 'cancelled'
-  | 'incomplete'
-  | 'unsat';
+export type HistoryStatusFilter = 'completed' | 'failed' | 'cancelled' | 'incomplete' | 'unsat';
 
 export type HistoryEngineFilter = 'custom' | 'z3';
 export type HistorySearchFilter = 'opt' | 'all';
 
-export type HistorySortPref =
-  | 'manual'
-  | 'newest'
-  | 'oldest'
-  | 'name-asc'
-  | 'name-desc'
-  | 'layouts-desc'
-  | 'nodes-asc';
+export type HistorySortPref = 'manual' | 'newest' | 'oldest' | 'name-asc' | 'name-desc' | 'layouts-desc' | 'nodes-asc';
 
 export type HistoryToolbarPrefs = {
   query: string;
@@ -45,13 +33,7 @@ export type UiPrefs = {
   form: FormDraftPrefs;
 };
 
-const STATUS_FILTERS = new Set<HistoryStatusFilter>([
-  'completed',
-  'failed',
-  'cancelled',
-  'incomplete',
-  'unsat'
-]);
+const STATUS_FILTERS = new Set<HistoryStatusFilter>(['completed', 'failed', 'cancelled', 'incomplete', 'unsat']);
 
 const ENGINE_FILTERS = new Set<HistoryEngineFilter>(['custom', 'z3']);
 const SEARCH_FILTERS = new Set<HistorySearchFilter>(['opt', 'all']);
@@ -62,7 +44,7 @@ const SORT_PREFS = new Set<HistorySortPref>([
   'name-asc',
   'name-desc',
   'layouts-desc',
-  'nodes-asc'
+  'nodes-asc',
 ]);
 
 export const DEFAULT_HISTORY_TOOLBAR_PREFS: HistoryToolbarPrefs = {
@@ -70,30 +52,35 @@ export const DEFAULT_HISTORY_TOOLBAR_PREFS: HistoryToolbarPrefs = {
   sort: 'manual',
   statusFilters: [],
   engineFilters: [],
-  searchFilters: []
+  searchFilters: [],
 };
 
 export const DEFAULT_FORM_DRAFT_PREFS: FormDraftPrefs = {
   inputs: [],
   outputs: [
     { id: 'output-1', name: '', rate: '60', multiplier: '1' },
-    { id: 'output-2', name: '', rate: '60', multiplier: '1' }
+    { id: 'output-2', name: '', rate: '60', multiplier: '1' },
   ],
   beltRate: '1200',
   enumerateAllAtN: true,
   engine: 'custom',
-  nextEndpointId: 3
+  nextEndpointId: 3,
 };
 
 export function defaultUiPrefs(): UiPrefs {
   return {
     version: UI_PREFS_VERSION,
-    history: { ...DEFAULT_HISTORY_TOOLBAR_PREFS, statusFilters: [], engineFilters: [], searchFilters: [] },
+    history: {
+      ...DEFAULT_HISTORY_TOOLBAR_PREFS,
+      statusFilters: [],
+      engineFilters: [],
+      searchFilters: [],
+    },
     form: {
       ...DEFAULT_FORM_DRAFT_PREFS,
       inputs: [],
-      outputs: DEFAULT_FORM_DRAFT_PREFS.outputs.map((row) => ({ ...row }))
-    }
+      outputs: DEFAULT_FORM_DRAFT_PREFS.outputs.map((row) => ({ ...row })),
+    },
   };
 }
 
@@ -107,7 +94,7 @@ function parseEndpointRow(raw: unknown): EndpointRow | null {
     id: raw.id,
     name: typeof raw.name === 'string' ? raw.name : '',
     rate: typeof raw.rate === 'string' ? raw.rate : '60',
-    multiplier: typeof raw.multiplier === 'string' ? raw.multiplier : '1'
+    multiplier: typeof raw.multiplier === 'string' ? raw.multiplier : '1',
   };
 }
 
@@ -144,7 +131,7 @@ export function parseHistoryToolbarPrefs(raw: unknown): HistoryToolbarPrefs {
     sort,
     statusFilters: filterKnown(raw.statusFilters, STATUS_FILTERS),
     engineFilters: filterKnown(raw.engineFilters, ENGINE_FILTERS),
-    searchFilters: filterKnown(raw.searchFilters, SEARCH_FILTERS)
+    searchFilters: filterKnown(raw.searchFilters, SEARCH_FILTERS),
   };
 }
 
@@ -152,18 +139,14 @@ export function parseFormDraftPrefs(raw: unknown): FormDraftPrefs {
   if (!isRecord(raw)) {
     return {
       ...DEFAULT_FORM_DRAFT_PREFS,
-      outputs: DEFAULT_FORM_DRAFT_PREFS.outputs.map((row) => ({ ...row }))
+      outputs: DEFAULT_FORM_DRAFT_PREFS.outputs.map((row) => ({ ...row })),
     };
   }
   const inputs = parseEndpointRows(raw.inputs) ?? [];
-  const outputs =
-    parseEndpointRows(raw.outputs) ??
-    DEFAULT_FORM_DRAFT_PREFS.outputs.map((row) => ({ ...row }));
+  const outputs = parseEndpointRows(raw.outputs) ?? DEFAULT_FORM_DRAFT_PREFS.outputs.map((row) => ({ ...row }));
   const engine: SolverEngine = raw.engine === 'z3' ? 'z3' : 'custom';
   const nextEndpointId =
-    typeof raw.nextEndpointId === 'number' &&
-    Number.isFinite(raw.nextEndpointId) &&
-    raw.nextEndpointId >= 1
+    typeof raw.nextEndpointId === 'number' && Number.isFinite(raw.nextEndpointId) && raw.nextEndpointId >= 1
       ? Math.floor(raw.nextEndpointId)
       : DEFAULT_FORM_DRAFT_PREFS.nextEndpointId;
   return {
@@ -171,11 +154,9 @@ export function parseFormDraftPrefs(raw: unknown): FormDraftPrefs {
     outputs,
     beltRate: typeof raw.beltRate === 'string' ? raw.beltRate : DEFAULT_FORM_DRAFT_PREFS.beltRate,
     enumerateAllAtN:
-      typeof raw.enumerateAllAtN === 'boolean'
-        ? raw.enumerateAllAtN
-        : DEFAULT_FORM_DRAFT_PREFS.enumerateAllAtN,
+      typeof raw.enumerateAllAtN === 'boolean' ? raw.enumerateAllAtN : DEFAULT_FORM_DRAFT_PREFS.enumerateAllAtN,
     engine,
-    nextEndpointId
+    nextEndpointId,
   };
 }
 
@@ -185,7 +166,7 @@ export function parseUiPrefs(raw: unknown): UiPrefs {
   return {
     version: UI_PREFS_VERSION,
     history: parseHistoryToolbarPrefs(raw.history),
-    form: parseFormDraftPrefs(raw.form)
+    form: parseFormDraftPrefs(raw.form),
   };
 }
 
@@ -207,13 +188,13 @@ export function readUiPrefs(): UiPrefs {
         ...cachedPrefs.history,
         statusFilters: [...cachedPrefs.history.statusFilters],
         engineFilters: [...cachedPrefs.history.engineFilters],
-        searchFilters: [...cachedPrefs.history.searchFilters]
+        searchFilters: [...cachedPrefs.history.searchFilters],
       },
       form: {
         ...cachedPrefs.form,
         inputs: cachedPrefs.form.inputs.map((row) => ({ ...row })),
-        outputs: cachedPrefs.form.outputs.map((row) => ({ ...row }))
-      }
+        outputs: cachedPrefs.form.outputs.map((row) => ({ ...row })),
+      },
     };
   }
   if (!storageAvailable()) {
@@ -236,13 +217,13 @@ export function writeUiPrefs(prefs: UiPrefs): void {
       ...prefs.history,
       statusFilters: [...prefs.history.statusFilters],
       engineFilters: [...prefs.history.engineFilters],
-      searchFilters: [...prefs.history.searchFilters]
+      searchFilters: [...prefs.history.searchFilters],
     },
     form: {
       ...prefs.form,
       inputs: prefs.form.inputs.map((row) => ({ ...row })),
-      outputs: prefs.form.outputs.map((row) => ({ ...row }))
-    }
+      outputs: prefs.form.outputs.map((row) => ({ ...row })),
+    },
   };
   if (!storageAvailable()) return;
   try {
@@ -252,10 +233,7 @@ export function writeUiPrefs(prefs: UiPrefs): void {
   }
 }
 
-export function updateUiPrefs(patch: {
-  history?: HistoryToolbarPrefs;
-  form?: FormDraftPrefs;
-}): UiPrefs {
+export function updateUiPrefs(patch: { history?: HistoryToolbarPrefs; form?: FormDraftPrefs }): UiPrefs {
   const current = readUiPrefs();
   const next: UiPrefs = {
     version: UI_PREFS_VERSION,
@@ -264,16 +242,16 @@ export function updateUiPrefs(patch: {
           ...patch.history,
           statusFilters: [...patch.history.statusFilters],
           engineFilters: [...patch.history.engineFilters],
-          searchFilters: [...patch.history.searchFilters]
+          searchFilters: [...patch.history.searchFilters],
         }
       : current.history,
     form: patch.form
       ? {
           ...patch.form,
           inputs: patch.form.inputs.map((row) => ({ ...row })),
-          outputs: patch.form.outputs.map((row) => ({ ...row }))
+          outputs: patch.form.outputs.map((row) => ({ ...row })),
         }
-      : current.form
+      : current.form,
   };
   writeUiPrefs(next);
   return next;

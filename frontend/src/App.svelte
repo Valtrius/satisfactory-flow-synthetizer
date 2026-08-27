@@ -17,19 +17,11 @@
     clampMultiplier,
     createEndpointRow,
     endpointSlots,
-    type EndpointCollection
+    type EndpointCollection,
   } from './lib/endpoints';
   import { createGraphSession } from './lib/graphSession';
-  import {
-    exportHistoryBundle,
-    exportHistoryEntry,
-    importHistoryPayload
-  } from './lib/historyIo';
-  import {
-    createPersistController,
-    installCloseFlush,
-    loadHistoryOrEmpty
-  } from './lib/historyLifecycle';
+  import { exportHistoryBundle, exportHistoryEntry, importHistoryPayload } from './lib/historyIo';
+  import { createPersistController, installCloseFlush, loadHistoryOrEmpty } from './lib/historyLifecycle';
   import {
     assembleEntries,
     createQueuedEntry,
@@ -39,21 +31,11 @@
     partitionEntries,
     reorderWithinBand,
     snapshotForm,
-    type HistoryEntry
+    type HistoryEntry,
   } from './lib/historyModel';
   import { HistoryQueue } from './lib/historyQueue';
-  import {
-    formatElapsed,
-    searchHeadline,
-    searchStageView,
-    searchSubline,
-    sizeSearchBody
-  } from './lib/searchStage';
-  import {
-    DEFAULT_SORT_COLUMNS,
-    compareSolutions,
-    type SortColumn
-  } from './lib/solutionSort';
+  import { formatElapsed, searchHeadline, searchStageView, searchSubline, sizeSearchBody } from './lib/searchStage';
+  import { DEFAULT_SORT_COLUMNS, compareSolutions, type SortColumn } from './lib/solutionSort';
   import { readUiPrefs, updateUiPrefs } from './lib/uiPrefs';
   import type { EndpointRow, Solution, SolverEngine } from './types';
 
@@ -68,9 +50,7 @@
   let historyEntries = $state<HistoryEntry[]>([]);
   let selectedEntryId = $state<string | null>(null);
   let expandedTelemetryEntries = $state<Record<string, boolean>>({});
-  const telemetryExpanded = $derived(
-    selectedEntryId != null && (expandedTelemetryEntries[selectedEntryId] ?? false)
-  );
+  const telemetryExpanded = $derived(selectedEntryId != null && (expandedTelemetryEntries[selectedEntryId] ?? false));
 
   function toggleTelemetry(): void {
     if (selectedEntryId == null) return;
@@ -95,7 +75,7 @@
 
   function patchEntry(id: string, patch: Partial<HistoryEntry>): void {
     historyEntries = historyEntries.map((entry) =>
-      entry.id === id ? { ...entry, ...patch, updatedAtMs: Date.now() } : entry
+      entry.id === id ? { ...entry, ...patch, updatedAtMs: Date.now() } : entry,
     );
   }
 
@@ -103,8 +83,7 @@
     nodes: flowNodes,
     edges: flowEdges,
     getSelectedEntryId: () => selectedEntryId,
-    getSelectedEntry: () =>
-      historyEntries.find((entry) => entry.id === selectedEntryId) ?? null,
+    getSelectedEntry: () => historyEntries.find((entry) => entry.id === selectedEntryId) ?? null,
     getSelectedSourceIndex: () => selectedSourceIndex,
     setSelectedSourceIndex: (index) => {
       selectedSourceIndex = index;
@@ -132,7 +111,7 @@
       graphFullscreen = chrome.fullscreen;
       canUndoGraph = chrome.canUndo;
       canRedoGraph = chrome.canRedo;
-    }
+    },
   });
 
   const queue = new HistoryQueue({
@@ -153,37 +132,30 @@
     },
     setElapsedMs: (ms) => {
       elapsedMs = ms;
-    }
+    },
   });
 
   const persist = createPersistController({
     isReady: () => historyReady,
     onError: (message) => {
       errorMessage = message;
-    }
+    },
   });
 
   const bands = $derived(partitionEntries(historyEntries));
-  const selectedEntry = $derived(
-    historyEntries.find((entry) => entry.id === selectedEntryId) ?? null
-  );
+  const selectedEntry = $derived(historyEntries.find((entry) => entry.id === selectedEntryId) ?? null);
   const hasRunning = $derived(bands.running != null);
   const viewJob = $derived(selectedEntry ? entryToJobSnapshot(selectedEntry) : null);
   const searchEnumerate = $derived(Boolean(selectedEntry?.request.enumerateAllAtN));
-  const busy = $derived(
-    selectedEntry?.status === 'running' || selectedEntry?.status === 'cancelling'
-  );
+  const busy = $derived(selectedEntry?.status === 'running' || selectedEntry?.status === 'cancelling');
   const showSearchStage = $derived(
-    Boolean(viewJob) &&
-      selectedEntry != null &&
-      selectedEntry.status !== 'queued' &&
-      (searchEnumerate || !solution)
+    Boolean(viewJob) && selectedEntry != null && selectedEntry.status !== 'queued' && (searchEnumerate || !solution),
   );
   const searchStageMuted = $derived(
     selectedEntry?.status === 'cancelled' ||
       selectedEntry?.status === 'failed' ||
       selectedEntry?.status === 'incomplete' ||
-      selectedEntry?.status === 'unsat'
+      selectedEntry?.status === 'unsat',
   );
   const searchView = $derived(searchStageView(viewJob?.progress ?? null));
   const inputSlots = $derived(endpointSlots(inputs));
@@ -193,22 +165,18 @@
     solutionsLength: solutions.length,
     searchEnumerate,
     firstNodeCount: solutions[0]?.stats.nodeCount ?? null,
-    engine: selectedEntry?.request.engine ?? engine
+    engine: selectedEntry?.request.engine ?? engine,
   });
   const elapsedLabel = $derived(formatElapsed(elapsedMs));
   const runningElapsedLabel = $derived(
-    bands.running?.startedAtMs
-      ? formatElapsed(Math.max(0, runningTick - bands.running.startedAtMs))
-      : ''
+    bands.running?.startedAtMs ? formatElapsed(Math.max(0, runningTick - bands.running.startedAtMs)) : '',
   );
   const displayRows = $derived(
     solutions
       .map((item, sourceIndex) => ({ solution: item, sourceIndex }))
-      .sort((left, right) => compareSolutions(left.solution, right.solution, sortColumns))
+      .sort((left, right) => compareSolutions(left.solution, right.solution, sortColumns)),
   );
-  const selectedDisplayIndex = $derived(
-    displayRows.findIndex((row) => row.sourceIndex === selectedSourceIndex)
-  );
+  const selectedDisplayIndex = $derived(displayRows.findIndex((row) => row.sourceIndex === selectedSourceIndex));
 
   onMount(() => {
     let unlistenClose: (() => void) | undefined;
@@ -227,7 +195,7 @@
       }
 
       unlistenClose = await installCloseFlush({
-        flush: () => flushHistoryToDisk()
+        flush: () => flushHistoryToDisk(),
       });
     })();
 
@@ -248,8 +216,8 @@
         beltRate,
         enumerateAllAtN,
         engine,
-        nextEndpointId
-      }
+        nextEndpointId,
+      },
     });
   });
 
@@ -288,10 +256,7 @@
       errorMessage = 'Add at least one output before solving.';
       return;
     }
-    const entry = createQueuedEntry(
-      snapshotForm(inputs, outputs, beltRate, enumerateAllAtN, engine),
-      request
-    );
+    const entry = createQueuedEntry(snapshotForm(inputs, outputs, beltRate, enumerateAllAtN, engine), request);
     graph.flushChrome();
     // Newest queued jobs stack on top; the runner drains from the bottom.
     const parts = partitionEntries(historyEntries);
@@ -410,12 +375,10 @@
     collection: EndpointCollection,
     index: number,
     field: 'rate' | 'multiplier',
-    value: string
+    value: string,
   ): void {
     const source = collection === 'inputs' ? inputs : outputs;
-    const updated = source.map((item, itemIndex) =>
-      itemIndex === index ? { ...item, [field]: value } : item
-    );
+    const updated = source.map((item, itemIndex) => (itemIndex === index ? { ...item, [field]: value } : item));
     if (collection === 'inputs') inputs = updated;
     else outputs = updated;
   }
@@ -503,12 +466,8 @@
       </div>
 
       <div
-        class={`min-w-0 flex flex-col gap-4 ${
-          showResultsTable
-            ? 'xl:min-h-[calc(100dvh-2rem)]'
-            : solution
-              ? 'xl:h-[calc(100dvh-2rem)]'
-              : ''
+        class={`flex min-w-0 flex-col gap-4 ${
+          showResultsTable ? 'xl:min-h-[calc(100dvh-2rem)]' : solution ? 'xl:h-[calc(100dvh-2rem)]' : ''
         }`}
       >
         <FlowInputsPanel
@@ -593,7 +552,7 @@
               sortColumns = next;
               if (selectedEntryId) {
                 patchEntry(selectedEntryId, {
-                  sortColumns: next.map((column) => ({ ...column }))
+                  sortColumns: next.map((column) => ({ ...column })),
                 });
               }
             }}
@@ -610,10 +569,7 @@
             onNodeDragStop={graph.onNodeDragStop}
           />
         {:else if solution}
-          <section
-            class="flex min-h-112 flex-1 flex-col"
-            aria-labelledby="result-title"
-          >
+          <section class="flex min-h-112 flex-1 flex-col" aria-labelledby="result-title">
             <Panel class="flex min-h-0 flex-1 flex-col overflow-hidden">
               <div class="shrink-0">
                 <SolutionSummary {solution} {elapsedLabel} />
@@ -624,13 +580,9 @@
                 fitRevision={graphFitRevision}
                 fullscreen={graphFullscreen}
                 subtitle="Drag nodes, pan, or zoom. Dashed amber belts mark feedback."
-                class={`min-h-0 flex-1 ${
-                  graphFullscreen ? 'fixed inset-0 z-100 h-dvh w-full bg-[#08141c]' : ''
-                }`}
+                class={`min-h-0 flex-1 ${graphFullscreen ? 'fixed inset-0 z-100 h-dvh w-full bg-[#08141c]' : ''}`}
                 canvasClass={`flow-wrap w-full bg-[#08141c] ${
-                  graphFullscreen
-                    ? 'min-h-0 flex-1'
-                    : 'h-[68vh] min-h-107.5 xl:h-auto xl:min-h-0 xl:flex-1'
+                  graphFullscreen ? 'min-h-0 flex-1' : 'h-[68vh] min-h-107.5 xl:h-auto xl:min-h-0 xl:flex-1'
                 }`}
                 onRotate={graph.rotate}
                 canUndo={canUndoGraph}
