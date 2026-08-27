@@ -70,6 +70,7 @@ async function updateVersion(nextVersion) {
     cargoWorkspace: 'Cargo.toml',
     cargoSolverApi: 'crates/solver-api/Cargo.toml',
     cargoLock: 'Cargo.lock',
+    readme: 'README.md',
   };
 
   const entries = await Promise.all(
@@ -178,6 +179,14 @@ async function updateVersion(nextVersion) {
       files.cargoLock,
       updateCargoLockVersions(files.cargoLock.contents, nextVersion),
     ],
+    [
+      files.readme,
+      updateReadmeVersion(
+        files.readme.contents,
+        nextVersion,
+        files.readme.path,
+      ),
+    ],
   ];
 
   await Promise.all(
@@ -192,6 +201,19 @@ async function updateVersion(nextVersion) {
   for (const [file] of updates) {
     console.log(`- ${file.path}`);
   }
+}
+
+function updateReadmeVersion(contents, nextVersion, path) {
+  const pattern =
+    /(\[!\[Version\]\(https:\/\/img\.shields\.io\/badge\/version-)[^/\s]+(-blue\.svg\)\]\(package\.json\))/;
+  const matches = [...contents.matchAll(new RegExp(pattern.source, 'g'))];
+  if (matches.length !== 1) {
+    throw new Error(
+      `Expected one version badge in ${path}, found ${matches.length}`,
+    );
+  }
+
+  return contents.replace(pattern, `$1${nextVersion}$2`);
 }
 
 function normalizeLineEndings(contents) {
