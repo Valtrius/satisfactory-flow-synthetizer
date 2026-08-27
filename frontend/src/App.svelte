@@ -67,6 +67,15 @@
 
   let historyEntries = $state<HistoryEntry[]>([]);
   let selectedEntryId = $state<string | null>(null);
+  let expandedTelemetryEntries = $state<Record<string, boolean>>({});
+  const telemetryExpanded = $derived(
+    selectedEntryId != null && (expandedTelemetryEntries[selectedEntryId] ?? false)
+  );
+
+  function toggleTelemetry(): void {
+    if (selectedEntryId == null) return;
+    expandedTelemetryEntries[selectedEntryId] = !telemetryExpanded;
+  }
 
   let solution = $state<Solution | null>(null);
   let solutions = $state<Solution[]>([]);
@@ -545,7 +554,10 @@
                 sizeBody={sizeSearchBody(viewJob, searchView)}
                 foundCount={solutions.length}
                 showFound={searchEnumerate}
-                showDetails={busy || Boolean(viewJob.progress)}
+                showDetails={searchEnumerate || busy || Boolean(viewJob.progress)}
+                collapsible={searchEnumerate}
+                detailsExpanded={telemetryExpanded}
+                onToggleDetails={toggleTelemetry}
               />
             </Panel>
           </section>
@@ -562,7 +574,9 @@
             sizeBody={sizeSearchBody(viewJob, searchView)}
             foundCount={solutions.length}
             showFound={searchEnumerate}
-            showDetails={busy || Boolean(viewJob.progress)}
+            showDetails
+            {telemetryExpanded}
+            onToggleTelemetry={toggleTelemetry}
             solutions={displayRows.map((row) => row.solution)}
             selectedIndex={Math.max(0, selectedDisplayIndex)}
             {sortColumns}
@@ -597,27 +611,22 @@
           />
         {:else if solution}
           <section
-            class="flex min-h-112 flex-1 flex-col gap-4 xl:min-h-0"
+            class="flex min-h-112 flex-1 flex-col"
             aria-labelledby="result-title"
           >
-            <div class="shrink-0">
-              <SolutionSummary {solution} {elapsedLabel} />
-            </div>
-
-            <Panel
-              class={`min-h-0 flex-1 overflow-hidden ${
-                graphFullscreen
-                  ? 'fixed inset-0 z-100 flex h-dvh w-full flex-col !rounded-none !border-0 !bg-[#08141c]'
-                  : 'flex flex-col'
-              }`}
-            >
+            <Panel class="flex min-h-0 flex-1 flex-col overflow-hidden">
+              <div class="shrink-0">
+                <SolutionSummary {solution} {elapsedLabel} />
+              </div>
               <TopologyGraphPanel
                 nodes={flowNodes}
                 edges={flowEdges}
                 fitRevision={graphFitRevision}
                 fullscreen={graphFullscreen}
                 subtitle="Drag nodes, pan, or zoom. Dashed amber belts mark feedback."
-                class="min-h-0 flex-1"
+                class={`min-h-0 flex-1 ${
+                  graphFullscreen ? 'fixed inset-0 z-100 h-dvh w-full bg-[#08141c]' : ''
+                }`}
                 canvasClass={`flow-wrap w-full bg-[#08141c] ${
                   graphFullscreen
                     ? 'min-h-0 flex-1'

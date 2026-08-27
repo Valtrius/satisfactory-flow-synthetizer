@@ -1,5 +1,7 @@
 <script lang="ts">
+  import ChevronDown from '@lucide/svelte/icons/chevron-down';
   import { diagnosticProgress, diagnosticText, type SearchStageView } from './searchStage';
+  import Button from './ui/Button.svelte';
 
   type Props = {
     searchView: SearchStageView;
@@ -13,6 +15,9 @@
     showFound: boolean;
     showDetails: boolean;
     borderBottom?: boolean;
+    collapsible?: boolean;
+    detailsExpanded?: boolean;
+    onToggleDetails?: () => void;
   };
 
   let {
@@ -26,14 +31,19 @@
     foundCount,
     showFound,
     showDetails,
-    borderBottom = false
+    borderBottom = false,
+    collapsible = false,
+    detailsExpanded = false,
+    onToggleDetails
   }: Props = $props();
+  const detailsId = $props.id();
+  const detailsVisible = $derived(showDetails && (!collapsible || detailsExpanded));
   const profiles = $derived(diagnosticProgress(searchView.custom));
 </script>
 
 <div
   class={`flex flex-col items-start justify-between gap-4 px-6 py-3 md:flex-row md:items-center ${
-    borderBottom || showDetails ? 'border-b border-line' : ''
+    borderBottom || detailsVisible ? 'border-b border-line' : ''
   } bg-[#0a151d]`}
 >
   <div class="flex items-center gap-3">
@@ -54,13 +64,33 @@
       <p class="m-0 mt-1 text-xs text-muted">{subline}</p>
     </div>
   </div>
-  <div class="whitespace-nowrap text-sm text-muted tabular-nums">
-    {elapsedLabel}
+  <div class="flex shrink-0 items-center gap-3">
+    {#if collapsible && showFound && !detailsVisible}
+      <span class="whitespace-nowrap text-sm text-muted tabular-nums">
+        <strong class="text-[#dfe9ed]">{foundCount}</strong> found
+      </span>
+    {/if}
+    <span class="whitespace-nowrap text-sm text-muted tabular-nums">{elapsedLabel}</span>
+    {#if collapsible && showDetails}
+      <Button
+        type="button"
+        variant="quiet"
+        size="small"
+        class="flex items-center gap-1.5 whitespace-nowrap"
+        aria-expanded={detailsVisible}
+        aria-controls={detailsId}
+        onclick={onToggleDetails}
+      >
+        {detailsVisible ? 'Hide telemetry' : 'Show telemetry'}
+        <ChevronDown size={14} class={detailsVisible ? 'rotate-180' : ''} aria-hidden="true" />
+      </Button>
+    {/if}
   </div>
 </div>
 
-{#if showDetails}
+{#if detailsVisible}
   <div
+    id={detailsId}
     class={`grid gap-5 p-4.5 md:grid-cols-[minmax(0,1fr)_auto_minmax(0,1.1fr)] md:items-start md:gap-0 md:p-5 ${
       borderBottom ? 'border-b border-line' : ''
     }`}

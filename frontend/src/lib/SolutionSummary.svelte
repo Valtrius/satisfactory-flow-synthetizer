@@ -13,38 +13,29 @@
   const isBestKnown = $derived(solution.status === 'best_known');
   const engineLabel = $derived(solution.engine === 'z3' ? 'Z3' : 'Custom');
   const statusLabel = $derived(
-    isOptimal ? 'Exact & optimal' : isBestKnown ? 'Best known · not proven optimal' : solution.status
-  );
-  const badgeLabel = $derived(
-    isOptimal ? 'Verified optimal' : isBestKnown ? 'Validated witness' : 'Result'
+    isOptimal ? 'Proven optimal' : isBestKnown ? 'Best known' : solution.status
   );
 </script>
 
-<div class="mb-5 flex flex-col items-start justify-between gap-4 md:flex-row md:items-center">
-  <div class="flex flex-wrap items-center gap-3">
-    <h2 class="m-0 text-3xl font-bold tracking-tighter md:text-4xl" id="result-title">
-      {nodeCountLabel(solution.stats.nodeCount)}
-    </h2>
-    <span
-      class="whitespace-nowrap rounded-full border border-[#4fc49a]/40 bg-[#20654b]/20 px-2.5 py-1.5 text-xs font-extrabold tracking-wider text-[#8bdeb8] uppercase"
-    >
-      {badgeLabel} · {engineLabel}
-    </span>
-  </div>
+<header class="flex flex-wrap items-center justify-between gap-3 border-b border-line px-5 py-3">
+  <h2 class="m-0 text-lg font-bold tracking-tight" id="result-title">
+    {nodeCountLabel(solution.stats.nodeCount)}
+  </h2>
   <div
-    class={`flex items-center gap-2 whitespace-nowrap rounded-full border px-3.5 py-2.5 text-sm font-extrabold ${
+    title={isBestKnown ? 'Not proven optimal' : undefined}
+    class={`flex items-center gap-2 whitespace-nowrap rounded-full border px-2.5 py-1.5 text-xs font-extrabold ${
       isOptimal
         ? 'border-[#4fc49a]/40 bg-[#20654b]/20 text-[#8bdeb8]'
         : 'border-[#8a6a3a]/50 bg-[#3a2a12]/35 text-[#e6c27a]'
     }`}
   >
-    <span>{isOptimal ? '✓' : '·'}</span>
-    {statusLabel}
+    <span aria-hidden="true">{isOptimal ? '✓' : ''}</span>
+    {statusLabel} · {engineLabel}
   </div>
-</div>
+</header>
 
 <div
-  class="mb-4 grid grid-cols-2 gap-px overflow-hidden rounded-tl-xl rounded-tr-sm rounded-br-xl rounded-bl-sm border border-line bg-line md:grid-cols-3 xl:grid-cols-6"
+  class="grid grid-cols-2 gap-px border-b border-line bg-line md:grid-cols-3 xl:grid-cols-6"
 >
   <div class="bg-[#0b1922] px-4.5 py-4">
     <span class="mb-2 block text-xs font-bold tracking-wider text-dim uppercase">Solve time</span>
@@ -77,40 +68,3 @@
     >
   </div>
 </div>
-
-{#if solution.stats.physicalLinkCount != null || solution.stats.discardLinkCount != null || solution.stats.checkedThrough != null || solution.validation}
-  <div class="mb-4 grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-line bg-line md:grid-cols-4">
-    {#if solution.stats.physicalLinkCount != null}
-      <div class="bg-[#0b1922] px-4 py-3">
-        <span class="mb-1 block text-[0.65rem] font-bold tracking-wider text-dim uppercase"
-          >Physical links</span
-        >
-        <strong class="text-[#dfe9ed] tabular-nums">{solution.stats.physicalLinkCount}</strong>
-      </div>
-    {/if}
-    {#if solution.stats.discardLinkCount != null}
-      <div class="bg-[#0b1922] px-4 py-3">
-        <span class="mb-1 block text-[0.65rem] font-bold tracking-wider text-dim uppercase"
-          >Discard links</span
-        >
-        <strong class="text-[#dfe9ed] tabular-nums">{solution.stats.discardLinkCount}</strong>
-      </div>
-    {/if}
-    {#if solution.stats.checkedThrough != null}
-      <div class="bg-[#0b1922] px-4 py-3">
-        <span class="mb-1 block text-[0.65rem] font-bold tracking-wider text-dim uppercase"
-          >Checked through</span
-        >
-        <strong class="text-[#dfe9ed] tabular-nums">N≤{solution.stats.checkedThrough}</strong>
-      </div>
-    {/if}
-    {#if solution.validation}
-      <div class="bg-[#0b1922] px-4 py-3">
-        <span class="mb-1 block text-[0.65rem] font-bold tracking-wider text-dim uppercase"
-          >Validator</span
-        >
-        <strong class="text-[#dfe9ed] tabular-nums">v{solution.validation.validatorVersion}</strong>
-      </div>
-    {/if}
-  </div>
-{/if}

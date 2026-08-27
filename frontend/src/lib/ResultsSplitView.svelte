@@ -21,6 +21,8 @@
     foundCount: number;
     showFound: boolean;
     showDetails: boolean;
+    telemetryExpanded: boolean;
+    onToggleTelemetry: () => void;
     solutions: Solution[];
     selectedIndex: number;
     sortColumns: SortColumn[];
@@ -55,6 +57,8 @@
     foundCount,
     showFound,
     showDetails,
+    telemetryExpanded,
+    onToggleTelemetry,
     solutions,
     selectedIndex,
     sortColumns,
@@ -102,6 +106,9 @@
         {foundCount}
         {showFound}
         {showDetails}
+        collapsible
+        detailsExpanded={telemetryExpanded}
+        onToggleDetails={onToggleTelemetry}
         borderBottom
       />
     </div>
