@@ -3,7 +3,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use num::{Integer, Signed, ToPrimitive, Zero};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use solver_api::{
     BestKnownSolution, ConsumerPortRef, GlobalUnsatProof, IncompleteReason, NodeId, NodeType,
     OptimalSolution, PhysicalGraph, PhysicalLink, ProducerPortRef, ProofSummary, Rational,
@@ -11,17 +11,17 @@ use solver_api::{
 };
 use thiserror::Error;
 
-use crate::exact_adapter::{PreparedAppRequest, TerminalMetadata};
+use solver_api::{PreparedProblem, TerminalMetadata};
 
 /// Exact value plus a deterministic six-place decimal preview.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DisplayRate {
     pub exact: String,
     pub decimal: String,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum GraphNodeKind {
     Input,
@@ -33,7 +33,7 @@ pub enum GraphNodeKind {
     Discard,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GraphNode {
     pub id: String,
@@ -41,7 +41,7 @@ pub struct GraphNode {
     pub label: String,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GraphEdge {
     pub id: String,
@@ -55,7 +55,7 @@ pub struct GraphEdge {
 }
 
 /// Public counts separate operator belts from all physical terminal/discard links.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PresentationStats {
     pub node_count: u32,
@@ -66,9 +66,10 @@ pub struct PresentationStats {
     pub mergers: u32,
     pub feedback_loops: u32,
     pub checked_through: Option<u32>,
+    pub internal_max_throughput: DisplayRate,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PresentationSolution {
     /// `proven_optimal` or the explicitly non-optimal `best_known`.
@@ -89,7 +90,7 @@ pub struct PresentationSolution {
     pub build_steps: Vec<String>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PresentedIncomplete {
     pub reason: IncompleteReason,
@@ -98,7 +99,7 @@ pub struct PresentedIncomplete {
 }
 
 /// Application-facing mathematical outcome; internal failures remain errors.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", content = "result", rename_all = "snake_case")]
 pub enum PresentedSolveOutcome {
     Optimal(PresentationSolution),
@@ -137,7 +138,7 @@ pub enum PresentationError {
 /// Returns [`PresentationError`] if a supposedly validated witness has malformed
 /// references or accounting. Such a failure must be treated as an internal error.
 pub fn present_solve_result(
-    request: &PreparedAppRequest,
+    request: &PreparedProblem,
     result: &SolveResult,
 ) -> Result<PresentedSolveOutcome, PresentationError> {
     match result {
@@ -169,7 +170,7 @@ pub fn present_solve_result(
 }
 
 fn present_optimal(
-    request: &PreparedAppRequest,
+    request: &PreparedProblem,
     solution: &OptimalSolution,
 ) -> Result<PresentationSolution, PresentationError> {
     present_witness(
@@ -195,7 +196,7 @@ fn present_optimal(
 /// Returns [`PresentationError`] when witness references or exact accounting
 /// disagree with the prepared application request.
 pub fn present_best_known_solution(
-    request: &PreparedAppRequest,
+    request: &PreparedProblem,
     solution: &BestKnownSolution,
     checked_through: Option<u32>,
 ) -> Result<PresentationSolution, PresentationError> {
@@ -225,7 +226,7 @@ struct WitnessCounts {
 }
 
 fn present_witness(
-    request: &PreparedAppRequest,
+    request: &PreparedProblem,
     status: &str,
     counts: WitnessCounts,
     graph: &PhysicalGraph,
@@ -309,6 +310,18 @@ fn present_witness(
             mergers,
             feedback_loops,
             checked_through: counts.checked_through,
+            internal_max_throughput: format_rate(
+                &graph
+                    .links
+                    .iter()
+                    .filter(|link| {
+                        matches!(link.producer, ProducerPortRef::Node { .. })
+                            && matches!(link.consumer, ConsumerPortRef::Node { .. })
+                    })
+                    .map(|link| link.flow.clone())
+                    .max()
+                    .unwrap_or_else(Rational::zero),
+            ),
         },
         total_input: format_rate(&total_input),
         total_output: format_rate(&total_output),
@@ -408,7 +421,7 @@ fn operator_nodes(operators: &BTreeMap<NodeId, NodeType>) -> Vec<GraphNode> {
 fn present_link(
     index: usize,
     link: &PhysicalLink,
-    request: &PreparedAppRequest,
+    request: &PreparedProblem,
     operators: &BTreeMap<NodeId, NodeType>,
     feedback: bool,
 ) -> Result<GraphEdge, PresentationError> {
@@ -789,7 +802,7 @@ mod tests {
     };
 
     use super::*;
-    use crate::exact_adapter::{AppSolveRequest, EndpointRequest};
+    use solver_api::{EndpointRequest, ProblemRequest};
 
     fn endpoint(id: &str, rate: &str) -> EndpointRequest {
         EndpointRequest {
@@ -799,8 +812,8 @@ mod tests {
         }
     }
 
-    fn prepared(inputs: &[&str], outputs: &[&str], capacity: &str) -> PreparedAppRequest {
-        AppSolveRequest {
+    fn prepared(inputs: &[&str], outputs: &[&str], capacity: &str) -> PreparedProblem {
+        ProblemRequest {
             inputs: inputs
                 .iter()
                 .enumerate()

@@ -1,147 +1,88 @@
 import { describe, expect, it } from 'vitest';
-import type { JobSnapshot, SolverProgress } from '../types';
-import {
-  formatElapsed,
-  nodeCountLabel,
-  ruledOutRangeLabel,
-  searchHeadline,
-  searchStageView,
-  searchSubline,
-  sizeSearchBody
-} from './searchStage';
+import type { Diagnostic, JobSnapshot, SolverProgress } from '../types';
+import { diagnosticProgress, diagnosticText, formatElapsed, nodeCountLabel, ruledOutRangeLabel, searchHeadline, searchStageView, searchSubline, sizeSearchBody } from './searchStage';
 
-function snapshot(
-  partial: Partial<JobSnapshot> & Pick<JobSnapshot, 'status'>
-): JobSnapshot {
-  return {
-    jobId: 'job-1',
-    startedAtMs: 0,
-    progress: null,
-    result: null,
-    results: [],
-    enumerationComplete: false,
-    error: null,
-    ...partial
-  };
+function progress(part: Partial<SolverProgress> = {}): SolverProgress {
+  return { phase: 'searching', elapsedMs: 10, nodeCount: null, linkConstraint: null, nodeLowerBound: null, bestNodeCount: null, bestLinkCount: null, solutionsFound: 0, custom: [], ...part };
 }
+function snapshot(part: Partial<JobSnapshot> = {}): JobSnapshot {
+  return { jobId: 'job-1', status: 'running', startedAtMs: 0, progress: null, result: null, results: [], enumerationComplete: false, error: null, ...part };
+}
+const context = { solutionsLength: 0, searchEnumerate: false, firstNodeCount: null };
 
-describe('searchStage', () => {
-  it('formats elapsed time with tenths under an hour', () => {
+describe('shared search progress', () => {
+  it('formats elapsed time and node counts', () => {
     expect(formatElapsed(65_200)).toBe('1:05.2');
     expect(formatElapsed(3_661_000)).toBe('1:01:01');
-  });
-
-  it('labels node counts', () => {
     expect(nodeCountLabel(1)).toBe('1 node');
     expect(nodeCountLabel(4)).toBe('4 nodes');
   });
-
-  it('maps preparing and checking progress', () => {
-    const preparing: SolverProgress = { engine: 'z3', kind: 'preparing', lowerBound: 3 };
-    expect(searchStageView(preparing).lowerBound).toBe(3);
-    expect(searchStageView(preparing).nodeCount).toBeNull();
-    expect(searchStageView(preparing).engine).toBe('z3');
-
-    const checking: SolverProgress = {
-      engine: 'z3',
-      kind: 'checking',
-      nodeCount: 5,
-      rejectedUnstableCandidates: 2,
-      lowerBound: 3,
-      profileCount: 10,
-      attemptSlots: 4,
-      threadsPerAttempt: 1
-    };
-    const view = searchStageView(checking);
-    expect(view.ruledOut).toBe(2);
-    expect(view.ruledOutThrough).toBe(4);
-    expect(view.profilesTotal).toBe(10);
+  it('maps the same common facts regardless of diagnostic names', () => {
+    for (const name of ['custom.capacity_prunes', 'z3.active_attempts', 'future.metric']) {
+      const view = searchStageView(progress({ nodeCount: 3, nodeLowerBound: 3, custom: [{ name, label: 'Diagnostic', value: { type: 'integer', value: '42' }, unit: null }] }));
+      expect(view.nodeCount).toBe(3);
+      expect(view.ruledOutThrough).toBe(2);
+      expect(view.custom[0].name).toBe(name);
+    }
   });
-
-  it('maps custom progress without inventing Z3 portfolio fields', () => {
-    const progress: SolverProgress = {
-      engine: 'custom',
-      phase: 'searching',
-      obligation: { nodeCount: 3, linkCount: 5 },
-      completedProfiles: 2,
-      totalProfiles: 8,
-      instrumentation: {
-        rawStructuralDecisions: 0,
-        canonicalStatesRetained: 1,
-        canonicalDuplicatesEliminated: 0,
-        propagationContradictions: 0,
-        capacityPrunes: 4,
-        lowerBoundPrunes: 1,
-        sccSolves: 0,
-        sccCacheHits: 0,
-        canonicalizationTimeNs: 0,
-        algebraTimeNs: 0,
-        peakStateCacheSize: 0,
-        peakMemoryBytes: 0,
-        wallTimeMs: 12
-      }
-    };
-    const view = searchStageView(progress);
-    expect(view.engine).toBe('custom');
-    expect(view.nodeCount).toBe(3);
-    expect(view.linkCount).toBe(5);
-    expect(view.profilesCompleted).toBe(2);
-    expect(view.launchedAttempts).toBe(0);
-    expect(view.instrumentation?.capacityPrunes).toBe(4);
+  it('does not mistake a Z3 cap for Custom exact L', () => {
+    const exact = searchStageView(progress({ nodeCount: 3, linkConstraint: { kind: 'exact', value: 4 } }));
+    const cap = searchStageView(progress({ nodeCount: 3, linkConstraint: { kind: 'at_most', value: 4 } }));
+    expect(sizeSearchBody(snapshot(), exact)).toContain('L=4');
+    expect(sizeSearchBody(snapshot(), cap)).toContain('L≤4');
+    expect(searchStageView(progress()).linkCount).toBeNull();
   });
-
-  it('builds size search body and ruled-out ranges', () => {
-    const view = searchStageView({
-      engine: 'z3',
-      kind: 'size_progress',
-      nodeCount: 6,
-      lowerBound: 4,
-      profilesTotal: 8,
-      profilesUnresolved: 2,
-      profilesUnsat: 4,
-      activeAttempts: 1,
-      launchedAttempts: 5,
-      abandonedAttempts: 0,
-      rejectedUnstableCandidates: 1,
-      attemptSlots: 4
-    });
-    expect(ruledOutRangeLabel(view)).toBe('4–5');
-    expect(sizeSearchBody(snapshot({ status: 'running' }), view)).toContain(
-      'Searching all 6-node'
-    );
+  it('retains integer precision and displays unknown diagnostics', () => {
+    expect(diagnosticText({ name: 'future.counter', label: 'Counter', value: { type: 'integer', value: '18446744073709551615' }, unit: 'items' })).toBe('18446744073709551615 items');
+    expect(diagnosticText({ name: 'future.flag', label: 'Flag', value: { type: 'boolean', value: false }, unit: null })).toBe('false');
   });
-
-  it('builds headline and subline from explicit context', () => {
-    const running = snapshot({
-      status: 'running',
-      progress: { engine: 'z3', kind: 'preparing', lowerBound: 2 }
-    });
-    expect(
-      searchHeadline(running, {
-        solutionsLength: 0,
-        searchEnumerate: false,
-        firstNodeCount: null,
-        engine: 'z3'
-      })
-    ).toBe('Preparing the exact model');
-    expect(
-      searchSubline(
-        running,
-        searchStageView(running.progress),
-        { solutionsLength: 0, searchEnumerate: false, firstNodeCount: null, engine: 'z3' }
-      )
-    ).toContain('Lower bound');
+  it('describes only proved node bounds', () => {
+    expect(ruledOutRangeLabel(searchStageView(progress({ nodeLowerBound: 6 })))).toBe('0–5');
+    expect(ruledOutRangeLabel(searchStageView(progress()))).toBe('');
   });
+  it('keeps minimum N proof distinct from unfinished optimization', () => {
+    const stopped = snapshot({ status: 'cancelled', proof: { minimumNodeCount: 3, minimumLinkCount: null } });
+    expect(searchHeadline(stopped, context)).toBe('Search cancelled');
+    expect(searchSubline(stopped, searchStageView(null), context)).toContain('Minimum N=3 proved');
+  });
+  it('does not call an incomplete enumeration complete', () => {
+    const partial = snapshot({ status: 'cancelled', enumerationComplete: false });
+    expect(searchHeadline(partial, { ...context, searchEnumerate: true, solutionsLength: 2, firstNodeCount: 1 })).toContain('cancelled');
+  });
+  it('keeps engine-specific cancellation copy outside the progress contract', () => {
+    expect(searchSubline(snapshot({ status: 'cancelling' }), searchStageView(null), { ...context, engine: 'custom' })).toContain('Custom');
+  });
+  it('describes lower-bound work while the bound is still unknown', () => {
+    const view = searchStageView(progress({ phase: 'computing_lower_bound' }));
+    expect(searchSubline(snapshot(), view, context)).toBe('Computing lower bound.');
+  });
+});
 
-  it('uses Custom cancel copy', () => {
-    const cancelling = snapshot({ status: 'cancelling' });
-    expect(
-      searchSubline(cancelling, searchStageView(null), {
-        solutionsLength: 0,
-        searchEnumerate: false,
-        firstNodeCount: null,
-        engine: 'custom'
-      })
-    ).toContain('Custom');
+describe('diagnostic profile bars', () => {
+  const counter = (name: string, value: string): Diagnostic => ({ name, label: name, value: { type: 'integer', value }, unit: null });
+  it('uses each reported local profile pair with its actual meaning', () => {
+    expect(diagnosticProgress([
+      counter('custom.completed_profiles', '2'), counter('custom.total_profiles', '4')
+    ])).toEqual({ label: 'Profiles closed in this L group', closed: '2', total: '4', percent: 50 });
+    expect(diagnosticProgress([
+      counter('z3.profiles_unsat', '1'), counter('z3.profiles_total', '4')
+    ])).toEqual({ label: 'Profiles proved UNSAT in this search', closed: '1', total: '4', percent: 25 });
+  });
+  it('does not invent progress for missing, zero, or inconsistent totals', () => {
+    for (const entries of [
+      [], [counter('future.total', '4')], [counter('z3.profiles_unsat', '1')],
+      [counter('custom.completed_profiles', '0'), counter('custom.total_profiles', '0')],
+      [counter('custom.completed_profiles', '3'), counter('custom.total_profiles', '2')],
+      [counter('custom.completed_profiles', 'NaN'), counter('custom.total_profiles', '2')]
+    ]) expect(diagnosticProgress(entries)).toBeNull();
+  });
+  it('keeps large counters exact and never rounds an unfinished search to 100 percent', () => {
+    const view = diagnosticProgress([
+      counter('z3.profiles_unsat', '18446744073709551614'),
+      counter('z3.profiles_total', '18446744073709551615')
+    ])!;
+    expect(view.closed).toBe('18446744073709551614');
+    expect(view.total).toBe('18446744073709551615');
+    expect(view.percent).toBeLessThan(100);
   });
 });

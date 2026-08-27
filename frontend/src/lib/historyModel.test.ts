@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { SolveRequest } from '../types';
+import type { SolveRequest, SolverProgress } from '../types';
 import {
   createQueuedEntry,
   defaultTitle,
@@ -8,6 +8,8 @@ import {
   entryOutcomeLine,
   entryStatusCaption,
   mergeImportedPayload,
+  parseHistoryDocument,
+  persistableEntries,
   partitionEntries,
   reorderWithinBand,
   type FormSnapshot,
@@ -277,5 +279,43 @@ describe('entryElapsedMs', () => {
       finishedAtMs: null
     };
     expect(entryElapsedMs(entry, 1600)).toBe(600);
+  });
+});
+
+describe('saved common progress', () => {
+  const progress: SolverProgress = {
+    phase: 'optimizing_links', elapsedMs: 100, nodeCount: 2,
+    linkConstraint: { kind: 'at_most', value: 1 }, nodeLowerBound: 2,
+    bestNodeCount: 2, bestLinkCount: 2, solutionsFound: 0,
+    custom: [{ name: 'z3.profiles_total', label: 'Profiles', value: { type: 'integer', value: '18446744073709551615' }, unit: null }]
+  };
+  const proof = { minimumNodeCount: 2, minimumLinkCount: null };
+  it('retains progress, proof, and sequence across save/load and import', () => {
+    const entry = completed({ id: 'entry', status: 'cancelled', progress, proof, sequence: 8 });
+    const saved = persistableEntries([entry]);
+    const [loaded] = parseHistoryDocument(JSON.parse(JSON.stringify({ entries: saved }))).entries;
+    expect(loaded.progress).toEqual(progress);
+    expect(loaded.proof).toEqual(proof);
+    expect(loaded.sequence).toBe(8);
+    const imported = mergeImportedPayload([], { kind: 'history-entry', entry: loaded }).entries[0];
+    expect(imported.progress).toEqual(progress);
+    expect(imported.proof).toEqual(proof);
+  });
+  it('ignores old or incomplete telemetry without discarding the saved graph', () => {
+    const graph = {
+      engine: 'z3', status: 'best_known', nodes: [{ id: 'kept' }], edges: []
+    };
+    for (const oldProgress of [
+      { engine: 'custom', phase: 'searching', instrumentation: {} },
+      { engine: 'z3', kind: 'checking', nodeCount: 2 },
+      { phase: 'searching', custom: [] },
+      { ...progress, custom: [{ name: 'broken', label: 'Missing value' }] }
+    ]) {
+      const [loaded] = parseHistoryDocument({ entries: [
+        { ...completed({ id: 'old' }), progress: oldProgress, result: graph }
+      ] }).entries;
+      expect(loaded.progress).toBeNull();
+      expect(loaded.result).toEqual(graph);
+    }
   });
 });

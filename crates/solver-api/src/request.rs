@@ -1,7 +1,7 @@
-//! Exact application request preparation for the greenfield solver boundary.
+//! Shared request preparation. Automatic supply is exactly one belt.
 
+use crate::{Problem, Rational};
 use serde::{Deserialize, Serialize};
-use solver_api::{Problem, Rational};
 use thiserror::Error;
 
 const MAX_ENDPOINTS_PER_SIDE: usize = 24;
@@ -19,7 +19,7 @@ pub struct EndpointRequest {
 /// Stable application request. Rates remain strings until exact parsing.
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct AppSolveRequest {
+pub struct ProblemRequest {
     pub inputs: Vec<EndpointRequest>,
     pub outputs: Vec<EndpointRequest>,
     pub belt_rate: String,
@@ -35,7 +35,7 @@ pub struct TerminalMetadata {
 
 /// Exact solver problem plus caller-facing terminal identity.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct PreparedAppRequest {
+pub struct PreparedProblem {
     pub problem: Problem,
     pub inputs: Vec<TerminalMetadata>,
     pub outputs: Vec<TerminalMetadata>,
@@ -50,6 +50,22 @@ pub enum PrepareRequestError {
     InvalidCapacity(String),
     #[error("belt capacity must be greater than zero")]
     NonPositiveCapacity,
+    #[error(
+        "automatic input rate {total} exceeds belt capacity {capacity}; split the inputs explicitly yourself"
+    )]
+    AutomaticInputExceedsCapacity {
+        total: Box<Rational>,
+        capacity: Box<Rational>,
+    },
+    #[error(
+        "{side} {index} rate {rate} exceeds belt capacity {capacity}; each terminal must fit on one belt"
+    )]
+    ExternalRateExceedsCapacity {
+        side: &'static str,
+        index: usize,
+        rate: Box<Rational>,
+        capacity: Box<Rational>,
+    },
     #[error("add at least one output")]
     MissingOutputs,
     #[error("{side} {index}: {message}")]
@@ -64,18 +80,17 @@ pub enum PrepareRequestError {
     NameTooLong { side: &'static str, index: usize },
 }
 
-impl AppSolveRequest {
+impl ProblemRequest {
     /// Parses and validates the exact application boundary.
     ///
     /// An empty input list derives automatic supply from the exact output sum and
-    /// partitions that sum across as many capacity-safe belts as needed (matching
-    /// the Z3/source-app automatic-input behavior).
+    /// requires that supply to fit on a single belt. Larger totals require explicit inputs.
     ///
     /// # Errors
     ///
     /// Returns [`PrepareRequestError`] for malformed/nonpositive rates, missing
-    /// outputs, or excessive endpoint/name counts.
-    pub fn prepare(&self) -> Result<PreparedAppRequest, PrepareRequestError> {
+    /// outputs, capacity violations, or excessive endpoint/name counts.
+    pub fn prepare(&self) -> Result<PreparedProblem, PrepareRequestError> {
         if self.inputs.len() > MAX_ENDPOINTS_PER_SIDE || self.outputs.len() > MAX_ENDPOINTS_PER_SIDE
         {
             return Err(PrepareRequestError::TooManyEndpoints);
@@ -90,20 +105,30 @@ impl AppSolveRequest {
         if self.outputs.is_empty() {
             return Err(PrepareRequestError::MissingOutputs);
         }
-        let outputs = parse_terminals(&self.outputs, "output")?;
+        let outputs = parse_terminals(&self.outputs, "output", &capacity)?;
         let inputs = if self.inputs.is_empty() {
             let rate = outputs
                 .iter()
                 .map(|terminal| terminal.rate.clone())
                 .sum::<Rational>();
-            automatic_inputs(&rate, &capacity)
+            if rate > capacity {
+                return Err(PrepareRequestError::AutomaticInputExceedsCapacity {
+                    total: Box::new(rate),
+                    capacity: Box::new(capacity),
+                });
+            }
+            vec![TerminalMetadata {
+                id: "automatic-input".to_owned(),
+                name: "Automatic supply".to_owned(),
+                rate,
+            }]
         } else {
-            parse_terminals(&self.inputs, "input")?
+            parse_terminals(&self.inputs, "input", &capacity)?
         };
         if inputs.len() > MAX_ENDPOINTS_PER_SIDE {
             return Err(PrepareRequestError::TooManyEndpoints);
         }
-        Ok(PreparedAppRequest {
+        Ok(PreparedProblem {
             problem: Problem {
                 inputs: inputs
                     .iter()
@@ -121,45 +146,10 @@ impl AppSolveRequest {
     }
 }
 
-/// Splits `total` into one or more capacity-safe automatic input terminals.
-fn automatic_inputs(total: &Rational, capacity: &Rational) -> Vec<TerminalMetadata> {
-    if total.is_zero() {
-        return Vec::new();
-    }
-    let mut remaining = total.clone();
-    let mut rates = Vec::new();
-    while remaining > Rational::zero() {
-        let rate = if remaining > *capacity {
-            capacity.clone()
-        } else {
-            remaining.clone()
-        };
-        remaining = remaining - &rate;
-        rates.push(rate);
-    }
-    let input_count = rates.len();
-    rates
-        .into_iter()
-        .enumerate()
-        .map(|(index, rate)| TerminalMetadata {
-            id: if input_count == 1 {
-                "automatic-input".to_owned()
-            } else {
-                format!("automatic-input-{}", index + 1)
-            },
-            name: if input_count == 1 {
-                "Automatic supply".to_owned()
-            } else {
-                format!("Automatic supply {}", index + 1)
-            },
-            rate,
-        })
-        .collect()
-}
-
 fn parse_terminals(
     requests: &[EndpointRequest],
     side: &'static str,
+    capacity: &Rational,
 ) -> Result<Vec<TerminalMetadata>, PrepareRequestError> {
     requests
         .iter()
@@ -175,6 +165,14 @@ fn parse_terminals(
             })?;
             if !rate.is_positive() {
                 return Err(PrepareRequestError::NonPositiveRate { side, index });
+            }
+            if rate > *capacity {
+                return Err(PrepareRequestError::ExternalRateExceedsCapacity {
+                    side,
+                    index,
+                    rate: Box::new(rate),
+                    capacity: Box::new(capacity.clone()),
+                });
             }
             let name = request.name.trim();
             if name.chars().count() > MAX_ENDPOINT_NAME_CHARS {
@@ -212,8 +210,8 @@ mod tests {
         }
     }
 
-    fn request(inputs: &[&str], outputs: &[&str], capacity: &str) -> AppSolveRequest {
-        AppSolveRequest {
+    fn request(inputs: &[&str], outputs: &[&str], capacity: &str) -> ProblemRequest {
+        ProblemRequest {
             inputs: inputs
                 .iter()
                 .enumerate()
@@ -238,18 +236,18 @@ mod tests {
     }
 
     #[test]
-    fn automatic_input_is_partitioned_when_the_sum_exceeds_capacity() {
-        let prepared = request(&[], &["40", "80"], "119").prepare().unwrap();
-        assert_eq!(prepared.inputs.len(), 2);
-        assert_eq!(prepared.inputs[0].name, "Automatic supply 1");
-        assert_eq!(prepared.inputs[1].name, "Automatic supply 2");
+    fn automatic_input_above_capacity_requires_explicit_inputs() {
         assert_eq!(
-            prepared.problem.inputs,
-            vec![Rational::from(119_u32), Rational::from(1_u32)]
+            request(&[], &["40", "80"], "119").prepare(),
+            Err(PrepareRequestError::AutomaticInputExceedsCapacity {
+                total: Box::new(120.into()),
+                capacity: Box::new(119.into())
+            })
         );
-        assert_eq!(
-            prepared.problem.inputs.iter().sum::<Rational>(),
-            Rational::from(120_u32)
+        assert!(
+            request(&["119", "1"], &["40", "80"], "119")
+                .prepare()
+                .is_ok()
         );
     }
 
@@ -257,11 +255,15 @@ mod tests {
     fn fractional_output_sum_uses_exact_arithmetic() {
         let prepared = request(&[], &["1/3", "0.1"], "13/30").prepare().unwrap();
         assert_eq!(prepared.problem.inputs, vec!["13/30".parse().unwrap()]);
+        assert!(matches!(
+            request(&[], &["0.1", "0.2"], "0.29999999999999999999").prepare(),
+            Err(PrepareRequestError::AutomaticInputExceedsCapacity { .. })
+        ));
     }
 
     #[test]
     fn explicit_surplus_is_preserved_for_core_discard_semantics() {
-        let prepared = request(&["3", "2"], &["4"], "3").prepare().unwrap();
+        let prepared = request(&["3", "2"], &["4"], "4").prepare().unwrap();
         assert_eq!(
             prepared.problem.inputs.iter().sum::<Rational>(),
             5_u32.into()
@@ -270,6 +272,33 @@ mod tests {
             prepared.problem.outputs.iter().sum::<Rational>(),
             4_u32.into()
         );
+    }
+
+    #[test]
+    fn explicit_terminal_capacity_errors_identify_the_side_index_and_exact_rates() {
+        for (inputs, outputs, side, index) in [
+            (vec!["1", "2000"], vec!["1"], "input", 2),
+            (vec!["1200", "1200"], vec!["2000"], "output", 1),
+        ] {
+            let error = request(&inputs, &outputs, "1200").prepare().unwrap_err();
+            assert_eq!(
+                error,
+                PrepareRequestError::ExternalRateExceedsCapacity {
+                    side,
+                    index,
+                    rate: Box::new(2000.into()),
+                    capacity: Box::new(1200.into())
+                }
+            );
+            assert!(error.to_string().contains(&format!(
+                "{side} {index} rate 2000 exceeds belt capacity 1200"
+            )));
+        }
+        assert!(request(&["1/3"], &["1/3"], "1/3").prepare().is_ok());
+        assert!(matches!(
+            request(&["0.30000000000000000001"], &["0.3"], "0.3").prepare(),
+            Err(PrepareRequestError::ExternalRateExceedsCapacity { side: "input", .. })
+        ));
     }
 
     #[test]

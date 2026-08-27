@@ -3,10 +3,12 @@
 //! Rates cross serialization boundaries as canonical strings. No type in this crate uses
 //! floating point for flow values or solver decisions.
 
+mod execution;
 mod graph;
 mod problem;
 mod progress;
 mod rational;
+mod request;
 mod result;
 
 pub use graph::{
@@ -16,10 +18,18 @@ pub use graph::{
 };
 pub use problem::Problem;
 pub use progress::{
-    ProofObligation, SearchInstrumentation, SolvePhase, SolverEvent, SolverProgress,
+    Diagnostic, DiagnosticValue, LinkConstraint, SolvePhase, SolverEvent, SolverProgress,
 };
 pub use rational::{Rational, RationalParseError};
 pub use result::{
     BestKnownSolution, ExternalTerminal, GlobalUnsatProof, GlobalUnsatReason, IncompleteReason,
     IncompleteResult, OptimalSolution, ProofSummary, SolveResult, ValidationSummary,
+};
+
+pub use execution::{
+    EnumerationStatus, OptimalityProof, RunOptions, SolveMode, SolveObserver, SolveOutcome,
+    SolverError,
+};
+pub use request::{
+    EndpointRequest, PrepareRequestError, PreparedProblem, ProblemRequest, TerminalMetadata,
 };

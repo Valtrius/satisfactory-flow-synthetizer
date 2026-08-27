@@ -1,4 +1,4 @@
-//! Exact application boundary and presentation adapters.
+//! Shared application orchestration and deterministic solution presentation.
 
-pub mod exact_adapter;
 pub mod presentation;
+pub mod runtime;

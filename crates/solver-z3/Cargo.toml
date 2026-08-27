@@ -5,6 +5,8 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+solver-api = { path = "../solver-api" }
+solver-validation = { path = "../solver-validation" }
 num = "0.4.3"
 serde = { version = "1.0", features = ["derive"] }
 thiserror = "2.0"

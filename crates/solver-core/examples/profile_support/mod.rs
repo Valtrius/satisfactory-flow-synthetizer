@@ -3,7 +3,7 @@
 #![allow(clippy::cast_precision_loss, clippy::too_many_lines)]
 
 use std::{
-    collections::{BTreeMap, BTreeSet, HashMap},
+    collections::{BTreeMap, BTreeSet},
     sync::{
         Arc, Mutex,
         atomic::{AtomicBool, Ordering},
@@ -14,9 +14,8 @@ use std::{
 };
 
 use solver_api::{
-    BestKnownSolution, CanonicalGraphKey, ConsumerPortRef, DiscardTerminalIndex,
-    InputTerminalIndex, NodeId, NodeType, OutputTerminalIndex, PhysicalGraph, PhysicalLink,
-    PhysicalNode, Problem, ProducerPortRef, Rational, SearchInstrumentation, SolvePhase,
+    BestKnownSolution, CanonicalGraphKey, ConsumerPortRef, Diagnostic, InputTerminalIndex,
+    OutputTerminalIndex, PhysicalGraph, Problem, ProducerPortRef, Rational, SolvePhase,
     SolverEvent,
 };
 use solver_core::{
@@ -27,11 +26,6 @@ use solver_core::{
     prepare_problem,
 };
 use solver_validation::validate_solution;
-use solver_z3::{
-    GraphNode as Z3GraphNode, NodeKind as Z3NodeKind, Solution as Z3Solution,
-    SolveRequest as Z3SolveRequest, SolveTermination as Z3Termination,
-    SolverEvent as Z3SolverEvent,
-};
 
 #[derive(Clone, Copy)]
 pub struct ProfileCase {
@@ -82,7 +76,7 @@ struct Z3Run {
     status: String,
     emitted_count: usize,
     terminal_count: usize,
-    layouts: Vec<Z3Solution>,
+    layouts: Vec<BestKnownSolution>,
 }
 
 struct CrossCanonicalZ3 {
@@ -103,7 +97,7 @@ struct CrossLayout {
 struct ProgressLine {
     phase: SolvePhase,
     obligation: Option<String>,
-    instrumentation: SearchInstrumentation,
+    custom: Vec<Diagnostic>,
 }
 
 pub fn run(case: ProfileCase) {
@@ -173,23 +167,13 @@ fn run_custom(problem: &Problem, seconds: u64, workers: usize, max_nodes: u32) -
     let layout_slot = Arc::clone(&layouts);
     let observer = move |event: SolverEvent| match event {
         SolverEvent::Progress(progress) => {
-            let obligation = progress.obligation.as_ref().map(|obligation| {
-                format!(
-                    "N={} L={:?} profile={:?} root={:?} profiles={}/{}",
-                    obligation.node_count,
-                    obligation.link_count,
-                    obligation.profile,
-                    obligation.root_partition,
-                    progress.completed_profiles,
-                    progress
-                        .total_profiles
-                        .map_or_else(|| "?".to_owned(), |total| total.to_string())
-                )
-            });
             *progress_slot.lock().expect("progress lock") = Some(ProgressLine {
                 phase: progress.phase,
-                obligation,
-                instrumentation: progress.instrumentation,
+                obligation: Some(format!(
+                    "N={:?} L={:?}",
+                    progress.node_count, progress.link_constraint
+                )),
+                custom: progress.custom,
             });
         }
         SolverEvent::SolutionFound(solution) => {
@@ -256,32 +240,14 @@ fn run_custom(problem: &Problem, seconds: u64, workers: usize, max_nodes: u32) -
 }
 
 fn run_z3(case: &ProfileCase, seconds: u64) -> Z3Run {
-    let request = Z3SolveRequest {
-        inputs: case
-            .inputs
-            .iter()
-            .enumerate()
-            .map(|(index, rate)| solver_z3::EndpointRequest {
-                id: format!("input-{index}"),
-                name: format!("Input {}", index + 1),
-                rate: rate.to_string(),
-            })
-            .collect(),
-        outputs: case
-            .outputs
-            .iter()
-            .enumerate()
-            .map(|(index, rate)| solver_z3::EndpointRequest {
-                id: format!("output-{index}"),
-                name: format!("Output {}", index + 1),
-                rate: rate.to_string(),
-            })
-            .collect(),
-        belt_rate: case.belt_rate.to_string(),
-        enumerate_all_at_n: true,
+    let problem = api_problem(case);
+    let options = solver_api::RunOptions {
+        mode: solver_api::SolveMode::AllAtMinimumNodes,
+        worker_count: available_workers(),
+        max_nodes: Some(case.default_max_nodes),
     };
     let cancel = Arc::new(AtomicBool::new(false));
-    let emitted = Arc::new(Mutex::new(Vec::<Z3Solution>::new()));
+    let emitted = Arc::new(Mutex::new(Vec::<BestKnownSolution>::new()));
     let emitted_slot = Arc::clone(&emitted);
     let (finished_tx, finished_rx) = mpsc::channel();
     let cancel_for_timer = Arc::clone(&cancel);
@@ -296,12 +262,12 @@ fn run_z3(case: &ProfileCase, seconds: u64) -> Z3Run {
     });
 
     let started = Instant::now();
-    let result = solver_z3::solve_exact(&request, &cancel, move |event| {
-        if let Z3SolverEvent::SolutionFound(solution) = event {
+    let result = solver_z3::solve_problem(&problem, &options, &cancel, &move |event| {
+        if let SolverEvent::SolutionFound(solution) = event {
             emitted_slot
                 .lock()
                 .expect("Z3 emitted layout lock")
-                .push(*solution);
+                .push(solution);
         }
     });
     let wall = started.elapsed();
@@ -313,17 +279,7 @@ fn run_z3(case: &ProfileCase, seconds: u64) -> Z3Run {
         .expect("Z3 emitted layout lock");
     let emitted_count = emitted.len();
     let (status, terminal) = match result {
-        Ok(Z3Termination::Enumerated(solutions)) => {
-            (format!("Enumerated({})", solutions.len()), solutions)
-        }
-        Ok(Z3Termination::Incomplete { solutions, error }) => (
-            format!("Incomplete({}, {error})", solutions.len()),
-            solutions,
-        ),
-        Ok(Z3Termination::Cancelled { solutions }) => {
-            (format!("Cancelled({})", solutions.len()), solutions)
-        }
-        Ok(Z3Termination::Completed(solution)) => ("Completed(1)".to_owned(), vec![*solution]),
+        Ok(outcome) => (format!("{:?}", outcome.enumeration), outcome.solutions),
         Err(error) => (format!("Error({error})"), Vec::new()),
     };
     let terminal_count = terminal.len();
@@ -348,9 +304,7 @@ fn canonicalize_z3(problem: &Problem, run: &Z3Run) -> CrossCanonicalZ3 {
     let mut layouts_by_effective_key = BTreeMap::new();
     let mut multiplicities = BTreeMap::<CanonicalGraphKey, usize>::new();
     for solution in &run.layouts {
-        let graph = z3_physical_graph(solution).unwrap_or_else(|error| {
-            panic!("could not convert Z3 layout to the shared physical model: {error}")
-        });
+        let graph = solution.graph.clone();
         let validation = validate_solution(problem, &graph)
             .unwrap_or_else(|error| panic!("shared validator rejected Z3 layout: {error}"));
         let (normalized_problem, normalized_graph) = normalize_like_custom(problem, &graph);
@@ -424,145 +378,6 @@ fn effective_layout_key(problem: &Problem, graph: &PhysicalGraph) -> CanonicalGr
     canonicalize_effective_layout(problem, graph)
 }
 
-fn z3_physical_graph(solution: &Z3Solution) -> Result<PhysicalGraph, String> {
-    let nodes_by_id = solution
-        .nodes
-        .iter()
-        .map(|node| (node.id.as_str(), node))
-        .collect::<HashMap<_, _>>();
-    let mut operator_nodes = solution
-        .nodes
-        .iter()
-        .filter_map(|node| z3_node_type(node).map(|node_type| (node.id.as_str(), node_type)))
-        .collect::<Vec<_>>();
-    operator_nodes.sort_by_key(|(id, _)| operator_suffix(id).unwrap_or(usize::MAX));
-    let operator_ids = operator_nodes
-        .iter()
-        .enumerate()
-        .map(|(index, (id, _))| {
-            u32::try_from(index)
-                .map(NodeId)
-                .map(|node_id| ((*id).to_owned(), node_id))
-                .map_err(|_| "operator count does not fit u32".to_owned())
-        })
-        .collect::<Result<HashMap<_, _>, _>>()?;
-    let nodes = operator_nodes
-        .into_iter()
-        .map(|(id, node_type)| PhysicalNode {
-            id: operator_ids[id],
-            node_type,
-        })
-        .collect::<Vec<_>>();
-    let discard_ids = solution
-        .nodes
-        .iter()
-        .filter(|node| node.kind == Z3NodeKind::Discard)
-        .enumerate()
-        .map(|(index, node)| {
-            u32::try_from(index)
-                .map(DiscardTerminalIndex)
-                .map(|discard| (node.id.as_str(), discard))
-                .map_err(|_| "discard count does not fit u32".to_owned())
-        })
-        .collect::<Result<HashMap<_, _>, _>>()?;
-    let links = solution
-        .edges
-        .iter()
-        .map(|edge| {
-            let source = nodes_by_id
-                .get(edge.source.as_str())
-                .ok_or_else(|| format!("unknown source {}", edge.source))?;
-            let target = nodes_by_id
-                .get(edge.target.as_str())
-                .ok_or_else(|| format!("unknown target {}", edge.target))?;
-            Ok(PhysicalLink {
-                producer: z3_producer(source, edge.source_port, &operator_ids)?,
-                consumer: z3_consumer(target, edge.target_port, &operator_ids, &discard_ids)?,
-                flow: edge
-                    .rate
-                    .exact
-                    .parse()
-                    .map_err(|error| format!("invalid exact edge rate: {error}"))?,
-            })
-        })
-        .collect::<Result<Vec<_>, String>>()?;
-    Ok(PhysicalGraph { nodes, links })
-}
-
-fn z3_node_type(node: &Z3GraphNode) -> Option<NodeType> {
-    match node.kind {
-        Z3NodeKind::Splitter2 => Some(NodeType::Splitter2),
-        Z3NodeKind::Splitter3 => Some(NodeType::Splitter3),
-        Z3NodeKind::Merger2 => Some(NodeType::Merger2),
-        Z3NodeKind::Merger3 => Some(NodeType::Merger3),
-        Z3NodeKind::Input | Z3NodeKind::Output | Z3NodeKind::Discard => None,
-    }
-}
-
-fn z3_producer(
-    node: &Z3GraphNode,
-    port: usize,
-    operators: &HashMap<String, NodeId>,
-) -> Result<ProducerPortRef, String> {
-    match node.kind {
-        Z3NodeKind::Input => terminal_suffix(&node.id, "input-")
-            .and_then(|index| u32::try_from(index).ok())
-            .map(InputTerminalIndex)
-            .map(ProducerPortRef::Input)
-            .ok_or_else(|| format!("invalid input node id {}", node.id)),
-        Z3NodeKind::Splitter2
-        | Z3NodeKind::Splitter3
-        | Z3NodeKind::Merger2
-        | Z3NodeKind::Merger3 => Ok(ProducerPortRef::Node {
-            node: *operators
-                .get(&node.id)
-                .ok_or_else(|| format!("unknown operator {}", node.id))?,
-            port: u8::try_from(port).map_err(|_| "producer port does not fit u8".to_owned())?,
-        }),
-        Z3NodeKind::Output | Z3NodeKind::Discard => {
-            Err(format!("{} cannot produce a physical link", node.id))
-        }
-    }
-}
-
-fn z3_consumer(
-    node: &Z3GraphNode,
-    port: usize,
-    operators: &HashMap<String, NodeId>,
-    discards: &HashMap<&str, DiscardTerminalIndex>,
-) -> Result<ConsumerPortRef, String> {
-    match node.kind {
-        Z3NodeKind::Output => terminal_suffix(&node.id, "output-")
-            .and_then(|index| u32::try_from(index).ok())
-            .map(OutputTerminalIndex)
-            .map(ConsumerPortRef::Output)
-            .ok_or_else(|| format!("invalid output node id {}", node.id)),
-        Z3NodeKind::Discard => discards
-            .get(node.id.as_str())
-            .copied()
-            .map(ConsumerPortRef::Discard)
-            .ok_or_else(|| format!("unknown discard {}", node.id)),
-        Z3NodeKind::Splitter2
-        | Z3NodeKind::Splitter3
-        | Z3NodeKind::Merger2
-        | Z3NodeKind::Merger3 => Ok(ConsumerPortRef::Node {
-            node: *operators
-                .get(&node.id)
-                .ok_or_else(|| format!("unknown operator {}", node.id))?,
-            port: u8::try_from(port).map_err(|_| "consumer port does not fit u8".to_owned())?,
-        }),
-        Z3NodeKind::Input => Err(format!("{} cannot consume a physical link", node.id)),
-    }
-}
-
-fn terminal_suffix(id: &str, prefix: &str) -> Option<usize> {
-    id.strip_prefix(prefix)?.parse().ok()
-}
-
-fn operator_suffix(id: &str) -> Option<usize> {
-    terminal_suffix(id, "operator-")
-}
-
 fn print_custom(problem: &Problem, run: &CustomRun) {
     let effective = custom_effective_layouts(problem, run);
     println!();
@@ -580,19 +395,9 @@ fn print_custom(problem: &Problem, run: &CustomRun) {
             progress.phase,
             progress.obligation.as_deref().unwrap_or("")
         );
-        let stats = &progress.instrumentation;
-        println!(
-            "work decisions={} states={} dupes={} prop={} capacity={} lb={} scc={}/{} peak_mem={}",
-            stats.raw_structural_decisions,
-            stats.canonical_states_retained,
-            stats.canonical_duplicates_eliminated,
-            stats.propagation_contradictions,
-            stats.capacity_prunes,
-            stats.lower_bound_prunes,
-            stats.scc_solves,
-            stats.scc_cache_hits,
-            stats.peak_memory_bytes,
-        );
+        for diagnostic in &progress.custom {
+            println!("{}={:?}", diagnostic.name, diagnostic.value);
+        }
     }
     print_hotspots(&run.hotspots, run.wall);
     print_distribution("Custom layout distribution", effective.into_values());

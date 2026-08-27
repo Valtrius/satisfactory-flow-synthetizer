@@ -9,3 +9,8 @@ mod validator;
 
 pub use algebra::{LinearSolveError, solve_fraction_free};
 pub use validator::{ValidationError, solve_topology, validate_solution};
+
+mod collection;
+mod identity;
+pub use collection::SolutionCollector;
+pub use identity::{layout_key, normalize_outcome_identity};

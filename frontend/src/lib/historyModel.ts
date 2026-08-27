@@ -5,6 +5,7 @@ import type {
   SolveRequest,
   SolverEngine,
   SolverProgress,
+  OptimalityProof,
   JobSnapshot
 } from '../types';
 import { DEFAULT_SORT_COLUMNS, type SortColumn } from './solutionSort';
@@ -51,6 +52,8 @@ export interface HistoryEntry {
   /** Set once when the job becomes terminal; used for frozen elapsed time. */
   finishedAtMs: number | null;
   progress: SolverProgress | null;
+  proof?: OptimalityProof | null;
+  sequence?: number;
   result: Solution | null;
   results: Solution[];
   enumerationComplete: boolean;
@@ -74,6 +77,8 @@ export function entryToJobSnapshot(entry: HistoryEntry): JobSnapshot {
     status,
     startedAtMs: entry.startedAtMs ?? entry.createdAtMs,
     progress: entry.progress,
+    proof: entry.proof,
+    sequence: entry.sequence,
     result: entry.result,
     results: entry.results,
     enumerationComplete: entry.enumerationComplete,
@@ -236,11 +241,7 @@ export function entryNodeCount(entry: HistoryEntry): number | null {
   if (fromResult != null) return fromResult;
   const progress = entry.progress;
   if (!progress) return null;
-  if (progress.engine === 'z3' && 'nodeCount' in progress) return progress.nodeCount;
-  if (progress.engine === 'custom' && progress.obligation?.nodeCount != null) {
-    return progress.obligation.nodeCount;
-  }
-  return null;
+  return progress.nodeCount ?? null;
 }
 
 export type HistoryMetricCell = {
@@ -362,6 +363,17 @@ export function emptyDocument(): HistoryDocument {
   return { version: HISTORY_DOCUMENT_VERSION, entries: [], selectedEntryId: null };
 }
 
+/** Old engine-specific telemetry is not compatible with the common snapshot. */
+function savedProgress(progress: SolverProgress | null | undefined): SolverProgress | null {
+  return progress && typeof progress.phase === 'string' &&
+    Number.isFinite(progress.elapsedMs) && Array.isArray(progress.custom) &&
+    progress.custom.every(entry => entry && typeof entry.name === 'string' &&
+      typeof entry.label === 'string' && entry.value &&
+      (entry.value.type === 'boolean' ? typeof entry.value.value === 'boolean' :
+        ['integer', 'text', 'rate'].includes(entry.value.type) && typeof entry.value.value === 'string'))
+    ? progress : null;
+}
+
 /** Entries safe to write across sessions (no live/queued work). */
 export function persistableEntries(entries: HistoryEntry[]): HistoryEntry[] {
   return entries
@@ -369,7 +381,7 @@ export function persistableEntries(entries: HistoryEntry[]): HistoryEntry[] {
     .map((entry) => ({
       ...entry,
       jobId: null,
-      progress: null,
+      progress: savedProgress(entry.progress),
       form: cloneForm(entry.form),
       sortColumns: entry.sortColumns.map((column) => ({ ...column })),
       // JSON round-trip: layouts must be IPC-serializable (no proxies / functions).
@@ -426,7 +438,9 @@ function normalizeEntry(entry: HistoryEntry): HistoryEntry {
       (entryBand(entry.status ?? 'completed') === 'history' && entry.startedAtMs
         ? (entry.updatedAtMs ?? Date.now())
         : null),
-    progress: null,
+    progress: savedProgress(entry.progress),
+    proof: entry.proof ?? null,
+    sequence: entry.sequence,
     result: entry.result ?? null,
     results: Array.isArray(entry.results) ? entry.results : [],
     enumerationComplete: Boolean(entry.enumerationComplete),
@@ -494,7 +508,6 @@ function remapEntry(entry: HistoryEntry): HistoryEntry {
     createdAtMs: now,
     updatedAtMs: now,
     jobId: null,
-    progress: null,
     status: entryBand(entry.status) === 'history' ? entry.status : 'completed'
   };
 }

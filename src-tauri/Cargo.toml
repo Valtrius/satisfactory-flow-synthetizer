@@ -13,13 +13,12 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-custom-solver-adapter = { path = "../crates/synthetizer-app" }
+synthetizer-app = { path = "../crates/synthetizer-app" }
 rusqlite = { version = "0.38", features = ["bundled"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0.151"
+solver-validation = { path = "../crates/solver-validation" }
 solver-api = { path = "../crates/solver-api" }
-solver-core = { path = "../crates/solver-core" }
-solver-z3 = { path = "../crates/solver-z3" }
 tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"
 tauri-plugin-fs = "2"

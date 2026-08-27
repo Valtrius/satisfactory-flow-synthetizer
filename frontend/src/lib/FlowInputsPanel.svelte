@@ -63,7 +63,7 @@
     endpoints={inputs}
     slots={inputSlots}
     emptyTitle="Automatic supply"
-    emptyBody="The solver will split the exact demand total across as many capacity-safe input belts as needed."
+    emptyBody="Automatic supply uses one belt. If total demand exceeds its capacity, add explicit inputs."
     onAdd={onAddInput}
     onRemove={onRemoveInput}
     onUpdate={onUpdateInput}

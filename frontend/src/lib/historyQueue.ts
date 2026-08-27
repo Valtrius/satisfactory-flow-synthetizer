@@ -115,6 +115,7 @@ export class HistoryQueue {
     const previous = this.host.getEntries().find((entry) => entry.id === entryId);
     if (!previous) return;
 
+    if (snapshot.sequence != null && previous.sequence != null && snapshot.sequence < previous.sequence) return;
     const omitted = Boolean(snapshot.resultsOmitted);
     const appended = Boolean(snapshot.resultAppended);
 
@@ -133,6 +134,8 @@ export class HistoryQueue {
         this.host.patchEntry(entryId, {
           status: snapshot.status,
           progress: snapshot.progress,
+          proof: snapshot.proof ?? previous.proof,
+          sequence: snapshot.sequence,
           result: previous.result ?? next,
           results,
           enumerationComplete: snapshot.enumerationComplete,
@@ -156,12 +159,17 @@ export class HistoryQueue {
       return;
     }
 
+    if (omitted && (snapshot.resultsLen ?? 0) > previous.results.length) {
+      void getJob(snapshot.jobId).then((full) => this.acceptSnapshot(full)).catch(() => this.host.setError('Lost live updates from the solver.'));
+    }
     const results = omitted ? previous.results : snapshot.results;
     const result = omitted ? previous.result ?? snapshot.result : snapshot.result;
     const terminal = isTerminalJobStatus(snapshot.status);
     this.host.patchEntry(entryId, {
       status: snapshot.status,
       progress: snapshot.progress ?? previous.progress,
+      proof: snapshot.proof ?? previous.proof,
+      sequence: snapshot.sequence,
       result,
       results,
       enumerationComplete: snapshot.enumerationComplete,
@@ -226,6 +234,8 @@ export class HistoryQueue {
               startedAtMs,
               finishedAtMs: null,
               progress: null,
+              proof: null,
+              sequence: undefined,
               error: null,
               updatedAtMs
             }

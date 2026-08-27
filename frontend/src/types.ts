@@ -77,13 +77,13 @@ export interface SolutionStats {
   /** Shared operator-to-operator belt count; excludes input/output stubs and discard lines. */
   linkCount: number;
   checkedThrough?: number | null;
-  /** Compatibility alias of linkCount, supplied by both engines. */
+  /** Legacy history alias of linkCount. */
   beltCount?: number | null;
   /** Peak throughput across operator-to-operator belts, supplied by both engines. */
   internalMaxThroughput?: DisplayRate | null;
-  /** Custom-only. */
+  /** Physical accounting supplied by both engines; optional in old history. */
   physicalLinkCount?: number | null;
-  /** Custom-only. */
+  /** Physical accounting supplied by both engines; optional in old history. */
   discardLinkCount?: number | null;
 }
 
@@ -103,85 +103,35 @@ export interface Solution {
   buildSteps: string[];
 }
 
-export type CustomSolvePhase =
-  | 'normalizing'
-  | 'global_checks'
-  | 'computing_lower_bound'
-  | 'searching'
-  | 'validating_witness';
+export type SolvePhase = 'normalizing' | 'global_checks' | 'computing_lower_bound' | 'searching' | 'validating_witness' | 'optimizing_links' | 'enumerating';
 
-export interface ProofObligation {
-  nodeCount: number;
-  linkCount?: number | null;
-  profile?: unknown;
-  rootPartition?: number | null;
+export type DiagnosticValue =
+  | { type: 'integer' | 'text' | 'rate'; value: string }
+  | { type: 'boolean'; value: boolean };
+
+export interface Diagnostic {
+  name: string;
+  label: string;
+  value: DiagnosticValue;
+  unit: string | null;
 }
 
-export interface SearchInstrumentation {
-  rawStructuralDecisions: number;
-  canonicalStatesRetained: number;
-  canonicalDuplicatesEliminated: number;
-  propagationContradictions: number;
-  capacityPrunes: number;
-  lowerBoundPrunes: number;
-  sccSolves: number;
-  sccCacheHits: number;
-  canonicalizationTimeNs: number;
-  algebraTimeNs: number;
-  peakStateCacheSize: number;
-  peakMemoryBytes: number;
-  wallTimeMs: number;
+export interface SolverProgress {
+  phase: SolvePhase;
+  elapsedMs: number;
+  nodeCount: number | null;
+  linkConstraint: { kind: 'exact' | 'at_most'; value: number } | null;
+  nodeLowerBound: number | null;
+  bestNodeCount: number | null;
+  bestLinkCount: number | null;
+  solutionsFound: number;
+  custom: Diagnostic[];
 }
 
-export type Z3SolverProgress =
-  | {
-      kind: 'preparing';
-      lowerBound: number;
-    }
-  | {
-      kind: 'checking';
-      nodeCount: number;
-      rejectedUnstableCandidates: number;
-      lowerBound: number;
-      profileCount: number;
-      attemptSlots: number;
-      threadsPerAttempt: number;
-      maxOperatorBelts?: number | null;
-      incumbentBeltCount?: number | null;
-    }
-  | {
-      kind: 'candidate_rejected';
-      nodeCount: number;
-      rejectedUnstableCandidates: number;
-      reason: string;
-      lowerBound: number;
-    }
-  | {
-      kind: 'size_progress';
-      nodeCount: number;
-      lowerBound: number;
-      profilesTotal: number;
-      profilesUnresolved: number;
-      profilesUnsat: number;
-      activeAttempts: number;
-      launchedAttempts: number;
-      abandonedAttempts: number;
-      rejectedUnstableCandidates: number;
-      attemptSlots: number;
-      maxOperatorBelts?: number | null;
-      incumbentBeltCount?: number | null;
-    };
-
-export type SolverProgress =
-  | ({ engine: 'z3' } & Z3SolverProgress)
-  | {
-      engine: 'custom';
-      phase: CustomSolvePhase;
-      obligation?: ProofObligation | null;
-      completedProfiles: number;
-      totalProfiles?: number | null;
-      instrumentation: SearchInstrumentation;
-    };
+export interface OptimalityProof {
+  minimumNodeCount: number | null;
+  minimumLinkCount: number | null;
+}
 
 export type JobStatus =
   | 'running'
@@ -202,6 +152,8 @@ export interface JobSnapshot {
   status: JobStatus;
   startedAtMs: number;
   progress: SolverProgress | null;
+  proof?: OptimalityProof | null;
+  sequence?: number;
   result: Solution | null;
   results: Solution[];
   enumerationComplete: boolean;
@@ -209,22 +161,10 @@ export interface JobSnapshot {
   resultsOmitted?: boolean;
   /** Incremental full-N emit: `result` is the newly found layout; append locally. */
   resultAppended?: boolean;
-  /** When `resultAppended`, server results length after the push (append seq). */
+  /** Server result count, also included with progress to detect missed appends. */
   resultsLen?: number;
   error: string | null;
   unsat?: GlobalUnsatProof | null;
-}
-
-export function isCustomProgress(
-  progress: SolverProgress | null | undefined
-): progress is Extract<SolverProgress, { engine: 'custom' }> {
-  return progress?.engine === 'custom';
-}
-
-export function isZ3Progress(
-  progress: SolverProgress | null | undefined
-): progress is Extract<SolverProgress, { engine: 'z3' }> {
-  return progress != null && progress.engine === 'z3';
 }
 
 /** Belt/link count used by tables and sort. */

@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::{BestKnownSolution, NodeProfile};
+use crate::BestKnownSolution;
 
 /// Current high-level phase of a live solve.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -16,72 +16,71 @@ pub enum SolvePhase {
     Searching,
     /// Flattening and independently validating a candidate witness.
     ValidatingWitness,
+    OptimizingLinks,
+    Enumerating,
 }
 
-/// Hierarchical finite proof obligation currently assigned to a worker.
+/// A solver-specific measurement. Integer strings preserve u64 precision in JavaScript.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "type", content = "value", rename_all = "snake_case")]
+pub enum DiagnosticValue {
+    Integer(String),
+    Text(String),
+    Boolean(bool),
+    Rate(crate::Rational),
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ProofObligation {
-    /// Node count currently being proved SAT or UNSAT.
-    pub node_count: u32,
-    /// Current structural non-discard physical-link group, if reached.
-    pub link_count: Option<u32>,
-    /// Current fixed node-type profile, if assigned.
-    pub profile: Option<NodeProfile>,
-    /// Deterministic canonical root-partition number, if assigned.
-    pub root_partition: Option<u32>,
+pub struct Diagnostic {
+    pub name: String,
+    pub label: String,
+    pub value: DiagnosticValue,
+    pub unit: Option<String>,
 }
 
-/// Monotone counters and timing measurements for search diagnostics.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SearchInstrumentation {
-    /// Structural edge decisions attempted.
-    pub raw_structural_decisions: u64,
-    /// Canonical states retained for search.
-    pub canonical_states_retained: u64,
-    /// Isomorphic or equivalent states rejected.
-    pub canonical_duplicates_eliminated: u64,
-    /// Contradictions found by exact propagation.
-    pub propagation_contradictions: u64,
-    /// Branches killed by exact positivity or capacity proofs.
-    pub capacity_prunes: u64,
-    /// Branches killed by proven lower bounds.
-    pub lower_bound_prunes: u64,
-    /// Exact SCC algebra solves performed.
-    pub scc_solves: u64,
-    /// Reusable SCC summaries found in cache.
-    pub scc_cache_hits: u64,
-    /// Nanoseconds spent canonicalizing topology and algebra.
-    pub canonicalization_time_ns: u64,
-    /// Nanoseconds spent in exact algebra.
-    pub algebra_time_ns: u64,
-    /// Largest number of entries in a live state cache.
-    pub peak_state_cache_size: u64,
-    /// Peak deterministic solver-owned canonical state/SCC cache payload in bytes.
-    ///
-    /// Implementations count owned key buffers and fixed cache values, but not
-    /// allocator buckets or process-global memory whose size depends on runtime
-    /// hashing, worker scheduling, or unrelated allocations.
-    pub peak_memory_bytes: u64,
-    /// End-to-end wall-clock duration in milliseconds.
-    pub wall_time_ms: u64,
+impl Diagnostic {
+    #[must_use]
+    pub fn counter(name: &str, label: &str, value: impl std::fmt::Display) -> Self {
+        Self {
+            name: name.to_owned(),
+            label: label.to_owned(),
+            value: DiagnosticValue::Integer(value.to_string()),
+            unit: None,
+        }
+    }
+    #[must_use]
+    pub fn text(name: &str, label: &str, value: impl Into<String>) -> Self {
+        Self {
+            name: name.to_owned(),
+            label: label.to_owned(),
+            value: DiagnosticValue::Text(value.into()),
+            unit: None,
+        }
+    }
 }
 
-/// A serializable snapshot of deterministic proof progress.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+pub enum LinkConstraint {
+    Exact(u32),
+    AtMost(u32),
+}
+
+/// Common facts only. Diagnostics are a complete replacement on each snapshot.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SolverProgress {
-    /// Current high-level solver phase.
     pub phase: SolvePhase,
-    /// Current hierarchical proof obligation, when search is active.
-    pub obligation: Option<ProofObligation>,
-    /// Profiles conclusively completed in the current equal-link group.
-    pub completed_profiles: u32,
-    /// Total profiles in the current equal-link group, when known.
-    pub total_profiles: Option<u32>,
-    /// Current search counters and timings.
-    pub instrumentation: SearchInstrumentation,
+    pub elapsed_ms: u64,
+    pub node_count: Option<u32>,
+    pub link_constraint: Option<LinkConstraint>,
+    pub node_lower_bound: Option<u32>,
+    pub best_node_count: Option<u32>,
+    pub best_link_count: Option<u32>,
+    /// Distinct enumeration layouts; Opt incumbents do not increment this count.
+    pub solutions_found: u64,
+    pub custom: Vec<Diagnostic>,
 }
 
 /// Live solver notification delivered to an application or service adapter.

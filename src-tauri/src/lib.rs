@@ -1,7 +1,6 @@
 mod contract;
 mod engines;
 mod history;
-mod layout_identity;
 
 use std::{
     collections::HashMap,
@@ -16,8 +15,8 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
 use uuid::Uuid;
 
-use contract::{Solution, SolveRequest, SolverEngine, SolverProgress, UnsatProof};
-use engines::{run_custom_job, run_z3_job};
+use contract::{Solution, SolveRequest, SolverProgress, UnsatProof};
+use engines::run_job;
 use history::{load_history, save_history};
 
 const JOB_SNAPSHOT_EVENT: &str = "job-snapshot";
@@ -38,6 +37,8 @@ pub(crate) struct JobSnapshot {
     status: JobStatus,
     started_at_ms: u64,
     progress: Option<SolverProgress>,
+    proof: Option<solver_api::OptimalityProof>,
+    sequence: u64,
     result: Option<Solution>,
     /// Populated during/after full-N enumeration. Empty in classic single-solution mode.
     results: Vec<Solution>,
@@ -48,11 +49,11 @@ pub(crate) struct JobSnapshot {
     /// Incremental full-N emit: `result` is the newly found layout; append it locally.
     #[serde(default)]
     result_appended: bool,
-    /// When `result_appended`, server `results.len()` after the push (1-based seq).
+    /// Server result count, also included with progress to detect missed appends.
     #[serde(default)]
     results_len: usize,
     error: Option<String>,
-    /// Present only for Custom global UNSAT terminals.
+    /// Present for a finite global contradiction from either engine.
     #[serde(skip_serializing_if = "Option::is_none")]
     unsat: Option<UnsatProof>,
 }
@@ -78,6 +79,8 @@ impl Job {
                 status: JobStatus::Running,
                 started_at_ms: now_ms(),
                 progress: None,
+                proof: None,
+                sequence: 0,
                 result: None,
                 results: Vec::new(),
                 enumeration_complete: false,
@@ -101,6 +104,7 @@ impl Job {
         let snapshot = {
             let mut snapshot = self.snapshot.lock().expect("job snapshot lock poisoned");
             update(&mut snapshot);
+            snapshot.sequence += 1;
             snapshot.results_omitted = false;
             snapshot.result_appended = false;
             snapshot.results_len = 0;
@@ -114,17 +118,20 @@ impl Job {
         let payload = {
             let mut snapshot = self.snapshot.lock().expect("job snapshot lock poisoned");
             snapshot.progress = Some(progress);
+            snapshot.sequence += 1;
             JobSnapshot {
                 job_id: snapshot.job_id,
                 status: snapshot.status,
                 started_at_ms: snapshot.started_at_ms,
                 progress: snapshot.progress.clone(),
+                proof: snapshot.proof,
+                sequence: snapshot.sequence,
                 result: None,
                 results: Vec::new(),
                 enumeration_complete: snapshot.enumeration_complete,
                 results_omitted: true,
                 result_appended: false,
-                results_len: 0,
+                results_len: snapshot.results.len(),
                 error: snapshot.error.clone(),
                 unsat: None,
             }
@@ -150,12 +157,15 @@ impl Job {
                 snapshot.result = Some(solution.clone());
             }
             snapshot.results.push(solution.clone());
+            snapshot.sequence += 1;
             let results_len = snapshot.results.len();
             JobSnapshot {
                 job_id: snapshot.job_id,
                 status: snapshot.status,
                 started_at_ms: snapshot.started_at_ms,
                 progress: snapshot.progress.clone(),
+                proof: snapshot.proof,
+                sequence: snapshot.sequence,
                 result: Some(solution),
                 results: Vec::new(),
                 enumeration_complete: snapshot.enumeration_complete,
@@ -200,6 +210,10 @@ fn create_job(
         return Err("a solver job is already running".to_owned());
     }
 
+    let prepared = request
+        .problem
+        .prepare()
+        .map_err(|error| error.to_string())?;
     let id = Uuid::new_v4();
     let job = Job::new(id);
     state
@@ -208,11 +222,7 @@ fn create_job(
         .expect("jobs lock poisoned")
         .insert(id, Arc::clone(&job));
     let _ = app.emit(JOB_SNAPSHOT_EVENT, &job.current());
-    let engine = request.engine;
-    tauri::async_runtime::spawn_blocking(move || match engine {
-        SolverEngine::Z3 => run_z3_job(&app, &job, &request),
-        SolverEngine::Custom => run_custom_job(&app, &job, &request),
-    });
+    tauri::async_runtime::spawn_blocking(move || run_job(&app, &job, &request, &prepared));
 
     Ok(id)
 }
@@ -233,7 +243,11 @@ fn cancel_job(
     let job = find_job(&state, job_id)?;
     if job.current().status == JobStatus::Running {
         job.cancel.store(true, Ordering::Relaxed);
-        job.update(&app, |snapshot| snapshot.status = JobStatus::Cancelling);
+        job.update(&app, |snapshot| {
+            if snapshot.status == JobStatus::Running {
+                snapshot.status = JobStatus::Cancelling;
+            }
+        });
     }
     Ok(job.current())
 }

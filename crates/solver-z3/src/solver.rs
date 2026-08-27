@@ -2,12 +2,12 @@
 //!
 //! # Search shape
 //!
-//! [`solve_exact`] walks node counts from a combinatorial lower bound upward. At each
+//! [`search`] walks node counts from a combinatorial lower bound upward. At each
 //! fixed size `N` it must either find a verified topology or prove every operator
 //! *profile* (multiset of splitter/merger kinds) unsatisfiable before trying `N+1`.
 //! That keeps minimality: speculative larger sizes are never started while `N` is open.
 //!
-//! When `SolveRequest::enumerate_all_at_n` is set, the first verified size is kept and
+//! In [`solver_api::SolveMode::AllAtMinimumNodes`] mode, the first verified size is kept and
 //! every distinct layout at that size is collected (with streaming
 //! [`SolverEvent::SolutionFound`] events) instead of returning a single optimum.
 //!
@@ -59,32 +59,27 @@ use z3::{
 };
 
 use crate::{
-    format_rate,
     model::{
-        Candidate, OperatorKind, PORTS, Problem, Route, Solution, SolveRequest, SolverProgress,
-        consumer_count, node_consumer, node_producer, output_consumer, producer_count,
+        Candidate, OperatorKind, PORTS, Problem, Route, Solution, SolverProgress, consumer_count,
+        node_consumer, node_producer, output_consumer, producer_count,
     },
-    verify::{
-        ProblemError, build_solution, build_solution_with_status, normalize_problem,
-        solution_identity, verify_candidate,
-    },
+    verify::{build_solution, solution_identity, verify_candidate},
 };
 
 #[derive(Clone, Debug, Error)]
 pub enum SolveError {
+    #[cfg(test)]
     #[error("{0}")]
     InvalidRequest(String),
-    #[error("not enough input: {available} available, {requested} requested")]
-    InsufficientMaterial {
-        available: String,
-        requested: String,
-    },
     #[error("exact solver failed: {0}")]
     Solver(String),
 }
 
 #[derive(Clone, Debug)]
 pub enum SolveTermination {
+    Limited {
+        exhausted_through: Option<u32>,
+    },
     /// Classic mode: proven (Nmin, Lmin) after belt-count improvement.
     Completed(Box<Solution>),
     /// Full-N mode finished collecting every distinct layout at minimal N.
@@ -95,7 +90,9 @@ pub enum SolveTermination {
         error: SolveError,
     },
     /// Search stopped by the user. `solutions` is non-empty only for partial full-N runs.
-    Cancelled { solutions: Vec<Solution> },
+    Cancelled {
+        solutions: Vec<Solution>,
+    },
 }
 
 #[derive(Clone, Debug)]
@@ -103,6 +100,7 @@ pub enum SolverEvent {
     Progress(SolverProgress),
     /// Emitted as each unique layout is found during full-N enumeration.
     SolutionFound(Box<Solution>),
+    Incumbent(Box<Solution>),
 }
 
 /// Find the smallest verified exact topology, unless the caller cancels the search.
@@ -118,35 +116,30 @@ pub enum SolverEvent {
 /// # Errors
 ///
 /// Returns an error for invalid rates, insufficient input, or an unexpected solver failure.
-pub fn solve_exact<F>(
-    request: &SolveRequest,
+pub(crate) fn search<F>(
+    problem: &Problem,
+    enumerate: bool,
+    max_nodes: Option<u32>,
     cancel: &AtomicBool,
     on_progress: F,
 ) -> Result<SolveTermination, SolveError>
 where
     F: FnMut(SolverEvent) + Send,
 {
-    let problem = normalize_problem(request).map_err(|error| match error {
-        ProblemError::Invalid(message) => SolveError::InvalidRequest(message),
-        ProblemError::Insufficient {
-            available,
-            requested,
-        } => SolveError::InsufficientMaterial {
-            available: format_rate(&available).exact,
-            requested: format_rate(&requested).exact,
-        },
-    })?;
-
-    let lower_bound = node_count_lower_bound(&problem);
+    let lower_bound = node_count_lower_bound(problem);
     let mut node_count = lower_bound;
     let mut rejected_total = 0;
     let on_progress = Mutex::new(on_progress);
     let throttle = EmitThrottle::new(Duration::from_millis(150));
-    let enumerate = request.enumerate_all_at_n;
 
     report_progress(&on_progress, SolverProgress::Preparing { lower_bound });
 
     loop {
+        if max_nodes.is_some_and(|max| node_count > max as usize) {
+            return Ok(SolveTermination::Limited {
+                exhausted_through: max_nodes,
+            });
+        }
         if cancel.load(Ordering::Relaxed) {
             return Ok(SolveTermination::Cancelled {
                 solutions: Vec::new(),
@@ -154,7 +147,7 @@ where
         }
 
         match search_size(
-            &problem,
+            problem,
             cancel,
             &on_progress,
             &throttle,
@@ -169,7 +162,7 @@ where
         )? {
             SizeSearch::Found(candidate) => {
                 return finish_opt_at_size(
-                    &problem,
+                    problem,
                     cancel,
                     &on_progress,
                     &throttle,
@@ -721,10 +714,10 @@ fn finish_opt_at_size<F>(
 where
     F: FnMut(SolverEvent) + Send,
 {
-    let mut incumbent = build_solution_with_status(problem, first, "best_known");
+    let mut incumbent = build_solution(problem, first)?;
     {
         let mut callback = on_progress.lock().expect("progress callback");
-        callback(SolverEvent::SolutionFound(Box::new(incumbent.clone())));
+        callback(SolverEvent::Incumbent(Box::new(incumbent.clone())));
     }
 
     loop {
@@ -733,8 +726,7 @@ where
                 solutions: vec![incumbent],
             });
         }
-        let Some(cap) = incumbent.stats.belt_count.checked_sub(1) else {
-            "proven_optimal".clone_into(&mut incumbent.status);
+        let Some(cap) = (incumbent.link_count as usize).checked_sub(1) else {
             return Ok(SolveTermination::Completed(Box::new(incumbent)));
         };
 
@@ -749,22 +741,21 @@ where
                 rejected_before,
                 enumerate: false,
                 max_operator_belts: Some(cap),
-                incumbent_belt_count: Some(incumbent.stats.belt_count),
+                incumbent_belt_count: Some(incumbent.link_count as usize),
             },
         )? {
             SizeSearch::Found(candidate) => {
-                let better = build_solution_with_status(problem, &candidate, "best_known");
-                if better.stats.belt_count >= incumbent.stats.belt_count {
+                let better = build_solution(problem, &candidate)?;
+                if better.link_count >= incumbent.link_count {
                     return Err(SolveError::Solver(
                         "belt-cap search returned a non-improving witness".to_owned(),
                     ));
                 }
                 incumbent = better;
                 let mut callback = on_progress.lock().expect("progress callback");
-                callback(SolverEvent::SolutionFound(Box::new(incumbent.clone())));
+                callback(SolverEvent::Incumbent(Box::new(incumbent.clone())));
             }
             SizeSearch::Unsatisfiable(_) => {
-                "proven_optimal".clone_into(&mut incumbent.status);
                 return Ok(SolveTermination::Completed(Box::new(incumbent)));
             }
             SizeSearch::Cancelled => {
@@ -821,7 +812,7 @@ where
     F: FnMut(SolverEvent) + Send,
 {
     let profiles = operator_profiles(problem, options.node_count);
-    let available = thread::available_parallelism().map_or(1, std::num::NonZero::get);
+    let available = problem.worker_count;
     let threads_per_attempt = if profiles.is_empty() {
         1
     } else {
@@ -872,7 +863,7 @@ where
         None => operator_profiles(problem, node_count),
     };
 
-    let available = thread::available_parallelism().map_or(1, std::num::NonZero::get);
+    let available = problem.worker_count;
     let attempt_slots = if profiles.is_empty() {
         0
     } else {
@@ -908,7 +899,7 @@ where
     let rejected = AtomicUsize::new(0);
     let found = Mutex::new(None);
     let enumerated = Mutex::new(Vec::<Solution>::new());
-    let seen_identities = Mutex::new(HashSet::<String>::new());
+    let seen_identities = Mutex::new(HashSet::<solver_api::CanonicalGraphKey>::new());
     let error = Mutex::new(None);
     let last_abandon_reason = Mutex::new(None);
     let progress_ctx = SizeProgressContext {
@@ -1114,7 +1105,7 @@ fn run_attempt<F>(
     progress: &SizeProgressContext<'_, F>,
     enumerate: bool,
     enumerated: &Mutex<Vec<Solution>>,
-    seen_identities: &Mutex<HashSet<String>>,
+    seen_identities: &Mutex<HashSet<solver_api::CanonicalGraphKey>>,
     max_operator_belts: Option<usize>,
 ) -> AttemptResult
 where
@@ -1179,7 +1170,7 @@ fn run_attempt_in_context<F>(
     progress: &SizeProgressContext<'_, F>,
     enumerate: bool,
     enumerated: &Mutex<Vec<Solution>>,
-    seen_identities: &Mutex<HashSet<String>>,
+    seen_identities: &Mutex<HashSet<solver_api::CanonicalGraphKey>>,
     max_operator_belts: Option<usize>,
 ) -> AttemptResult
 where
@@ -1237,7 +1228,10 @@ where
                 };
                 if let Ok(verified) = verify_candidate(problem, candidate.clone()) {
                     if enumerate {
-                        let solution = build_solution(problem, &verified);
+                        let solution = match build_solution(problem, &verified) {
+                            Ok(solution) => solution,
+                            Err(error) => return AttemptResult::Failed(error),
+                        };
                         let identity = solution_identity(&solution);
                         let is_new = {
                             let mut seen = seen_identities.lock().expect("seen identities");
@@ -2024,7 +2018,38 @@ mod tests {
     use std::{sync::atomic::AtomicBool, time::Duration};
 
     use super::*;
-    use crate::{EndpointRequest, parse_rate};
+    use crate::verify::from_problem;
+    use solver_api::{EndpointRequest, ProblemRequest, SolveMode};
+
+    fn parse_rate(value: &str) -> Result<BigRational, String> {
+        value
+            .parse::<solver_api::Rational>()
+            .map(solver_api::Rational::into_big_rational)
+            .map_err(|error| error.to_string())
+    }
+
+    fn prepare_problem(request: &ProblemRequest) -> Result<Problem, SolveError> {
+        let prepared = request
+            .prepare()
+            .map_err(|error| SolveError::InvalidRequest(error.to_string()))?;
+        Ok(from_problem(&prepared.problem))
+    }
+
+    fn solve_exact<F: FnMut(SolverEvent) + Send>(
+        request: &ProblemRequest,
+        mode: SolveMode,
+        cancel: &AtomicBool,
+        observer: F,
+    ) -> Result<SolveTermination, SolveError> {
+        let problem = prepare_problem(request)?;
+        search(
+            &problem,
+            mode == SolveMode::AllAtMinimumNodes,
+            None,
+            cancel,
+            observer,
+        )
+    }
 
     fn endpoint(id: &str, rate: &str) -> EndpointRequest {
         EndpointRequest {
@@ -2057,16 +2082,20 @@ mod tests {
 
     #[test]
     fn progress_reports_preparing_then_checking() {
-        let request = SolveRequest {
+        let request = ProblemRequest {
             inputs: vec![endpoint("input", "120")],
             outputs: vec![endpoint("a", "60"), endpoint("b", "60")],
             belt_rate: "1200".to_owned(),
-            enumerate_all_at_n: false,
         };
         let events = Mutex::new(Vec::new());
-        let result = solve_exact(&request, &AtomicBool::new(false), |event| {
-            events.lock().expect("events").push(event);
-        })
+        let result = solve_exact(
+            &request,
+            SolveMode::Optimal,
+            &AtomicBool::new(false),
+            |event| {
+                events.lock().expect("events").push(event);
+            },
+        )
         .unwrap();
         assert!(matches!(result, SolveTermination::Completed(_)));
         let events = events.into_inner().expect("events");
@@ -2096,82 +2125,97 @@ mod tests {
 
     #[test]
     fn direct_belt_needs_no_node() {
-        let request = SolveRequest {
+        let request = ProblemRequest {
             inputs: vec![endpoint("input", "60")],
             outputs: vec![endpoint("output", "60")],
             belt_rate: "1200".to_owned(),
-            enumerate_all_at_n: false,
         };
-        let result = solve_exact(&request, &AtomicBool::new(false), |_| {}).unwrap();
+        let result = solve_exact(
+            &request,
+            SolveMode::Optimal,
+            &AtomicBool::new(false),
+            |_| {},
+        )
+        .unwrap();
         let SolveTermination::Completed(solution) = result else {
             panic!("solver was cancelled");
         };
-        assert_eq!(solution.stats.node_count, 0);
+        assert_eq!(solution.node_count, 0);
     }
 
     #[test]
     fn one_splitter_makes_two_equal_outputs() {
-        let request = SolveRequest {
+        let request = ProblemRequest {
             inputs: vec![endpoint("input", "120")],
             outputs: vec![endpoint("a", "60"), endpoint("b", "60")],
             belt_rate: "1200".to_owned(),
-            enumerate_all_at_n: false,
         };
-        let result = solve_exact(&request, &AtomicBool::new(false), |_| {}).unwrap();
+        let result = solve_exact(
+            &request,
+            SolveMode::Optimal,
+            &AtomicBool::new(false),
+            |_| {},
+        )
+        .unwrap();
         let SolveTermination::Completed(solution) = result else {
             panic!("solver was cancelled");
         };
-        assert_eq!(solution.stats.node_count, 1);
-        assert_eq!(solution.stats.splitters, 1);
+        assert_eq!(solution.node_count, 1);
+        assert_eq!(
+            solution.graph.nodes[0].node_type,
+            solver_api::NodeType::Splitter2
+        );
     }
 
     #[test]
     fn unequal_inputs_can_merge_then_split() {
-        let request = SolveRequest {
+        let request = ProblemRequest {
             inputs: vec![endpoint("a", "30"), endpoint("b", "90")],
             outputs: vec![endpoint("x", "60"), endpoint("y", "60")],
             belt_rate: "1200".to_owned(),
-            enumerate_all_at_n: false,
         };
-        let result = solve_exact(&request, &AtomicBool::new(false), |_| {}).unwrap();
+        let result = solve_exact(
+            &request,
+            SolveMode::Optimal,
+            &AtomicBool::new(false),
+            |_| {},
+        )
+        .unwrap();
         let SolveTermination::Completed(solution) = result else {
             panic!("solver was cancelled");
         };
-        assert_eq!(solution.stats.node_count, 2);
+        assert_eq!(solution.node_count, 2);
     }
 
     #[test]
     fn required_denominator_uses_the_reduced_input_grain() {
-        let fifth = normalize_problem(&SolveRequest {
+        let fifth = prepare_problem(&ProblemRequest {
             inputs: vec![endpoint("input", "1")],
             outputs: vec![endpoint("output", "1/5")],
             belt_rate: "1200".to_owned(),
-            enumerate_all_at_n: false,
         })
         .unwrap();
         assert_eq!(required_denominator(&fifth), BigInt::from(5));
         assert!(!is_two_three_smooth(&required_denominator(&fifth)));
 
-        let identity = normalize_problem(&SolveRequest {
+        let identity = prepare_problem(&ProblemRequest {
             inputs: vec![endpoint("a", "7"), endpoint("b", "7")],
             outputs: vec![endpoint("x", "7"), endpoint("y", "7")],
             belt_rate: "1200".to_owned(),
-            enumerate_all_at_n: false,
         })
         .unwrap();
         assert_eq!(required_denominator(&identity), BigInt::from(1));
 
-        let two_three = normalize_problem(&SolveRequest {
+        let two_three = prepare_problem(&ProblemRequest {
             inputs: vec![endpoint("input", "216")],
             outputs: vec![endpoint("a", "66"), endpoint("b", "150")],
             belt_rate: "1200".to_owned(),
-            enumerate_all_at_n: false,
         })
         .unwrap();
         assert_eq!(required_denominator(&two_three), BigInt::from(36));
         assert!(is_two_three_smooth(&required_denominator(&two_three)));
 
-        let prime = normalize_problem(&SolveRequest {
+        let prime = prepare_problem(&ProblemRequest {
             inputs: vec![endpoint("input", "358")],
             outputs: vec![
                 endpoint("a", "144"),
@@ -2180,7 +2224,6 @@ mod tests {
                 endpoint("d", "108"),
             ],
             belt_rate: "1200".to_owned(),
-            enumerate_all_at_n: false,
         })
         .unwrap();
         assert_eq!(required_denominator(&prime), BigInt::from(179));
@@ -2189,52 +2232,47 @@ mod tests {
 
     #[test]
     fn node_count_lower_bound_combines_denominator_and_branch_constraints() {
-        let merge_problem = normalize_problem(&SolveRequest {
+        let merge_problem = prepare_problem(&ProblemRequest {
             inputs: vec![endpoint("a", "30"), endpoint("b", "90")],
             outputs: vec![endpoint("output", "120")],
             belt_rate: "1200".to_owned(),
-            enumerate_all_at_n: false,
         })
         .unwrap();
         assert_eq!(node_count_lower_bound(&merge_problem), 1);
 
-        let discard_problem = normalize_problem(&SolveRequest {
+        let discard_problem = prepare_problem(&ProblemRequest {
             inputs: vec![endpoint("input", "120")],
             outputs: vec![endpoint("output", "60")],
             belt_rate: "1200".to_owned(),
-            enumerate_all_at_n: false,
         })
         .unwrap();
         assert_eq!(node_count_lower_bound(&discard_problem), 1);
 
-        let identity = normalize_problem(&SolveRequest {
+        let identity = prepare_problem(&ProblemRequest {
             inputs: vec![endpoint("a", "7"), endpoint("b", "7")],
             outputs: vec![endpoint("x", "7"), endpoint("y", "7")],
             belt_rate: "1200".to_owned(),
-            enumerate_all_at_n: false,
         })
         .unwrap();
         assert_eq!(node_count_lower_bound(&identity), 0);
 
-        let fifth = normalize_problem(&SolveRequest {
+        let fifth = prepare_problem(&ProblemRequest {
             inputs: vec![endpoint("input", "1")],
             outputs: vec![endpoint("output", "1/5")],
             belt_rate: "1200".to_owned(),
-            enumerate_all_at_n: false,
         })
         .unwrap();
         assert_eq!(node_count_lower_bound(&fifth), 3);
 
-        let two_three = normalize_problem(&SolveRequest {
+        let two_three = prepare_problem(&ProblemRequest {
             inputs: vec![endpoint("input", "216")],
             outputs: vec![endpoint("a", "66"), endpoint("b", "150")],
             belt_rate: "1200".to_owned(),
-            enumerate_all_at_n: false,
         })
         .unwrap();
         assert_eq!(node_count_lower_bound(&two_three), 7);
 
-        let prime = normalize_problem(&SolveRequest {
+        let prime = prepare_problem(&ProblemRequest {
             inputs: vec![endpoint("input", "358")],
             outputs: vec![
                 endpoint("a", "144"),
@@ -2243,7 +2281,6 @@ mod tests {
                 endpoint("d", "108"),
             ],
             belt_rate: "1200".to_owned(),
-            enumerate_all_at_n: false,
         })
         .unwrap();
         assert_eq!(node_count_lower_bound(&prime), 9);
@@ -2253,7 +2290,7 @@ mod tests {
 
     #[test]
     fn detects_small_prime_transfer_denominators() {
-        let problem = normalize_problem(&SolveRequest {
+        let problem = prepare_problem(&ProblemRequest {
             inputs: vec![endpoint("input", "358")],
             outputs: vec![
                 endpoint("a", "144"),
@@ -2262,7 +2299,6 @@ mod tests {
                 endpoint("d", "108"),
             ],
             belt_rate: "1200".to_owned(),
-            enumerate_all_at_n: false,
         })
         .unwrap();
         assert_eq!(modular_transfer_primes(&problem), vec![179]);
@@ -2270,44 +2306,44 @@ mod tests {
 
     #[test]
     fn derives_automatic_supply_from_the_exact_output_sum() {
-        let problem = normalize_problem(&SolveRequest {
+        let problem = prepare_problem(&ProblemRequest {
             inputs: Vec::new(),
             outputs: vec![endpoint("a", "125/3"), endpoint("b", "25/3")],
             belt_rate: "1200".to_owned(),
-            enumerate_all_at_n: false,
         })
         .unwrap();
 
         assert_eq!(problem.inputs.len(), 1);
-        assert_eq!(problem.inputs[0].name, "Automatic supply");
-        assert_eq!(problem.total_input, parse_rate("50").unwrap());
-        assert_eq!(problem.total_input, problem.total_output);
+        assert_eq!(problem.inputs[0].rate, parse_rate("50").unwrap());
+        assert_eq!(
+            problem
+                .inputs
+                .iter()
+                .map(|input| &input.rate)
+                .sum::<BigRational>(),
+            parse_rate("50").unwrap()
+        );
+        assert!(problem.discard_rate.is_zero());
         assert!(problem.discard_rate.is_zero());
     }
 
     #[test]
-    fn automatic_supply_uses_multiple_belts_when_the_sum_exceeds_capacity() {
-        let problem = normalize_problem(&SolveRequest {
+    fn automatic_supply_above_capacity_is_rejected() {
+        let error = prepare_problem(&ProblemRequest {
             inputs: Vec::new(),
             outputs: vec![endpoint("a", "800"), endpoint("b", "800")],
             belt_rate: "1200".to_owned(),
-            enumerate_all_at_n: false,
         })
-        .unwrap();
-
-        assert_eq!(problem.inputs.len(), 2);
-        assert_eq!(problem.inputs[0].rate, parse_rate("1200").unwrap());
-        assert_eq!(problem.inputs[1].rate, parse_rate("400").unwrap());
-        assert_eq!(problem.total_input, problem.total_output);
+        .unwrap_err();
+        assert!(error.to_string().contains("split the inputs explicitly"));
     }
 
     #[test]
     fn encoding_allocates_only_active_ports() {
-        let problem = normalize_problem(&SolveRequest {
+        let problem = prepare_problem(&ProblemRequest {
             inputs: vec![endpoint("input", "120")],
             outputs: vec![endpoint("a", "60"), endpoint("b", "60")],
             belt_rate: "1200".to_owned(),
-            enumerate_all_at_n: false,
         })
         .unwrap();
         let encoding = Encoding::new_with_threads(&problem, &[OperatorKind::Splitter2], 1);
@@ -2317,11 +2353,10 @@ mod tests {
 
     #[test]
     fn smt_rejects_a_disconnected_circulation() {
-        let problem = normalize_problem(&SolveRequest {
+        let problem = prepare_problem(&ProblemRequest {
             inputs: vec![endpoint("input", "60")],
             outputs: vec![endpoint("output", "60")],
             belt_rate: "1200".to_owned(),
-            enumerate_all_at_n: false,
         })
         .unwrap();
         let encoding = Encoding::new_with_threads(
@@ -2337,84 +2372,15 @@ mod tests {
     }
 
     #[test]
-    fn surplus_goes_to_the_infinite_sink() {
-        let request = SolveRequest {
-            inputs: vec![endpoint("input", "1200")],
-            outputs: vec![endpoint("output", "400")],
-            belt_rate: "1200".to_owned(),
-            enumerate_all_at_n: false,
-        };
-        let result = solve_exact(&request, &AtomicBool::new(false), |_| {}).unwrap();
-        let SolveTermination::Completed(solution) = result else {
-            panic!("solver was cancelled");
-        };
-        assert_eq!(solution.discard_rate.exact, "800");
-        assert_eq!(solution.stats.node_count, 1);
-        assert!(
-            solution
-                .nodes
-                .iter()
-                .any(|node| node.kind == crate::NodeKind::Discard)
-        );
-        assert!(
-            solution
-                .edges
-                .iter()
-                .filter(|edge| edge.discarded)
-                .all(|edge| {
-                    solution
-                        .nodes
-                        .iter()
-                        .any(|node| node.id == edge.target && node.kind == crate::NodeKind::Discard)
-                })
-        );
-    }
-
-    #[test]
-    fn discard_rendering_keeps_every_belt_within_capacity() {
-        let request = SolveRequest {
-            inputs: vec![endpoint("a", "1200"), endpoint("b", "1200")],
-            outputs: Vec::new(),
-            belt_rate: "1200".to_owned(),
-            enumerate_all_at_n: false,
-        };
-        let result = solve_exact(&request, &AtomicBool::new(false), |_| {}).unwrap();
-        let SolveTermination::Completed(solution) = result else {
-            panic!("solver was cancelled");
-        };
-        assert_eq!(solution.stats.node_count, 0);
-        assert_eq!(
-            solution
-                .nodes
-                .iter()
-                .filter(|node| node.kind == crate::NodeKind::Discard)
-                .count(),
-            2
-        );
-        assert!(
-            solution
-                .edges
-                .iter()
-                .filter(|edge| edge.discarded)
-                .all(|edge| {
-                    solution
-                        .nodes
-                        .iter()
-                        .any(|node| node.id == edge.target && node.kind == crate::NodeKind::Discard)
-                })
-        );
-        assert!(solution.edges.iter().all(|edge| {
-            parse_rate(&edge.rate.exact).unwrap() <= parse_rate(&solution.belt_rate.exact).unwrap()
-        }));
-    }
-
-    #[test]
     fn smt_rejects_an_over_capacity_discard_belt() {
-        let problem = normalize_problem(&SolveRequest {
-            inputs: vec![endpoint("a", "800"), endpoint("b", "800")],
-            outputs: Vec::new(),
+        let problem = prepare_problem(&ProblemRequest {
+            inputs: vec![
+                endpoint("a", "800"),
+                endpoint("b", "800"),
+                endpoint("c", "1"),
+            ],
+            outputs: vec![endpoint("out", "1")],
             belt_rate: "1200".to_owned(),
-            enumerate_all_at_n: false,
         })
         .unwrap();
         let encoding = Encoding::new_with_threads(&problem, &[OperatorKind::Merger2], 1);
@@ -2424,7 +2390,7 @@ mod tests {
     #[test]
     #[ignore = "manual hard-case performance benchmark"]
     fn benchmarks_prime_denominator_unsat_prefix() {
-        let problem = normalize_problem(&SolveRequest {
+        let problem = prepare_problem(&ProblemRequest {
             inputs: vec![endpoint("input", "358")],
             outputs: vec![
                 endpoint("a", "144"),
@@ -2433,7 +2399,6 @@ mod tests {
                 endpoint("d", "108"),
             ],
             belt_rate: "1200".to_owned(),
-            enumerate_all_at_n: false,
         })
         .unwrap();
         let cancel = AtomicBool::new(false);
@@ -2447,55 +2412,21 @@ mod tests {
     }
 
     #[test]
-    fn feedback_loop_can_make_an_exact_fifth() {
-        let request = SolveRequest {
-            inputs: vec![endpoint("input", "1")],
-            outputs: vec![endpoint("output", "1/5")],
-            belt_rate: "1200".to_owned(),
-            enumerate_all_at_n: false,
-        };
-        let result = solve_exact(&request, &AtomicBool::new(false), |_| {}).unwrap();
-        let SolveTermination::Completed(solution) = result else {
-            panic!("solver was cancelled");
-        };
-        assert_eq!(solution.stats.node_count, 3);
-        assert!(solution.stats.feedback_loops >= 1);
-        assert_eq!(
-            solution.edges.iter().filter(|edge| edge.feedback).count(),
-            solution.stats.feedback_loops
-        );
-        assert!(
-            solution
-                .edges
-                .iter()
-                .filter(|edge| edge.feedback)
-                .all(|edge| {
-                    solution.nodes.iter().any(|node| {
-                        node.id == edge.target
-                            && matches!(
-                                node.kind,
-                                crate::NodeKind::Merger2 | crate::NodeKind::Merger3
-                            )
-                    })
-                })
-        );
-    }
-
-    #[test]
     fn finds_the_seven_node_216_to_66_and_150_layout_quickly() {
-        let request = SolveRequest {
+        let request = ProblemRequest {
             inputs: vec![endpoint("input", "216")],
             outputs: vec![endpoint("a", "66"), endpoint("b", "150")],
             belt_rate: "1200".to_owned(),
-            enumerate_all_at_n: false,
         };
         let started = std::time::Instant::now();
-        let problem = normalize_problem(&request).unwrap();
+        let problem = prepare_problem(&request).unwrap();
         let cancel = AtomicBool::new(false);
         let solution = (1..=7)
             .find_map(
                 |count| match search_size_quiet(&problem, count, &cancel).unwrap() {
-                    SizeSearch::Found(candidate) => Some(build_solution(&problem, &candidate)),
+                    SizeSearch::Found(candidate) => {
+                        Some(build_solution(&problem, &candidate).unwrap())
+                    }
                     SizeSearch::Unsatisfiable(_) => None,
                     SizeSearch::Cancelled
                     | SizeSearch::Enumerated(_)
@@ -2504,9 +2435,8 @@ mod tests {
                 },
             )
             .expect("the known seven-building layout should be found");
-        assert_eq!(solution.total_input.exact, "216");
-        assert_eq!(solution.total_output.exact, "216");
-        assert_eq!(solution.stats.node_count, 7);
+        assert_eq!(solution.validation.node_count, 7);
+        assert_eq!(solution.node_count, 7);
         assert!(
             started.elapsed() < Duration::from_secs(10),
             "the exact search took {:?}",
@@ -2516,32 +2446,35 @@ mod tests {
 
     #[test]
     fn a_pre_cancelled_search_stops_cleanly() {
-        let request = SolveRequest {
+        let request = ProblemRequest {
             inputs: vec![endpoint("input", "1")],
             outputs: vec![endpoint("output", "1/7")],
             belt_rate: "1200".to_owned(),
-            enumerate_all_at_n: false,
         };
         assert!(matches!(
-            solve_exact(&request, &AtomicBool::new(true), |_| {}).unwrap(),
+            solve_exact(&request, SolveMode::Optimal, &AtomicBool::new(true), |_| {}).unwrap(),
             SolveTermination::Cancelled { .. }
         ));
     }
 
     #[test]
     fn enumerate_all_at_n_streams_unique_layouts() {
-        let request = SolveRequest {
+        let request = ProblemRequest {
             inputs: vec![endpoint("input", "120")],
             outputs: vec![endpoint("a", "60"), endpoint("b", "60")],
             belt_rate: "1200".to_owned(),
-            enumerate_all_at_n: true,
         };
         let found_events = Mutex::new(Vec::new());
-        let result = solve_exact(&request, &AtomicBool::new(false), |event| {
-            if let SolverEvent::SolutionFound(solution) = event {
-                found_events.lock().expect("events").push(*solution);
-            }
-        })
+        let result = solve_exact(
+            &request,
+            SolveMode::AllAtMinimumNodes,
+            &AtomicBool::new(false),
+            |event| {
+                if let SolverEvent::SolutionFound(solution) = event {
+                    found_events.lock().expect("events").push(*solution);
+                }
+            },
+        )
         .unwrap();
         let SolveTermination::Enumerated(solutions) = result else {
             panic!("expected enumerated termination, got {result:?}");
@@ -2551,26 +2484,30 @@ mod tests {
         assert!(
             solutions
                 .iter()
-                .all(|solution| solution.stats.node_count == solutions[0].stats.node_count)
+                .all(|solution| solution.node_count == solutions[0].node_count)
         );
-        assert!(solutions.iter().all(|solution| {
-            solution.stats.belt_count
-                <= solution.edges.iter().filter(|edge| !edge.discarded).count()
-        }));
+        assert!(
+            solutions
+                .iter()
+                .all(|solution| { solution.link_count <= solution.physical_link_count })
+        );
     }
 
     #[test]
     fn finish_enumerate_prefers_incomplete_over_complete_on_portfolio_error() {
         let solution = {
-            let request = SolveRequest {
+            let request = ProblemRequest {
                 inputs: vec![endpoint("input", "120")],
                 outputs: vec![endpoint("a", "60"), endpoint("b", "60")],
                 belt_rate: "1200".to_owned(),
-                enumerate_all_at_n: false,
             };
-            let SolveTermination::Completed(solution) =
-                solve_exact(&request, &AtomicBool::new(false), |_| {}).unwrap()
-            else {
+            let SolveTermination::Completed(solution) = solve_exact(
+                &request,
+                SolveMode::Optimal,
+                &AtomicBool::new(false),
+                |_| {},
+            )
+            .unwrap() else {
                 panic!("expected a completed solution");
             };
             *solution
@@ -2590,40 +2527,24 @@ mod tests {
     }
 
     #[test]
-    fn classic_solution_reports_operator_belt_metrics() {
-        let request = SolveRequest {
-            inputs: vec![endpoint("input", "120")],
-            outputs: vec![endpoint("a", "60"), endpoint("b", "60")],
-            belt_rate: "1200".to_owned(),
-            enumerate_all_at_n: false,
-        };
-        let SolveTermination::Completed(solution) =
-            solve_exact(&request, &AtomicBool::new(false), |_| {}).unwrap()
-        else {
-            panic!("expected a completed solution");
-        };
-        // Single splitter: only I/O stubs, no operator↔operator belts.
-        assert_eq!(solution.stats.belt_count, 0);
-        assert_eq!(solution.stats.internal_max_throughput.exact, "0");
-    }
-
-    #[test]
     fn classic_opt_streams_best_known_then_matches_min_enumerated_belts() {
-        let base = SolveRequest {
+        let base = ProblemRequest {
             inputs: vec![endpoint("input", "120")],
             outputs: vec![endpoint("a", "60"), endpoint("b", "60")],
             belt_rate: "1200".to_owned(),
-            enumerate_all_at_n: false,
         };
         let streamed = Mutex::new(Vec::new());
-        let SolveTermination::Completed(opt) =
-            solve_exact(&base, &AtomicBool::new(false), |event| {
-                if let SolverEvent::SolutionFound(solution) = event {
+        let SolveTermination::Completed(opt) = solve_exact(
+            &base,
+            SolveMode::Optimal,
+            &AtomicBool::new(false),
+            |event| {
+                if let SolverEvent::Incumbent(solution) = event {
                     streamed.lock().expect("streamed").push(*solution);
                 }
-            })
-            .unwrap()
-        else {
+            },
+        )
+        .unwrap() else {
             panic!("expected completed opt");
         };
         let streamed = streamed.into_inner().expect("streamed");
@@ -2632,48 +2553,40 @@ mod tests {
             "opt must stream at least one best_known incumbent"
         );
         assert!(
-            streamed
-                .iter()
-                .all(|solution| solution.status == "best_known"),
-            "streamed opt incumbents must be best_known, got {streamed:?}"
-        );
-        assert_eq!(opt.status, "proven_optimal");
-        assert!(
-            !opt.nodes.is_empty() && !opt.edges.is_empty(),
+            !opt.graph.nodes.is_empty() && !opt.graph.links.is_empty(),
             "proven_optimal must include a drawable graph, got {} nodes / {} edges",
-            opt.nodes.len(),
-            opt.edges.len()
+            opt.graph.nodes.len(),
+            opt.graph.links.len()
         );
         assert!(
-            streamed
-                .iter()
-                .all(|solution| !solution.nodes.is_empty() && !solution.edges.is_empty()),
+            streamed.iter().all(
+                |solution| !solution.graph.nodes.is_empty() && !solution.graph.links.is_empty()
+            ),
             "streamed best_known incumbents must include drawable graphs"
         );
-        assert_eq!(
-            opt.stats.belt_count,
-            streamed.last().expect("last").stats.belt_count
-        );
+        assert_eq!(opt.link_count, streamed.last().expect("last").link_count);
 
-        let mut enumerate = base.clone();
-        enumerate.enumerate_all_at_n = true;
-        let SolveTermination::Enumerated(all) =
-            solve_exact(&enumerate, &AtomicBool::new(false), |_| {}).unwrap()
-        else {
+        let SolveTermination::Enumerated(all) = solve_exact(
+            &base,
+            SolveMode::AllAtMinimumNodes,
+            &AtomicBool::new(false),
+            |_| {},
+        )
+        .unwrap() else {
             panic!("expected enumerated layouts");
         };
         let min_belts = all
             .iter()
-            .map(|solution| solution.stats.belt_count)
+            .map(|solution| solution.link_count)
             .min()
             .expect("enumerated layouts");
         assert_eq!(
-            opt.stats.belt_count, min_belts,
+            opt.link_count, min_belts,
             "opt must return the minimum operator-belt layout among Nmin layouts"
         );
         assert!(
             all.iter()
-                .all(|solution| solution.stats.node_count == opt.stats.node_count)
+                .all(|solution| solution.node_count == opt.node_count)
         );
     }
 
@@ -2682,21 +2595,23 @@ mod tests {
         // Unbalanced inputs need operator↔operator links. Search order may already
         // return Lmin as the first Nmin witness, but when it does not, incumbents
         // must strictly improve and the final Opt result must match enumeration.
-        let base = SolveRequest {
+        let base = ProblemRequest {
             inputs: vec![endpoint("a", "30"), endpoint("b", "90")],
             outputs: vec![endpoint("x", "60"), endpoint("y", "60")],
             belt_rate: "1200".to_owned(),
-            enumerate_all_at_n: false,
         };
         let streamed = Mutex::new(Vec::new());
-        let SolveTermination::Completed(opt) =
-            solve_exact(&base, &AtomicBool::new(false), |event| {
-                if let SolverEvent::SolutionFound(solution) = event {
+        let SolveTermination::Completed(opt) = solve_exact(
+            &base,
+            SolveMode::Optimal,
+            &AtomicBool::new(false),
+            |event| {
+                if let SolverEvent::Incumbent(solution) = event {
                     streamed.lock().expect("streamed").push(*solution);
                 }
-            })
-            .unwrap()
-        else {
+            },
+        )
+        .unwrap() else {
             panic!("expected completed opt");
         };
         let streamed = streamed.into_inner().expect("streamed");
@@ -2705,50 +2620,41 @@ mod tests {
             "opt must stream at least one best_known incumbent"
         );
         assert!(
-            streamed.first().expect("first").stats.belt_count > 0,
+            streamed.first().expect("first").link_count > 0,
             "fixture must involve operator belts"
-        );
-        assert!(
-            streamed
-                .iter()
-                .all(|solution| solution.status == "best_known")
         );
         for window in streamed.windows(2) {
             assert!(
-                window[1].stats.belt_count < window[0].stats.belt_count,
+                window[1].link_count < window[0].link_count,
                 "incumbents must strictly improve L"
             );
         }
-        assert_eq!(opt.status, "proven_optimal");
-        assert_eq!(
-            opt.stats.belt_count,
-            streamed.last().expect("last").stats.belt_count
-        );
+        assert_eq!(opt.link_count, streamed.last().expect("last").link_count);
 
-        let mut enumerate = base.clone();
-        enumerate.enumerate_all_at_n = true;
-        let SolveTermination::Enumerated(all) =
-            solve_exact(&enumerate, &AtomicBool::new(false), |_| {}).unwrap()
-        else {
+        let SolveTermination::Enumerated(all) = solve_exact(
+            &base,
+            SolveMode::AllAtMinimumNodes,
+            &AtomicBool::new(false),
+            |_| {},
+        )
+        .unwrap() else {
             panic!("expected enumerated layouts");
         };
         let min_belts = all
             .iter()
-            .map(|solution| solution.stats.belt_count)
+            .map(|solution| solution.link_count)
             .min()
             .expect("enumerated layouts");
-        assert_eq!(opt.stats.belt_count, min_belts);
+        assert_eq!(opt.link_count, min_belts);
         assert!(
-            all.iter()
-                .any(|solution| solution.stats.belt_count > min_belts)
-                || streamed.len() == 1,
+            all.iter().any(|solution| solution.link_count > min_belts) || streamed.len() == 1,
             "either enumeration has suboptimal L at Nmin (improve can matter) or the first witness was already Lmin"
         );
     }
 
     #[test]
     fn an_active_parallel_search_stops_cleanly() {
-        let request = SolveRequest {
+        let request = ProblemRequest {
             inputs: vec![endpoint("input", "358")],
             outputs: vec![
                 endpoint("a", "144"),
@@ -2757,7 +2663,6 @@ mod tests {
                 endpoint("d", "108"),
             ],
             belt_rate: "1200".to_owned(),
-            enumerate_all_at_n: false,
         };
         let cancel = AtomicBool::new(false);
         thread::scope(|scope| {
@@ -2766,7 +2671,7 @@ mod tests {
                 cancel.store(true, Ordering::Relaxed);
             });
             assert!(matches!(
-                solve_exact(&request, &cancel, |_| {}).unwrap(),
+                solve_exact(&request, SolveMode::Optimal, &cancel, |_| {}).unwrap(),
                 SolveTermination::Cancelled { .. }
             ));
         });
@@ -2774,16 +2679,23 @@ mod tests {
 
     #[test]
     fn rejects_rates_above_the_normal_belt_limit() {
-        let request = SolveRequest {
+        let request = ProblemRequest {
             inputs: vec![endpoint("input", "1201")],
-            outputs: Vec::new(),
+            outputs: vec![endpoint("output", "1200")],
             belt_rate: "1200".to_owned(),
-            enumerate_all_at_n: false,
         };
-        assert!(matches!(
-            solve_exact(&request, &AtomicBool::new(false), |_| {}),
-            Err(SolveError::InvalidRequest(_))
-        ));
+        let error = solve_exact(
+            &request,
+            SolveMode::Optimal,
+            &AtomicBool::new(false),
+            |_| {},
+        )
+        .unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("input 1 rate 1201 exceeds belt capacity 1200")
+        );
     }
 
     #[test]
@@ -2808,7 +2720,7 @@ mod tests {
             let slots = (available / threads_per_attempt).max(1);
             eprintln!("######## T={threads_per_attempt} => attempt_slots={slots} ########");
             for (label, outputs) in &cases {
-                let request = SolveRequest {
+                let request = ProblemRequest {
                     inputs: Vec::new(),
                     outputs: outputs
                         .iter()
@@ -2816,9 +2728,8 @@ mod tests {
                         .map(|(index, rate)| endpoint(&format!("o{index}"), rate))
                         .collect(),
                     belt_rate: "1200".to_owned(),
-                    enumerate_all_at_n: false,
                 };
-                let problem = normalize_problem(&request).unwrap();
+                let problem = prepare_problem(&request).unwrap();
                 let cancel = AtomicBool::new(false);
                 let mut node_count = node_count_lower_bound(&problem);
                 let wall_started = std::time::Instant::now();
@@ -2852,11 +2763,11 @@ mod tests {
                     );
                     match result {
                         SizeSearch::Found(candidate) => {
-                            let solution = build_solution(&problem, &candidate);
+                            let solution = build_solution(&problem, &candidate).unwrap();
                             eprintln!(
                                 "FOUND nodes={} feedback={} total_wall={:?}",
-                                solution.stats.node_count,
-                                solution.stats.feedback_loops,
+                                solution.node_count,
+                                solution.validation.cyclic_scc_count,
                                 wall_started.elapsed()
                             );
                             break;
@@ -2876,7 +2787,7 @@ mod tests {
     #[ignore = "manual production portfolio policy: 150,45,63 size-8 unsat only"]
     fn profile_production_150_45_63_size8_unsat() {
         let available = thread::available_parallelism().map_or(1, std::num::NonZero::get);
-        let request = SolveRequest {
+        let request = ProblemRequest {
             inputs: Vec::new(),
             outputs: vec![
                 endpoint("o0", "150"),
@@ -2884,9 +2795,8 @@ mod tests {
                 endpoint("o2", "63"),
             ],
             belt_rate: "1200".to_owned(),
-            enumerate_all_at_n: false,
         };
-        let problem = normalize_problem(&request).unwrap();
+        let problem = prepare_problem(&request).unwrap();
         let node_count = 8;
         let profiles = operator_profiles(&problem, node_count);
         let t = default_threads_per_attempt(available, profiles.len().max(1));

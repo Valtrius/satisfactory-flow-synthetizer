@@ -79,6 +79,50 @@ pub fn solve_reference(
     options: &ReferenceOptions,
     cancel: &AtomicBool,
 ) -> Result<SolveResult, ReferenceError> {
+    solve_reference_internal(problem, *options, cancel, false, &mut Vec::new())
+}
+
+/// Shared Problem/Solution entry point. Reference intentionally has no progress API.
+///
+/// # Errors
+/// Returns malformed input or a failure of the independent oracle.
+pub fn solve_problem(
+    problem: &Problem,
+    options: &solver_api::RunOptions,
+    cancel: &AtomicBool,
+) -> Result<solver_api::SolveOutcome, solver_api::SolverError> {
+    let mut solutions = Vec::new();
+    let native = ReferenceOptions {
+        max_nodes: options.max_nodes.unwrap_or(4),
+    };
+    let result = solve_reference_internal(
+        problem,
+        native,
+        cancel,
+        options.mode == solver_api::SolveMode::AllAtMinimumNodes,
+        &mut solutions,
+    )
+    .map_err(|error| match error {
+        ReferenceError::InvalidProblem(_) => {
+            solver_api::SolverError::InvalidProblem(error.to_string())
+        }
+        _ => solver_api::SolverError::Internal(error.to_string()),
+    })?;
+    let mut outcome = solver_api::SolveOutcome::new(result, options.mode, solutions);
+    // This only encodes the public return value. Reference search and deduplication
+    // above remain independent of the production canonicalizer.
+    solver_validation::normalize_outcome_identity(problem, &mut outcome);
+    Ok(outcome)
+}
+
+#[allow(clippy::too_many_lines)]
+fn solve_reference_internal(
+    problem: &Problem,
+    options: ReferenceOptions,
+    cancel: &AtomicBool,
+    enumerate: bool,
+    solutions: &mut Vec<BestKnownSolution>,
+) -> Result<SolveResult, ReferenceError> {
     validate_problem(problem)?;
     let mut proof = empty_proof();
 
@@ -108,6 +152,8 @@ pub fn solve_reference(
     let surplus =
         &canonical_problem.problem.total_input() - &canonical_problem.problem.total_output();
     let mut best_known = None;
+    let mut preferred = None;
+    let mut layouts = BTreeSet::new();
 
     for node_count in 0..=options.max_nodes {
         if cancel.load(Ordering::Relaxed) {
@@ -154,6 +200,15 @@ pub fn solve_reference(
                             &mut canonical_topologies,
                         ) {
                             Ok(Some(candidate)) => {
+                                if enumerate {
+                                    let mut topology = candidate.graph.clone();
+                                    for link in &mut topology.links {
+                                        link.flow = Rational::zero();
+                                    }
+                                    if layouts.insert(canonicalize_graph(problem, &topology).key) {
+                                        solutions.push(candidate.clone());
+                                    }
+                                }
                                 retain_smallest(&mut group_best, candidate.clone());
                                 retain_smallest(&mut best_known, candidate);
                                 ControlFlow::Continue(())
@@ -190,7 +245,7 @@ pub fn solve_reference(
                 .checked_add(1)
                 .ok_or(ReferenceError::CountOverflow)?;
             if let Some(best) = group_best {
-                return Ok(SolveResult::Optimal(OptimalSolution {
+                let solution = OptimalSolution {
                     node_count: best.node_count,
                     link_count: best.link_count,
                     physical_link_count: best.physical_link_count,
@@ -199,10 +254,21 @@ pub fn solve_reference(
                     graph: best.graph,
                     proof,
                     validation: best.validation,
-                }));
+                };
+                if !enumerate {
+                    return Ok(SolveResult::Optimal(solution));
+                }
+                proof = solution.proof.clone();
+                if preferred.is_none() {
+                    preferred = Some(solution);
+                }
             }
         }
 
+        if let Some(mut solution) = preferred.take() {
+            solution.proof = proof;
+            return Ok(SolveResult::Optimal(solution));
+        }
         proof.node_counts_exhausted_through = Some(node_count);
     }
 
@@ -515,10 +581,17 @@ fn is_candidate_rejection(error: &ValidationError) -> bool {
 }
 
 fn retain_smallest(target: &mut Option<BestKnownSolution>, candidate: BestKnownSolution) {
-    if target
-        .as_ref()
-        .is_none_or(|current| candidate.canonical_graph_key < current.canonical_graph_key)
-    {
+    if target.as_ref().is_none_or(|current| {
+        (
+            candidate.node_count,
+            candidate.link_count,
+            &candidate.canonical_graph_key,
+        ) < (
+            current.node_count,
+            current.link_count,
+            &current.canonical_graph_key,
+        )
+    }) {
         *target = Some(candidate);
     }
 }

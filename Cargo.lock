@@ -483,16 +483,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "52560adf09603e58c9a7ee1fe1dcb95a16927b17c127f0ac02d6e768a0e25bc1"
 
 [[package]]
-name = "custom-solver-adapter"
-version = "0.1.0"
-dependencies = [
- "num",
- "serde",
- "solver-api",
- "thiserror 2.0.20",
-]
-
-[[package]]
 name = "darling"
 version = "0.23.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2813,13 +2803,12 @@ dependencies = [
 name = "satisfactory-flow-synthetizer"
 version = "0.1.0"
 dependencies = [
- "custom-solver-adapter",
  "rusqlite",
  "serde",
  "serde_json",
  "solver-api",
- "solver-core",
- "solver-z3",
+ "solver-validation",
+ "synthetizer-app",
  "tauri",
  "tauri-build",
  "tauri-plugin-dialog",
@@ -3183,6 +3172,7 @@ dependencies = [
 name = "solver-validation"
 version = "0.1.0"
 dependencies = [
+ "canonaut",
  "num",
  "solver-api",
  "thiserror 2.0.20",
@@ -3195,6 +3185,8 @@ dependencies = [
  "num",
  "serde",
  "serde_json",
+ "solver-api",
+ "solver-validation",
  "thiserror 2.0.20",
  "z3",
 ]
@@ -3334,6 +3326,21 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.119",
+]
+
+[[package]]
+name = "synthetizer-app"
+version = "0.1.0"
+dependencies = [
+ "num",
+ "serde",
+ "serde_json",
+ "solver-api",
+ "solver-core",
+ "solver-reference",
+ "solver-validation",
+ "solver-z3",
+ "thiserror 2.0.20",
 ]
 
 [[package]]

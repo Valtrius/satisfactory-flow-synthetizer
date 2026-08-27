@@ -8,7 +8,7 @@ use std::{
 
 use solver_api::{
     CanonicalGraphKey, IncompleteReason, NodeProfile, PhysicalGraph, PhysicalLink, Problem,
-    Rational, SearchInstrumentation, ValidationSummary,
+    Rational, ValidationSummary,
 };
 use solver_validation::{ValidationError, solve_topology, validate_solution};
 use thiserror::Error;
@@ -31,6 +31,7 @@ use crate::{
     },
     reachability::{ReachabilityVerdict, analyze_reachability},
     scc::{SccError, detect_affected_sccs, summarize_open_scc},
+    telemetry::SearchInstrumentation,
     topology::{FlowVarId, TopologyDecision, TopologyState},
 };
 

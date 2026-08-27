@@ -64,7 +64,7 @@
   </div>
   <div class="bg-[#0b1922] px-4.5 py-4">
     <span class="mb-2 block text-xs font-bold tracking-wider text-dim uppercase">
-      {solution.engine === 'custom' ? 'Links (L)' : 'Belts'}
+      Links (L)
     </span>
     <strong class="block text-xl text-[#dfe9ed] tabular-nums"
       >{solution.stats.linkCount ?? solution.stats.beltCount ?? '—'}</strong
@@ -78,7 +78,7 @@
   </div>
 </div>
 
-{#if solution.engine === 'custom' && (solution.stats.physicalLinkCount != null || solution.validation)}
+{#if solution.stats.physicalLinkCount != null || solution.stats.discardLinkCount != null || solution.stats.checkedThrough != null || solution.validation}
   <div class="mb-4 grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-line bg-line md:grid-cols-4">
     {#if solution.stats.physicalLinkCount != null}
       <div class="bg-[#0b1922] px-4 py-3">

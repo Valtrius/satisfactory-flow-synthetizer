@@ -6,10 +6,11 @@ use crate::Rational;
 ///
 /// Input vector positions are [`crate::InputTerminalIndex`] values. Output vector positions are
 /// [`crate::OutputTerminalIndex`] values. A valid solver request has at least one rate on each
-/// side, all rates and `max_link_rate` are strictly positive, and every external rate is no
-/// greater than `max_link_rate`. Total input may exceed total requested output;
-/// the exact surplus is carried by anonymous discard lines. Output demand above
-/// total input is a finite global UNSAT proof rather than malformed syntax.
+/// side, and all rates and `max_link_rate` are strictly positive. Total input may exceed
+/// total requested output; the exact surplus is carried by anonymous discard lines.
+/// External rates above capacity and output demand above total input are finite global
+/// UNSAT proofs for raw problems, not malformed syntax. [`crate::ProblemRequest::prepare`]
+/// rejects capacity violations earlier with user-facing terminal errors.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Problem {
@@ -22,6 +23,77 @@ pub struct Problem {
 }
 
 impl Problem {
+    /// Checks syntax/domain requirements without treating impossibility as invalid input.
+    ///
+    /// # Errors
+    /// Returns an error for empty sides, nonpositive rates, or unrepresentable indices.
+    pub fn validate(&self) -> Result<(), crate::SolverError> {
+        if self.inputs.is_empty() || self.outputs.is_empty() {
+            return Err(crate::SolverError::InvalidProblem(
+                "at least one input and output are required".to_owned(),
+            ));
+        }
+        if self.inputs.len() > u32::MAX as usize || self.outputs.len() > u32::MAX as usize {
+            return Err(crate::SolverError::InvalidProblem(
+                "too many terminals".to_owned(),
+            ));
+        }
+        if !self.max_link_rate.is_positive()
+            || self
+                .inputs
+                .iter()
+                .chain(&self.outputs)
+                .any(|rate| !rate.is_positive())
+        {
+            return Err(crate::SolverError::InvalidProblem(
+                "all rates and belt capacity must be positive".to_owned(),
+            ));
+        }
+        Ok(())
+    }
+
+    /// Finite contradictions, evaluated only after `validate` succeeds.
+    #[must_use]
+    pub fn global_contradiction(&self) -> Option<crate::GlobalUnsatProof> {
+        use crate::{
+            ExternalTerminal, GlobalUnsatProof, GlobalUnsatReason, InputTerminalIndex,
+            OutputTerminalIndex, ProofSummary,
+        };
+        let reason = if self.total_input() < self.total_output() {
+            GlobalUnsatReason::InsufficientInput {
+                total_input: self.total_input(),
+                total_output: self.total_output(),
+            }
+        } else if let Some((i, rate)) = self
+            .inputs
+            .iter()
+            .enumerate()
+            .find(|(_, r)| *r > &self.max_link_rate)
+        {
+            GlobalUnsatReason::ExternalRateExceedsCapacity {
+                terminal: ExternalTerminal::Input(InputTerminalIndex(u32::try_from(i).ok()?)),
+                rate: rate.clone(),
+                max_link_rate: self.max_link_rate.clone(),
+            }
+        } else if let Some((i, rate)) = self
+            .outputs
+            .iter()
+            .enumerate()
+            .find(|(_, r)| *r > &self.max_link_rate)
+        {
+            GlobalUnsatReason::ExternalRateExceedsCapacity {
+                terminal: ExternalTerminal::Output(OutputTerminalIndex(u32::try_from(i).ok()?)),
+                rate: rate.clone(),
+                max_link_rate: self.max_link_rate.clone(),
+            }
+        } else {
+            return None;
+        };
+        Some(GlobalUnsatProof {
+            reason,
+            proof: ProofSummary::default(),
+        })
+    }
     /// Returns the exact sum of all external input rates.
     #[must_use]
     pub fn total_input(&self) -> Rational {

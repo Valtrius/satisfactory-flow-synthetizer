@@ -50,6 +50,12 @@ impl HistoryStore {
               sort_columns_json TEXT NOT NULL,
               layouts_json TEXT NOT NULL DEFAULT '{}'
             );
+            CREATE TABLE IF NOT EXISTS solver_state (
+              entry_id TEXT PRIMARY KEY REFERENCES entries(id) ON DELETE CASCADE,
+              progress_json TEXT,
+              proof_json TEXT,
+              sequence INTEGER NOT NULL DEFAULT 0
+            );
             ",
         )
         .map_err(|error| format!("init history schema: {error}"))?;
@@ -72,8 +78,9 @@ impl HistoryStore {
                   id, title, status, created_at_ms, updated_at_ms, started_at_ms,
                   finished_at_ms, enumeration_complete, error, selected_source_index,
                   request_json, form_json, result_json, results_json,
-                  sort_columns_json, layouts_json
-                FROM entries
+                  sort_columns_json, layouts_json, solver_state.progress_json,
+                  solver_state.proof_json, COALESCE(solver_state.sequence, 0)
+                FROM entries LEFT JOIN solver_state ON entries.id = solver_state.entry_id
                 ORDER BY sort_order ASC
                 ",
             )
@@ -98,6 +105,9 @@ impl HistoryStore {
                     results_json: row.get(13)?,
                     sort_columns_json: row.get(14)?,
                     layouts_json: row.get(15)?,
+                    progress_json: row.get(16)?,
+                    proof_json: row.get(17)?,
+                    sequence: row.get(18)?,
                 })
             })
             .map_err(|error| format!("query history entries: {error}"))?;
@@ -202,6 +212,7 @@ impl HistoryStore {
                 ],
             )
             .map_err(|error| format!("insert history entry: {error}"))?;
+            save_solver_state(&tx, id, entry)?;
         }
 
         meta_set(&tx, "version", &version.to_string())?;
@@ -217,6 +228,20 @@ impl HistoryStore {
             .map_err(|error| format!("commit history save: {error}"))?;
         Ok(())
     }
+}
+
+fn save_solver_state(tx: &Connection, id: &str, entry: &Value) -> Result<(), String> {
+    let optional_json = |name| {
+        entry
+            .get(name)
+            .filter(|v| !v.is_null())
+            .map(compact_json)
+            .transpose()
+    };
+    tx.execute("INSERT INTO solver_state (entry_id, progress_json, proof_json, sequence) VALUES (?1, ?2, ?3, ?4)",
+    params![id, optional_json("progress")?, optional_json("proof")?, entry.get("sequence").and_then(Value::as_i64).unwrap_or(0)])
+    .map_err(|error| format!("save solver state: {error}"))?;
+    Ok(())
 }
 
 struct EntryRow {
@@ -236,6 +261,9 @@ struct EntryRow {
     results_json: String,
     sort_columns_json: String,
     layouts_json: String,
+    progress_json: Option<String>,
+    proof_json: Option<String>,
+    sequence: i64,
 }
 
 fn row_to_json(row: &EntryRow) -> Result<Value, String> {
@@ -260,7 +288,9 @@ fn row_to_json(row: &EntryRow) -> Result<Value, String> {
         "sortColumns": parse_json(&row.sort_columns_json, "sortColumns")?,
         "layouts": parse_json(&row.layouts_json, "layouts")?,
         "jobId": Value::Null,
-        "progress": Value::Null,
+        "progress": row.progress_json.as_deref().map(|v| parse_json(v, "progress")).transpose()?,
+        "proof": row.proof_json.as_deref().map(|v| parse_json(v, "proof")).transpose()?,
+        "sequence": row.sequence,
     }))
 }
 
@@ -346,7 +376,10 @@ mod tests {
             "entries": [{
                 "id": "entry-1",
                 "title": "Z3 layout",
-                "status": "unsat",
+                "status": "cancelled",
+                "progress": {"phase": "searching", "custom": [{"name": "test.counter", "value": {"type": "integer", "value": "18446744073709551615"}}]},
+                "proof": {"minimumNodeCount": 2, "minimumLinkCount": null},
+                "sequence": 7,
                 "createdAtMs": 1,
                 "updatedAtMs": 2,
                 "startedAtMs": 1,
@@ -379,7 +412,13 @@ mod tests {
         let loaded = store.load_document().unwrap();
 
         assert_eq!(loaded["selectedEntryId"], "entry-1");
-        assert_eq!(loaded["entries"][0]["status"], "unsat");
+        assert_eq!(loaded["entries"][0]["status"], "cancelled");
+        for field in ["progress", "proof", "sequence"] {
+            assert_eq!(loaded["entries"][0][field], document["entries"][0][field]);
+        }
+        // A replacement save removes solver state via the foreign-key cascade.
+        store.save_document(&document).unwrap();
+        assert_eq!(store.load_document().unwrap(), loaded);
         assert_eq!(loaded["entries"][0]["request"]["engine"], "z3");
         assert_eq!(loaded["entries"][0]["form"]["engine"], "z3");
     }

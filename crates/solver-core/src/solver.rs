@@ -13,8 +13,8 @@ use std::sync::Arc;
 
 use solver_api::{
     BestKnownSolution, ConsumerPortRef, IncompleteReason, IncompleteResult, InputTerminalIndex,
-    OptimalSolution, OutputTerminalIndex, PhysicalGraph, Problem, ProducerPortRef, ProofObligation,
-    ProofSummary, SearchInstrumentation, SolvePhase, SolveResult, SolverEvent, SolverProgress,
+    OptimalSolution, OutputTerminalIndex, PhysicalGraph, Problem, ProducerPortRef, ProofSummary,
+    SolvePhase, SolveResult, SolverEvent, SolverProgress,
 };
 use solver_validation::{ValidationError, validate_solution};
 use thiserror::Error;
@@ -37,6 +37,7 @@ use crate::{
         RootPartitionPlan, plan_profile_root_partitions_with_accounting,
         search_profile_root_partition,
     },
+    telemetry::{ProofObligation, SearchInstrumentation},
 };
 
 const PROOF_VERSION: u32 = 1;
@@ -63,19 +64,7 @@ impl Default for SolveOptions {
     }
 }
 
-/// Thread-safe sink for live progress and independently validated incumbents.
-pub trait SolveObserver: Sync {
-    fn on_event(&self, event: SolverEvent);
-}
-
-impl<F> SolveObserver for F
-where
-    F: Fn(SolverEvent) + Sync,
-{
-    fn on_event(&self, event: SolverEvent) {
-        self(event);
-    }
-}
+pub use solver_api::SolveObserver;
 
 /// Invalid input or an internal failure that prevents a production proof from being trusted.
 #[derive(Clone, Debug, Error, PartialEq, Eq)]
@@ -280,6 +269,16 @@ fn solve_internal(
         solve_started,
     );
     let bounds = baseline_lower_bounds(&normalized)?;
+    let mut progress = progress_snapshot(
+        SolvePhase::ComputingLowerBound,
+        None,
+        0,
+        None,
+        &instrumentation,
+        solve_started,
+    );
+    progress.node_lower_bound = Some(bounds.combined_nodes);
+    emit_event(observer, SolverEvent::Progress(progress));
     proof.initial_node_lower_bound = bounds.combined_nodes;
     // The lower-bound certificate itself discharges every smaller node count;
     // no topology enumeration is required for those obligations.
@@ -1257,18 +1256,71 @@ fn emit_progress(
     instrumentation: &SearchInstrumentation,
     solve_started: Instant,
 ) {
-    let mut snapshot = instrumentation.clone();
-    snapshot.wall_time_ms = u64::try_from(solve_started.elapsed().as_millis()).unwrap_or(u64::MAX);
     emit_event(
         observer,
-        SolverEvent::Progress(SolverProgress {
+        SolverEvent::Progress(progress_snapshot(
             phase,
             obligation,
             completed_profiles,
             total_profiles,
-            instrumentation: snapshot,
-        }),
+            instrumentation,
+            solve_started,
+        )),
     );
+}
+
+fn progress_snapshot(
+    phase: SolvePhase,
+    obligation: Option<ProofObligation>,
+    completed_profiles: u32,
+    total_profiles: Option<u32>,
+    instrumentation: &SearchInstrumentation,
+    solve_started: Instant,
+) -> SolverProgress {
+    use solver_api::{Diagnostic, LinkConstraint};
+    let mut custom = vec![Diagnostic::counter(
+        "custom.completed_profiles",
+        "Profiles closed",
+        completed_profiles,
+    )];
+    if let Some(total) = total_profiles {
+        custom.push(Diagnostic::counter(
+            "custom.total_profiles",
+            "Profiles in group",
+            total,
+        ));
+    }
+    if let Some(obligation) = &obligation {
+        if let Some(profile) = obligation.profile {
+            custom.push(Diagnostic::text(
+                "custom.profile",
+                "Profile",
+                format!("{profile:?}"),
+            ));
+        }
+        if let Some(root) = obligation.root_partition {
+            custom.push(Diagnostic::counter(
+                "custom.root_partition",
+                "Root partition",
+                root,
+            ));
+        }
+    }
+    custom.extend(instrumentation.diagnostics());
+    SolverProgress {
+        phase,
+        elapsed_ms: u64::try_from(solve_started.elapsed().as_millis()).unwrap_or(u64::MAX),
+        node_count: obligation.as_ref().map(|o| o.node_count),
+        link_constraint: obligation
+            .as_ref()
+            .and_then(|o| o.link_count)
+            .map(LinkConstraint::Exact),
+        node_lower_bound: obligation.as_ref().map(|o| o.node_count),
+        best_node_count: None,
+        best_link_count: None,
+        solutions_found: 0,
+        custom,
+    }
 }
 
 /// Progress is advisory and must never alter the mathematical outcome.
@@ -1599,13 +1651,13 @@ mod tests {
             &|event| {
                 if let SolverEvent::Progress(SolverProgress {
                     phase: SolvePhase::Searching,
-                    obligation: Some(obligation),
+                    node_count: Some(node_count),
                     ..
                 }) = event
                 {
                     let mut first = first_search_node.lock().unwrap();
                     if first.is_none() {
-                        *first = Some(obligation.node_count);
+                        *first = Some(node_count);
                         cancel.store(true, Ordering::Relaxed);
                     }
                 }
@@ -1823,17 +1875,15 @@ mod tests {
         ] {
             assert!(phases.contains(&required), "missing phase {required:?}");
         }
-        assert!(events.iter().any(|event| matches!(
-            event,
-            SolverEvent::Progress(SolverProgress {
-                phase: SolvePhase::Searching,
-                obligation: Some(ProofObligation {
-                    root_partition: Some(0),
-                    ..
-                }),
-                ..
-            })
-        )));
+        assert!(events.iter().any(|event| {
+            match event {
+                SolverEvent::Progress(progress) => progress
+                    .custom
+                    .iter()
+                    .any(|d| d.name == "custom.root_partition"),
+                _ => false,
+            }
+        }));
         let incumbents = events
             .iter()
             .filter_map(|event| match event {
