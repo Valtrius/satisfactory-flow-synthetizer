@@ -284,14 +284,17 @@
       request
     );
     graph.flushChrome();
-    historyEntries = [...historyEntries, entry];
+    // Newest queued jobs stack on top; the runner drains from the bottom.
     const parts = partitionEntries(historyEntries);
-    historyEntries = assembleEntries(parts.queued, parts.running, parts.history);
-    selectedEntryId = entry.id;
-    graph.clearView();
-    sortColumns = [...DEFAULT_SORT_COLUMNS];
+    const jobAlreadyRunning = parts.running != null;
+    historyEntries = assembleEntries([entry, ...parts.queued], parts.running, parts.history);
+    if (!jobAlreadyRunning) {
+      selectedEntryId = entry.id;
+      graph.clearView();
+      sortColumns = [...DEFAULT_SORT_COLUMNS];
+    }
     await queue.pump();
-    if (selectedEntryId) await hydrateViewFromEntry(selectedEntryId);
+    if (!jobAlreadyRunning && selectedEntryId) await hydrateViewFromEntry(selectedEntryId);
   }
 
   async function selectHistoryEntry(id: string): Promise<void> {

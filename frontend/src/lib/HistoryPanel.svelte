@@ -36,9 +36,10 @@
     type HistoryStatusFilter
   } from './uiPrefs';
   import { flip } from 'svelte/animate';
+  import { untrack } from 'svelte';
+  import { createHistoryEntrance, createHistoryOrder, historyMotionDuration } from './historyMotion';
   import {
     insertIndexFromClient,
-    prefersReducedMotion,
     setListDragging,
     visualReorderSlots
   } from './pointerReorder';
@@ -51,6 +52,15 @@
   type DragBand = 'queued' | 'history';
   type VisualItem =
     | { kind: 'entry'; entry: HistoryEntry }
+    | { kind: 'ghost'; key: string };
+
+  type VisualRow =
+    | {
+        kind: 'entry';
+        entry: HistoryEntry;
+        band: 'queued' | 'running' | 'history';
+        draggable: boolean;
+      }
     | { kind: 'ghost'; key: string };
 
   type Props = {
@@ -114,7 +124,6 @@
   let dragHeight = $state(0);
   let dragFloatX = $state(0);
   let dragFloatY = $state(0);
-  let dragReduceMotion = false;
 
   const statusOptions: { value: StatusFilter; label: string }[] = [
     { value: 'completed', label: 'Done' },
@@ -165,6 +174,10 @@
       }
     });
   });
+
+  const enterHistoryRow = createHistoryEntrance(
+    untrack(() => allEntries.map((entry) => entry.id))
+  );
 
   function togglePanel(panel: ToolbarPanel, event: MouseEvent): void {
     event.stopPropagation();
@@ -313,8 +326,6 @@
       : null
   );
 
-  const flipDuration = $derived(dragReduceMotion || !dragActive ? 0 : 220);
-
   function visualList(entries: HistoryEntry[], band: DragBand): VisualItem[] {
     if (!dragActive || dragBand !== band || !dragFromId) {
       return entries.map((entry) => ({ kind: 'entry', entry }));
@@ -329,6 +340,45 @@
 
   const visualQueued = $derived(visualList(filteredQueued, 'queued'));
   const visualHistory = $derived(visualList(filteredHistory, 'history'));
+
+  /** Single list so flip animates queued, running, and history together on insert. */
+  const visualRows = $derived.by((): VisualRow[] => {
+    const rows: VisualRow[] = [];
+    for (const item of visualQueued) {
+      if (item.kind === 'ghost') rows.push({ kind: 'ghost', key: item.key });
+      else {
+        rows.push({ kind: 'entry', entry: item.entry, band: 'queued', draggable: true });
+      }
+    }
+    if (filteredRunning) {
+      rows.push({
+        kind: 'entry',
+        entry: filteredRunning,
+        band: 'running',
+        draggable: false
+      });
+    }
+    for (const item of visualHistory) {
+      if (item.kind === 'ghost') rows.push({ kind: 'ghost', key: item.key });
+      else {
+        rows.push({
+          kind: 'entry',
+          entry: item.entry,
+          band: 'history',
+          draggable: historyDraggable
+        });
+      }
+    }
+    return rows;
+  });
+
+  // Svelte restarts FLIP on each list reconciliation. Job snapshots must update
+  // the row contents without reconciling an unchanged order mid-animation.
+  const visualRowsByKey = $derived(
+    new Map(visualRows.map((item) => [item.kind === 'ghost' ? item.key : item.entry.id, item]))
+  );
+  const stabilizeOrder = createHistoryOrder();
+  const visualOrder = $derived(stabilizeOrder([...visualRowsByKey.keys()]));
 
   function dropTargetId(
     entries: HistoryEntry[],
@@ -380,7 +430,6 @@
     event.preventDefault();
     menuId = null;
     openPanel = null;
-    dragReduceMotion = prefersReducedMotion();
     const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
     const source = band === 'queued' ? filteredQueued : filteredHistory;
     const fromIndex = source.findIndex((entry) => entry.id === id);
@@ -749,8 +798,9 @@
       </p>
     {:else}
       <div class="flex flex-col">
-        {#each visualQueued as item (item.kind === 'ghost' ? item.key : item.entry.id)}
-          <div class="history-list-item" animate:flip={{ duration: flipDuration }}>
+        {#each visualOrder as key (key)}
+          {@const item = visualRowsByKey.get(key)!}
+          <div class="relative" animate:flip={{ duration: historyMotionDuration }}>
             {#if item.kind === 'ghost'}
               <div
                 class="history-drag-ghost"
@@ -758,25 +808,9 @@
                 aria-hidden="true"
               ></div>
             {:else}
-              {@render row(item.entry, 'queued', true)}
-            {/if}
-          </div>
-        {/each}
-        {#if filteredRunning}
-          <div class="history-list-item">
-            {@render row(filteredRunning, 'running', false)}
-          </div>
-        {/if}
-        {#each visualHistory as item (item.kind === 'ghost' ? item.key : item.entry.id)}
-          <div class="history-list-item" animate:flip={{ duration: flipDuration }}>
-            {#if item.kind === 'ghost'}
-              <div
-                class="history-drag-ghost"
-                style={`height: ${dragHeight}px`}
-                aria-hidden="true"
-              ></div>
-            {:else}
-              {@render row(item.entry, 'history', historyDraggable)}
+              <div use:enterHistoryRow={{ id: item.entry.id, band: item.band }}>
+                {@render row(item.entry, item.band, item.draggable)}
+              </div>
             {/if}
           </div>
         {/each}
@@ -787,7 +821,7 @@
 
 {#if dragActive && dragEntry && dragBand}
   <div
-    class="history-drag-float"
+    class="pointer-events-none fixed top-0 left-0 z-80 will-change-transform"
     style={`width: ${dragWidth}px; transform: translate3d(${dragFloatX}px, ${dragFloatY}px, 0);`}
     aria-hidden="true"
   >
@@ -811,8 +845,10 @@
     aria-selected={selected}
     data-history-id={floating ? undefined : entry.id}
     data-history-band={floating ? undefined : band}
-    class={`relative grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-2 gap-y-1 border-b px-3 py-2.5 ${
-      band === 'queued' ? 'border-dashed border-[#4a6574]' : 'border-solid border-line'
+    class={`relative grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-2 gap-y-1 border-y border-solid border-t-transparent border-b-line px-3 py-2.5 transition-opacity duration-150 motion-reduce:transition-none ${
+      band === 'queued' && !floating && filteredRunning
+        ? 'opacity-[0.52] hover:opacity-[0.88] aria-selected:opacity-[0.88]'
+        : ''
     } ${
       selected && band !== 'running' ? 'bg-selected shadow-[inset_3px_0_0_var(--color-accent)]' : ''
     } ${selected && band === 'running' ? 'shadow-[inset_3px_0_0_var(--color-accent)]' : ''} ${

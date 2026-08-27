@@ -331,10 +331,6 @@
   }
 }
 
-.history-list-item {
-  position: relative;
-}
-
 .list-drag-ghost,
 .history-drag-ghost {
   box-sizing: border-box;
@@ -361,8 +357,7 @@
   vertical-align: top;
 }
 
-.list-drag-float,
-.history-drag-float {
+.list-drag-float {
   position: fixed;
   top: 0;
   left: 0;

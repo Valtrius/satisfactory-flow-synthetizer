@@ -82,7 +82,9 @@ export class HistoryQueue {
     if (parts.running || parts.queued.length === 0) return;
     this.startingJob = true;
     try {
-      await this.startQueuedEntry(parts.queued[0].id);
+      // Queue stacks newest-first; always start the bottom (oldest) entry.
+      const nextId = parts.queued[parts.queued.length - 1].id;
+      await this.startQueuedEntry(nextId);
     } finally {
       this.startingJob = false;
     }
@@ -214,15 +216,22 @@ export class HistoryQueue {
         return false;
       }
       const startedAtMs = Date.now();
-      this.host.patchEntry(entryId, {
-        status: 'running',
-        jobId,
-        startedAtMs,
-        finishedAtMs: null,
-        progress: null,
-        error: null
-      });
-      const parts = partitionEntries(this.host.getEntries());
+      const updatedAtMs = Date.now();
+      const nextEntries = this.host.getEntries().map((item) =>
+        item.id === entryId
+          ? {
+              ...item,
+              status: 'running' as const,
+              jobId,
+              startedAtMs,
+              finishedAtMs: null,
+              progress: null,
+              error: null,
+              updatedAtMs
+            }
+          : item
+      );
+      const parts = partitionEntries(nextEntries);
       this.host.setEntries(assembleEntries(parts.queued, parts.running, parts.history));
 
       this.resetTransport();

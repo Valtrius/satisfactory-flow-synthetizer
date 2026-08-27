@@ -178,7 +178,10 @@ export function partitionEntries(entries: HistoryEntry[]): {
   return { queued, running, history };
 }
 
-/** Rebuild document order: queued → running → history. */
+/**
+ * Rebuild document order: queued → running → history.
+ * Queued is newest-first (top of the list); the runner drains from the bottom.
+ */
 export function assembleEntries(
   queued: HistoryEntry[],
   running: HistoryEntry | null,
