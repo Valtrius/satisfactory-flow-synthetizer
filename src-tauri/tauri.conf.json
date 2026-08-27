@@ -1,0 +1,38 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Satisfactory Flow Synthetizer",
+  "version": "0.1.0",
+  "identifier": "dev.satisfactory.flowsynthetizer",
+  "build": {
+    "beforeDevCommand": "npm run dev -w frontend",
+    "beforeBuildCommand": "npm run build -w frontend",
+    "devUrl": "http://localhost:5173",
+    "frontendDist": "../frontend/dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Satisfactory Flow Synthetizer",
+        "width": 1440,
+        "height": 920,
+        "minWidth": 720,
+        "minHeight": 560,
+        "backgroundColor": "#071017"
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: http://asset.localhost data:; font-src 'self'; connect-src ipc: http://ipc.localhost; object-src 'none'; base-uri 'none'"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ]
+  }
+}

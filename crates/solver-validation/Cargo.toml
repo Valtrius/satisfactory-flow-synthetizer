@@ -1,0 +1,13 @@
+[package]
+name = "solver-validation"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+num = "0.4.3"
+solver-api = { path = "../solver-api" }
+thiserror = "2.0"
+
+[lints]
+workspace = true

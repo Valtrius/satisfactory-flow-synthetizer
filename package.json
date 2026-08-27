@@ -1,0 +1,18 @@
+{
+  "name": "satisfactory-flow-synthetizer",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "frontend"
+  ],
+  "scripts": {
+    "dev": "tauri dev",
+    "build": "tauri build",
+    "check": "npm run check -w frontend",
+    "test": "npm run test -w frontend",
+    "tauri": "tauri"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.11.4"
+  }
+}

@@ -1,0 +1,612 @@
+<script lang="ts">
+  import { onDestroy, onMount } from 'svelte';
+  import { writable, type Writable } from 'svelte/store';
+  import type { Edge, Node } from '@xyflow/svelte';
+  import ConstraintPanel from './lib/ConstraintPanel.svelte';
+  import EmptyGraphState from './lib/EmptyGraphState.svelte';
+  import EndpointListPanel from './lib/EndpointListPanel.svelte';
+  import ErrorBanner from './lib/ErrorBanner.svelte';
+  import HistoryPanel from './lib/HistoryPanel.svelte';
+  import ResultsSplitView from './lib/ResultsSplitView.svelte';
+  import SearchTelemetry from './lib/SearchTelemetry.svelte';
+  import SolutionSummary from './lib/SolutionSummary.svelte';
+  import TopologyGraphPanel from './lib/TopologyGraphPanel.svelte';
+  import Panel from './lib/ui/Panel.svelte';
+  import {
+    MAX_ENDPOINTS,
+    buildSolveRequest,
+    clampMultiplier,
+    createEndpointRow,
+    endpointSlots,
+    type EndpointCollection
+  } from './lib/endpoints';
+  import { createGraphSession } from './lib/graphSession';
+  import {
+    exportHistoryBundle,
+    exportHistoryEntry,
+    importHistoryPayload
+  } from './lib/historyIo';
+  import {
+    createPersistController,
+    installCloseFlush,
+    loadHistoryOrEmpty
+  } from './lib/historyLifecycle';
+  import {
+    assembleEntries,
+    createQueuedEntry,
+    entryElapsedMs,
+    entryToJobSnapshot,
+    mergeImportedPayload,
+    partitionEntries,
+    reorderWithinBand,
+    snapshotForm,
+    type HistoryEntry
+  } from './lib/historyModel';
+  import { HistoryQueue } from './lib/historyQueue';
+  import {
+    formatElapsed,
+    searchHeadline,
+    searchStageView,
+    searchSubline,
+    sizeSearchBody
+  } from './lib/searchStage';
+  import {
+    DEFAULT_SORT_COLUMNS,
+    compareSolutions,
+    type SortColumn
+  } from './lib/solutionSort';
+  import type { EndpointRow, Solution, SolverEngine } from './types';
+
+  let nextEndpointId = 3;
+  let inputs = $state<EndpointRow[]>([]);
+  let outputs = $state<EndpointRow[]>([
+    { id: 'output-1', name: '', rate: '60', multiplier: '1' },
+    { id: 'output-2', name: '', rate: '60', multiplier: '1' }
+  ]);
+  let beltRate = $state('1200');
+  let enumerateAllAtN = $state(true);
+  let engine = $state<SolverEngine>('custom');
+
+  let historyEntries = $state<HistoryEntry[]>([]);
+  let selectedEntryId = $state<string | null>(null);
+
+  let solution = $state<Solution | null>(null);
+  let solutions = $state<Solution[]>([]);
+  let selectedSourceIndex = $state(0);
+  let sortColumns = $state<SortColumn[]>([...DEFAULT_SORT_COLUMNS]);
+  let errorMessage = $state('');
+  let elapsedMs = $state(0);
+  let historyReady = $state(false);
+  let runningTick = $state(Date.now());
+  let graphFitRevision = $state(0);
+  let graphFullscreen = $state(false);
+  let canUndoGraph = $state(false);
+  let canRedoGraph = $state(false);
+
+  const flowNodes: Writable<Node[]> = writable([]);
+  const flowEdges: Writable<Edge[]> = writable([]);
+
+  function patchEntry(id: string, patch: Partial<HistoryEntry>): void {
+    historyEntries = historyEntries.map((entry) =>
+      entry.id === id ? { ...entry, ...patch, updatedAtMs: Date.now() } : entry
+    );
+  }
+
+  const graph = createGraphSession({
+    nodes: flowNodes,
+    edges: flowEdges,
+    getSelectedEntryId: () => selectedEntryId,
+    getSelectedEntry: () =>
+      historyEntries.find((entry) => entry.id === selectedEntryId) ?? null,
+    getSelectedSourceIndex: () => selectedSourceIndex,
+    setSelectedSourceIndex: (index) => {
+      selectedSourceIndex = index;
+    },
+    getSolution: () => solution,
+    setSolution: (next) => {
+      solution = next;
+    },
+    getSolutions: () => solutions,
+    setSolutions: (next) => {
+      solutions = next;
+    },
+    getSortColumns: () => sortColumns,
+    setSortColumns: (next) => {
+      sortColumns = next;
+    },
+    getInputs: () => inputs,
+    getOutputs: () => outputs,
+    patchEntry,
+    setError: (message) => {
+      errorMessage = message;
+    },
+    onChromeChange: (chrome) => {
+      graphFitRevision = chrome.fitRevision;
+      graphFullscreen = chrome.fullscreen;
+      canUndoGraph = chrome.canUndo;
+      canRedoGraph = chrome.canRedo;
+    }
+  });
+
+  const queue = new HistoryQueue({
+    getEntries: () => historyEntries,
+    setEntries: (entries) => {
+      historyEntries = entries;
+    },
+    patchEntry,
+    getSelectedId: () => selectedEntryId,
+    isHistoryReady: () => historyReady,
+    flushSelectedChrome: () => graph.flushChrome(),
+    syncViewIfSelected: (entryId, entry) => {
+      if (selectedEntryId !== entryId) return;
+      graph.syncLiveResults(entry);
+    },
+    setError: (message) => {
+      errorMessage = message;
+    },
+    setElapsedMs: (ms) => {
+      elapsedMs = ms;
+    }
+  });
+
+  const persist = createPersistController({
+    isReady: () => historyReady,
+    onError: (message) => {
+      errorMessage = message;
+    }
+  });
+
+  const bands = $derived(partitionEntries(historyEntries));
+  const selectedEntry = $derived(
+    historyEntries.find((entry) => entry.id === selectedEntryId) ?? null
+  );
+  const hasRunning = $derived(bands.running != null);
+  const viewJob = $derived(selectedEntry ? entryToJobSnapshot(selectedEntry) : null);
+  const searchEnumerate = $derived(Boolean(selectedEntry?.request.enumerateAllAtN));
+  const busy = $derived(
+    selectedEntry?.status === 'running' || selectedEntry?.status === 'cancelling'
+  );
+  const showSearchStage = $derived(
+    Boolean(viewJob) &&
+      selectedEntry != null &&
+      selectedEntry.status !== 'queued' &&
+      (searchEnumerate || !solution)
+  );
+  const searchStageMuted = $derived(
+    selectedEntry?.status === 'cancelled' ||
+      selectedEntry?.status === 'failed' ||
+      selectedEntry?.status === 'incomplete' ||
+      selectedEntry?.status === 'unsat'
+  );
+  const searchView = $derived(searchStageView(viewJob?.progress ?? null));
+  const inputSlots = $derived(endpointSlots(inputs));
+  const outputSlots = $derived(endpointSlots(outputs));
+  const showResultsTable = $derived(searchEnumerate && solutions.length > 0);
+  const searchCopyContext = $derived({
+    solutionsLength: solutions.length,
+    searchEnumerate,
+    firstNodeCount: solutions[0]?.stats.nodeCount ?? null,
+    engine: selectedEntry?.request.engine ?? engine
+  });
+  const elapsedLabel = $derived(formatElapsed(elapsedMs));
+  const runningElapsedLabel = $derived(
+    bands.running?.startedAtMs
+      ? formatElapsed(Math.max(0, runningTick - bands.running.startedAtMs))
+      : ''
+  );
+  const displayRows = $derived(
+    solutions
+      .map((item, sourceIndex) => ({ solution: item, sourceIndex }))
+      .sort((left, right) => compareSolutions(left.solution, right.solution, sortColumns))
+  );
+  const selectedDisplayIndex = $derived(
+    displayRows.findIndex((row) => row.sourceIndex === selectedSourceIndex)
+  );
+
+  onMount(() => {
+    let unlistenClose: (() => void) | undefined;
+
+    void (async () => {
+      const loaded = await loadHistoryOrEmpty();
+      if (loaded.ok) {
+        historyEntries = loaded.document.entries;
+        selectedEntryId = loaded.document.selectedEntryId;
+        historyReady = true;
+        if (selectedEntryId) await hydrateViewFromEntry(selectedEntryId);
+        void queue.pump();
+      } else {
+        errorMessage = loaded.error;
+        // Keep historyReady false so a transient load failure never overwrites SQLite.
+      }
+
+      unlistenClose = await installCloseFlush({
+        flush: () => flushHistoryToDisk()
+      });
+    })();
+
+    return () => {
+      unlistenClose?.();
+    };
+  });
+
+  $effect(() => {
+    persist.schedule(historyEntries, selectedEntryId);
+  });
+
+  $effect(() => {
+    if (!bands.running?.startedAtMs) return;
+    const id = setInterval(() => {
+      runningTick = Date.now();
+    }, 100);
+    return () => clearInterval(id);
+  });
+
+  $effect(() => {
+    const entry = selectedEntry;
+    if (!entry) {
+      elapsedMs = 0;
+      return;
+    }
+    elapsedMs = entryElapsedMs(entry);
+  });
+
+  async function hydrateViewFromEntry(id: string): Promise<void> {
+    const entry = historyEntries.find((item) => item.id === id);
+    if (!entry) {
+      graph.clearView();
+      sortColumns = [...DEFAULT_SORT_COLUMNS];
+      return;
+    }
+    await graph.hydrateFromEntry(entry);
+  }
+
+  async function solve(): Promise<void> {
+    graph.setFullscreen(false);
+    errorMessage = '';
+    const request = buildSolveRequest(inputs, outputs, beltRate, enumerateAllAtN, engine);
+    if (request.outputs.length < 1) {
+      errorMessage = 'Add at least one output before solving.';
+      return;
+    }
+    const entry = createQueuedEntry(
+      snapshotForm(inputs, outputs, beltRate, enumerateAllAtN, engine),
+      request
+    );
+    graph.flushChrome();
+    historyEntries = [...historyEntries, entry];
+    const parts = partitionEntries(historyEntries);
+    historyEntries = assembleEntries(parts.queued, parts.running, parts.history);
+    selectedEntryId = entry.id;
+    graph.clearView();
+    sortColumns = [...DEFAULT_SORT_COLUMNS];
+    await queue.pump();
+    if (selectedEntryId) await hydrateViewFromEntry(selectedEntryId);
+  }
+
+  async function selectHistoryEntry(id: string): Promise<void> {
+    if (id === selectedEntryId) return;
+    graph.flushChrome();
+    selectedEntryId = id;
+    await hydrateViewFromEntry(id);
+  }
+
+  function renameEntry(id: string, title: string | null): void {
+    patchEntry(id, { title });
+  }
+
+  function deleteEntry(id: string): void {
+    const entry = historyEntries.find((item) => item.id === id);
+    if (!entry) return;
+    if (entry.status === 'running' || entry.status === 'cancelling') return;
+    historyEntries = historyEntries.filter((item) => item.id !== id);
+    if (selectedEntryId === id) {
+      const parts = partitionEntries(historyEntries);
+      selectedEntryId = parts.running?.id ?? parts.history[0]?.id ?? parts.queued[0]?.id ?? null;
+      if (selectedEntryId) void hydrateViewFromEntry(selectedEntryId);
+      else {
+        graph.clearView();
+        sortColumns = [...DEFAULT_SORT_COLUMNS];
+      }
+    }
+  }
+
+  function copyEntryToForm(id: string): void {
+    const entry = historyEntries.find((item) => item.id === id);
+    if (!entry) return;
+    inputs = entry.form.inputs.map((row) => ({ ...row }));
+    outputs = entry.form.outputs.map((row) => ({ ...row }));
+    beltRate = entry.form.beltRate;
+    enumerateAllAtN = entry.form.enumerateAllAtN;
+    engine = entry.form.engine ?? entry.request.engine ?? 'custom';
+    const maxId = [...inputs, ...outputs]
+      .map((row) => Number(String(row.id).replace(/\D+/g, '')) || 0)
+      .reduce((max, value) => Math.max(max, value), nextEndpointId);
+    nextEndpointId = maxId + 1;
+  }
+
+  async function exportEntry(id: string): Promise<void> {
+    graph.flushChrome();
+    const entry = historyEntries.find((item) => item.id === id);
+    if (!entry) return;
+    try {
+      await exportHistoryEntry(entry);
+    } catch (error) {
+      errorMessage = `Export failed: ${error instanceof Error ? error.message : String(error)}`;
+    }
+  }
+
+  async function exportAll(): Promise<void> {
+    graph.flushChrome();
+    try {
+      await exportHistoryBundle(historyEntries);
+    } catch (error) {
+      errorMessage = `Export failed: ${error instanceof Error ? error.message : String(error)}`;
+    }
+  }
+
+  async function importHistory(): Promise<void> {
+    try {
+      const payload = await importHistoryPayload();
+      if (payload == null) return;
+      const { entries, importedIds } = mergeImportedPayload(historyEntries, payload);
+      if (importedIds.length === 0) {
+        errorMessage = 'No history entries found in that file.';
+        return;
+      }
+      historyEntries = entries;
+      selectedEntryId = importedIds[0] ?? selectedEntryId;
+      if (selectedEntryId) await hydrateViewFromEntry(selectedEntryId);
+    } catch (error) {
+      errorMessage = `Import failed: ${error instanceof Error ? error.message : String(error)}`;
+    }
+  }
+
+  function updateEndpoint(
+    collection: EndpointCollection,
+    index: number,
+    field: 'rate' | 'multiplier',
+    value: string
+  ): void {
+    const source = collection === 'inputs' ? inputs : outputs;
+    const updated = source.map((item, itemIndex) =>
+      itemIndex === index ? { ...item, [field]: value } : item
+    );
+    if (collection === 'inputs') inputs = updated;
+    else outputs = updated;
+  }
+
+  function commitMultiplier(collection: EndpointCollection, index: number): void {
+    const source = collection === 'inputs' ? inputs : outputs;
+    const current = source[index];
+    if (!current) return;
+    const next = clampMultiplier(current.multiplier);
+    if (next === current.multiplier) return;
+    updateEndpoint(collection, index, 'multiplier', next);
+  }
+
+  function addEndpoint(collection: EndpointCollection): void {
+    const slots = collection === 'inputs' ? inputSlots : outputSlots;
+    if (slots >= MAX_ENDPOINTS) return;
+    const endpoint = createEndpointRow(collection, nextEndpointId++);
+    if (collection === 'inputs') inputs = [...inputs, endpoint];
+    else outputs = [...outputs, endpoint];
+  }
+
+  function removeEndpoint(collection: EndpointCollection, index: number): void {
+    if (collection === 'inputs') inputs = inputs.filter((_, itemIndex) => itemIndex !== index);
+    else outputs = outputs.filter((_, itemIndex) => itemIndex !== index);
+  }
+
+  function handleFlowError(id: string, message: string): void {
+    errorMessage = `The factory graph could not render an edge (${id}): ${message}`;
+  }
+
+  async function flushHistoryToDisk(): Promise<void> {
+    graph.flushChrome();
+    await persist.flushNow(historyEntries, selectedEntryId);
+  }
+
+  onDestroy(() => {
+    queue.dispose();
+    persist.dispose();
+    document.body.classList.remove('graph-expanded');
+    if (historyReady) {
+      graph.flushChrome();
+      void persist.flushNow(historyEntries, selectedEntryId).catch(() => {
+        /* close path already tried; avoid noisy teardown errors */
+      });
+    }
+  });
+</script>
+
+<svelte:window onkeydown={graph.handleKeydown} />
+
+<svelte:head>
+  <title>Satisfactory Flow Synthetizer</title>
+  <meta
+    name="description"
+    content="Exact Satisfactory splitter and merger flow synthetizer with Custom and Z3 engines."
+  />
+</svelte:head>
+
+<div class="min-h-screen">
+  <main class="mx-auto w-full max-w-[1680px] p-4">
+    <div class="grid grid-cols-1 items-start gap-4 xl:grid-cols-[minmax(240px,280px)_minmax(0,1fr)]">
+      <div class="xl:sticky xl:top-4 xl:h-[calc(100dvh-2rem)]">
+        <HistoryPanel
+          queued={bands.queued}
+          running={bands.running}
+          history={bands.history}
+          {selectedEntryId}
+          {runningElapsedLabel}
+          onSelect={(id) => void selectHistoryEntry(id)}
+          onReorderQueued={(fromId, toId) => {
+            historyEntries = reorderWithinBand(historyEntries, 'queued', fromId, toId);
+          }}
+          onReorderHistory={(fromId, toId) => {
+            historyEntries = reorderWithinBand(historyEntries, 'history', fromId, toId);
+          }}
+          onRename={renameEntry}
+          onDelete={deleteEntry}
+          onCancelRunning={() => void queue.cancel()}
+          onCopyToNew={copyEntryToForm}
+          onExportEntry={(id) => void exportEntry(id)}
+          onExportAll={() => void exportAll()}
+          onImport={() => void importHistory()}
+        />
+      </div>
+
+      <div class="min-w-0">
+        <section
+          class="grid grid-cols-1 items-stretch gap-4 md:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(290px,.72fr)]"
+          aria-label="Flow inputs"
+        >
+          <EndpointListPanel
+            title="Supply"
+            labelPrefix="Input"
+            endpoints={inputs}
+            slots={inputSlots}
+            emptyTitle="Automatic supply"
+            emptyBody="The solver will split the exact demand total across as many capacity-safe input belts as needed."
+            onAdd={() => addEndpoint('inputs')}
+            onRemove={(index) => removeEndpoint('inputs', index)}
+            onUpdate={(index, field, value) => updateEndpoint('inputs', index, field, value)}
+            onCommitMultiplier={(index) => commitMultiplier('inputs', index)}
+          />
+
+          <EndpointListPanel
+            title="Demand"
+            labelPrefix="Output"
+            endpoints={outputs}
+            slots={outputSlots}
+            minRows={1}
+            onAdd={() => addEndpoint('outputs')}
+            onRemove={(index) => removeEndpoint('outputs', index)}
+            onUpdate={(index, field, value) => updateEndpoint('outputs', index, field, value)}
+            onCommitMultiplier={(index) => commitMultiplier('outputs', index)}
+          />
+
+          <ConstraintPanel
+            bind:beltRate
+            {enumerateAllAtN}
+            {engine}
+            {hasRunning}
+            onEnumerateChange={(value) => {
+              enumerateAllAtN = value;
+            }}
+            onEngineChange={(value) => {
+              engine = value;
+            }}
+            onSolve={() => void solve()}
+          />
+        </section>
+
+        {#if errorMessage}
+          <ErrorBanner message={errorMessage} />
+        {/if}
+
+        {#if showSearchStage && viewJob && !showResultsTable}
+          <section class="mt-4" aria-labelledby="search-stage-title">
+            <Panel class="overflow-hidden">
+              <SearchTelemetry
+                {searchView}
+                muted={searchStageMuted}
+                {busy}
+                {elapsedLabel}
+                headline={searchHeadline(viewJob, searchCopyContext)}
+                subline={searchSubline(viewJob, searchView, searchCopyContext)}
+                sizeBody={sizeSearchBody(viewJob, searchView)}
+                foundCount={solutions.length}
+                showFound={searchEnumerate}
+                showDetails={busy || Boolean(viewJob.progress)}
+              />
+            </Panel>
+          </section>
+        {/if}
+
+        {#if showResultsTable && solution && viewJob}
+          <ResultsSplitView
+            {searchView}
+            {searchStageMuted}
+            {busy}
+            {elapsedLabel}
+            headline={searchHeadline(viewJob, searchCopyContext)}
+            subline={searchSubline(viewJob, searchView, searchCopyContext)}
+            sizeBody={sizeSearchBody(viewJob, searchView)}
+            foundCount={solutions.length}
+            showFound={searchEnumerate}
+            showDetails={busy || Boolean(viewJob.progress)}
+            solutions={displayRows.map((row) => row.solution)}
+            selectedIndex={Math.max(0, selectedDisplayIndex)}
+            {sortColumns}
+            selectedSolution={solution}
+            nodes={flowNodes}
+            edges={flowEdges}
+            fitRevision={graphFitRevision}
+            fullscreen={graphFullscreen}
+            onSelect={(displayIndex) => {
+              const row = displayRows[displayIndex];
+              if (row) void graph.selectSolution(row.sourceIndex);
+            }}
+            onColumnsChange={(next) => {
+              sortColumns = next;
+              if (selectedEntryId) {
+                patchEntry(selectedEntryId, {
+                  sortColumns: next.map((column) => ({ ...column }))
+                });
+              }
+            }}
+            onRotate={graph.rotate}
+            canUndo={canUndoGraph}
+            canRedo={canRedoGraph}
+            onUndo={graph.undo}
+            onRedo={graph.redo}
+            onReset={() => void graph.resetLayout()}
+            onExport={() => void graph.exportSvg()}
+            onToggleFullscreen={graph.toggleFullscreen}
+            onFlowError={handleFlowError}
+            onNodeDragStart={graph.onNodeDragStart}
+            onNodeDragStop={graph.onNodeDragStop}
+          />
+        {:else if solution}
+          <section class="mt-4" aria-labelledby="result-title">
+            <SolutionSummary {solution} {elapsedLabel} />
+
+            <Panel
+              class={`overflow-hidden ${
+                graphFullscreen
+                  ? 'fixed inset-0 z-100 flex h-dvh w-full flex-col !rounded-none !border-0 !bg-[#08141c]'
+                  : ''
+              }`}
+            >
+              <TopologyGraphPanel
+                nodes={flowNodes}
+                edges={flowEdges}
+                fitRevision={graphFitRevision}
+                fullscreen={graphFullscreen}
+                subtitle="Drag nodes, pan, or zoom. Dashed amber belts mark feedback."
+                class={graphFullscreen ? 'min-h-0 flex-1' : ''}
+                canvasClass={`flow-wrap w-full bg-[#08141c] ${
+                  graphFullscreen ? 'min-h-0 flex-1' : 'h-[68vh] min-h-107.5'
+                }`}
+                onRotate={graph.rotate}
+                canUndo={canUndoGraph}
+                canRedo={canRedoGraph}
+                onUndo={graph.undo}
+                onRedo={graph.redo}
+                onReset={() => void graph.resetLayout()}
+                onExport={() => void graph.exportSvg()}
+                onToggleFullscreen={graph.toggleFullscreen}
+                onFlowError={handleFlowError}
+                onNodeDragStart={graph.onNodeDragStart}
+                onNodeDragStop={graph.onNodeDragStop}
+              />
+            </Panel>
+          </section>
+        {:else if !selectedEntry || selectedEntry.status === 'queued'}
+          <EmptyGraphState />
+        {/if}
+      </div>
+    </div>
+  </main>
+</div>

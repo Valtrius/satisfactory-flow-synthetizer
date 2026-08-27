@@ -1,0 +1,19 @@
+# Local-only speed flags for your build machine.
+# Copy to config.toml (gitignored) — do not commit that file.
+#
+#   copy .cargo\config.toml.example .cargo\config.toml
+#
+# After changing CXXFLAGS/CFLAGS, force a Z3 rebuild:
+#   cargo clean -p z3-sys
+#   cargo build --release -p solver-z3
+#
+# Examples:
+#   Zen 4 (7950X3D, …): target-cpu=znver4 + /arch:AVX512
+#   Unknown/other CPU:  target-cpu=native  + /arch:AVX2 (safe default)
+
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-cpu=znver4"]
+
+[env]
+CXXFLAGS = { value = "/O2 /Ob2 /Oi /Ot /arch:AVX512", force = true }
+CFLAGS = { value = "/O2 /Ob2 /Oi /Ot /arch:AVX512", force = true }

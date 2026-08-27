@@ -1,0 +1,21 @@
+[package]
+name = "solver-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[features]
+test-hooks = []
+
+[dependencies]
+num = "0.4.3"
+petgraph = "0.8.2"
+solver-api = { path = "../solver-api" }
+solver-validation = { path = "../solver-validation" }
+thiserror = "2.0"
+
+[dev-dependencies]
+solver-reference = { path = "../solver-reference" }
+
+[lints]
+workspace = true

@@ -1,0 +1,33 @@
+[package]
+name = "satisfactory-flow-synthetizer"
+version.workspace = true
+description = "Dual-engine exact Satisfactory flow synthetizer"
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "satisfactory_flow_synthetizer_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+custom-solver-adapter = { path = "../crates/synthetizer-app" }
+rusqlite = { version = "0.38", features = ["bundled"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0.151"
+solver-api = { path = "../crates/solver-api" }
+solver-core = { path = "../crates/solver-core" }
+solver-db = { path = "../crates/solver-db" }
+solver-z3 = { path = "../crates/solver-z3" }
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+tauri-plugin-fs = "2"
+uuid = { version = "1.18", features = ["serde", "v4"] }
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+tempfile = "3.23"

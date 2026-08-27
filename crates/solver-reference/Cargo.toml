@@ -1,0 +1,13 @@
+[package]
+name = "solver-reference"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+solver-api = { path = "../solver-api" }
+solver-validation = { path = "../solver-validation" }
+thiserror = "2.0"
+
+[lints]
+workspace = true

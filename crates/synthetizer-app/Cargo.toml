@@ -1,0 +1,16 @@
+[package]
+name = "custom-solver-adapter"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+autobins = false
+
+[dependencies]
+solver-api = { path = "../solver-api" }
+num = "0.4.3"
+petgraph = "0.8.2"
+serde = { version = "1.0", features = ["derive"] }
+thiserror = "2.0"
+
+[lints]
+workspace = true
