@@ -1,8 +1,9 @@
 # 08. Repeated bundle comparison and worker counts
 
-Date: 2026-08-28. State: launched; awaiting user-reported completion and analysis.
-No timing findings from this run are recorded yet. Documentation work deliberately
-does not inspect its partial results or change its frozen inputs and tools.
+Date: 2026-08-28. State: analyzed; 62 verified records, no watchdog kills.
+See [results and decisions](08-repeat-scheduling-results.md). The original protocol
+and provenance remain here. Documentation and commit work during the run did not
+alter its frozen inputs, scripts or executables.
 
 ## Questions
 
@@ -65,15 +66,17 @@ Authoritative status: `BENCHMARK-STATUS.txt`; current job under `results/`.
 Completion/failure dialog and `BENCHMARK-FINISHED.txt`/`BENCHMARK-FAILED.txt` are enabled.
 Additional prepared context: `target/parallelism-ladder/repeat-scheduling-HANDOFF.md`.
 
-After the user reports completion, verify 62 scheduled identities and full result
-correctness before comparing medians/ranges. Separate complete solve, first witness,
-partial enumeration, proof progress, memory and cancellation. A busier p1 run with
-no new witness is not a time-to-solution win. Record failures and negative results.
-Update this record, the index and current status before proposing isolated commits
-or changing defaults. Do not stage the entire experimental working tree.
+The user reported completion. The preserved analyzer reproduced its original
+summary exactly, including all 62 identities and binary hashes. Current Rust
+sources equal the frozen benchmark snapshot. All eight hard-36 optimal solutions
+and both partial enumeration solution objects match the original hard screen.
+The six timed-out runs remain incomplete, with no completion speedup inferred.
 
-While this screen runs, the user requested a benchmark/documentation baseline
-commit. The accompanying `chore(bench)` commit includes the tools and diagnostic
+While this screen ran, the user requested a benchmark/documentation baseline
+commit. Commit `92b111c` includes the tools and diagnostic
 hooks but excludes compact keys and constructor optimizations. It leaves the
 frozen run untouched. Standalone build/test verification of that source split is
-deferred until timing jobs finish; earlier validation applies to the full working version.
+deferred until timing jobs finished; earlier validation applies to the full working version.
+After completion, that commit passed 194 solver-core library/integration/example
+tests, two ignored, strict solver-core Clippy and 22 tooling tests, using its own
+target directory. Logs and validation scope are in [current status](../status.md).

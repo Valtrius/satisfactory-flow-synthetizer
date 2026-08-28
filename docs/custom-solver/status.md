@@ -1,90 +1,89 @@
 # Current decisions and handoff
 
 Updated 2026-08-28. Start at [the entry point](../custom-parallelism.md).
-This is the current decision summary, not a replacement for dated experiment records.
+Historical hypotheses and results remain in the [experiment index](experiments/README.md).
 
 ## Objective
 
-Reduce elapsed time to a proven optimum and to complete minimum-node enumeration,
-especially on difficult inputs. Record first validated-witness latency separately.
-CPU and memory explain costs; lower overhead alone does not outweigh slower completion.
+Reduce time to a proven optimum and complete minimum-node enumeration on difficult
+inputs. Record first validated witness separately. CPU and memory explain costs;
+lower overhead alone does not justify slower completion.
 
-## What is permanent
+## Committed baselines
 
-| Change                                                                | Evidence                                                                                                               | Delivery                           |
-| --------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | ---------------------------------- |
-| Lazy canonical MRV, cheaper exact RREF and inequality arithmetic      | [792-run suite](experiments/02-exact-kernel.md), same search coverage, 1.81-2.36x serial improvements                  | `319191e`, committed and published |
-| Remove ordering-only refinement from exhaustive full-witness labeling | [Isolated replays](experiments/05-refinement-and-reuse.md), 6.54x replay speedup, identical key and permutation counts | `3e804e8`, committed and published |
+| Change                                                         | Evidence                                             | Commit                                        |
+| -------------------------------------------------------------- | ---------------------------------------------------- | --------------------------------------------- |
+| Lazy MRV and cheaper exact RREF/inequality arithmetic          | 792 verified runs, 1.81-2.36x serial gains           | `319191e`, published                          |
+| Remove ordering-only full-witness refinement                   | 6.54x isolated replay, same key/permutation coverage | `3e804e8`, published by the user              |
+| Benchmark tools, diagnostic hooks and experiment documentation | Independent commit validation completed              | `92b111c`, no push performed in this analysis |
 
-The user pushed `3e804e8` after the agent's HTTPS/SSH attempts failed. Remote
-`develop` was subsequently verified at that commit. Earlier local reports saying
-publication was blocked describe the earlier state, not the current decision.
+## Candidates and promotion decision
 
-## Implemented but not yet committed
+| Candidate                                                    | Evidence                                                                                                   | Decision                                                     |
+| ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| Constructor eligibility, per-N reuse and integer subset sums | Earlier avoided helper work and 143.962 to 6.516 s construction; isolated tests; stable no-deadline screen | Permanent; see [10](experiments/10-constructor-promotion.md) |
+| Compact state/SCC keys                                       | Isolated encoding comparison favors all seven short-case medians; large memory savings                     | Recommend a separate permanent commit                        |
+| Five-second constructor deadline                             | No prior expiry established a benefit                                                                      | Removed; preserved as an unapplied benchmark patch           |
+| Adaptive partitions and remaining groups                     | Earlier witnesses, but hard enumeration still incomplete                                                   | Keep opt-in; no default change                               |
 
-| Candidate                                                | What the evidence supports                                               | Remaining uncertainty                                                |
-| -------------------------------------------------------- | ------------------------------------------------------------------------ | -------------------------------------------------------------------- |
-| Constructor eligibility and per-N completed-result reuse | Avoids known ineligible/repeated optional work; exact fallback unchanged | Whole-solve effects measured alongside other changes                 |
-| Compact exact state/SCC keys                             | Strong memory/cancellation improvement in the compact screen             | Bundle result, not isolated key-only timing attribution              |
-| Incremental integer subset sums                          | Instrumented constructor time 143.962 to 6.516 s                         | Single samples and other concurrent changes                          |
-| Five-second constructor budget                           | Correctly defers, never proves a miss/UNSAT                              | Zero expiries in compact diagnostics; performance benefit unmeasured |
+Constructor improvements are permanent in the commit accompanying experiment 10.
+Compact keys remain active and uncommitted. Their code is isolated in
+`acyclic_incumbent.rs`, `lower_bound.rs`, `solver.rs`, and separately `canonical.rs`.
+The deadline remains outside production. The constructor commit includes its
+related Markdown evidence; compact keys and profiling tools follow separately.
 
-These candidates are present in the working solver. "Uncommitted" does not mean
-disabled. Do not stage the whole working tree to promote one candidate.
+## Latest measured findings
 
-## Benchmarking and documentation baseline
+[Experiment 09 results](experiments/09-serializer-and-find-all-results.md): 42
+verified records, 34 optimal and eight cooperative capped incomplete, no watchdog
+kills, 40.10 process minutes. Original/rechecked analyzer summaries match. All
+completed results and partial solution sets match experiment 08; source/binary
+identities match the frozen run. Both timing variants use the same constructor
+without a deadline and the same boxed key storage; only row encoding differs.
 
-The accompanying `chore(bench)` commit records the benchmark examples, diagnostic
-module and measurement hooks, manifests, runner/analyzer, regression tests and
-this documentation. It does not promote the remaining solver optimizations.
-Diagnostic events specific to the new constructor's eligibility/reuse/budget
-remain with that uncommitted implementation. No scheduler defaults change.
+- 24 all/baseline, five repeats: legacy median 24.763 s versus compact 21.627 s,
+  12.7% less time, 15.1% less CPU and 82.2% lower peak memory. Ranges overlap.
+- All seven short-case medians favor compact encoding. States and decisions match.
+  One diagnostic pair reduces summed encoding time 7.631 to 0.405 s. This weakens
+  the earlier codec-regression hypothesis, but does not explain the old bundle regression.
+- Hard 36 all, two repeats each: p14/32 first witness median 31.636 s versus groups/32
+  95.078 s. P14 uses 70.2% more CPU and 18.0% less peak memory. All eight runs time
+  out at 240 s with the same two layouts, 20 link groups and 45 profiles exhausted.
+- Hard 36 optimal p1/32: 31.902 s median, same N=9/L=11 witness. No large regression
+  appears after removing the optional deadline. This was not an isolated deadline A/B.
+- The 10 case was not rerun. Experiment 08's capped runs remain incomplete at
+  N=11/L=18 with no witness. More states or CPU did not establish faster completion.
 
-The full working version passed the validation recorded in experiment 08. This
-isolated benchmark-only source split receives formatting and static dependency
-checks now; its standalone build/test rerun is deferred while benchmarks run.
-The commit is local unless separately published by the user or an authorized push.
+## Next actions
 
-## Scheduling decisions
+1. Commit compact keys separately with their evidence; constructor promotion is
+   recorded in [10](experiments/10-constructor-promotion.md). No exact isolated constructor speedup is claimed
+   by 09; its recommendation also relies on earlier helper diagnostics and validation.
+2. Use p1/32 for the next hard-optimal comparison and p14/32 as the next hard-all
+   candidate for earlier witnesses. Do not claim faster hard enumeration yet.
+3. Add a benchmark-only path for fixed exact N/L/profile work around 36 N=9/L=12
+   and 10 N=11/L=18. Profile hard obligations, then select manageable complete ones
+   where possible. Preserve exact witnesses and explicit incomplete/exhausted status.
+4. Target repeated canonical graph construction, exact basis generation or witness
+   work according to those hard traces. The short-case codec is no longer the first
+   suspect. A common coarse pool is not justified by occupancy alone.
 
-- All four scheduling flags still default to false in the application.
-- Groups-only is a useful find-all comparison at large worker counts; partitions
-  are a useful find-optimal comparison. Neither is an automatic universal policy.
-- Sharing is mixed and can retain much more memory. Donation stays off by default.
-- A common bounded pool of coarse roots across eligible groups is proposed,
-  not implemented or measured. Fixed group allocations can leave capacity unused.
-- Do not select policy from benchmark names or externally supplied cyclicity.
-  Only normalized problem facts and information already available during search
-  may affect solver decisions. See [contracts](contracts.md).
+No benchmark is running. Last status:
+`target/parallelism-ladder/serializer-scheduling-20260828/BENCHMARK-STATUS.txt`.
+Existing difficult cases suffice. Automatic worker selection, sharing/donation
+defaults, allocator replacement and a new coarse scheduler remain unpromoted.
+Use only normalized inputs and runtime facts, never benchmark cyclicity labels.
 
-## Current measurement
+## Validation records
 
-[Experiment 08](experiments/08-repeat-scheduling.md) was launched with 62 jobs.
-The user reports it is still running. Results have not been reviewed for this
-documentation update. Do not infer a finding from a partial CSV or an elapsed cap.
-The run uses frozen scripts, inputs and binaries, so documentation edits do not
-change its execution. Wait for the user to report completion before analysis.
+Experiment 09 prelaunch checks: constructor-only source passed 199 solver-core
+library/integration/example tests; both encoder variants passed 200 each, with two
+ignored per run. All three passed strict all-target Clippy. The 22 tooling tests,
+release builds and formatting passed. No solver changes or test reruns in this analysis.
 
-## Open questions, in order
-
-1. Do short-case repeats confirm the compact/constructor bundle, especially the
-   observed 24 find-all baseline slowdown relative to recovery?
-2. On the faster kernel, does adaptive partitioning improve hard 36 completion?
-   Does 16 or 32 workers offer the better elapsed-time/memory tradeoff?
-3. Can hard find-all complete sooner? The last reviewed 600-second run still had
-   only two partial layouts. The last reviewed 10 run had no witness at 180 s.
-4. If imbalance remains after serial work is reduced, test the coarse pool.
-   Refine indivisible long roots separately; queue changes alone cannot split them.
-5. Full-witness enumeration remains factorial. Any future symmetry pruning must
-   retain the exact public minimum key and all layouts.
-
-Existing hard inputs are sufficient for this next decision. More shapes and
-another machine remain necessary before generalizing production defaults.
-
-## Not adopted or not established
-
-No automatic all-stage policy, allocator replacement, cache eviction policy,
-detached cleanup, new witness symmetry pruning or common coarse pool was adopted.
-The first has measured regressions; allocator cause and coarse-pool benefit remain
-hypotheses. Hiding cleanup or weakening proof/result coverage is not an acceptable
-optimization. A time-limited optional helper is acceptable only with exact fallback.
+The earlier isolated benchmark commit `92b111c` passed 194 solver-core tests, two
+ignored, strict Clippy and 22 tooling tests in `target/benchmark-commit-validation-20260828/`
+with its own target. These are package/example checks, not new full-workspace runs.
+The earlier 297-test working-workspace validation remains a separate historical record.
+Log paths and hashes are in [09 protocol](experiments/09-serializer-and-find-all.md)
+and [08 protocol](experiments/08-repeat-scheduling.md).

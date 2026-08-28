@@ -24,7 +24,7 @@ use solver_validation::{ValidationError, validate_solution};
 use thiserror::Error;
 
 use crate::{
-    acyclic_incumbent::find_small_acyclic_witness,
+    acyclic_incumbent::AcyclicConstructor,
     canonical::canonicalize_witness_cancellable,
     lower_bound::{LowerBoundError, baseline_lower_bounds},
     problem::{InvalidProblem, NormalizedProblem, Preparation, prepare_problem},
@@ -343,6 +343,7 @@ fn solve_internal(
     let mut winning_node = None;
     let mut node_count = bounds.combined_nodes;
     let mut proof_ledger = ProofLedger::default();
+    let mut constructor = None;
 
     loop {
         if cancel.load(Ordering::Relaxed) {
@@ -410,8 +411,9 @@ fn solve_internal(
             // exhaustive search unchanged.
             if node_count >= 3 && !parallel_outputs.contains_key(&group.link_count) {
                 for accounted in &group.profiles {
-                    if let Some(graph) =
-                        find_small_acyclic_witness(&normalized, accounted.profile, cancel)
+                    if let Some(graph) = constructor
+                        .get_or_insert_with(|| AcyclicConstructor::new(&normalized))
+                        .find(accounted.profile, accounted.accounting, cancel)
                     {
                         emit_progress(
                             observer,

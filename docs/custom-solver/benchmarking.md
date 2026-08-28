@@ -5,6 +5,15 @@
 All new file cases are in `benchmarks/custom/cases/` and use max link rate 1200.
 Names describe the test corpus only, not information passed to solver policy.
 
+The completed isolated encoding screen is described in
+[experiment 09](experiments/09-serializer-and-find-all.md). Its before binary is a
+fresh legacy-encoding build with the current constructor and boxed keys, not the
+old recovery binary. The `acyclic24_diagnostic` alias uses the same case file to
+keep instrumented samples out of timing groups. Source patches live in
+`benchmarks/custom/variants/`; never apply them during a running screen.
+Its [verified results](experiments/09-serializer-and-find-all-results.md) include
+eight incomplete hard enumerations; faster first witnesses do not prove faster completion.
+
 | Label          | Exact problem     | Role and last reviewed scope                                |
 | -------------- | ----------------- | ----------------------------------------------------------- |
 | `acyclic24`    | 24 = 7+6+5+4+2    | Complete optimal/all regression, N<=7                       |
@@ -93,4 +102,7 @@ completed by the user. Historical artifacts are not rewritten to change that his
 
 Before the current run: 297 workspace Rust tests passed, five ignored; 22 runner/
 analyzer tests, strict workspace Clippy, release build and formatting passed. See
-experiment 08 for exact logs. Run tests only after timing jobs have finished.
+experiment 08 for exact logs. After that run, isolated commit `92b111c` passed
+194 solver-core library/integration/example tests, two ignored, strict solver-core
+Clippy and 22 tooling tests in a separate target directory. See [status](status.md)
+for logs and scope. Run tests only after timing jobs have finished.

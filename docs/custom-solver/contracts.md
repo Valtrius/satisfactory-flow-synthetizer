@@ -46,8 +46,9 @@ Decimal rates are rational strings. Uniform scaling can normalize to the same pr
 - Completed constructor hits/misses may be reused for one N within one solve.
   The helper does not take L, so later groups may reuse its result. Neither a
   cached miss nor an expired attempt proves exhaustive-search UNSAT.
-- Five-second expiries go into a separate deferred set, not completed misses.
-  Cancellation does not retain a completed outcome. Changing N clears both sets.
+- Cancellation does not retain a completed outcome. Changing N clears the helper
+  cache. The five-second deadline is currently removed; its preserved experimental
+  patch stores expiries in a separate deferred set, never as completed misses.
 
 ## Parallel proof and cancellation
 

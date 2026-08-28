@@ -219,7 +219,7 @@ pub fn profile_impossibility(
     None
 }
 
-fn required_source_denominator(problem: &NormalizedProblem) -> BigInt {
+pub(crate) fn required_source_denominator(problem: &NormalizedProblem) -> BigInt {
     let scale = problem
         .inputs
         .iter()

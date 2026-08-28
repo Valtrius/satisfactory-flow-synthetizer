@@ -23,13 +23,21 @@ Updated 2026-08-28.
 - Exact MRV/RREF/inequality optimizations are permanent in `319191e`.
 - Removal of ordering-only full-witness refinement is permanent in `3e804e8`.
   Its isolated witness replay improved 6.54x with identical keys and coverage.
-- Compact exact keys and constructor improvements remain uncommitted candidates.
-  The last reviewed screen had ten optimal results, six capped incomplete results
-  and no watchdog kills. Hard 36 optimal took about 100 seconds.
+- [Constructor improvements](custom-solver/experiments/10-constructor-promotion.md)
+  are permanent. Compact exact keys remain recommended for a separate commit. The isolated encoding comparison favors
+  all seven short-case medians, including 24 all/baseline, with large memory savings.
+  This does not establish the cause of experiment 08's earlier bundle regression.
 - All experimental scheduling flags still default to false. Their benefits vary
   with solve mode, problem, worker count and memory cost.
 - [The 62-job repeated comparison](custom-solver/experiments/08-repeat-scheduling.md)
-  is launched and awaiting analysis. No findings from that run are claimed here.
+  is verified: 56 optimal results, six capped incomplete, no watchdog kills.
+  Adaptive partitions reduce hard 36 optimal from 92.9 to 31.4 seconds at 32 workers.
+  See [the results and recommendations](custom-solver/experiments/08-repeat-scheduling-results.md).
+- [Experiment 09 results](custom-solver/experiments/09-serializer-and-find-all-results.md):
+  42 verified records, 34 optimal, eight incomplete, no kills. Compact encoding
+  reduces 24 all/baseline median time 12.7%. P14/32 finds the first hard-36 witness
+  3.01x sooner than groups/32; all hard enumeration runs remain unfinished at 240 s.
+  The helper deadline stays removed. No new benchmark is running.
 
 The goal is shorter time to a proven optimum and complete minimum-node enumeration.
 First-witness latency is a separate measure. More occupied workers, a partial

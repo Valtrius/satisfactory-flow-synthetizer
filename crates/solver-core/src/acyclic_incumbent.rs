@@ -4,17 +4,110 @@
 //! miss falls back to exhaustive production search. Every hit is independently
 //! validated before it can affect an incumbent or optimality claim.
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::{
+    collections::BTreeMap,
+    sync::atomic::{AtomicBool, Ordering},
+};
+
+use num::{BigInt, Integer};
 
 use solver_api::{
     ConsumerPortRef, InputTerminalIndex, NodeId, NodeProfile, NodeType, OutputTerminalIndex,
     PhysicalGraph, PhysicalLink, PhysicalNode, ProducerPortRef, Rational,
 };
 
-use crate::problem::NormalizedProblem;
+use crate::{
+    lower_bound::{profile_impossibility, required_source_denominator},
+    problem::NormalizedProblem,
+    profile::ProfileLinkAccounting,
+};
 
 const MAX_CONSTRUCTIVE_SPLITTERS: u32 = 8;
 const MAX_CONSTRUCTIVE_LEAVES: usize = 20;
+
+/// Optional helper results, scoped to one problem and the current node count.
+/// A cached miss is never a proof about the exhaustive cyclic/acyclic search.
+pub(crate) struct AcyclicConstructor<'a> {
+    problem: &'a NormalizedProblem,
+    source_denominator: BigInt,
+    node_count: Option<u32>,
+    completed: BTreeMap<NodeProfile, Option<PhysicalGraph>>,
+}
+
+impl<'a> AcyclicConstructor<'a> {
+    pub(crate) fn new(problem: &'a NormalizedProblem) -> Self {
+        Self {
+            problem,
+            source_denominator: required_source_denominator(problem),
+            node_count: None,
+            completed: BTreeMap::new(),
+        }
+    }
+
+    fn eligible(&self, profile: NodeProfile) -> bool {
+        if !self.problem.surplus.is_zero()
+            || profile
+                .splitter2
+                .checked_add(profile.splitter3)
+                .is_none_or(|n| n > MAX_CONSTRUCTIVE_SPLITTERS)
+        {
+            return false;
+        }
+        // In an acyclic network every source coefficient has a denominator
+        // dividing the product of splitter arities. Summing paths cannot add
+        // denominator factors. This uses all input rates through their GCD;
+        // it does not assume a single source, or that passing proves existence.
+        let product =
+            BigInt::from(2_u8).pow(profile.splitter2) * BigInt::from(3_u8).pow(profile.splitter3);
+        product.is_multiple_of(&self.source_denominator)
+    }
+
+    pub(crate) fn find(
+        &mut self,
+        profile: NodeProfile,
+        accounting: ProfileLinkAccounting,
+        cancel: &AtomicBool,
+    ) -> Option<PhysicalGraph> {
+        if cancel.load(Ordering::Relaxed) {
+            return None;
+        }
+        if self.node_count != Some(profile.node_count()) {
+            self.completed.clear();
+            self.node_count = Some(profile.node_count());
+        }
+        if !self.eligible(profile)
+            || profile_impossibility(self.problem, profile, accounting).is_some()
+        {
+            drop(crate::diagnostics::ActivitySpan::start(
+                "acyclic_ineligible",
+                profile.node_count(),
+                Some(accounting.link_count),
+                Some(profile),
+                None,
+                1,
+            ));
+            return None;
+        }
+        if let Some(outcome) = self.completed.get(&profile) {
+            drop(crate::diagnostics::ActivitySpan::start(
+                "acyclic_reuse",
+                profile.node_count(),
+                Some(accounting.link_count),
+                Some(profile),
+                None,
+                1,
+            ));
+            return outcome.clone();
+        }
+        let outcome = find_small_acyclic_witness(self.problem, profile, cancel);
+        if cancel.load(Ordering::Relaxed) {
+            return None;
+        }
+        // Cancellation can interrupt an attempt; do not retain it as a finished miss.
+        self.completed.insert(profile, outcome.clone());
+        outcome
+    }
+}
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 struct Leaf {
@@ -23,7 +116,7 @@ struct Leaf {
 }
 
 #[must_use]
-pub(crate) fn find_small_acyclic_witness(
+fn find_small_acyclic_witness(
     problem: &NormalizedProblem,
     profile: NodeProfile,
     cancel: &AtomicBool,
@@ -100,6 +193,9 @@ fn split_recursively(
             continue;
         }
         for leaf_index in 0..leaves.len() {
+            if cancel.load(Ordering::Relaxed) {
+                return None;
+            }
             let mut next_leaves = leaves.clone();
             let leaf = next_leaves.remove(leaf_index);
             let output_flow = &leaf.flow / &Rational::from(u32::from(arity));
@@ -171,8 +267,22 @@ fn assign_outputs(
     }
     let target = &problem.outputs.as_slice()[output_index];
     let maximum_mask = 1_u64.checked_shl(u32::try_from(leaves.len()).ok()?)?;
-    for mask in 1..maximum_mask {
-        if output_index + 1 == problem.outputs.len() && mask + 1 != maximum_mask {
+    let mut sums = SubsetSums::new(leaves, target);
+    let first_mask = if output_index + 1 == problem.outputs.len() {
+        maximum_mask - 1
+    } else {
+        1
+    };
+    for mask in first_mask..maximum_mask {
+        // A failed subset scan can otherwise run to 2^20 masks without reaching
+        // another recursive cancellation check.
+        if (mask == first_mask || mask & 255 == 1) && cancel.load(Ordering::Relaxed) {
+            return None;
+        }
+        sums.select(mask);
+        if sums.sum != sums.target
+            || u64::from(mask.count_ones()) > 1 + u64::from(merger2) + 2 * u64::from(merger3)
+        {
             continue;
         }
         let selected = leaves
@@ -181,12 +291,6 @@ fn assign_outputs(
             .filter(|(index, _)| mask & (1_u64 << index) != 0)
             .map(|(_, leaf)| leaf.clone())
             .collect::<Vec<_>>();
-        let sum = selected
-            .iter()
-            .fold(Rational::zero(), |total, leaf| &total + &leaf.flow);
-        if &sum != target {
-            continue;
-        }
         let reduction = u32::try_from(selected.len()).ok()?.checked_sub(1)?;
         for used_merger3 in 0..=merger3.min(reduction / 2) {
             let used_merger2 = reduction.checked_sub(used_merger3.checked_mul(2)?)?;
@@ -224,6 +328,44 @@ fn assign_outputs(
         }
     }
     None
+}
+
+/// Preserve numeric mask order, but update an exact integer sum only for bits
+/// that changed. No per-mask leaf cloning or rational normalization is needed.
+struct SubsetSums {
+    values: Vec<BigInt>,
+    target: BigInt,
+    sum: BigInt,
+    mask: u64,
+}
+
+impl SubsetSums {
+    fn new(leaves: &[Leaf], target: &Rational) -> Self {
+        let denominator = leaves.iter().fold(target.denominator().clone(), |d, leaf| {
+            d.lcm(leaf.flow.denominator())
+        });
+        let scale = |value: &Rational| value.numerator() * (&denominator / value.denominator());
+        Self {
+            values: leaves.iter().map(|leaf| scale(&leaf.flow)).collect(),
+            target: scale(target),
+            sum: BigInt::from(0),
+            mask: 0,
+        }
+    }
+
+    fn select(&mut self, mask: u64) {
+        let mut changed = mask ^ self.mask;
+        while changed != 0 {
+            let index = changed.trailing_zeros() as usize;
+            if mask & (1_u64 << index) == 0 {
+                self.sum -= &self.values[index];
+            } else {
+                self.sum += &self.values[index];
+            }
+            changed &= changed - 1;
+        }
+        self.mask = mask;
+    }
 }
 
 fn merge_group(
@@ -295,6 +437,149 @@ mod tests {
     }
 
     #[test]
+    fn incremental_subsets_match_rational_sums_in_the_original_mask_order() {
+        for count in 1..=9 {
+            let leaves = (0..count)
+                .map(|i| Leaf {
+                    flow: Rational::new(1 + i % 4, 1 + i % 3).unwrap(),
+                    producer: ProducerPortRef::Input(InputTerminalIndex(i)),
+                })
+                .collect::<Vec<_>>();
+            for target in [Rational::new(7, 6).unwrap(), Rational::from(3)] {
+                let mut sums = SubsetSums::new(&leaves, &target);
+                let mut actual = Vec::new();
+                let mut expected = Vec::new();
+                for mask in 1..(1_u64 << count) {
+                    sums.select(mask);
+                    let exact = leaves
+                        .iter()
+                        .enumerate()
+                        .filter(|(i, _)| mask & (1 << i) != 0)
+                        .fold(Rational::zero(), |total, (_, leaf)| &total + &leaf.flow);
+                    if sums.sum == sums.target {
+                        actual.push(mask);
+                    }
+                    if exact == target {
+                        expected.push(mask);
+                    }
+                }
+                assert_eq!(actual, expected);
+                let mut whole = SubsetSums::new(&leaves, &target);
+                whole.select((1 << count) - 1);
+                assert_eq!(
+                    whole.sum, sums.sum,
+                    "last output can jump directly to the full mask"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn eligibility_uses_all_rates_and_exact_profile_divisibility() {
+        let binary = NodeProfile {
+            splitter2: 3,
+            merger2: 2,
+            ..NodeProfile::default()
+        };
+        for scale in [1, 7, 11] {
+            let requires_feedback = normalized(&[15 * scale], &[6 * scale, 9 * scale]);
+            assert!(!AcyclicConstructor::new(&requires_feedback).eligible(binary));
+            let requires_three = normalized(&[18 * scale], &[6 * scale, 12 * scale]);
+            let constructor = AcyclicConstructor::new(&requires_three);
+            assert!(!constructor.eligible(binary));
+            assert!(constructor.eligible(NodeProfile {
+                splitter3: 1,
+                merger2: 1,
+                ..NodeProfile::default()
+            }));
+            let multiple_inputs = normalized(&[3 * scale, 2 * scale], &[4 * scale, scale]);
+            assert!(
+                AcyclicConstructor::new(&multiple_inputs).eligible(NodeProfile {
+                    splitter2: 1,
+                    merger2: 1,
+                    ..NodeProfile::default()
+                })
+            );
+        }
+    }
+
+    #[test]
+    fn completed_helper_hits_and_misses_are_reused_across_link_groups() {
+        let profile = NodeProfile {
+            splitter2: 1,
+            merger2: 1,
+            ..NodeProfile::default()
+        };
+        for (inputs, outputs, succeeds) in [([2, 3], [1, 4], true), ([1, 7], [3, 5], false)] {
+            let problem = normalized(&inputs, &outputs);
+            let accounts = crate::profile::profile_link_accountings(
+                profile,
+                2,
+                2,
+                &problem.surplus,
+                &problem.max_link_rate,
+            )
+            .unwrap();
+            assert!(accounts.len() > 1);
+            let mut constructor = AcyclicConstructor::new(&problem);
+            let cancel = AtomicBool::new(true);
+            assert!(constructor.find(profile, accounts[0], &cancel).is_none());
+            assert!(constructor.completed.is_empty());
+            cancel.store(false, Ordering::Relaxed);
+            let first = constructor.find(profile, accounts[0], &cancel);
+            assert_eq!(first.is_some(), succeeds);
+            assert_eq!(constructor.completed.get(&profile), Some(&first));
+            assert_eq!(constructor.find(profile, accounts[1], &cancel), first);
+            assert_eq!(constructor.completed.len(), 1);
+            // Returning to another node count cannot accumulate an unbounded cache.
+            let empty = NodeProfile::default();
+            let account = crate::profile::profile_link_accounting(
+                empty,
+                2,
+                2,
+                &problem.surplus,
+                &problem.max_link_rate,
+            )
+            .unwrap()
+            .unwrap();
+            constructor.find(empty, account, &cancel);
+            assert!(!constructor.completed.contains_key(&profile));
+        }
+    }
+
+    #[test]
+    fn eligibility_never_rejects_a_constructed_small_witness() {
+        // Generated rates and profiles, with no benchmark classifications.
+        for total in 2..=6 {
+            for first_output in 1..total {
+                let problem = normalized(&[total], &[first_output, total - first_output]);
+                let mut constructor = AcyclicConstructor::new(&problem);
+                for nodes in 0..=3 {
+                    let groups = crate::profile::enumerate_accounted_profile_groups(
+                        nodes,
+                        1,
+                        2,
+                        &problem.surplus,
+                        &problem.max_link_rate,
+                    )
+                    .unwrap();
+                    for accounted in groups.iter().flat_map(|group| &group.profiles) {
+                        let cancel = AtomicBool::new(false);
+                        let raw = find_small_acyclic_witness(&problem, accounted.profile, &cancel);
+                        if raw.is_some() {
+                            assert!(constructor.eligible(accounted.profile));
+                        }
+                        assert_eq!(
+                            constructor.find(accounted.profile, accounted.accounting, &cancel),
+                            raw
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
     fn hard_case_constructor_produces_an_exact_valid_certificate() {
         let problem = normalized(&[216], &[66, 150]);
         let profile = NodeProfile {
@@ -331,6 +616,46 @@ mod tests {
             max_link_rate: problem.max_link_rate,
         };
         validate_solution(&public_problem, &graph).unwrap();
+    }
+
+    #[test]
+    fn cancellation_interrupts_an_unsuccessful_large_subset_scan() {
+        use std::{
+            thread,
+            time::{Duration, Instant},
+        };
+        let problem = normalized(&[1; 20], &[11, 9]);
+        let leaves = (0..20)
+            .map(|index| Leaf {
+                flow: 1.into(),
+                producer: ProducerPortRef::Input(InputTerminalIndex(index)),
+            })
+            .collect::<Vec<_>>();
+        let cancel = AtomicBool::new(false);
+        let started = Instant::now();
+        thread::scope(|scope| {
+            scope.spawn(|| {
+                thread::sleep(Duration::from_millis(20));
+                cancel.store(true, Ordering::Relaxed);
+            });
+            assert!(
+                assign_outputs(
+                    &problem,
+                    NodeProfile::default(),
+                    &leaves,
+                    PhysicalGraph::default(),
+                    0,
+                    0,
+                    0,
+                    &cancel
+                )
+                .is_none()
+            );
+        });
+        assert!(
+            started.elapsed() < Duration::from_secs(2),
+            "subset scan ignored cancellation"
+        );
     }
 
     #[test]

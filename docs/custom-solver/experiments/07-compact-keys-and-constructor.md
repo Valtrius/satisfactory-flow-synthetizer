@@ -1,6 +1,7 @@
 # 07. Compact exact keys and integer constructor
 
-Date: 2026-08-28. State: analyzed; promising uncommitted candidates, repeats pending.
+Date: 2026-08-28. State: analyzed; promising uncommitted candidates. Repeats were
+subsequently analyzed in [experiment 08 results](08-repeat-scheduling-results.md).
 Hypothesis: fewer retained key bytes and cheaper exact subset calculations reduce
 memory, destruction time and serial construction without changing solver semantics.
 
