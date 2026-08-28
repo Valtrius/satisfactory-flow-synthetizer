@@ -99,6 +99,8 @@
   let renameDraft = $state('');
   let renameIgnoreBlur = false;
   let menuId = $state<string | null>(null);
+  /** When true, the entry ⋯ menu opens above the trigger to stay in view. */
+  let menuOpenUpward = $state(false);
   let headerMenuOpen = $state(false);
   let confirmDeleteAll = $state(false);
   const savedToolbar = readUiPrefs().history;
@@ -549,7 +551,18 @@
     event.stopPropagation();
     openPanel = null;
     headerMenuOpen = false;
-    menuId = menuId === id ? null : id;
+    if (menuId === id) {
+      menuId = null;
+      return;
+    }
+    const trigger = event.currentTarget as HTMLElement;
+    const triggerRect = trigger.getBoundingClientRect();
+    const list = trigger.closest('[role="listbox"]');
+    const bounds = (list ?? document.documentElement).getBoundingClientRect();
+    // Four menuitems + padding; keep a little slack so we don't clip the shadow.
+    const menuHeight = 168;
+    menuOpenUpward = triggerRect.bottom + menuHeight > bounds.bottom;
+    menuId = id;
   }
 
   function subtitle(entry: HistoryEntry, band: 'queued' | 'running' | 'history'): string {
@@ -858,7 +871,10 @@
       <div class="flex flex-col">
         {#each visualOrder as key (key)}
           {@const item = visualRowsByKey.get(key)!}
-          <div class="relative" animate:flip={{ duration: historyMotionDuration }}>
+          <div
+            class={`relative ${item.kind === 'entry' && menuId === item.entry.id ? 'z-20' : ''}`}
+            animate:flip={{ duration: historyMotionDuration }}
+          >
             {#if item.kind === 'ghost'}
               <div class="history-drag-ghost" style={`height: ${dragHeight}px`} aria-hidden="true"></div>
             {:else}
@@ -924,6 +940,8 @@
     data-history-id={floating ? undefined : entry.id}
     data-history-band={floating ? undefined : band}
     class={`border-b-line relative grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-2 gap-y-1 border-y border-solid border-t-transparent px-3 py-2.5 transition-opacity duration-150 motion-reduce:transition-none ${
+      menuId === entry.id && !floating ? 'z-20' : ''
+    } ${
       band === 'queued' && !floating && filteredRunning
         ? 'opacity-[0.52] hover:opacity-[0.88] aria-selected:opacity-[0.88]'
         : ''
@@ -985,7 +1003,7 @@
       </p>
     </div>
 
-    <div class="flex items-start">
+    <div class="relative flex items-start">
       {#if band === 'running'}
         <Button
           size="small"
@@ -1030,6 +1048,8 @@
           aria-label="More actions"
           class="!min-h-7 !w-7"
           tabindex={floating ? -1 : undefined}
+          aria-expanded={menuId === entry.id}
+          aria-haspopup="menu"
           onclick={(event) => {
             if (floating) {
               event.stopPropagation();
@@ -1040,6 +1060,64 @@
         >
           ⋯
         </Button>
+        {#if menuId === entry.id && !floating}
+          <div
+            class={`border-line bg-panel absolute right-0 z-20 min-w-44 rounded-lg border py-1 shadow-[0_14px_32px_rgb(0_0_0/45%)] ${
+              menuOpenUpward ? 'bottom-full mb-1' : 'top-full mt-1'
+            }`}
+            role="menu"
+            tabindex="-1"
+            onkeydown={(event) => event.stopPropagation()}
+            onclick={(event) => event.stopPropagation()}
+            onpointerdown={(event) => event.stopPropagation()}
+          >
+            <button
+              type="button"
+              class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-[#152833]"
+              role="menuitem"
+              onclick={() => startRename(entry)}
+            >
+              <Pencil class="text-muted size-3.5" />
+              Rename
+            </button>
+            <button
+              type="button"
+              class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-[#152833]"
+              role="menuitem"
+              onclick={() => {
+                menuId = null;
+                onCopyToNew(entry.id);
+              }}
+            >
+              <Copy class="text-muted size-3.5" />
+              Copy to New problem
+            </button>
+            <button
+              type="button"
+              class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-[#152833]"
+              role="menuitem"
+              onclick={() => {
+                menuId = null;
+                onExportEntry(entry.id);
+              }}
+            >
+              <Download class="text-muted size-3.5" />
+              Export entry…
+            </button>
+            <button
+              type="button"
+              class="text-danger flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-[#152833]"
+              role="menuitem"
+              onclick={() => {
+                menuId = null;
+                onDelete(entry.id);
+              }}
+            >
+              <Trash2 class="size-3.5" />
+              Delete
+            </button>
+          </div>
+        {/if}
       {/if}
     </div>
 
@@ -1085,62 +1163,5 @@
         <span class="truncate">{metrics.layouts.value}</span>
       </li>
     </ul>
-
-    {#if menuId === entry.id && !floating}
-      <div
-        class="border-line bg-panel absolute top-9 right-1 z-5 min-w-44 rounded-lg border py-1 shadow-[0_14px_32px_rgb(0_0_0/45%)]"
-        role="menu"
-        tabindex="-1"
-        onkeydown={(event) => event.stopPropagation()}
-        onclick={(event) => event.stopPropagation()}
-        onpointerdown={(event) => event.stopPropagation()}
-      >
-        <button
-          type="button"
-          class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-[#152833]"
-          role="menuitem"
-          onclick={() => startRename(entry)}
-        >
-          <Pencil class="text-muted size-3.5" />
-          Rename
-        </button>
-        <button
-          type="button"
-          class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-[#152833]"
-          role="menuitem"
-          onclick={() => {
-            menuId = null;
-            onCopyToNew(entry.id);
-          }}
-        >
-          <Copy class="text-muted size-3.5" />
-          Copy to New problem
-        </button>
-        <button
-          type="button"
-          class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-[#152833]"
-          role="menuitem"
-          onclick={() => {
-            menuId = null;
-            onExportEntry(entry.id);
-          }}
-        >
-          <Download class="text-muted size-3.5" />
-          Export entry…
-        </button>
-        <button
-          type="button"
-          class="text-danger flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-[#152833]"
-          role="menuitem"
-          onclick={() => {
-            menuId = null;
-            onDelete(entry.id);
-          }}
-        >
-          <Trash2 class="size-3.5" />
-          Delete
-        </button>
-      </div>
-    {/if}
   </div>
 {/snippet}
