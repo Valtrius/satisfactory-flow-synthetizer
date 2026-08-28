@@ -400,7 +400,7 @@ body.history-dragging * {
   isolation: isolate;
   border-color: transparent !important;
   border-style: solid !important;
-  border-width: 1px 0 !important;
+  border-width: 1px !important;
   background:
     linear-gradient(#0c151c, #0c151c) padding-box,
     conic-gradient(
