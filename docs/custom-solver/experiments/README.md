@@ -16,6 +16,7 @@ Record dates follow the analysis chronology, not necessarily every run's start t
 | [08](08-repeat-scheduling.md)               | 2026-08-28    | Are gains repeatable; how do partitions and 16/32 workers compare?      | 62 verified; p1 hard optimal 2.96x faster; 24 all/baseline median regresses 6.2%    |
 | [09](09-serializer-and-find-all.md)         | 2026-08-28    | Does isolated encoding explain the regression; does p14 help hard all?  | 42 verified; encoding favors all seven medians; p14 earlier witness, all unfinished |
 | [10](10-constructor-promotion.md)           | 2026-08-28    | Promote the validated constructor without the deadline?                 | Permanent, separate from compact keys; not pushed                                   |
+| [11](11-compact-key-promotion.md)           | 2026-08-28    | Promote compact exact keys independently?                               | Permanent with isolated encoding evidence; not pushed                               |
 
 ## How the diagnosis changed
 

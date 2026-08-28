@@ -1,6 +1,6 @@
 # 10. Permanent constructor improvements
 
-Date: 2026-08-28. State: promoted in the commit containing this record; not pushed.
+Date: 2026-08-28. State: promoted in `099cc12`; not pushed.
 The user approved a separate constructor commit with its documentation.
 
 ## Included

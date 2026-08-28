@@ -19,18 +19,17 @@ lower overhead alone does not justify slower completion.
 
 ## Candidates and promotion decision
 
-| Candidate                                                    | Evidence                                                                                                   | Decision                                                     |
-| ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
-| Constructor eligibility, per-N reuse and integer subset sums | Earlier avoided helper work and 143.962 to 6.516 s construction; isolated tests; stable no-deadline screen | Permanent; see [10](experiments/10-constructor-promotion.md) |
-| Compact state/SCC keys                                       | Isolated encoding comparison favors all seven short-case medians; large memory savings                     | Recommend a separate permanent commit                        |
-| Five-second constructor deadline                             | No prior expiry established a benefit                                                                      | Removed; preserved as an unapplied benchmark patch           |
-| Adaptive partitions and remaining groups                     | Earlier witnesses, but hard enumeration still incomplete                                                   | Keep opt-in; no default change                               |
+| Candidate                                                    | Evidence                                                                                                   | Decision                                                            |
+| ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| Constructor eligibility, per-N reuse and integer subset sums | Earlier avoided helper work and 143.962 to 6.516 s construction; isolated tests; stable no-deadline screen | `099cc12`, local; see [10](experiments/10-constructor-promotion.md) |
+| Compact state/SCC keys                                       | Isolated encoding comparison favors all seven short-case medians; large memory savings                     | Permanent; see [11](experiments/11-compact-key-promotion.md)        |
+| Five-second constructor deadline                             | No prior expiry established a benefit                                                                      | Removed; preserved as an unapplied benchmark patch                  |
+| Adaptive partitions and remaining groups                     | Earlier witnesses, but hard enumeration still incomplete                                                   | Keep opt-in; no default change                                      |
 
-Constructor improvements are permanent in the commit accompanying experiment 10.
-Compact keys remain active and uncommitted. Their code is isolated in
-`acyclic_incumbent.rs`, `lower_bound.rs`, `solver.rs`, and separately `canonical.rs`.
-The deadline remains outside production. The constructor commit includes its
-related Markdown evidence; compact keys and profiling tools follow separately.
+Constructor improvements are permanent in `099cc12`; compact keys are permanent
+in the commit accompanying [11](experiments/11-compact-key-promotion.md). Both include
+their related documentation and remain local, not pushed. The unproven helper
+deadline is not included. New hard-work profiling follows in a separate commit.
 
 ## Latest measured findings
 
@@ -56,9 +55,9 @@ without a deadline and the same boxed key storage; only row encoding differs.
 
 ## Next actions
 
-1. Commit compact keys separately with their evidence; constructor promotion is
-   recorded in [10](experiments/10-constructor-promotion.md). No exact isolated constructor speedup is claimed
-   by 09; its recommendation also relies on earlier helper diagnostics and validation.
+1. Preserve the separate constructor and key commits as the profiling baseline.
+   Their evidence and limits are recorded in [10](experiments/10-constructor-promotion.md)
+   and [11](experiments/11-compact-key-promotion.md).
 2. Use p1/32 for the next hard-optimal comparison and p14/32 as the next hard-all
    candidate for earlier witnesses. Do not claim faster hard enumeration yet.
 3. Add a benchmark-only path for fixed exact N/L/profile work around 36 N=9/L=12

@@ -69,7 +69,7 @@ pub struct PartialTopology {
 /// contributes only an equality row; raw `None`/`Some` coloring and algebra row
 /// insertion order never enter the key.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct StateKey(Vec<u8>);
+pub struct StateKey(Box<[u8]>);
 
 impl StateKey {
     /// Borrows the stable canonical byte representation.
@@ -81,7 +81,7 @@ impl StateKey {
     /// Consumes the key and returns the stable canonical bytes.
     #[must_use]
     pub fn into_bytes(self) -> Vec<u8> {
-        self.0
+        self.0.into_vec()
     }
 }
 
@@ -93,7 +93,7 @@ impl StateKey {
 /// the encoding. Equal keys therefore describe the same open subsystem under a
 /// physical relabeling and may reuse label-free exact algebra facts.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct SccSummaryKey(Vec<u8>);
+pub struct SccSummaryKey(Box<[u8]>);
 
 impl SccSummaryKey {
     /// Borrows the stable canonical byte representation.
@@ -172,7 +172,7 @@ impl CanonicalOpenPortKey {
 #[must_use]
 pub fn canonicalize_state(topology: &PartialTopology) -> StateKey {
     let selected = select_canonical(topology, None, EncodingKind::State);
-    StateKey(selected.bytes)
+    StateKey(selected.bytes.into_boxed_slice())
 }
 
 /// Computes the production state key, or stops during labeling when cancelled.
@@ -181,7 +181,7 @@ pub(crate) fn canonicalize_state_cancellable(
     cancel: &AtomicBool,
 ) -> Option<StateKey> {
     select_canonical_cancellable(topology, None, EncodingKind::State, cancel)
-        .map(|selected| StateKey(selected.bytes))
+        .map(|selected| StateKey(selected.bytes.into_boxed_slice()))
 }
 
 /// Canonicalizes the complete input of [`crate::scc::summarize_open_scc`].
@@ -285,7 +285,7 @@ fn canonicalize_scc_summary_input_with_relabeling_inner(
     let (producer_relabeling, consumer_relabeling) =
         incidence.port_relabeling(topology, &selected.ranks);
     Some(CanonicalSccSummaryInput {
-        key: SccSummaryKey(selected.bytes),
+        key: SccSummaryKey(selected.bytes.into_boxed_slice()),
         producer_relabeling,
         consumer_relabeling,
     })
@@ -1712,12 +1712,13 @@ fn encode_semantic_system(
     );
     drop(equality_timer);
     let encoding_timer = CanonicalTimer::start(CanonicalPhase::SemanticEncoding);
-    write_len(bytes, variable_count);
-    write_len(bytes, equalities.len());
+    // Internal state/SCC protocol only. Public witness and marked-port/link
+    // encodings keep their existing byte format and ordering.
+    bytes.extend_from_slice(b"sparse-exact-rows\0\x01");
+    write_varint(bytes, variable_count);
+    write_varint(bytes, equalities.len());
     for row in &equalities {
-        for value in row {
-            write_rational(bytes, value);
-        }
+        write_sparse_row(bytes, row);
     }
     drop(encoding_timer);
 
@@ -1726,14 +1727,54 @@ fn encode_semantic_system(
         primitive_inequality_basis(&source.problem.max_link_rate, variable_count, &equalities);
     drop(inequality_timer);
     let _encoding_timer = CanonicalTimer::start(CanonicalPhase::SemanticEncoding);
-    write_len(bytes, inequalities.len());
+    write_varint(bytes, inequalities.len());
     for (relation, row) in inequalities {
         bytes.push(match relation {
             SemanticInequalityRelation::LessThan => 0,
             SemanticInequalityRelation::LessThanOrEqual => 1,
         });
-        for value in row {
-            write_rational(bytes, &value);
+        write_sparse_row(bytes, &row);
+    }
+}
+
+fn write_varint(bytes: &mut Vec<u8>, mut value: usize) {
+    while value >= 128 {
+        bytes.push(u8::try_from(value & 127).unwrap() | 128);
+        value >>= 7;
+    }
+    bytes.push(u8::try_from(value).unwrap());
+}
+
+/// The row width is encoded by the surrounding system. Ordered indices retain
+/// every nonzero coefficient, including the RHS, without storing dense zeros.
+fn write_sparse_row(bytes: &mut Vec<u8>, row: &[Rational]) {
+    write_varint(bytes, row.iter().filter(|value| !value.is_zero()).count());
+    for (index, value) in row.iter().enumerate().filter(|(_, value)| !value.is_zero()) {
+        write_varint(bytes, index);
+        write_compact_rational(bytes, value);
+    }
+}
+
+fn write_compact_rational(bytes: &mut Vec<u8>, value: &Rational) {
+    if value.is_zero() {
+        bytes.push(0);
+    } else if value.denominator().is_one() && value.numerator().is_one() {
+        bytes.push(1);
+    } else if value.denominator().is_one()
+        && value.numerator().is_negative()
+        && value.numerator().magnitude().is_one()
+    {
+        bytes.push(2);
+    } else {
+        let integer = value.denominator().is_one();
+        bytes.push(if integer { 3 } else { 4 });
+        let numerator = value.numerator().to_signed_bytes_le();
+        write_varint(bytes, numerator.len());
+        bytes.extend_from_slice(&numerator);
+        if !integer {
+            let denominator = value.denominator().to_signed_bytes_le();
+            write_varint(bytes, denominator.len());
+            bytes.extend_from_slice(&denominator);
         }
     }
 }
@@ -2361,6 +2402,97 @@ mod tests {
         rows
     }
 
+    fn read_varint(input: &mut &[u8]) -> usize {
+        let mut value = 0;
+        let mut shift = 0;
+        loop {
+            let byte = input[0];
+            *input = &input[1..];
+            value |= usize::from(byte & 127) << shift;
+            if byte & 128 == 0 {
+                return value;
+            }
+            shift += 7;
+        }
+    }
+
+    fn read_compact_rational(input: &mut &[u8]) -> Rational {
+        let tag = input[0];
+        *input = &input[1..];
+        match tag {
+            0 => Rational::zero(),
+            1 => Rational::one(),
+            2 => Rational::from(-1),
+            3 | 4 => {
+                let len = read_varint(input);
+                let numerator = BigInt::from_signed_bytes_le(&input[..len]);
+                *input = &input[len..];
+                let denominator = if tag == 4 {
+                    let len = read_varint(input);
+                    let value = BigInt::from_signed_bytes_le(&input[..len]);
+                    *input = &input[len..];
+                    value
+                } else {
+                    BigInt::one()
+                };
+                Rational::new(numerator, denominator).unwrap()
+            }
+            _ => panic!("invalid compact rational"),
+        }
+    }
+
+    fn assert_sparse_row_round_trip(row: &[Rational]) {
+        let mut compact = Vec::new();
+        write_sparse_row(&mut compact, row);
+        let mut input = compact.as_slice();
+        let mut decoded = vec![Rational::zero(); row.len()];
+        for _ in 0..read_varint(&mut input) {
+            let index = read_varint(&mut input);
+            decoded[index] = read_compact_rational(&mut input);
+        }
+        assert!(input.is_empty());
+        assert_eq!(decoded, row);
+        let mut legacy = Vec::new();
+        let mut restored = Vec::new();
+        for value in row {
+            write_rational(&mut legacy, value);
+        }
+        for value in &decoded {
+            write_rational(&mut restored, value);
+        }
+        assert_eq!(
+            legacy, restored,
+            "compact keys retain every old semantic coefficient"
+        );
+    }
+
+    #[test]
+    fn compact_semantics_round_trip_sparse_indices_and_arbitrary_exact_numbers() {
+        for width in [0, 1, 128, 300] {
+            let mut row = vec![Rational::zero(); width];
+            for (i, text) in [
+                "1",
+                "-1",
+                "128",
+                "-129",
+                "2/3",
+                "-100000000000000000000000000000003/17",
+            ]
+            .iter()
+            .enumerate()
+            {
+                if width != 0 {
+                    row[(i * 53) % width] = rational(text);
+                }
+            }
+            assert_sparse_row_round_trip(&row);
+        }
+        let row = vec![Rational::zero(); 300];
+        let mut encoded = Vec::new();
+        write_sparse_row(&mut encoded, &row);
+        assert_eq!(encoded.len(), 1, "a zero row needs only its nonzero count");
+    }
+
     #[test]
     fn sparse_elimination_matches_dense_reference_exactly() {
         let mut seed = 0x7b19_c21d_u64;
@@ -2387,12 +2519,18 @@ mod tests {
                 let expected = dense_reference_rational_rref(rows.clone(), variables);
                 let actual = rational_rref(rows, variables);
                 assert_eq!(actual, expected, "variables={variables}, sample={sample}");
+                for row in &actual {
+                    assert_sparse_row_round_trip(row);
+                }
                 for capacity in ["1/7", "5", "100000000000000000000000000000000000003"] {
                     let capacity = rational(capacity);
                     assert_eq!(
                         primitive_inequality_basis(&capacity, variables, &actual),
                         dense_reference_primitive_inequality_basis(&capacity, variables, &expected)
                     );
+                    for (_, row) in primitive_inequality_basis(&capacity, variables, &actual) {
+                        assert_sparse_row_round_trip(&row);
+                    }
                 }
             }
         }

@@ -24,7 +24,8 @@ Updated 2026-08-28.
 - Removal of ordering-only full-witness refinement is permanent in `3e804e8`.
   Its isolated witness replay improved 6.54x with identical keys and coverage.
 - [Constructor improvements](custom-solver/experiments/10-constructor-promotion.md)
-  are permanent. Compact exact keys remain recommended for a separate commit. The isolated encoding comparison favors
+  are permanent in `099cc12`. [Compact exact keys](custom-solver/experiments/11-compact-key-promotion.md)
+  are permanent in a separate commit. Both remain local, not pushed. The isolated encoding comparison favors
   all seven short-case medians, including 24 all/baseline, with large memory savings.
   This does not establish the cause of experiment 08's earlier bundle regression.
 - All experimental scheduling flags still default to false. Their benefits vary
