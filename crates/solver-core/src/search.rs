@@ -1630,6 +1630,9 @@ fn rollback_branch(
     state.rollback(topology_checkpoint);
 }
 
+// Keep solving, exact-L rejection, canonicalization and the validation firewall
+// in their execution order so their different failure semantics remain visible.
+#[allow(clippy::too_many_lines)]
 fn evaluate_complete_state(
     state: &TopologyState,
     context: &mut SearchContext<'_>,
@@ -1668,6 +1671,26 @@ fn evaluate_complete_state(
             return DfsResult::Failed(ProfileSearchError::InvalidCompleteTopology(Box::new(error)));
         }
     };
+
+    // Witness labeling only renames endpoints. Reject an out-of-group topology
+    // before exhaustive byte minimization; accepted witnesses still pass the
+    // independent validator and all accounting checks below.
+    if context.expected_link_count.is_some_and(|expected| {
+        solved
+            .links
+            .iter()
+            .filter(|link| {
+                matches!(link.producer, solver_api::ProducerPortRef::Node { .. })
+                    && matches!(link.consumer, solver_api::ConsumerPortRef::Node { .. })
+            })
+            .count()
+            != expected as usize
+    }) {
+        increment(&mut context.stats.rejected_complete_topologies);
+        context.insert_state_status(state_key, StateStatus::ProvenDead);
+        hotspot_profile::record_evaluate_complete(complete_started.elapsed());
+        return DfsResult::Exhausted(None);
+    }
 
     let canonical_started = Instant::now();
     let Some(canonical) =
@@ -3032,6 +3055,55 @@ mod tests {
             nodes,
             links,
             remaining_profile: NodeProfile::default(),
+        }
+    }
+
+    #[test]
+    fn complete_exact_link_guard_preserves_witnesses_and_cancellation() {
+        let caller = problem(&["4"], &["2", "1", "1"], "1200");
+        let problem = normalized(&caller);
+        let fixed = profile(2, 0, 0, 0);
+        let mut partial = two_splitter_partial(&normalized_problem(&caller), [0, 1], false);
+        partial.links.extend([
+            PartialLink {
+                producer: ProducerPortRef::Node {
+                    node: NodeId(0),
+                    port: 0,
+                },
+                consumer: ConsumerPortRef::Output(OutputTerminalIndex(2)),
+                flow: None,
+            },
+            PartialLink {
+                producer: ProducerPortRef::Node {
+                    node: NodeId(1),
+                    port: 0,
+                },
+                consumer: ConsumerPortRef::Output(OutputTerminalIndex(1)),
+                flow: None,
+            },
+        ]);
+        let state = TopologyState::from_partial_topology(&partial).unwrap();
+        let key = canonicalize_state(&partial);
+        for expected in [None, Some(1), Some(2)] {
+            for cancelled in [false, true] {
+                let cancel = AtomicBool::new(cancelled);
+                let mut context = SearchContext::new(&problem, fixed, &cancel);
+                context.expected_link_count = expected;
+                context.expected_physical_link_count = 5;
+                context.expected_discard_link_count = 0;
+                let result = evaluate_complete_state(&state, &mut context, key.clone());
+                if expected == Some(2) {
+                    assert!(matches!(result, DfsResult::Exhausted(None)));
+                    assert!(context.best_witness.is_none());
+                    assert_eq!(context.stats.rejected_complete_topologies, 1);
+                } else if cancelled {
+                    assert!(matches!(result, DfsResult::Incomplete));
+                    assert!(context.best_witness.is_none());
+                } else {
+                    assert!(matches!(result, DfsResult::Exhausted(Some(_))));
+                    assert_eq!(context.best_witness.unwrap().validation.link_count, 1);
+                }
+            }
         }
     }
 

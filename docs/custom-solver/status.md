@@ -19,13 +19,11 @@ lower overhead alone does not justify slower completion.
 | Compact exact state/SCC keys                          | Seven short-case medians favor compact rows; memory savings         | `2716fac`, [11](experiments/11-compact-key-promotion.md)     |
 | Fixed hard-work profiling                             | Feature-gated production search and strict local-scope verification | `1b558a6`, [12](experiments/12-hard-obligation-profiling.md) |
 
-Each optimization commit includes its related docs. The local `origin/develop`
-tracking ref now contains both optimization commits; the profiling commit is one
-commit ahead, rechecked locally after experiment 13. No push was performed or remote
-refresh requested. Result docs and the three measured calculation improvements
-are uncommitted. Separate promotion is recommended. The five-second constructor
-deadline remains an unapplied patch.
-All experimental scheduling flags remain opt-in.
+Each optimization commit includes its related docs. Experiment 13 tooling/results
+are committed in `473aba7`. [Calculation promotion](experiments/14-calculation-promotion.md)
+is in progress: exact-L is included in its own commit; witness and basis remain
+active and await their separate commits. No push is performed. The five-second
+constructor deadline remains unapplied; all scheduling flags remain opt-in.
 
 ## Latest measured findings
 
@@ -61,7 +59,7 @@ new scheduler default or a universal memory-saving claim.
 
 1. Promote the [three measured changes](experiments/13-calculation-changes.md)
    separately with tests and related docs. Commit benchmark tooling separately.
-   They are already active, not yet committed. No new benchmark is running.
+   Promotion is in progress. No new benchmark is running.
 2. Compare p1 versus p14 on actual hard-36 all with the new calculations. Use
    bounded repeated timing and a separate trace to locate the remaining tail.
    Repeat hard optimal before treating its single-sample gain as stable.

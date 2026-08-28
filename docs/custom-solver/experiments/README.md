@@ -20,6 +20,8 @@ Record dates follow the analysis chronology, not necessarily every run's start t
 | [12](12-hard-obligation-profiling.md)       | 2026-08-28    | What dominates the remaining hard N/L/profile work?                                       | 24 verified; 36 witness tail, 10 basis/labeling cost; no kills                      |
 | [13](13-calculation-changes.md)             | 2026-08-28    | Can early exact-L checks, cached witness leaves and direct RREF bounds reduce hard costs? | 80 verified; isolated gains support three promotions; hard whole-all still capped   |
 
+| [14](14-calculation-promotion.md) | 2026-08-28 | Promote the three measured calculations independently? | Approved; separate commits in progress |
+
 ## How the diagnosis changed
 
 1. Early parallelism results favored larger frontiers and overlapping groups.
