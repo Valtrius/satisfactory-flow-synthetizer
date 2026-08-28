@@ -650,22 +650,11 @@ fn select_canonical_with_incidence(
             cancel,
         );
     }
-    let mut initial = incidence.initial_colors();
-    if let Some(vertex) = individualized_vertex {
-        initial[vertex] = initial
-            .iter()
-            .copied()
-            .max()
-            .unwrap_or(0)
-            .checked_add(1)
-            .expect("canonical color count must fit u32");
-    }
-    let initial = incidence.refine_cancellable(initial, cancel)?;
     let groups = incidence.labeling_groups(topology);
     let ranks = vec![None; incidence.base_colors.len()];
     let mut best = None;
     if !search_individualizations(
-        topology, incidence, &groups, 0, 0, initial, ranks, encoding, cancel, &mut best,
+        topology, incidence, &groups, 0, 0, ranks, encoding, cancel, &mut best,
     ) {
         return None;
     }
@@ -775,7 +764,6 @@ fn search_individualizations(
     groups: &[Vec<VertexId>],
     group_index: usize,
     rank_in_group: usize,
-    colors: Vec<u32>,
     ranks: Vec<Option<u32>>,
     encoding: EncodingKind,
     cancel: Option<&AtomicBool>,
@@ -793,7 +781,6 @@ fn search_individualizations(
                 groups,
                 group_index + 1,
                 0,
-                colors,
                 ranks,
                 encoding,
                 cancel,
@@ -801,24 +788,18 @@ fn search_individualizations(
             );
         }
 
-        let individual_color = colors.iter().copied().max().unwrap_or(0) + 1;
-        let mut choices = group
+        let choices = group
             .iter()
             .copied()
             .filter(|vertex| ranks[*vertex].is_none())
             .collect::<Vec<_>>();
-        // Refinement orders the exhaustive branches but never removes one. A future branch
-        // reduction must prove an automorphism before treating two choices as equivalent.
-        choices.sort_by_key(|vertex| (colors[*vertex], *vertex));
+        // Visit exactly the same full set of labelings without refining colors
+        // just to order them. Only ranks determine the leaf encoding, and the
+        // minimum over all leaves is independent of their traversal order.
         for vertex in choices {
             if cancel.is_some_and(|flag| flag.load(Ordering::Relaxed)) {
                 return false;
             }
-            let mut individualized = colors.clone();
-            individualized[vertex] = individual_color;
-            let Some(refined) = incidence.refine_cancellable(individualized, cancel) else {
-                return false;
-            };
             let mut next_ranks = ranks.clone();
             next_ranks[vertex] =
                 Some(u32::try_from(rank_in_group).expect("one label group must fit a u32 rank"));
@@ -828,7 +809,6 @@ fn search_individualizations(
                 groups,
                 group_index,
                 rank_in_group + 1,
-                refined,
                 next_ranks,
                 encoding,
                 cancel,
@@ -902,12 +882,6 @@ enum EdgeColor {
 enum CanonicalVertexColor {
     Original(BaseColor),
     Incidence(EdgeColor),
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
-struct RefinementSignature {
-    color: u32,
-    neighbors: Vec<(EdgeColor, u32)>,
 }
 
 #[derive(Clone, Debug)]
@@ -1106,43 +1080,6 @@ impl IncidenceGraph {
     fn add_edge(&mut self, left: VertexId, right: VertexId, color: EdgeColor) {
         self.adjacency[left].push((color, right));
         self.adjacency[right].push((color, left));
-    }
-
-    fn initial_colors(&self) -> Vec<u32> {
-        ordered_color_ids(&self.base_colors)
-    }
-
-    fn refine_cancellable(
-        &self,
-        mut colors: Vec<u32>,
-        cancel: Option<&AtomicBool>,
-    ) -> Option<Vec<u32>> {
-        loop {
-            if cancel.is_some_and(|flag| flag.load(Ordering::Relaxed)) {
-                return None;
-            }
-            let signatures = self
-                .adjacency
-                .iter()
-                .enumerate()
-                .map(|(vertex, neighbors)| {
-                    let mut neighbors = neighbors
-                        .iter()
-                        .map(|(edge, neighbor)| (*edge, colors[*neighbor]))
-                        .collect::<Vec<_>>();
-                    neighbors.sort();
-                    RefinementSignature {
-                        color: colors[vertex],
-                        neighbors,
-                    }
-                })
-                .collect::<Vec<_>>();
-            let next = ordered_color_ids(&signatures);
-            if same_partition(&colors, &next) {
-                return Some(next);
-            }
-            colors = next;
-        }
     }
 
     fn labeling_groups(&self, topology: &PartialTopology) -> Vec<Vec<VertexId>> {
@@ -1420,13 +1357,6 @@ fn ordered_color_ids<T: Ord>(values: &[T]) -> Vec<u32> {
             .expect("incidence graph must fit u32 colors")
         })
         .collect()
-}
-
-fn same_partition(left: &[u32], right: &[u32]) -> bool {
-    (0..left.len()).all(|first| {
-        (0..left.len())
-            .all(|second| (left[first] == left[second]) == (right[first] == right[second]))
-    })
 }
 
 fn canonical_terminal_labels(
@@ -2448,6 +2378,44 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn active_cancellation_discards_partial_witness_labeling() {
+        use std::{thread, time::Duration};
+        let mut problem = problem(
+            &["256"],
+            &["128", "64", "32", "16", "8", "4", "2", "1", "1"],
+        );
+        problem.max_link_rate = 1200.into();
+        let mut graph = PhysicalGraph {
+            nodes: (0..8).map(|i| node(i, NodeType::Splitter2)).collect(),
+            links: vec![link(input(0), consumer(0, 0), "256")],
+        };
+        for i in 0..8 {
+            let flow = (128_u32 >> i).to_string();
+            graph.links.push(link(producer(i, 0), output(i), &flow));
+            graph.links.push(link(
+                producer(i, 1),
+                if i == 7 {
+                    output(8)
+                } else {
+                    consumer(i + 1, 0)
+                },
+                &flow,
+            ));
+        }
+        solver_validation::validate_solution(&problem, &graph).unwrap();
+        let cancel = AtomicBool::new(false);
+        let started = Instant::now();
+        thread::scope(|scope| {
+            scope.spawn(|| {
+                thread::sleep(Duration::from_millis(20));
+                cancel.store(true, Ordering::Relaxed);
+            });
+            assert!(canonicalize_witness_cancellable(&problem, &graph, &cancel).is_none());
+        });
+        assert!(started.elapsed() < Duration::from_secs(2));
     }
 
     #[test]
