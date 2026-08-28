@@ -1,2 +1,3 @@
 - Use conventional commits for commit messages and pull requests titles.
 - Use `npm run format` to format code before committing.
+- When running benchmarks, launch them with a way for the user to know when they are done, then end your turn.
