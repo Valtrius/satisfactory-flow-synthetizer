@@ -2061,20 +2061,35 @@ fn primitive_inequality_basis(
     variable_count: usize,
     equalities: &[Vec<Rational>],
 ) -> Vec<(SemanticInequalityRelation, Vec<Rational>)> {
-    let mut rows = Vec::with_capacity(variable_count.saturating_mul(2));
-    for variable in 0..variable_count {
-        let mut positive = vec![Rational::zero(); variable_count + 1];
-        positive[variable] = Rational::from(-1);
-        rows.push((SemanticInequalityRelation::LessThan, positive));
-
-        let mut bounded = vec![Rational::zero(); variable_count + 1];
-        bounded[variable] = Rational::one();
-        bounded[variable_count] = capacity.clone();
-        rows.push((SemanticInequalityRelation::LessThanOrEqual, bounded));
+    // RREF pivot columns are unit columns. Reducing +/- one variable therefore
+    // uses at most its own pivot row; all other pivot coefficients stay zero.
+    let mut pivots = vec![None; variable_count];
+    for equality in equalities {
+        if let Some(pivot) = equality[..variable_count].iter().position(|v| !v.is_zero()) {
+            debug_assert_eq!(equality[pivot].numerator(), equality[pivot].denominator());
+            pivots[pivot] = Some(equality);
+        }
     }
-    for (_, row) in &mut rows {
-        reduce_modulo_equalities(row, equalities, variable_count);
-        normalize_positive_scale(row);
+    let mut rows = Vec::with_capacity(variable_count.saturating_mul(2));
+    for (variable, pivot) in pivots.into_iter().enumerate() {
+        let (mut positive, mut bounded) = if let Some(equality) = pivot {
+            let mut positive = equality.clone();
+            positive[variable] = Rational::zero();
+            let mut bounded = positive.iter().map(|v| -v).collect::<Vec<_>>();
+            bounded[variable_count] = capacity - &positive[variable_count];
+            (positive, bounded)
+        } else {
+            let mut positive = vec![Rational::zero(); variable_count + 1];
+            positive[variable] = Rational::from(-1);
+            let mut bounded = vec![Rational::zero(); variable_count + 1];
+            bounded[variable] = Rational::one();
+            bounded[variable_count] = capacity.clone();
+            (positive, bounded)
+        };
+        normalize_positive_scale(&mut positive);
+        normalize_positive_scale(&mut bounded);
+        rows.push((SemanticInequalityRelation::LessThan, positive));
+        rows.push((SemanticInequalityRelation::LessThanOrEqual, bounded));
     }
     rows.sort();
     rows.dedup();
@@ -2190,6 +2205,7 @@ fn rational_rref(mut rows: Vec<Vec<Rational>>, variable_count: usize) -> Vec<Vec
     rows
 }
 
+#[cfg(test)]
 fn reduce_modulo_equalities(
     row: &mut [Rational],
     equalities: &[Vec<Rational>],
@@ -2740,6 +2756,54 @@ mod tests {
                     for (_, row) in primitive_inequality_basis(&capacity, variables, &actual) {
                         assert_sparse_row_round_trip(&row);
                     }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn direct_bound_rows_match_general_reduction_for_wide_rref_systems() {
+        for variables in [0, 1, 4, 31, 64] {
+            for contradiction in [false, true] {
+                let mut equations = Vec::new();
+                for pivot in (0..variables).step_by(2) {
+                    let mut row =
+                        assignment_row(variables, pivot, rational("100000000000000000000003/17"));
+                    if pivot + 1 < variables {
+                        row[pivot + 1] = rational("-2/3");
+                    }
+                    equations.push(row.clone());
+                    equations.push(row); // Redundancy must disappear in RREF.
+                }
+                if contradiction {
+                    equations.push(sum_assignment_row(variables, &[], Rational::one()));
+                }
+                let basis = rational_rref(equations, variables);
+                for capacity in [rational("1/7"), rational("1200")] {
+                    let mut expected = Vec::new();
+                    for variable in 0..variables {
+                        for (relation, sign, rhs) in [
+                            (SemanticInequalityRelation::LessThan, -1, Rational::zero()),
+                            (
+                                SemanticInequalityRelation::LessThanOrEqual,
+                                1,
+                                capacity.clone(),
+                            ),
+                        ] {
+                            let mut row = vec![Rational::zero(); variables + 1];
+                            row[variable] = sign.into();
+                            row[variables] = rhs;
+                            reduce_modulo_equalities(&mut row, &basis, variables);
+                            normalize_positive_scale(&mut row);
+                            expected.push((relation, row));
+                        }
+                    }
+                    expected.sort();
+                    expected.dedup();
+                    assert_eq!(
+                        primitive_inequality_basis(&capacity, variables, &basis),
+                        expected
+                    );
                 }
             }
         }

@@ -47,7 +47,7 @@ Updated 2026-08-28.
   [Next experiments](custom-solver/experiments/12-next-experiments.md) target those costs;
   no new scheduler default is justified.
 - [Calculation candidates](custom-solver/experiments/13-calculation-changes.md) are
-  undergoing [separate promotion](custom-solver/experiments/14-calculation-promotion.md). [80 verified jobs](custom-solver/experiments/13-calculation-results.md)
+  permanent through [separate promotion](custom-solver/experiments/14-calculation-promotion.md). [80 verified jobs](custom-solver/experiments/13-calculation-results.md)
   support separate promotion: targeted exact-L proof improves 4.44-4.45x, witness
   replay 14.87x, and completed basis workloads 7.3-8.3%. [Whole results](custom-solver/experiments/13-whole-results.md)
   improve short-case completion medians 5.6-12.3%; hard 36 optimal improves 25.0%

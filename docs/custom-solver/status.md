@@ -21,9 +21,9 @@ lower overhead alone does not justify slower completion.
 
 Each optimization commit includes its related docs. Experiment 13 tooling/results
 are committed in `473aba7`. [Calculation promotion](experiments/14-calculation-promotion.md)
-is in progress: exact-L is committed in `5ae5631`; cached witness leaves are
-included in their separate commit. Direct RREF bounds remain active and uncommitted. No push is performed. The five-second
-constructor deadline remains unapplied; all scheduling flags remain opt-in.
+has separate commits: exact-L `5ae5631`, witness `1fbe95d`, and direct RREF bounds
+included with this update. All three are permanent. No push was performed.
+The constructor deadline and scheduling flags remain unchanged.
 
 ## Latest measured findings
 
@@ -57,9 +57,8 @@ new scheduler default or a universal memory-saving claim.
 
 ## Next work
 
-1. Promote the [three measured changes](experiments/13-calculation-changes.md)
-   separately with tests and related docs. Commit benchmark tooling separately.
-   Promotion is in progress. No new benchmark is running.
+1. The [three measured changes](experiments/14-calculation-promotion.md) are
+   promoted separately with tests and related docs. No new benchmark is running.
 2. Compare p1 versus p14 on actual hard-36 all with the new calculations. Use
    bounded repeated timing and a separate trace to locate the remaining tail.
    Repeat hard optimal before treating its single-sample gain as stable.
