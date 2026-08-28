@@ -22,6 +22,16 @@ def digest(path):
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
+def check_variant(directory):
+    directory = Path(directory)
+    hashes = read(directory / "hashes.json")
+    for name, expected in hashes.items():
+        target = (directory / name).resolve()
+        if not target.is_relative_to(directory.resolve()) or digest(target) != expected:
+            raise ValueError(f"Changed variant file: {name}")
+    return hashes
+
+
 def prepare(manifest_path, root):
     root = Path(root).resolve()
     manifest_path = Path(manifest_path).resolve()
@@ -30,13 +40,43 @@ def prepare(manifest_path, root):
     inputs.mkdir()
     (inputs / "cases").mkdir()
     binary = root / "bin/profile_obligation.exe"
+    variants = {}
+    for name, origin in manifest.get("variants", {}).items():
+        if not name or any(c not in "abcdefghijklmnopqrstuvwxyz0123456789_" for c in name):
+            raise ValueError("Invalid variant name")
+        source = (manifest_path.parent / origin).resolve()
+        check_variant(source)
+        destination = root / "variants" / name
+        shutil.copytree(source, destination)
+        check_variant(destination)
+        variants[name] = str(destination)
+    write(root / "variants.json", variants)
     schedule = []
     for original in manifest["jobs"]:
         job = dict(original)
+        variant = job.pop("variant", None)
+        variant_root = Path(variants[variant]) if variant is not None else None
+        selected_binary = variant_root / "bin/profile_obligation.exe" if variant_root else binary
+        kind = job.pop("kind", "fixed_obligation")
         expand = job.pop("expand_profiles", False)
         job_id = job.pop("id")
         if not job_id or any(c not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_" for c in job_id):
             raise ValueError("Invalid job ID")
+        if kind == "witness_replay":
+            source = (manifest_path.parent / job.pop("witness_file")).resolve()
+            saved = read(source)
+            if saved.get("kind") != "fixed_obligation" or saved.get("validated") is not True:
+                raise ValueError("Replay needs a validated fixed-work witness source")
+            witness = next(s for p in saved["profiles"] for s in p["solutions"])
+            replay_input = inputs / (job_id + ".witness.json")
+            write(replay_input, {"problem": saved["problem"], "outcome": {"result": witness},
+                                "source_scope": saved["scope"], "source_sha256": digest(source)})
+            executable = variant_root / "bin/profile_witness.exe" if variant_root else root / "bin/profile_witness.exe"
+            schedule.append(dict(id=job_id, kind=kind, variant=variant, binary=str(executable),
+                                 request=job, request_file=str(replay_input), input_sha256=digest(replay_input)))
+            continue
+        if kind != "fixed_obligation":
+            raise ValueError("Unknown workload kind")
         source = (manifest_path.parent / job["case_file"]).resolve()
         if read(source)["problem"]["maxLinkRate"] != "1200":
             raise ValueError("Every case must use capacity 1200")
@@ -46,7 +86,7 @@ def prepare(manifest_path, root):
         job["case_file"] = case_file
         probe = inputs / (job_id + ".probe.json")
         write(probe, job)
-        listed = subprocess.run([str(binary), "--list", str(probe)], check=True,
+        listed = subprocess.run([str(selected_binary), "--list", str(probe)], check=True,
                                 capture_output=True, text=True, timeout=30)
         expected = json.loads(listed.stdout)
         selections = expected["profiles"] if expand else [job.get("profile")]
@@ -57,12 +97,14 @@ def prepare(manifest_path, root):
             if request_file.exists():
                 raise ValueError("Duplicate job identity")
             write(request_file, request)
-            schedule.append(dict(id=identity, request_file=str(request_file),
+            schedule.append(dict(id=identity, kind=kind, variant=variant, binary=str(selected_binary), request_file=str(request_file),
                                  request=request, problem=expected["problem"],
                                  expected_profiles=[profile] if expand else expected["profiles"]))
         probe.unlink()
-    if not schedule or sum(j["request"]["timeout_s"] for j in schedule) > 25 * 60:
-        raise ValueError("Empty plan or search caps exceed 25 minutes")
+    if len({j["id"] for j in schedule}) != len(schedule):
+        raise ValueError("Duplicate job identity")
+    if not schedule or sum(j["request"]["timeout_s"] for j in schedule) > 40 * 60:
+        raise ValueError("Empty plan or search caps exceed 40 minutes")
     random.Random(manifest.get("seed", 280826)).shuffle(schedule)
     write(root / "schedule.json", schedule)
     write(root / "manifest.json", manifest)
@@ -119,6 +161,9 @@ def verify(root):
     schedule = read(root / "schedule.json")
     binary = read(root / "binary.json")
     failures = []
+    variants = read(root / "variants.json") if (root / "variants.json").exists() else {}
+    for directory in variants.values():
+        check_variant(directory)
     if digest(binary["path"]) != binary["sha256"]:
         failures.append("Binary hash mismatch")
     expected_ids = [job["id"] for job in schedule]
@@ -131,10 +176,23 @@ def verify(root):
     if any(row["watchdog_killed"].lower() != "false" or int(row["exit_code"]) != 0 for row in metrics):
         failures.append("Failed or killed process")
     summaries = []
+    replays = defaultdict(list)
     comparisons = defaultdict(list)
     for job in schedule:
         try:
+            if job.get("variant") is not None:
+                example = "profile_witness.exe" if job.get("kind") == "witness_replay" else "profile_obligation.exe"
+                expected_binary = Path(variants[job["variant"]]) / "bin" / example
+                if Path(job["binary"]).resolve() != expected_binary.resolve():
+                    raise ValueError("Job executable does not match its variant")
             result = read(root / "results" / (job["id"] + ".json"))
+            if job.get("kind") == "witness_replay":
+                validate_replay(job, result)
+                if result["completed"]:
+                    source = read(job["request_file"])
+                    replays[source["source_sha256"]].append(result)
+                summaries.append(dict(id=job["id"], kind="witness_replay", variant=job["variant"], result=result))
+                continue
             profiles = validate_result(job, result)
             for profile in profiles:
                 key = (json.dumps(job["problem"], sort_keys=True), job["request"]["node_count"],
@@ -143,7 +201,7 @@ def verify(root):
             spans = defaultdict(list)
             for rec in result["activity"]["records"]:
                 spans[rec["kind"]].append((rec["end_ns"] - rec["start_ns"]) / 1e9)
-            summaries.append(dict(id=job["id"], request=job["request"], status=result["status"],
+            summaries.append(dict(id=job["id"], variant=job.get("variant"), request=job["request"], status=result["status"],
                 wall_s=result["wall_s"], profiles=profiles, hotspots=result["hotspots"],
                 trace_dropped=result["activity"]["dropped"],
                 phase_s={k:dict(count=len(v), sum=sum(v), maximum=max(v)) for k,v in spans.items()}))
@@ -165,12 +223,31 @@ def verify(root):
             complete = [(j,p) for j,p in entries if p["exhausted"] and j["request"]["mode"] == mode]
             if complete and any(p["solutions"] != complete[0][1]["solutions"] for _,p in complete):
                 failures.append("Completed same-mode profile results disagree")
+    for completed in replays.values():
+        for result in completed[1:]:
+            if any(result["hotspots"][k] != completed[0]["hotspots"][k] for k in ("witness_leaves", "witness_branches")):
+                failures.append("Replay permutation coverage changed")
     if (root / "failed-jobs.json").exists():
         failures.extend(str(j) for j in read(root / "failed-jobs.json"))
     write(root / "summary.json", dict(failures=failures, records=len(summaries), summary=summaries))
     if failures:
         raise ValueError("\n".join(failures))
     print(f"Verified {len(summaries)}/{len(schedule)} fixed workloads. Exhaustion is local to selected profiles.")
+
+
+def validate_replay(job, result):
+    if digest(job["request_file"]) != job["input_sha256"]:
+        raise ValueError("Changed replay input")
+    cancel_ms = job["request"].get("cancel_after_ms", 0)
+    if result.get("kind") != "witness_replay" or result.get("validated") is not True or result.get("cancel_after_ms") != cancel_ms:
+        raise ValueError("Invalid replay identity or validation")
+    if result.get("completed"):
+        if result.get("key_equal") is not True:
+            raise ValueError("Replay key mismatch")
+    elif not cancel_ms or result.get("cancelled") is not True or result.get("key_equal") is not None:
+        raise ValueError("Unexpected incomplete replay")
+    if result.get("activity", {}).get("active"):
+        raise ValueError("Replay left active work")
 
 
 if __name__ == "__main__":

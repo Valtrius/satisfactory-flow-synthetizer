@@ -4,20 +4,21 @@ All timings are historical observations on this machine unless stated otherwise.
 Read [current status](../status.md) before treating an old recommendation as current.
 Record dates follow the analysis chronology, not necessarily every run's start time.
 
-| ID                                          | Date          | Question                                                                | Outcome                                                                             |
-| ------------------------------------------- | ------------- | ----------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
-| [01](01-parallelism-ladder.md)              | 2026-08-27    | Which parallelism stages help?                                          | Large-worker wins; extra CPU/memory and small-worker regressions                    |
-| [02](02-exact-kernel.md)                    | 2026-08-27/28 | Can exact calculations be cheaper without changing search?              | 792 verified runs; kernel made permanent                                            |
-| [03](03-hard-case-screen.md)                | 2026-08-28    | Do those findings extend to difficult inputs?                           | Slow witness/constructor phases; incomplete enumeration; N<=10 cutoff error         |
-| [04](04-witness-constructor-diagnostics.md) | 2026-08-28    | Which serial work and cancellation phase dominate?                      | Full-witness refinement, repeated helper work; root teardown still unresolved       |
-| [05](05-refinement-and-reuse.md)            | 2026-08-28    | Remove redundant refinement and avoid ineligible/repeated construction? | 6.54x isolated replay; first solver job killed; refinement later committed          |
-| [06](06-cancellation-recovery.md)           | 2026-08-28    | Preserve failure evidence and locate the cancellation tail?             | 9 valid results, 3 kills; cache destruction observed; allocator cause unproved      |
-| [07](07-compact-keys-and-constructor.md)    | 2026-08-28    | Reduce key storage and exact subset arithmetic?                         | 16 verified records, no kills; strong bundle gains; six incomplete solves           |
-| [08](08-repeat-scheduling.md)               | 2026-08-28    | Are gains repeatable; how do partitions and 16/32 workers compare?      | 62 verified; p1 hard optimal 2.96x faster; 24 all/baseline median regresses 6.2%    |
-| [09](09-serializer-and-find-all.md)         | 2026-08-28    | Does isolated encoding explain the regression; does p14 help hard all?  | 42 verified; encoding favors all seven medians; p14 earlier witness, all unfinished |
-| [10](10-constructor-promotion.md)           | 2026-08-28    | Promote the validated constructor without the deadline?                 | Permanent, separate from compact keys; not pushed                                   |
-| [11](11-compact-key-promotion.md)           | 2026-08-28    | Promote compact exact keys independently?                               | Permanent with isolated encoding evidence; not pushed                               |
-| [12](12-hard-obligation-profiling.md)       | 2026-08-28    | What dominates the remaining hard N/L/profile work?                     | Profiler validated; 24-job diagnostic plan, results pending                         |
+| ID                                          | Date          | Question                                                                                  | Outcome                                                                             |
+| ------------------------------------------- | ------------- | ----------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| [01](01-parallelism-ladder.md)              | 2026-08-27    | Which parallelism stages help?                                                            | Large-worker wins; extra CPU/memory and small-worker regressions                    |
+| [02](02-exact-kernel.md)                    | 2026-08-27/28 | Can exact calculations be cheaper without changing search?                                | 792 verified runs; kernel made permanent                                            |
+| [03](03-hard-case-screen.md)                | 2026-08-28    | Do those findings extend to difficult inputs?                                             | Slow witness/constructor phases; incomplete enumeration; N<=10 cutoff error         |
+| [04](04-witness-constructor-diagnostics.md) | 2026-08-28    | Which serial work and cancellation phase dominate?                                        | Full-witness refinement, repeated helper work; root teardown still unresolved       |
+| [05](05-refinement-and-reuse.md)            | 2026-08-28    | Remove redundant refinement and avoid ineligible/repeated construction?                   | 6.54x isolated replay; first solver job killed; refinement later committed          |
+| [06](06-cancellation-recovery.md)           | 2026-08-28    | Preserve failure evidence and locate the cancellation tail?                               | 9 valid results, 3 kills; cache destruction observed; allocator cause unproved      |
+| [07](07-compact-keys-and-constructor.md)    | 2026-08-28    | Reduce key storage and exact subset arithmetic?                                           | 16 verified records, no kills; strong bundle gains; six incomplete solves           |
+| [08](08-repeat-scheduling.md)               | 2026-08-28    | Are gains repeatable; how do partitions and 16/32 workers compare?                        | 62 verified; p1 hard optimal 2.96x faster; 24 all/baseline median regresses 6.2%    |
+| [09](09-serializer-and-find-all.md)         | 2026-08-28    | Does isolated encoding explain the regression; does p14 help hard all?                    | 42 verified; encoding favors all seven medians; p14 earlier witness, all unfinished |
+| [10](10-constructor-promotion.md)           | 2026-08-28    | Promote the validated constructor without the deadline?                                   | Permanent, separate from compact keys; not pushed                                   |
+| [11](11-compact-key-promotion.md)           | 2026-08-28    | Promote compact exact keys independently?                                                 | Permanent with isolated encoding evidence; not pushed                               |
+| [12](12-hard-obligation-profiling.md)       | 2026-08-28    | What dominates the remaining hard N/L/profile work?                                       | 24 verified; 36 witness tail, 10 basis/labeling cost; no kills                      |
+| [13](13-calculation-changes.md)             | 2026-08-28    | Can early exact-L checks, cached witness leaves and direct RREF bounds reduce hard costs? | 80 verified; isolated gains support three promotions; hard whole-all still capped   |
 
 ## How the diagnosis changed
 
@@ -36,6 +37,13 @@ Record dates follow the analysis chronology, not necessarily every run's start t
    The old bundle regression remains unexplained. P14 improves first-witness latency
    without completing hard enumeration. [09 results](09-serializer-and-find-all-results.md)
    recommend separate constructor/key promotion and fixed hard-proof diagnostics next.
+9. [Fixed hard-work results](12-hard-obligation-results.md) isolate a serial witness
+   tail in 36 and a busy worker pool in 10. [Next experiments](12-next-experiments.md)
+   prioritize earlier exact-L rejection, cheaper witness leaves and exact basis work.
+10. [Isolated calculation results](13-calculation-results.md) confirm those gains.
+    [Whole results](13-whole-results.md) improve completed short solves and finish
+    the fixed hard-36 group, but not full hard enumeration. Recompare p1/p14 with
+    the cheaper calculations; seek a complete exact prefix for hard 10.
 
 ## Evidence conventions
 

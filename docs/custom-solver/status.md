@@ -9,89 +9,89 @@ Reduce time to a proven optimum and complete minimum-node enumeration on difficu
 inputs. Record first validated witness separately. CPU and memory explain costs;
 lower overhead alone does not justify slower completion.
 
-## Committed baselines
+## Permanent changes and commit state
 
-| Change                                                         | Evidence                                             | Commit                                        |
-| -------------------------------------------------------------- | ---------------------------------------------------- | --------------------------------------------- |
-| Lazy MRV and cheaper exact RREF/inequality arithmetic          | 792 verified runs, 1.81-2.36x serial gains           | `319191e`, published                          |
-| Remove ordering-only full-witness refinement                   | 6.54x isolated replay, same key/permutation coverage | `3e804e8`, published by the user              |
-| Benchmark tools, diagnostic hooks and experiment documentation | Independent commit validation completed              | `92b111c`, no push performed in this analysis |
+| Change                                                | Evidence                                                            | Commit                                                       |
+| ----------------------------------------------------- | ------------------------------------------------------------------- | ------------------------------------------------------------ |
+| Lazy MRV and exact RREF/inequality arithmetic         | 792 verified runs, 1.81-2.36x serial gains                          | `319191e`                                                    |
+| Remove ordering-only full-witness refinement          | 6.54x isolated replay, same keys/permutations                       | `3e804e8`                                                    |
+| Constructor eligibility, per-N reuse, integer subsets | Avoided helper work; stable no-deadline screen                      | `099cc12`, [10](experiments/10-constructor-promotion.md)     |
+| Compact exact state/SCC keys                          | Seven short-case medians favor compact rows; memory savings         | `2716fac`, [11](experiments/11-compact-key-promotion.md)     |
+| Fixed hard-work profiling                             | Feature-gated production search and strict local-scope verification | `1b558a6`, [12](experiments/12-hard-obligation-profiling.md) |
 
-## Candidates and promotion decision
-
-| Candidate                                                    | Evidence                                                                                                   | Decision                                                            |
-| ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
-| Constructor eligibility, per-N reuse and integer subset sums | Earlier avoided helper work and 143.962 to 6.516 s construction; isolated tests; stable no-deadline screen | `099cc12`, local; see [10](experiments/10-constructor-promotion.md) |
-| Compact state/SCC keys                                       | Isolated encoding comparison favors all seven short-case medians; large memory savings                     | `2716fac`, local; see [11](experiments/11-compact-key-promotion.md) |
-| Five-second constructor deadline                             | No prior expiry established a benefit                                                                      | Removed; preserved as an unapplied benchmark patch                  |
-| Adaptive partitions and remaining groups                     | Earlier witnesses, but hard enumeration still incomplete                                                   | Keep opt-in; no default change                                      |
-
-Constructor improvements are permanent in `099cc12`; compact keys are permanent
-in `2716fac`; see [11](experiments/11-compact-key-promotion.md). Both include
-their related documentation and remain local, not pushed. The unproven helper
-deadline is not included. Hard-work profiling is a separate tooling commit,
-documented in [12](experiments/12-hard-obligation-profiling.md).
+Each optimization commit includes its related docs. The local `origin/develop`
+tracking ref now contains both optimization commits; the profiling commit is one
+commit ahead, rechecked locally after experiment 13. No push was performed or remote
+refresh requested. Result docs and the three measured calculation improvements
+are uncommitted. Separate promotion is recommended. The five-second constructor
+deadline remains an unapplied patch.
+All experimental scheduling flags remain opt-in.
 
 ## Latest measured findings
 
-[Experiment 09 results](experiments/09-serializer-and-find-all-results.md): 42
-verified records, 34 optimal and eight cooperative capped incomplete, no watchdog
-kills, 40.10 process minutes. Original/rechecked analyzer summaries match. All
-completed results and partial solution sets match experiment 08; source/binary
-identities match the frozen run. Both timing variants use the same constructor
-without a deadline and the same boxed key storage; only row encoding differs.
+[Experiment 13 isolated results](experiments/13-calculation-results.md) and
+[whole results](experiments/13-whole-results.md): 80/80 verified, no kills or
+verification failures, 28.669 process minutes. Original/rechecked summaries match;
+frozen hashes and job identities pass. Current Rust sources match the measured
+combined candidate after newline normalization. No source change during analysis.
 
-- 24 all/baseline, five repeats: legacy median 24.763 s versus compact 21.627 s,
-  12.7% less time, 15.1% less CPU and 82.2% lower peak memory. Ranges overlap.
-- All seven short-case medians favor compact encoding. States and decisions match.
-  One diagnostic pair reduces summed encoding time 7.631 to 0.405 s. This weakens
-  the earlier codec-regression hypothesis, but does not explain the old bundle regression.
-- Hard 36 all, two repeats each: p14/32 first witness median 31.636 s versus groups/32
-  95.078 s. P14 uses 70.2% more CPU and 18.0% less peak memory. All eight runs time
-  out at 240 s with the same two layouts, 20 link groups and 45 profiles exhausted.
-- Hard 36 optimal p1/32: 31.902 s median, same N=9/L=11 witness. No large regression
-  appears after removing the optional deadline. This was not an isolated deadline A/B.
-- The 10 case was not rerun. Experiment 08's capped runs remain incomplete at
-  N=11/L=18 with no witness. More states or CPU did not establish faster completion.
+- Early exact-L rejection shortens the targeted complete 36 proof 77.5-77.6%,
+  4.44-4.45x, in three samples per variant/mode. Two discarded witness calls and
+  2,654,208 leaves disappear. Exact results and local exhaustion agree.
+- Cached witness leaves improve isolated replay 14.87x, from 15.845 to 1.066 s.
+  Exact public key, all 2,985,984 leaves and 13,214,106 branches agree.
+- Direct RREF bounds shorten another complete proof 7.3-8.3% in both modes, with
+  lower CPU. Separate diagnostics reduce summed inequality time 36.8%.
+- Real 24/65 optimal/all completion medians improve 5.6-12.3%, three samples each.
+  Hard 36 optimal improves 33.274 to 24.972 s in one sample, still provisional.
+- Combined 36 N=9/L=12 p1/32 finishes all five profiles and 392 roots in 62.409 s
+  all, with six witnesses. Reference remains incomplete at 110 s with five, an
+  exact subset. This new local reference has no fully exhausted baseline SAT set.
+- Whole 36 all/p14 remains incomplete at 120 s with the same two partial witnesses.
+  First witness improves 33.784 to 25.071 s in one sample. CPU and memory at the
+  cap increase; complete-enumeration speed is still unknown.
+- Hard 10 stays incomplete with 32 roots active at cancellation. Basis/labeling
+  costs remain substantial. The new 30 s diagnostics have 0.303-0.346 s root tails.
 
-## Next actions
+Earlier diagnoses remain in [12](experiments/12-hard-obligation-results.md).
+The current results support all three calculation changes without justifying a
+new scheduler default or a universal memory-saving claim.
 
-1. Preserve the separate constructor and key commits as the profiling baseline.
-   Their evidence and limits are recorded in [10](experiments/10-constructor-promotion.md)
-   and [11](experiments/11-compact-key-promotion.md).
-2. Use p1/32 for the next hard-optimal comparison and p14/32 as the next hard-all
-   candidate for earlier witnesses. Do not claim faster hard enumeration yet.
-3. Run the prepared fixed-work profiler at 36 N=9/L=12 and 10 N=11/L=18:
-   24 instrumented jobs, 18.7 minutes of search caps, no hard single-worker runs.
-   Analyze [12](experiments/12-hard-obligation-profiling.md), then select manageable
-   complete obligations where possible. No new performance conclusion yet.
-4. Target repeated canonical graph construction, exact basis generation or witness
-   work according to those hard traces. The short-case codec is no longer the first
-   suspect. A common coarse pool is not justified by occupancy alone.
+## Next work
 
-The next launch follows the tooling commit. Its authoritative status is
-`target/parallelism-ladder/hard-obligations-20260828/BENCHMARK-STATUS.txt`.
-The launcher shows completion/failure; message the task when it finishes.
-Existing difficult cases suffice. Automatic worker selection, sharing/donation
-defaults, allocator replacement and a new coarse scheduler remain unpromoted.
-Use only normalized inputs and runtime facts, never benchmark cyclicity labels.
+1. Promote the [three measured changes](experiments/13-calculation-changes.md)
+   separately with tests and related docs. Commit benchmark tooling separately.
+   They are already active, not yet committed. No new benchmark is running.
+2. Compare p1 versus p14 on actual hard-36 all with the new calculations. Use
+   bounded repeated timing and a separate trace to locate the remaining tail.
+   Repeat hard optimal before treating its single-sample gain as stable.
+3. Add a benchmark-only exact partition-prefix workload for hard 10, with frozen
+   decisions/frontier identity and honest local proof scope. Seek completion in
+   tens of seconds before testing further exact basis or labeling changes.
+
+See [the detailed recommendations](experiments/13-whole-results.md#recommendations).
+Keep scheduling opt-in. Revisit bounded donation only with evidence of idle
+workers and an expensive DFS tail. Existing cases suffice; no hard single-worker
+baseline is needed. Use normalized inputs/runtime facts, never benchmark labels.
 
 ## Validation records
 
-Fixed-work profiling checks: 208 solver-core library/integration/example tests
-passed with `bench-internals`, two ignored; 26 Python checks passed, including a
-real tiny completion and one-second hard cancellation contract test. Strict
-solver-core all-target Clippy passed with and without the feature; release build
-passed. See [12](experiments/12-hard-obligation-profiling.md) for logs and scope.
+Experiment 13 prelaunch: exact-L and witness variants each passed 209 solver-core
+library/integration/example tests, the combined basis variant passed 210, two
+ignored per run. Witness/basis strict all-target Clippy passed; final default-feature
+Clippy passed. Release builds, 28 Python tooling tests and the 80-job frozen plan
+check passed. See [13 changes](experiments/13-calculation-changes.md) for logs.
+Experiment 13 post-run verification passed all 80 records and provenance checks;
+this analysis changes documentation only, not the previously tested Rust code.
 
-Experiment 09 prelaunch checks: constructor-only source passed 199 solver-core
-library/integration/example tests; both encoder variants passed 200 each, with two
-ignored per run. All three passed strict all-target Clippy. The 22 tooling tests,
-release builds and formatting passed. Those checks cover the promoted source split.
+Profiling prelaunch: 208 solver-core library/integration/example tests passed with
+`bench-internals`, two ignored; 26 Python tests passed, including actual tiny
+completion and one-second hard cancellation. Strict all-target solver-core Clippy
+passed with and without the feature; release build passed. Logs are in [12](experiments/12-hard-obligation-profiling.md).
 
-The earlier isolated benchmark commit `92b111c` passed 194 solver-core tests, two
-ignored, strict Clippy and 22 tooling tests in `target/benchmark-commit-validation-20260828/`
-with its own target. These are package/example checks, not new full-workspace runs.
-The earlier 297-test working-workspace validation remains a separate historical record.
-Log paths and hashes are in [09 protocol](experiments/09-serializer-and-find-all.md)
-and [08 protocol](experiments/08-repeat-scheduling.md).
+Experiment 09 prelaunch: constructor-only source passed 199 tests; both encoder
+variants passed 200 each, two ignored per run. Strict all-target Clippy, 22 tooling
+tests, builds and formatting passed. Earlier benchmark commit `92b111c` passed
+194 package/example tests, two ignored, and strict Clippy. The 297-test workspace
+validation is a separate historical record. See [08](experiments/08-repeat-scheduling.md)
+and [09](experiments/09-serializer-and-find-all.md) for those logs and source splits.

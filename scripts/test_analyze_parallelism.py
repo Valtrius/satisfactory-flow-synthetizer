@@ -10,6 +10,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 
 class AnalyzerTests(unittest.TestCase):
@@ -60,6 +61,51 @@ class AnalyzerTests(unittest.TestCase):
         result["request"]["must_exhaust"] = True
         with self.assertRaises(ValueError):
             module.validate_result(job, result)
+
+    def test_fixed_variants_freeze_identity_and_reject_changed_files(self):
+        module, job, result = self.fixed_fixture()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source"
+            (source / "bin").mkdir(parents=True)
+            (source / "bin/profile_obligation.exe").write_bytes(b"fixture")
+            module.write(source / "hashes.json", {"bin/profile_obligation.exe": module.digest(source / "bin/profile_obligation.exe")})
+            module.write(root / "case.json", {"problem": job["problem"]})
+            module.write(root / "manifest.json", {"variants": {"reference": "source"}, "jobs": [
+                dict(job["request"], id="tiny", variant="reference", case_file="case.json", timeout_s=10, profile=None)]})
+            run = root / "run"
+            (run / "bin").mkdir(parents=True)
+            (run / "bin/profile_obligation.exe").write_bytes(b"default")
+            listed = subprocess.CompletedProcess([], 0, json.dumps({"problem": job["problem"], "profiles": job["expected_profiles"]}))
+            with patch.object(module.subprocess, "run", return_value=listed):
+                module.prepare(root / "manifest.json", run)
+            scheduled = module.read(run / "schedule.json")[0]
+            self.assertEqual(scheduled["variant"], "reference")
+            self.assertEqual(Path(scheduled["binary"]), run / "variants/reference/bin/profile_obligation.exe")
+            module.check_variant(run / "variants/reference")
+            (run / "variants/reference/bin/profile_obligation.exe").write_bytes(b"changed")
+            with self.assertRaisesRegex(ValueError, "Changed variant"):
+                module.check_variant(run / "variants/reference")
+
+    def test_witness_replay_requires_exact_key_or_requested_cancellation(self):
+        module, _, _ = self.fixed_fixture()
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "witness.json"
+            path.write_text("saved fixture")
+            job = dict(request_file=str(path), input_sha256=module.digest(path), request={"cancel_after_ms": 0})
+            result = dict(kind="witness_replay", validated=True, cancel_after_ms=0, completed=True, key_equal=True, activity={"active": []})
+            module.validate_replay(job, result)
+            result["key_equal"] = False
+            with self.assertRaises(ValueError):
+                module.validate_replay(job, result)
+            result.update(completed=False, cancelled=True, key_equal=None)
+            with self.assertRaises(ValueError):
+                module.validate_replay(job, result)
+            job["request"]["cancel_after_ms"] = result["cancel_after_ms"] = 20
+            module.validate_replay(job, result)
+            path.write_text("different fixture")
+            with self.assertRaisesRegex(ValueError, "Changed replay input"):
+                module.validate_replay(job, result)
 
     def test_fixed_work_verifier_compares_exact_sets_and_process_identity(self):
         module, job, result = self.fixed_fixture()
@@ -119,6 +165,17 @@ class AnalyzerTests(unittest.TestCase):
                 self.assertEqual(result["deadline_fired"], name == "cancel")
                 self.assertEqual(result["activity"]["active"], [])
                 self.assertTrue(result_file.with_suffix(".heartbeat.log").exists())
+                if name == "tiny":
+                    replay_binary = binary.with_name("profile_witness.exe")
+                    if replay_binary.exists():
+                        witness = next(s for p in result["profiles"] for s in p["solutions"])
+                        replay_input = root / "replay-input.json"
+                        module.write(replay_input, {"problem": result["problem"], "outcome": {"result": witness}})
+                        replay_output = root / "replay-output.json"
+                        subprocess.run([str(replay_binary), str(replay_input), str(replay_output), "0"],
+                                       check=True, capture_output=True, text=True, timeout=10)
+                        module.validate_replay(dict(request_file=str(replay_input), input_sha256=module.digest(replay_input),
+                                                    request={"cancel_after_ms": 0}), module.read(replay_output))
 
     @unittest.skipUnless(os.name == "nt" and shutil.which("pwsh") and shutil.which("rustc"), "Windows runner integration")
     def test_runner_preserves_watchdog_failure_and_runs_the_next_job(self):

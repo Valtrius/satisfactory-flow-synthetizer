@@ -35,8 +35,16 @@ the same proof work without exercising remaining-group concurrency.
 
 ## Running a screen
 
+The verified [calculation comparison](experiments/13-calculation-screen.md) freezes
+four cumulative variants and runs fixed-work/replay then whole optimal/all phases
+sequentially. `start-hard-profile.ps1 -PlanOnly` validates without launching.
+[Results](experiments/13-calculation-results.md) cover 80 jobs. The complete 36
+N=9/L=12 group is now another bounded reference, not a full enumeration reference.
+
 For exact N/L/profile diagnostics, use the separate [fixed-work protocol](experiments/12-hard-obligation-profiling.md).
 Its `best` mode is profile-local; keep it separate from whole `optimal` solve results.
+The [verified hard results](experiments/12-hard-obligation-results.md) supply four
+complete 36 profile controls and identify which 10 profile still requires a cap.
 
 Do not build/test concurrently with timing runs. Use a separate Cargo target
 directory for an isolated checkout; sharing targets across different uncommitted

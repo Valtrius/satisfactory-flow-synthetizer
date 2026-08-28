@@ -1,6 +1,6 @@
 # 12 - Profile fixed hard obligations
 
-Date: 2026-08-28. State: tooling validated; results pending. No push requested.
+Date: 2026-08-28. State: 24 results verified; see [findings](12-hard-obligation-results.md).
 
 ## Question and hypothesis
 
@@ -15,7 +15,7 @@ calculation change is promoted. Benchmark names never guide solver policy.
 ## Baseline and implementation
 
 Constructor commit `099cc12` and compact-key commit `2716fac` each include their
-related docs. This protocol, runner and profiling entry are committed separately.
+related docs. This protocol, runner and profiling entry are in `1b558a6`.
 The experiment 09 manifest and unapplied variant patches are also preserved in
 the tooling commit; neither patch is active in the profiling binary.
 
@@ -100,6 +100,7 @@ Recheck with `python scripts/hard-profile.py verify <run-directory>`.
 
 ## Findings and next decision
 
-Pending the actual run. Identify dominant hard-work costs, completed profile
-references and cancellation tails before proposing the next isolated change.
-Update this record and [status](../status.md) after verifying all scheduled jobs.
+All 24 jobs verified in 14.028 process minutes: 14 local exhaustions, ten capped
+incomplete, no kills. No hard whole solve completed. The [results](12-hard-obligation-results.md)
+identify a full-witness tail for 36 and distributed exact-search costs for 10.
+See [next experiments](12-next-experiments.md); no scheduler default changed.

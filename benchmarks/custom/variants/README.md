@@ -1,7 +1,7 @@
 # Isolated source variants
 
-These patches are benchmark inputs, not production options. They apply to the
-working source recorded in [experiment 09](../../../docs/custom-solver/experiments/09-serializer-and-find-all.md).
+These patches are benchmark inputs, not production options. The historical
+legacy-encoding/deadline patches target the source recorded in [experiment 09](../../../docs/custom-solver/experiments/09-serializer-and-find-all.md).
 Use a detached checkout and its own Cargo target directory. Never share build
 artifacts between source variants or apply these patches during a timing run.
 
@@ -28,3 +28,22 @@ it completes or receives cancellation, with frequent cancellation checks retaine
 The deadline patch is separate from eligibility, per-N reuse and integer subset
 arithmetic. Those remain in three solver files and can be reviewed without the
 serializer. Do not apply both experimental policies merely to reproduce old timings.
+
+## Calculation candidates from experiment 13
+
+Apply `early-exact-l.patch`, then `cached-witness-leaves.patch`, then
+`direct-rref-bounds.patch` to the reference source at `1b558a6`. Each patch is the
+isolated difference from the preceding variant, including its tests. The witness
+patch includes a Clippy-only line-count allowance in `search.rs`.
+
+These changes are already active in the current working tree; do not apply again.
+The corresponding frozen names are reference, exact_l, witness and basis under
+`target/parallelism-ladder/calculation-variants-20260828/`. Each snapshot retains
+sources, release examples and hashes. Use `git apply --check --ignore-space-change`
+when checking a patch against an untracked frozen CRLF copy.
+
+[Implementation and validation](../../../docs/custom-solver/experiments/13-calculation-changes.md)
+and [comparison protocol](../../../docs/custom-solver/experiments/13-calculation-screen.md)
+record the source split. [Verified results](../../../docs/custom-solver/experiments/13-calculation-results.md)
+support separate promotion of all three changes; they remain uncommitted.
+Never apply the old deadline/legacy patches as part of this comparison.
