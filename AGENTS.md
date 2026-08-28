@@ -1,3 +1,4 @@
 - Use conventional commits for commit messages and pull requests titles.
 - Use `npm run format` to format code before committing.
 - When running benchmarks, launch them with a way for the user to know when they are done, then end your turn.
+- For Custom solver work, read `docs/custom-parallelism.md` and `docs/custom-solver/status.md` first. Keep this documentation current as part of the work, not only when asked: record each meaningful experiment, implementation change, result, failure, and decision in `docs/custom-solver/experiments/`, then update the experiment index and current status. Follow `docs/custom-solver/maintenance.md`; distinguish measured results from hypotheses, pending runs, and commit status. Never infer performance or completion from a running benchmark.

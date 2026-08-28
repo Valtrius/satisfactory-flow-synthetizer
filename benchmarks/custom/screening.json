@@ -1,0 +1,269 @@
+{
+  "description": "One-sample screening. Cyclic10 is a bounded UNSAT-prefix probe, not a full solve; defer duplicate find-all prefix runs.",
+  "jobs": [
+    {
+      "Case": "acyclic24",
+      "CaseFile": "cases/acyclic24.json",
+      "Mode": "optimal",
+      "Stage": "baseline",
+      "Workers": 32,
+      "Repeat": 1,
+      "TimeoutSeconds": 15,
+      "MaxNodes": 7,
+      "Cohort": "reference"
+    },
+    {
+      "Case": "acyclic24",
+      "CaseFile": "cases/acyclic24.json",
+      "Mode": "optimal",
+      "Stage": "p1",
+      "Workers": 32,
+      "Repeat": 1,
+      "TimeoutSeconds": 15,
+      "MaxNodes": 7,
+      "Cohort": "reference"
+    },
+    {
+      "Case": "acyclic24",
+      "CaseFile": "cases/acyclic24.json",
+      "Mode": "optimal",
+      "Stage": "p12",
+      "Workers": 32,
+      "Repeat": 1,
+      "TimeoutSeconds": 15,
+      "MaxNodes": 7,
+      "Cohort": "reference"
+    },
+    {
+      "Case": "acyclic24",
+      "CaseFile": "cases/acyclic24.json",
+      "Mode": "all",
+      "Stage": "baseline",
+      "Workers": 32,
+      "Repeat": 1,
+      "TimeoutSeconds": 60,
+      "MaxNodes": 7,
+      "Cohort": "reference"
+    },
+    {
+      "Case": "acyclic24",
+      "CaseFile": "cases/acyclic24.json",
+      "Mode": "all",
+      "Stage": "groups",
+      "Workers": 32,
+      "Repeat": 1,
+      "TimeoutSeconds": 60,
+      "MaxNodes": 7,
+      "Cohort": "reference"
+    },
+    {
+      "Case": "acyclic24",
+      "CaseFile": "cases/acyclic24.json",
+      "Mode": "all",
+      "Stage": "p14",
+      "Workers": 32,
+      "Repeat": 1,
+      "TimeoutSeconds": 60,
+      "MaxNodes": 7,
+      "Cohort": "reference"
+    },
+    {
+      "Case": "cyclic65",
+      "CaseFile": "cases/cyclic65.json",
+      "Mode": "optimal",
+      "Stage": "baseline",
+      "Workers": 32,
+      "Repeat": 1,
+      "TimeoutSeconds": 15,
+      "MaxNodes": 6,
+      "Cohort": "reference"
+    },
+    {
+      "Case": "cyclic65",
+      "CaseFile": "cases/cyclic65.json",
+      "Mode": "optimal",
+      "Stage": "p1",
+      "Workers": 32,
+      "Repeat": 1,
+      "TimeoutSeconds": 15,
+      "MaxNodes": 6,
+      "Cohort": "reference"
+    },
+    {
+      "Case": "cyclic65",
+      "CaseFile": "cases/cyclic65.json",
+      "Mode": "optimal",
+      "Stage": "p12",
+      "Workers": 32,
+      "Repeat": 1,
+      "TimeoutSeconds": 15,
+      "MaxNodes": 6,
+      "Cohort": "reference"
+    },
+    {
+      "Case": "cyclic65",
+      "CaseFile": "cases/cyclic65.json",
+      "Mode": "all",
+      "Stage": "baseline",
+      "Workers": 32,
+      "Repeat": 1,
+      "TimeoutSeconds": 60,
+      "MaxNodes": 6,
+      "Cohort": "reference"
+    },
+    {
+      "Case": "cyclic65",
+      "CaseFile": "cases/cyclic65.json",
+      "Mode": "all",
+      "Stage": "groups",
+      "Workers": 32,
+      "Repeat": 1,
+      "TimeoutSeconds": 60,
+      "MaxNodes": 6,
+      "Cohort": "reference"
+    },
+    {
+      "Case": "cyclic65",
+      "CaseFile": "cases/cyclic65.json",
+      "Mode": "all",
+      "Stage": "p14",
+      "Workers": 32,
+      "Repeat": 1,
+      "TimeoutSeconds": 60,
+      "MaxNodes": 6,
+      "Cohort": "reference"
+    },
+    {
+      "Case": "acyclic36",
+      "CaseFile": "cases/acyclic36.json",
+      "Mode": "optimal",
+      "Stage": "baseline",
+      "Workers": 32,
+      "Repeat": 1,
+      "TimeoutSeconds": 480,
+      "MaxNodes": 9,
+      "Cohort": "stress"
+    },
+    {
+      "Case": "acyclic36",
+      "CaseFile": "cases/acyclic36.json",
+      "Mode": "optimal",
+      "Stage": "p1",
+      "Workers": 32,
+      "Repeat": 1,
+      "TimeoutSeconds": 480,
+      "MaxNodes": 9,
+      "Cohort": "stress"
+    },
+    {
+      "Case": "acyclic36",
+      "CaseFile": "cases/acyclic36.json",
+      "Mode": "optimal",
+      "Stage": "p12",
+      "Workers": 32,
+      "Repeat": 1,
+      "TimeoutSeconds": 480,
+      "MaxNodes": 9,
+      "Cohort": "stress"
+    },
+    {
+      "Case": "acyclic36",
+      "CaseFile": "cases/acyclic36.json",
+      "Mode": "optimal",
+      "Stage": "p1",
+      "Workers": 16,
+      "Repeat": 1,
+      "TimeoutSeconds": 480,
+      "MaxNodes": 9,
+      "Cohort": "stress"
+    },
+    {
+      "Case": "acyclic36",
+      "CaseFile": "cases/acyclic36.json",
+      "Mode": "all",
+      "Stage": "baseline",
+      "Workers": 32,
+      "Repeat": 1,
+      "TimeoutSeconds": 600,
+      "MaxNodes": 9,
+      "Cohort": "stress"
+    },
+    {
+      "Case": "acyclic36",
+      "CaseFile": "cases/acyclic36.json",
+      "Mode": "all",
+      "Stage": "groups",
+      "Workers": 32,
+      "Repeat": 1,
+      "TimeoutSeconds": 600,
+      "MaxNodes": 9,
+      "Cohort": "stress"
+    },
+    {
+      "Case": "acyclic36",
+      "CaseFile": "cases/acyclic36.json",
+      "Mode": "all",
+      "Stage": "p14",
+      "Workers": 32,
+      "Repeat": 1,
+      "TimeoutSeconds": 600,
+      "MaxNodes": 9,
+      "Cohort": "stress"
+    },
+    {
+      "Case": "acyclic36",
+      "CaseFile": "cases/acyclic36.json",
+      "Mode": "all",
+      "Stage": "p14",
+      "Workers": 16,
+      "Repeat": 1,
+      "TimeoutSeconds": 600,
+      "MaxNodes": 9,
+      "Cohort": "stress"
+    },
+    {
+      "Case": "cyclic10",
+      "CaseFile": "cases/cyclic10.json",
+      "Mode": "optimal",
+      "Stage": "baseline",
+      "Workers": 32,
+      "Repeat": 1,
+      "TimeoutSeconds": 180,
+      "MaxNodes": 10,
+      "Cohort": "stress"
+    },
+    {
+      "Case": "cyclic10",
+      "CaseFile": "cases/cyclic10.json",
+      "Mode": "optimal",
+      "Stage": "p1",
+      "Workers": 32,
+      "Repeat": 1,
+      "TimeoutSeconds": 180,
+      "MaxNodes": 10,
+      "Cohort": "stress"
+    },
+    {
+      "Case": "cyclic10",
+      "CaseFile": "cases/cyclic10.json",
+      "Mode": "optimal",
+      "Stage": "p12",
+      "Workers": 32,
+      "Repeat": 1,
+      "TimeoutSeconds": 180,
+      "MaxNodes": 10,
+      "Cohort": "stress"
+    },
+    {
+      "Case": "cyclic10",
+      "CaseFile": "cases/cyclic10.json",
+      "Mode": "optimal",
+      "Stage": "p1",
+      "Workers": 16,
+      "Repeat": 1,
+      "TimeoutSeconds": 180,
+      "MaxNodes": 10,
+      "Cohort": "stress"
+    }
+  ]
+}

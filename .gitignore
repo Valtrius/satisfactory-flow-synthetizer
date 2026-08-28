@@ -13,3 +13,4 @@
 /.tmp
 /.cargo/config.toml
 /.cargo/config
+__pycache__/

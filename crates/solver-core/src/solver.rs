@@ -440,10 +440,19 @@ fn solve_internal(
                         else {
                             return Ok(incomplete(IncompleteReason::Cancelled, best_known, proof));
                         };
+                        let validation_activity = crate::diagnostics::ActivitySpan::start(
+                            "witness_validate",
+                            node_count,
+                            Some(group.link_count),
+                            Some(accounted.profile),
+                            None,
+                            1,
+                        );
                         let validation = validate_solution(&normalized_problem, &canonical.graph)
                             .map_err(|error| {
                             SolverError::ValidationFirewall(Box::new(error))
                         })?;
+                        drop(validation_activity);
                         if validation.link_count != accounted.accounting.link_count {
                             continue;
                         }
@@ -946,6 +955,14 @@ impl ProfileGroupRun<'_> {
         ledger: &mut ProofLedger,
         progress: &(dyn Fn(&SearchInstrumentation) + Sync),
     ) -> Result<Vec<ProfileTaskOutput>, SolverError> {
+        let _activity = crate::diagnostics::ActivitySpan::start(
+            "group",
+            self.node_count,
+            Some(self.link_count),
+            None,
+            None,
+            self.requested_workers,
+        );
         ledger.register_link_group(
             self.node_count,
             self.link_count,
@@ -988,6 +1005,14 @@ impl ProfileGroupRun<'_> {
         profiles: &[AccountedProfile],
         ledger: &mut ProofLedger,
     ) -> Result<(Vec<RootTask>, Vec<RootTaskOutput>), SolverError> {
+        let _activity = crate::diagnostics::ActivitySpan::start(
+            "root_planning",
+            self.node_count,
+            Some(self.link_count),
+            None,
+            None,
+            self.requested_workers,
+        );
         let mut tasks = Vec::new();
         let mut immediate = Vec::new();
         for (profile_index, accounted) in profiles.iter().copied().enumerate() {
@@ -1168,6 +1193,14 @@ impl ProfileGroupRun<'_> {
         progress: &(dyn Fn(&SearchInstrumentation) + Sync),
     ) -> RootTaskOutput {
         let partition = task.partition.id().ordinal();
+        let _activity = crate::diagnostics::ActivitySpan::start(
+            "root",
+            self.node_count,
+            Some(self.link_count),
+            Some(task.accounted.profile),
+            Some(partition),
+            self.requested_workers,
+        );
         let result = catch_unwind(AssertUnwindSafe(|| {
             #[cfg(test)]
             assert!(
@@ -1396,6 +1429,14 @@ fn restore_and_validate(
     node_count: u32,
     accounting: ProfileLinkAccounting,
 ) -> Result<BestKnownSolution, SolverError> {
+    let _activity = crate::diagnostics::ActivitySpan::start(
+        "restore_validate",
+        node_count,
+        Some(accounting.link_count),
+        None,
+        None,
+        1,
+    );
     let mut graph = witness.graph;
     restore_terminals(&mut graph, normalized)?;
     for link in &mut graph.links {

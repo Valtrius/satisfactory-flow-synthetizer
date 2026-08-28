@@ -1,6 +1,7 @@
 mod acyclic_incumbent;
 pub mod algebra;
 pub mod canonical;
+pub mod diagnostics;
 pub mod hotspot_profile;
 pub mod lower_bound;
 pub mod problem;

@@ -7,6 +7,11 @@
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::Duration;
 
+static WITNESS_SEARCH_NS: AtomicU64 = AtomicU64::new(0);
+static WITNESS_REFINE_NS: AtomicU64 = AtomicU64::new(0);
+static WITNESS_LEAF_NS: AtomicU64 = AtomicU64::new(0);
+static WITNESS_BRANCHES: AtomicU64 = AtomicU64::new(0);
+static WITNESS_LEAVES: AtomicU64 = AtomicU64::new(0);
 static ENABLED: AtomicBool = AtomicBool::new(false);
 
 static SNAPSHOT_NS: AtomicU64 = AtomicU64::new(0);
@@ -31,6 +36,11 @@ static SEMANTIC_ENCODING_NS: AtomicU64 = AtomicU64::new(0);
 /// Named nanosecond accumulators for one profiling session.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct HotspotSnapshot {
+    pub witness_leaves: u64,
+    pub witness_branches: u64,
+    pub witness_leaf_ns: u64,
+    pub witness_refine_ns: u64,
+    pub witness_search_ns: u64,
     pub snapshot_ns: u64,
     pub state_canonicalize_ns: u64,
     pub legal_decisions_ns: u64,
@@ -89,6 +99,11 @@ pub fn peek_snapshot() -> HotspotSnapshot {
 
 fn load_snapshot() -> HotspotSnapshot {
     HotspotSnapshot {
+        witness_leaves: WITNESS_LEAVES.load(Ordering::Relaxed),
+        witness_branches: WITNESS_BRANCHES.load(Ordering::Relaxed),
+        witness_leaf_ns: WITNESS_LEAF_NS.load(Ordering::Relaxed),
+        witness_refine_ns: WITNESS_REFINE_NS.load(Ordering::Relaxed),
+        witness_search_ns: WITNESS_SEARCH_NS.load(Ordering::Relaxed),
         snapshot_ns: SNAPSHOT_NS.load(Ordering::Relaxed),
         state_canonicalize_ns: STATE_CANONICALIZE_NS.load(Ordering::Relaxed),
         legal_decisions_ns: LEGAL_DECISIONS_NS.load(Ordering::Relaxed),
@@ -112,6 +127,11 @@ fn load_snapshot() -> HotspotSnapshot {
 
 fn clear_buckets() {
     for bucket in [
+        &WITNESS_LEAVES,
+        &WITNESS_BRANCHES,
+        &WITNESS_LEAF_NS,
+        &WITNESS_REFINE_NS,
+        &WITNESS_SEARCH_NS,
         &SNAPSHOT_NS,
         &STATE_CANONICALIZE_NS,
         &LEGAL_DECISIONS_NS,
@@ -193,6 +213,8 @@ pub(crate) fn record_graph_canon(elapsed: Duration) {
 
 /// Sub-buckets overlap the existing top-level search buckets; never sum both.
 pub(crate) enum CanonicalPhase {
+    WitnessLeaf,
+    WitnessSearch,
     IncidenceBuild,
     DenseGraph,
     Labeling,
@@ -222,6 +244,8 @@ impl Drop for CanonicalTimer {
     fn drop(&mut self) {
         let Some(started) = self.started else { return };
         let bucket = match self.phase {
+            CanonicalPhase::WitnessLeaf => &WITNESS_LEAF_NS,
+            CanonicalPhase::WitnessSearch => &WITNESS_SEARCH_NS,
             CanonicalPhase::IncidenceBuild => &INCIDENCE_BUILD_NS,
             CanonicalPhase::DenseGraph => &DENSE_GRAPH_NS,
             CanonicalPhase::Labeling => &LABELING_NS,
@@ -232,4 +256,11 @@ impl Drop for CanonicalTimer {
         };
         add_bucket(bucket, started.elapsed());
     }
+}
+
+pub(crate) fn record_witness_branch() {
+    add_count(&WITNESS_BRANCHES, 1);
+}
+pub(crate) fn record_witness_leaf() {
+    add_count(&WITNESS_LEAVES, 1);
 }

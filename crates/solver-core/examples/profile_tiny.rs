@@ -6,7 +6,7 @@ fn main() {
         name: "2+3 -> 1+4",
         inputs: &[2, 3],
         outputs: &[1, 4],
-        belt_rate: 5,
+        belt_rate: 1200,
         default_timeout_seconds: 60,
         default_max_nodes: 2,
     });

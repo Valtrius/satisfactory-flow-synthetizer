@@ -456,6 +456,17 @@ pub(crate) fn search_profile_root_partition_with_execution<'a>(
     progress: Option<&'a (dyn Fn(&SearchInstrumentation) + Sync)>,
     execution: SearchExecution<'a>,
 ) -> ProfileSearchResult {
+    let activity = |kind| {
+        crate::diagnostics::ActivitySpan::start(
+            kind,
+            profile.node_count(),
+            accounting.map(|a| a.link_count),
+            Some(profile),
+            Some(partition.id().ordinal()),
+            1,
+        )
+    };
+    let search_activity = activity("root_search");
     let initialized = initialize_profile_search(
         problem,
         profile,
@@ -481,7 +492,20 @@ pub(crate) fn search_profile_root_partition_with_execution<'a>(
         Ok(()) => search_state(&mut state, &mut propagation, &mut context),
         Err(result) => result,
     };
-    finish_profile_search(context, started, result)
+    drop(search_activity);
+    let output = {
+        let _activity = activity("root_finish");
+        finish_profile_search(context, started, result)
+    };
+    {
+        let _activity = activity("root_propagation_drop");
+        drop(propagation);
+    }
+    {
+        let _activity = activity("root_topology_drop");
+        drop(state);
+    }
+    output
 }
 
 fn replay_prefix(
@@ -924,13 +948,35 @@ impl<'a> SearchContext<'a> {
             .max(self.owned_cache_bytes);
     }
 
-    fn finish_stats(&mut self, started: Instant) {
+    fn finish_stats_and_release_caches(&mut self, started: Instant) {
         self.stats.instrumentation.wall_time_ms =
             u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
+        {
+            let _activity = crate::diagnostics::ActivitySpan::start(
+                "state_cache_drop",
+                self.expected_node_count,
+                self.expected_link_count,
+                Some(self.profile),
+                None,
+                1,
+            );
+            drop(std::mem::take(&mut self.cache));
+        }
+        {
+            let _activity = crate::diagnostics::ActivitySpan::start(
+                "scc_cache_drop",
+                self.expected_node_count,
+                self.expected_link_count,
+                Some(self.profile),
+                None,
+                1,
+            );
+            drop(std::mem::take(&mut self.scc_cache));
+        }
     }
 
     fn exhausted(mut self, started: Instant) -> ProfileSearchResult {
-        self.finish_stats(started);
+        self.finish_stats_and_release_caches(started);
         ProfileSearchResult::Exhausted {
             best_witness: self.best_witness,
             witnesses: self.witnesses.into_values().collect(),
@@ -939,7 +985,7 @@ impl<'a> SearchContext<'a> {
     }
 
     fn incomplete(mut self, reason: IncompleteReason, started: Instant) -> ProfileSearchResult {
-        self.finish_stats(started);
+        self.finish_stats_and_release_caches(started);
         ProfileSearchResult::Incomplete {
             reason,
             best_witness: self.best_witness,
@@ -949,7 +995,7 @@ impl<'a> SearchContext<'a> {
     }
 
     fn failed(mut self, error: ProfileSearchError, started: Instant) -> ProfileSearchResult {
-        self.finish_stats(started);
+        self.finish_stats_and_release_caches(started);
         ProfileSearchResult::Failed {
             error,
             stats: self.stats,
@@ -1633,7 +1679,16 @@ fn evaluate_complete_state(
     };
     context.record_canonicalization(canonical_started.elapsed());
     let validation_started = Instant::now();
+    let validation_activity = crate::diagnostics::ActivitySpan::start(
+        "witness_validate",
+        context.expected_node_count,
+        context.expected_link_count,
+        Some(context.profile),
+        None,
+        1,
+    );
     let validation = validate_solution(&context.problem, &canonical.graph);
+    drop(validation_activity);
     context.record_algebra(validation_started.elapsed());
     let validation = match validation {
         Ok(validation) => validation,

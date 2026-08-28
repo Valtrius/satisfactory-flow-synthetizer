@@ -28,6 +28,14 @@ pub(crate) fn find_small_acyclic_witness(
     profile: NodeProfile,
     cancel: &AtomicBool,
 ) -> Option<PhysicalGraph> {
+    let _activity = crate::diagnostics::ActivitySpan::start(
+        "acyclic_construct",
+        profile.node_count(),
+        None,
+        Some(profile),
+        None,
+        1,
+    );
     if !problem.surplus.is_zero()
         || profile.splitter2.checked_add(profile.splitter3)? > MAX_CONSTRUCTIVE_SPLITTERS
     {

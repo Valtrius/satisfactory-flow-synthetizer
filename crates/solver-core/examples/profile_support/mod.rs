@@ -29,6 +29,7 @@ use solver_core::{
 use solver_validation::validate_solution;
 
 #[derive(Clone, Copy)]
+#[allow(dead_code)] // Named examples use this; the file-based example uses run_file.
 pub struct ProfileCase {
     pub name: &'static str,
     pub inputs: &'static [i64],
@@ -68,10 +69,13 @@ struct CustomRun {
     wall: Duration,
     first_valid: Option<Duration>,
     status: String,
+    outcome: Option<solver_api::SolveResult>,
+    deadline_fired: bool,
     preferred_key: Option<CanonicalGraphKey>,
     layouts: BTreeMap<CanonicalGraphKey, BestKnownSolution>,
     last_progress: Option<ProgressLine>,
     hotspots: HotspotSnapshot,
+    activity: solver_core::diagnostics::ActivitySnapshot,
 }
 
 struct Z3Run {
@@ -101,18 +105,45 @@ struct ProgressLine {
     phase: SolvePhase,
     obligation: Option<String>,
     custom: Vec<Diagnostic>,
+    snapshot: solver_api::SolverProgress,
 }
 
+#[allow(dead_code)]
 pub fn run(case: ProfileCase) {
+    run_problem(
+        case.name,
+        &api_problem(&case),
+        case.default_timeout_seconds,
+        case.default_max_nodes,
+    );
+}
+
+/// A file case uses exact rational strings and the same positional options as the named examples.
+#[allow(dead_code)]
+pub fn run_file() {
+    let path = argument(9).expect("expected case JSON path as argument 9");
+    let case: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(path).expect("read case JSON"))
+            .expect("parse case JSON");
+    let problem: Problem = serde_json::from_value(case["problem"].clone()).expect("exact problem");
+    run_problem(case["name"].as_str().expect("case name"), &problem, 180, 12);
+}
+
+fn run_problem(
+    name: &str,
+    problem: &Problem,
+    default_timeout_seconds: u64,
+    default_max_nodes: u32,
+) {
     let seconds = argument(1)
         .and_then(|value| value.parse().ok())
-        .unwrap_or(case.default_timeout_seconds);
+        .unwrap_or(default_timeout_seconds);
     let workers = argument(2)
         .and_then(|value| value.parse().ok())
         .unwrap_or_else(available_workers);
     let max_nodes = argument(3)
         .and_then(|value| value.parse().ok())
-        .unwrap_or(case.default_max_nodes);
+        .unwrap_or(default_max_nodes);
     let engine_argument = argument(4);
     let engines = EngineSelection::parse(engine_argument.as_deref());
     let parallelism = parallelism_stage(argument(5).as_deref());
@@ -126,9 +157,7 @@ pub fn run(case: ProfileCase) {
         "off" => false,
         other => panic!("unknown hotspot recording setting: {other}"),
     };
-    let problem = api_problem(&case);
-
-    println!("dual-engine profile: {} @{}", case.name, case.belt_rate);
+    println!("dual-engine profile: {name} @{}", problem.max_link_rate);
     println!(
         "timeout={seconds}s custom_workers={workers} custom_max_nodes={max_nodes} engines={engines:?}"
     );
@@ -136,7 +165,7 @@ pub fn run(case: ProfileCase) {
 
     let custom = engines.includes_custom().then(|| {
         run_custom(
-            &problem,
+            problem,
             seconds,
             workers,
             max_nodes,
@@ -145,10 +174,12 @@ pub fn run(case: ProfileCase) {
             record_hotspots,
         )
     });
-    let z3 = engines.includes_z3().then(|| run_z3(&case, seconds, mode));
+    let z3 = engines
+        .includes_z3()
+        .then(|| run_z3(problem, seconds, max_nodes, mode));
 
     if let Some(custom) = &custom {
-        print_custom(&problem, custom);
+        print_custom(problem, custom);
         if let Some(path) = argument(6) {
             let keys: Vec<_> = custom
                 .layouts
@@ -161,18 +192,27 @@ pub fn run(case: ProfileCase) {
                 })
                 .collect();
             for solution in custom.layouts.values() {
-                validate_solution(&problem, &solution.graph).expect("benchmark witness validation");
+                validate_solution(problem, &solution.graph).expect("benchmark witness validation");
+            }
+            if let Some(solver_api::SolveResult::Incomplete(incomplete)) = &custom.outcome
+                && let Some(best) = &incomplete.best_known
+            {
+                validate_solution(problem, &best.graph).expect("benchmark incumbent validation");
             }
             let result = serde_json::json!({
-                "case": case.name, "stage": argument(5).unwrap_or_else(|| "baseline".into()),
+                "case": name, "problem": problem, "stage": argument(5).unwrap_or_else(|| "baseline".into()),
                 "mode": if mode == solver_api::SolveMode::Optimal { "optimal" } else { "all" },
                 "hotspot_recording": record_hotspots,
                 "workers": workers, "max_nodes": max_nodes, "timeout_s": seconds,
                 "status": custom.status, "wall_s": custom.wall.as_secs_f64(),
                 "first_valid_s": custom.first_valid.map(|time| time.as_secs_f64()),
                 "validated": true,
+                "outcome": custom.outcome, "deadline_fired": custom.deadline_fired,
+                "last_progress": custom.last_progress.as_ref().map(|p| &p.snapshot),
+                "solutions": custom.layouts.values().collect::<Vec<_>>(),
                 "accounted_timer_s": ns_to_s(custom.hotspots.accounted_ns()),
                 "hotspots": hotspot_json(&custom.hotspots),
+                "activity": record_hotspots.then(|| activity_json(&custom.activity)),
                 "layout_keys": keys, "layouts": custom.layouts.len(),
                 "preferred_key": custom.preferred_key.as_ref().map(|key| key.as_bytes().iter().fold(String::new(), |mut text, byte| { write!(&mut text, "{byte:02x}").unwrap(); text })),
                 "diagnostics": custom.last_progress.as_ref().map(|p| &p.custom),
@@ -180,12 +220,12 @@ pub fn run(case: ProfileCase) {
             std::fs::write(path, serde_json::to_vec_pretty(&result).unwrap()).unwrap();
         }
     }
-    let cross_z3 = z3.as_ref().map(|run| canonicalize_z3(&problem, run));
+    let cross_z3 = z3.as_ref().map(|run| canonicalize_z3(problem, run));
     if let (Some(z3), Some(cross)) = (&z3, &cross_z3) {
         print_z3(z3, cross);
     }
     if let (Some(custom), Some(z3)) = (&custom, &cross_z3) {
-        print_comparison(&problem, custom, z3);
+        print_comparison(problem, custom, z3);
     }
 }
 
@@ -219,6 +259,7 @@ fn available_workers() -> usize {
     thread::available_parallelism().map_or(1, std::num::NonZero::get)
 }
 
+#[allow(dead_code)]
 fn api_problem(case: &ProfileCase) -> Problem {
     Problem {
         inputs: case.inputs.iter().copied().map(Rational::from).collect(),
@@ -254,6 +295,7 @@ fn run_custom(
     let observer = move |event: SolverEvent| match event {
         SolverEvent::Progress(progress) => {
             *progress_slot.lock().expect("progress lock") = Some(ProgressLine {
+                snapshot: progress.clone(),
                 phase: progress.phase,
                 obligation: Some(format!(
                     "N={:?} L={:?}",
@@ -282,25 +324,91 @@ fn run_custom(
 
     if record_hotspots {
         hotspot_profile::install_recorder();
+        solver_core::diagnostics::install();
     }
     let (finished_tx, finished_rx) = mpsc::channel();
     let cancel_for_timer = Arc::clone(&cancel);
+    let deadline_fired = Arc::new(AtomicBool::new(false));
+    let timer_fired = Arc::clone(&deadline_fired);
+    let timer_progress = Arc::clone(&last_progress);
+    let live_path = record_hotspots
+        .then(|| argument(6))
+        .flatten()
+        .map(std::path::PathBuf::from);
+    let started = Instant::now();
+    let (heartbeat_tx, heartbeat_rx) = mpsc::channel();
+    let heartbeat = live_path.as_ref().map(|path| {
+        let mut file =
+            std::fs::File::create(path.with_extension("heartbeat.log")).expect("create heartbeat");
+        let flag = Arc::clone(&cancel);
+        thread::spawn(move || {
+            loop {
+                let returned = heartbeat_rx.recv_timeout(Duration::from_secs(5))
+                    != Err(mpsc::RecvTimeoutError::Timeout);
+                if let Err(error) = write_heartbeat(
+                    &mut file,
+                    started.elapsed(),
+                    flag.load(Ordering::Relaxed),
+                    returned,
+                ) {
+                    eprintln!("Cannot write diagnostic heartbeat: {error}");
+                    break;
+                }
+                if returned {
+                    break;
+                }
+            }
+        })
+    });
     let timer = thread::spawn(move || {
         if finished_rx
             .recv_timeout(Duration::from_secs(seconds))
             .is_err()
         {
+            timer_fired.store(true, Ordering::Relaxed);
             cancel_for_timer.store(true, Ordering::Relaxed);
+            drop(solver_core::diagnostics::ActivitySpan::start(
+                "cancel_requested",
+                0,
+                None,
+                None,
+                None,
+                0,
+            ));
             let live = hotspot_profile::peek_snapshot();
             eprintln!(
-                "Custom timer fired: graph_canons={} state_canon_cpu={:.1}s complete_cpu={:.1}s",
+                "Custom timer fired: graph_canons={} state_canon_elapsed_sum={:.1}s complete_elapsed_sum={:.1}s",
                 live.graph_canon_calls,
                 ns_to_s(live.state_canonicalize_ns),
                 ns_to_s(live.evaluate_complete_ns),
             );
+            let mut sample = 0;
+            loop {
+                if let Some(path) = &live_path {
+                    let progress = timer_progress.lock().expect("progress lock").clone();
+                    let snapshot = serde_json::json!({
+                        "diagnostic_only": true,
+                        "solver_returned": false,
+                        "elapsed_s": started.elapsed().as_secs_f64(),
+                        "cancel_requested": true,
+                        "last_progress": progress.as_ref().map(|p| &p.snapshot),
+                        "hotspots": hotspot_json(&hotspot_profile::peek_snapshot()),
+                        "activity": activity_json(&solver_core::diagnostics::peek()),
+                    });
+                    let sample_path = path.with_extension(format!("live-{sample:04}.json"));
+                    if let Err(error) = write_live_snapshot(&sample_path, &snapshot) {
+                        eprintln!("Cannot persist cancellation diagnostic: {error}");
+                    }
+                }
+                sample += 1;
+                if finished_rx.recv_timeout(Duration::from_secs(15))
+                    != Err(mpsc::RecvTimeoutError::Timeout)
+                {
+                    break;
+                }
+            }
         }
     });
-    let started = Instant::now();
     let result = match mode {
         solver_api::SolveMode::AllAtMinimumNodes => {
             enumerate_with_observer(problem, &options, &cancel, &observer)
@@ -312,8 +420,13 @@ fn run_custom(
     let wall = started.elapsed();
     drop(observer);
     let _ = finished_tx.send(());
+    let _ = heartbeat_tx.send(());
+    if let Some(heartbeat) = heartbeat {
+        let _ = heartbeat.join();
+    }
     let _ = timer.join();
     let hotspots = hotspot_profile::take_snapshot();
+    let activity = solver_core::diagnostics::take();
     if let Ok(solver_api::SolveResult::Optimal(solution)) = &result
         && mode == solver_api::SolveMode::Optimal
     {
@@ -336,7 +449,16 @@ fn run_custom(
         }
         _ => None,
     };
-    let status = match result {
+    if let Ok(solver_api::SolveResult::Incomplete(incomplete)) = &result
+        && mode == solver_api::SolveMode::Optimal
+        && let Some(best) = &incomplete.best_known
+    {
+        layouts
+            .lock()
+            .expect("layout lock")
+            .insert(best.canonical_graph_key.clone(), best.clone());
+    }
+    let status = match &result {
         Ok(solver_api::SolveResult::Optimal(solution)) => format!(
             "Optimal(N={}, L={})",
             solution.node_count, solution.link_count
@@ -357,6 +479,8 @@ fn run_custom(
             .expect("first witness lock")
             .map(|time| time.duration_since(started)),
         status,
+        outcome: result.ok(),
+        deadline_fired: deadline_fired.load(Ordering::Relaxed),
         preferred_key,
         layouts: Arc::try_unwrap(layouts)
             .expect("custom layout observer retained")
@@ -367,15 +491,15 @@ fn run_custom(
             .into_inner()
             .expect("progress lock"),
         hotspots,
+        activity,
     }
 }
 
-fn run_z3(case: &ProfileCase, seconds: u64, mode: solver_api::SolveMode) -> Z3Run {
-    let problem = api_problem(case);
+fn run_z3(problem: &Problem, seconds: u64, max_nodes: u32, mode: solver_api::SolveMode) -> Z3Run {
     let options = solver_api::RunOptions {
         mode,
         worker_count: available_workers(),
-        max_nodes: Some(case.default_max_nodes),
+        max_nodes: Some(max_nodes),
     };
     let cancel = Arc::new(AtomicBool::new(false));
     let emitted = Arc::new(Mutex::new(Vec::<BestKnownSolution>::new()));
@@ -393,7 +517,7 @@ fn run_z3(case: &ProfileCase, seconds: u64, mode: solver_api::SolveMode) -> Z3Ru
     });
 
     let started = Instant::now();
-    let result = solver_z3::solve_problem(&problem, &options, &cancel, &move |event| {
+    let result = solver_z3::solve_problem(problem, &options, &cancel, &move |event| {
         if let SolverEvent::SolutionFound(solution) = event {
             emitted_slot
                 .lock()
@@ -467,7 +591,7 @@ fn canonicalize_z3(problem: &Problem, run: &Z3Run) -> CrossCanonicalZ3 {
     }
 }
 
-fn normalize_like_custom(problem: &Problem, graph: &PhysicalGraph) -> (Problem, PhysicalGraph) {
+pub fn normalize_like_custom(problem: &Problem, graph: &PhysicalGraph) -> (Problem, PhysicalGraph) {
     let Preparation::Prepared(normalized) =
         prepare_problem(problem).expect("profile case must be a valid problem")
     else {
@@ -731,8 +855,13 @@ fn print_hotspots(hotspots: &HotspotSnapshot, wall: Duration) {
     println!("  canonical_subphases_ns={}", hotspot_json(hotspots));
 }
 
-fn hotspot_json(h: &HotspotSnapshot) -> serde_json::Value {
+pub fn hotspot_json(h: &HotspotSnapshot) -> serde_json::Value {
     serde_json::json!({
+        "witness_search_ns": h.witness_search_ns,
+        "witness_refine_ns": h.witness_refine_ns,
+        "witness_leaf_ns": h.witness_leaf_ns,
+        "witness_branches": h.witness_branches,
+        "witness_leaves": h.witness_leaves,
         "state_canonicalize_ns": h.state_canonicalize_ns,
         "legal_decisions_ns": h.legal_decisions_ns,
         "propagation_sync_ns": h.propagation_sync_ns,
@@ -753,4 +882,160 @@ fn hotspot_json(h: &HotspotSnapshot) -> serde_json::Value {
 
 fn ns_to_s(ns: u64) -> f64 {
     ns as f64 / 1_000_000_000.0
+}
+
+pub fn activity_json(trace: &solver_core::diagnostics::ActivitySnapshot) -> serde_json::Value {
+    let record_json = |r: &solver_core::diagnostics::ActivityRecord| {
+        serde_json::json!({
+            "kind": r.kind, "node_count": r.node_count, "link_count": r.link_count,
+            "profile": r.profile, "root": r.root, "worker_budget": r.worker_budget,
+            "start_ns": r.start_ns, "end_ns": r.end_ns, "thread": r.thread,
+        })
+    };
+    serde_json::json!({"dropped": trace.dropped,
+        "records": trace.records.iter().map(record_json).collect::<Vec<_>>(),
+        "active": trace.active.iter().map(record_json).collect::<Vec<_>>(),
+    })
+}
+
+fn write_live_snapshot(path: &std::path::Path, value: &serde_json::Value) -> std::io::Result<()> {
+    // Each sample has a unique name. A killed writer leaves only a .tmp file,
+    // so an earlier complete diagnostic remains available.
+    use std::io::Write as _;
+    let pending = path.with_extension("tmp");
+    let mut file = std::fs::File::create(&pending)?;
+    serde_json::to_writer(&mut file, value)?;
+    file.flush()?;
+    file.sync_all()?;
+    drop(file);
+    std::fs::rename(pending, path)
+}
+
+fn write_heartbeat(
+    writer: &mut impl std::io::Write,
+    elapsed: Duration,
+    cancelled: bool,
+    returned: bool,
+) -> std::io::Result<()> {
+    use std::io::Write as _;
+    let counts = solver_core::diagnostics::heartbeat();
+    // A separate thread and stack buffer avoid the allocating JSON/trace-lock
+    // path. This remains diagnostic information, never a solver result.
+    let mut line = std::io::Cursor::new([0_u8; 256]);
+    writeln!(
+        &mut line,
+        "diagnostic_only=true elapsed_ms={} cancel={} solver_returned={} root_searches={} state_cache_drops={} scc_cache_drops={}",
+        elapsed.as_millis(),
+        cancelled,
+        returned,
+        counts.root_searches,
+        counts.state_cache_drops,
+        counts.scc_cache_drops
+    )?;
+    writer.write_all(&line.get_ref()[..usize::try_from(line.position()).unwrap()])?;
+    writer.flush()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn live_diagnostic_is_separate_from_solver_results_and_keeps_previous_samples() {
+        let directory =
+            std::env::temp_dir().join(format!("custom-live-test-{}", std::process::id()));
+        std::fs::create_dir(&directory).unwrap();
+        let path = directory.join("sample.live-0000.json");
+        let value = serde_json::json!({"diagnostic_only": true, "solver_returned": false});
+        write_live_snapshot(&path, &value).unwrap();
+        write_live_snapshot(&directory.join("sample.live-0001.json"), &value).unwrap();
+        assert_eq!(
+            serde_json::from_slice::<serde_json::Value>(&std::fs::read(path).unwrap()).unwrap(),
+            value
+        );
+        assert_eq!(std::fs::read_dir(&directory).unwrap().count(), 2);
+        std::fs::remove_file(directory.join("sample.live-0000.json")).unwrap();
+        std::fs::remove_file(directory.join("sample.live-0001.json")).unwrap();
+        std::fs::remove_dir(directory).unwrap();
+    }
+
+    #[test]
+    fn heartbeat_uses_a_bounded_writer_and_distinguishes_cancellation_from_return() {
+        let mut output = std::io::Cursor::new([0_u8; 256]);
+        write_heartbeat(&mut output, Duration::from_millis(123), true, false).unwrap();
+        let text =
+            std::str::from_utf8(&output.get_ref()[..usize::try_from(output.position()).unwrap()])
+                .unwrap();
+        assert!(
+            text.contains("diagnostic_only=true elapsed_ms=123 cancel=true solver_returned=false")
+        );
+        assert!(text.contains("state_cache_drops="));
+    }
+
+    fn tiny() -> Problem {
+        Problem {
+            inputs: vec![2.into(), 3.into()],
+            outputs: vec![1.into(), 4.into()],
+            max_link_rate: 1200.into(),
+        }
+    }
+
+    #[test]
+    fn file_runner_records_finite_bound_as_incomplete() {
+        let run = run_custom(
+            &tiny(),
+            30,
+            2,
+            1,
+            ParallelismOptions::default(),
+            solver_api::SolveMode::Optimal,
+            false,
+        );
+        let Some(solver_api::SolveResult::Incomplete(result)) = run.outcome else {
+            panic!("expected finite bound")
+        };
+        assert_eq!(result.proof.node_counts_exhausted_through, Some(1));
+        assert!(matches!(
+            result.reason,
+            solver_api::IncompleteReason::ResourceLimit { .. }
+        ));
+        assert!(result.best_known.is_none());
+        assert!(run.preferred_key.is_none());
+        assert!(!run.deadline_fired);
+    }
+
+    #[test]
+    fn file_runner_records_both_actual_modes_and_validated_witnesses() {
+        for mode in [
+            solver_api::SolveMode::Optimal,
+            solver_api::SolveMode::AllAtMinimumNodes,
+        ] {
+            let problem = tiny();
+            let run = run_custom(
+                &problem,
+                30,
+                2,
+                2,
+                ParallelismOptions::default(),
+                mode,
+                false,
+            );
+            assert!(matches!(
+                run.outcome,
+                Some(solver_api::SolveResult::Optimal(_))
+            ));
+            assert!(run.first_valid.is_some());
+            assert_eq!(
+                run.layouts.len(),
+                if mode == solver_api::SolveMode::Optimal {
+                    1
+                } else {
+                    2
+                }
+            );
+            for solution in run.layouts.values() {
+                validate_solution(&problem, &solution.graph).unwrap();
+            }
+        }
+    }
 }

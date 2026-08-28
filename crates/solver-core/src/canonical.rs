@@ -334,7 +334,9 @@ pub fn canonicalize_effective_layout(
     CanonicalGraphKey::from_bytes(select_canonical(&topology, None, EncodingKind::Layout).bytes)
 }
 
-pub(crate) fn canonicalize_witness_cancellable(
+/// Canonicalizes a complete witness, returning no key when cancellation interrupts the exact search.
+#[must_use]
+pub fn canonicalize_witness_cancellable(
     problem: &Problem,
     graph: &PhysicalGraph,
     cancel: &AtomicBool,
@@ -347,6 +349,14 @@ fn canonicalize_witness_inner(
     graph: &PhysicalGraph,
     cancel: Option<&AtomicBool>,
 ) -> Option<CanonicalWitness> {
+    let _activity = crate::diagnostics::ActivitySpan::start(
+        "witness_canonicalize",
+        u32::try_from(graph.nodes.len()).unwrap_or(u32::MAX),
+        None,
+        None,
+        None,
+        1,
+    );
     let discard_count = discard_count_from_links(&graph.links);
     let topology = PartialTopology {
         problem: problem.clone(),
@@ -650,6 +660,7 @@ fn select_canonical_with_incidence(
             cancel,
         );
     }
+    let _witness_timer = CanonicalTimer::start(CanonicalPhase::WitnessSearch);
     let groups = incidence.labeling_groups(topology);
     let ranks = vec![None; incidence.base_colors.len()];
     let mut best = None;
@@ -712,9 +723,13 @@ fn select_canonical_with_canonaut(
         return None;
     }
     let labeling_timer = CanonicalTimer::start(CanonicalPhase::Labeling);
+    let labeling_activity = crate::diagnostics::SlowCall::start(
+        u32::try_from(topology.nodes.len()).unwrap_or(u32::MAX),
+    );
     let mut manager = CanonautManager::new(graph.number_of_vertices()).with_canonization();
     manager.canonize_graph(&graph);
     drop(labeling_timer);
+    labeling_activity.finish(cancel.is_some_and(|flag| flag.load(Ordering::Relaxed)));
     if cancel.is_some_and(|flag| flag.load(Ordering::Relaxed)) {
         return None;
     }
@@ -769,6 +784,7 @@ fn search_individualizations(
     cancel: Option<&AtomicBool>,
     best: &mut Option<SelectedCanonical>,
 ) -> bool {
+    hotspot_profile::record_witness_branch();
     if cancel.is_some_and(|flag| flag.load(Ordering::Relaxed)) {
         return false;
     }
@@ -820,6 +836,8 @@ fn search_individualizations(
         return true;
     }
 
+    hotspot_profile::record_witness_leaf();
+    let _leaf_timer = CanonicalTimer::start(CanonicalPhase::WitnessLeaf);
     let candidate = incidence.relabel(topology, &ranks);
     let bytes = match encoding {
         EncodingKind::State => {

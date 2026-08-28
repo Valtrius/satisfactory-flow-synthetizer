@@ -1,0 +1,137 @@
+{
+  "description": "Bounded post-recommendation screen with complete small-case gates, hard find-optimal, cyclic N=11 and enumeration teardown diagnostics. Case names are harness labels only.",
+  "jobs": [
+    {
+      "Case": "acyclic24",
+      "CaseFile": "cases/acyclic24.json",
+      "Mode": "optimal",
+      "Stage": "baseline",
+      "Workers": 32,
+      "Repeat": 1,
+      "TimeoutSeconds": 15,
+      "MaxNodes": 7,
+      "Cohort": "reference"
+    },
+    {
+      "Case": "acyclic24",
+      "CaseFile": "cases/acyclic24.json",
+      "Mode": "optimal",
+      "Stage": "p1",
+      "Workers": 32,
+      "Repeat": 1,
+      "TimeoutSeconds": 15,
+      "MaxNodes": 7,
+      "Cohort": "reference"
+    },
+    {
+      "Case": "acyclic24",
+      "CaseFile": "cases/acyclic24.json",
+      "Mode": "all",
+      "Stage": "baseline",
+      "Workers": 32,
+      "Repeat": 1,
+      "TimeoutSeconds": 60,
+      "MaxNodes": 7,
+      "Cohort": "reference"
+    },
+    {
+      "Case": "acyclic24",
+      "CaseFile": "cases/acyclic24.json",
+      "Mode": "all",
+      "Stage": "groups",
+      "Workers": 32,
+      "Repeat": 1,
+      "TimeoutSeconds": 60,
+      "MaxNodes": 7,
+      "Cohort": "reference"
+    },
+    {
+      "Case": "cyclic65",
+      "CaseFile": "cases/cyclic65.json",
+      "Mode": "optimal",
+      "Stage": "baseline",
+      "Workers": 32,
+      "Repeat": 1,
+      "TimeoutSeconds": 15,
+      "MaxNodes": 6,
+      "Cohort": "reference"
+    },
+    {
+      "Case": "cyclic65",
+      "CaseFile": "cases/cyclic65.json",
+      "Mode": "optimal",
+      "Stage": "p1",
+      "Workers": 32,
+      "Repeat": 1,
+      "TimeoutSeconds": 15,
+      "MaxNodes": 6,
+      "Cohort": "reference"
+    },
+    {
+      "Case": "cyclic65",
+      "CaseFile": "cases/cyclic65.json",
+      "Mode": "all",
+      "Stage": "baseline",
+      "Workers": 32,
+      "Repeat": 1,
+      "TimeoutSeconds": 60,
+      "MaxNodes": 6,
+      "Cohort": "reference"
+    },
+    {
+      "Case": "cyclic65",
+      "CaseFile": "cases/cyclic65.json",
+      "Mode": "all",
+      "Stage": "groups",
+      "Workers": 32,
+      "Repeat": 1,
+      "TimeoutSeconds": 60,
+      "MaxNodes": 6,
+      "Cohort": "reference"
+    },
+    {
+      "Case": "acyclic36",
+      "CaseFile": "cases/acyclic36.json",
+      "Mode": "optimal",
+      "Stage": "baseline",
+      "Workers": 32,
+      "Repeat": 1,
+      "TimeoutSeconds": 360,
+      "MaxNodes": 9,
+      "Cohort": "stress"
+    },
+    {
+      "Case": "cyclic10",
+      "CaseFile": "cases/cyclic10.json",
+      "Mode": "optimal",
+      "Stage": "baseline",
+      "Workers": 32,
+      "Repeat": 1,
+      "TimeoutSeconds": 180,
+      "MaxNodes": 11,
+      "Cohort": "stress"
+    },
+    {
+      "Case": "cyclic10",
+      "CaseFile": "cases/cyclic10.json",
+      "Mode": "optimal",
+      "Stage": "p1",
+      "Workers": 32,
+      "Repeat": 1,
+      "TimeoutSeconds": 180,
+      "MaxNodes": 11,
+      "Cohort": "stress"
+    },
+    {
+      "Case": "acyclic36",
+      "CaseFile": "cases/acyclic36.json",
+      "Mode": "all",
+      "Stage": "groups",
+      "Workers": 32,
+      "Repeat": 1,
+      "TimeoutSeconds": 600,
+      "MaxNodes": 9,
+      "Cohort": "stress"
+    }
+  ]
+}
