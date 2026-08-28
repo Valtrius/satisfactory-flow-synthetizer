@@ -3,6 +3,9 @@
 //! This bypasses earlier N/L groups and the optional constructor. Exhaustion
 //! proves only the selected work, never global optimality or minimum-N enumeration.
 
+mod prefix;
+pub use prefix::{PrefixIdentity, PreparedPrefix, prepare_prefix};
+
 use super::{
     AtomicBool, BTreeMap, ParallelismOptions, Preparation, Problem, ProfileGroupRun,
     ProfileSearchResult, ProfileTaskResult, ProofLedger, SearchInstrumentation, SolverError,
@@ -186,7 +189,7 @@ mod tests {
     use super::*;
     use solver_api::{CanonicalGraphKey, PhysicalGraph};
 
-    fn fixture() -> (Problem, FixedWorkload) {
+    pub(super) fn fixture() -> (Problem, FixedWorkload) {
         (
             Problem {
                 inputs: vec![2.into(), 3.into()],

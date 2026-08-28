@@ -49,15 +49,44 @@ fn workload(value: &Value) -> FixedWorkload {
     }
 }
 
-fn main() {
-    let args = std::env::args().collect::<Vec<_>>();
-    assert_eq!(
-        args.len(),
-        3,
-        "usage: profile_obligation request.json output.json | --list request.json"
-    );
-    let list_only = args[1] == "--list";
-    let request_path = Path::new(if list_only { &args[2] } else { &args[1] });
+fn prepare_prefix(
+    request: &Value,
+    problem: &Problem,
+    selection: &FixedWorkload,
+    list_only: bool,
+) -> (Option<benchmark::PreparedPrefix>, Option<Value>) {
+    let prefix = request.get("prefix").map(|recipe| {
+        benchmark::prepare_prefix(
+            problem,
+            selection,
+            usize::try_from(recipe["depth"].as_u64().expect("prefix depth")).unwrap(),
+            usize::try_from(recipe["pick"].as_u64().expect("prefix pick")).unwrap(),
+        )
+        .expect("valid prefix selection")
+    });
+    let prefix_identity = prefix.as_ref().map(|prepared| {
+        let id = prepared.identity();
+        json!({"version":1,"frontiers":id.frontiers,"route":id.route,
+            "decisions":id.decisions,"stable_key":id.stable_key})
+    });
+    if !list_only {
+        if let Some(identity) = &prefix_identity {
+            assert_eq!(
+                request.get("prefix_identity"),
+                Some(identity),
+                "changed or missing frozen prefix identity"
+            );
+        } else {
+            assert!(
+                request.get("prefix_identity").is_none(),
+                "prefix identity without a selection"
+            );
+        }
+    }
+    (prefix, prefix_identity)
+}
+
+fn load_request(request_path: &Path) -> (Value, Problem) {
     let request: Value = serde_json::from_slice(&std::fs::read(request_path).unwrap()).unwrap();
     let case_path = request_path
         .parent()
@@ -70,10 +99,37 @@ fn main() {
         1200.into(),
         "benchmark capacity must be 1200"
     );
+    (request, problem)
+}
+
+fn profile_reports(result: Vec<benchmark::FixedProfileResult>) -> Vec<Value> {
+    result.into_iter().map(|p| {
+        json!({"profile":p.profile,"exhausted":p.exhausted,"incomplete_reason":p.incomplete_reason,
+            "roots":p.roots,"roots_exhausted":p.roots_exhausted,
+            "diagnostics":p.instrumentation.diagnostics(), "solutions":p.witnesses})
+    }).collect::<Vec<_>>()
+}
+
+fn main() {
+    let args = std::env::args().collect::<Vec<_>>();
+    assert_eq!(
+        args.len(),
+        3,
+        "usage: profile_obligation request.json output.json | --list request.json"
+    );
+    let list_only = args[1] == "--list";
+    let request_path = Path::new(if list_only { &args[2] } else { &args[1] });
+    let (request, problem) = load_request(request_path);
     let selection = workload(&request);
     let expected = benchmark::profiles(&problem, &selection).expect("valid exact selection");
+    let preparation_started = Instant::now();
+    let (prefix, prefix_identity) = prepare_prefix(&request, &problem, &selection, list_only);
+    let preparation_s = preparation_started.elapsed().as_secs_f64();
     if list_only {
-        println!("{}", json!({"problem":problem,"profiles":expected}));
+        println!(
+            "{}",
+            json!({"problem":problem,"profiles":expected,"prefix_identity":prefix_identity})
+        );
         return;
     }
     let output = Path::new(&args[2]);
@@ -124,9 +180,13 @@ fn main() {
                 }
             });
         }
-        let result = benchmark::run(&problem, &selection, &cancel, &|snapshot| {
+        let publish = |snapshot: &SearchInstrumentation| {
             *progress.lock().unwrap() = snapshot.clone();
-        });
+        };
+        let result = match &prefix {
+            Some(prepared) => prepared.run(prepared.identity(), &cancel, &publish).map(|r| vec![r]),
+            None => benchmark::run(&problem, &selection, &cancel, &publish),
+        };
         let _ = finished_tx.send(());
         let _ = heartbeat_tx.send(());
         let _ = live_tx.send(());
@@ -134,13 +194,15 @@ fn main() {
     }).expect("fixed production workload failed");
     let wall_s = started.elapsed().as_secs_f64();
     let exhausted = result.iter().all(|p| p.exhausted);
-    let profiles = result.into_iter().map(|p| {
-        json!({"profile":p.profile,"exhausted":p.exhausted,"incomplete_reason":p.incomplete_reason,
-            "roots":p.roots,"roots_exhausted":p.roots_exhausted,
-            "diagnostics":p.instrumentation.diagnostics(), "solutions":p.witnesses})
-    }).collect::<Vec<_>>();
-    let report = json!({"schema_version":1,"kind":"fixed_obligation","scope":"selected_profiles",
+    let profiles = profile_reports(result);
+    let proof_scope = if prefix.is_some() {
+        "selected_prefix"
+    } else {
+        "selected_profiles"
+    };
+    let report = json!({"schema_version":1,"kind":"fixed_obligation","scope":proof_scope,
         "request":request,"problem":problem,"expected_profiles":expected,
+        "prefix_identity":prefix_identity,"preparation_s":preparation_s,
         "status":if exhausted {"exhausted"} else {"incomplete"}, "profiles":profiles,
         "validated":true,"wall_s":wall_s,"deadline_fired":deadline_fired.load(Ordering::Relaxed),
         "hotspots":profile_support::hotspot_json(&hotspot_profile::take_snapshot()),

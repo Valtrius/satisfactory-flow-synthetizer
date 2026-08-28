@@ -1,5 +1,8 @@
 # 13 - Isolated calculation candidates
 
+Subsequent promotion is recorded in [14](14-calculation-promotion.md). The results
+and uncommitted-state descriptions below retain the analysis-time context.
+
 Date: 2026-08-28. Implemented, validated and measured in 80 verified jobs.
 All three changes are active and uncommitted; separate promotion is recommended.
 [Basis for the work](12-next-experiments.md). [Measurement protocol](13-calculation-screen.md).

@@ -104,7 +104,7 @@ try {
         & python (Join-Path $runRoot 'analyze-parallelism.py') $wholeResults --allow-incomplete --output (Join-Path $wholeResults 'summary.json') *> (Join-Path $runRoot 'whole-verification.log')
         if ($LASTEXITCODE -ne 0) { throw 'Whole-solve verification failed; inspect whole-verification.log.' }
     }
-    $message = @('FINISHED: calculation benchmarks and verification completed.',"Finished: $(Get-Date -Format o)",'Fixed-work exhaustion applies only to selected profiles. Capped work remains incomplete.',"Results: $runRoot",'Message the Codex task to analyze results.')
+    $message = @('FINISHED: Custom benchmarks and verification completed.',"Finished: $(Get-Date -Format o)",'Fixed-work exhaustion applies only to its recorded profile/prefix scope. Capped work remains incomplete.',"Results: $runRoot",'Message the Codex task to analyze results.')
     $message | Set-Content -LiteralPath (Join-Path $runRoot 'BENCHMARK-FINISHED.txt')
     $title = 'Custom hard profiling finished'
 } catch {

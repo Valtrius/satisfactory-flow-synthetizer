@@ -22,7 +22,7 @@ lower overhead alone does not justify slower completion.
 Each optimization commit includes its related docs. Experiment 13 tooling/results
 are committed in `473aba7`. [Calculation promotion](experiments/14-calculation-promotion.md)
 has separate commits: exact-L `5ae5631`, witness `1fbe95d`, and direct RREF bounds
-included with this update. All three are permanent. No push was performed.
+`af1682c`. All three are permanent. No push was performed.
 The constructor deadline and scheduling flags remain unchanged.
 
 ## Latest measured findings
@@ -30,8 +30,8 @@ The constructor deadline and scheduling flags remain unchanged.
 [Experiment 13 isolated results](experiments/13-calculation-results.md) and
 [whole results](experiments/13-whole-results.md): 80/80 verified, no kills or
 verification failures, 28.669 process minutes. Original/rechecked summaries match;
-frozen hashes and job identities pass. Current Rust sources match the measured
-combined candidate after newline normalization. No source change during analysis.
+frozen hashes and job identities pass. At that analysis, Rust sources matched the measured combined candidate. Subsequent
+changes add benchmark-only prefix access, with no new production calculation policy.
 
 - Early exact-L rejection shortens the targeted complete 36 proof 77.5-77.6%,
   4.44-4.45x, in three samples per variant/mode. Two discarded witness calls and
@@ -55,23 +55,32 @@ Earlier diagnoses remain in [12](experiments/12-hard-obligation-results.md).
 The current results support all three calculation changes without justifying a
 new scheduler default or a universal memory-saving claim.
 
-## Next work
+## Current run and next analysis
 
-1. The [three measured changes](experiments/14-calculation-promotion.md) are
-   promoted separately with tests and related docs. No new benchmark is running.
-2. Compare p1 versus p14 on actual hard-36 all with the new calculations. Use
-   bounded repeated timing and a separate trace to locate the remaining tail.
-   Repeat hard optimal before treating its single-sample gain as stable.
-3. Add a benchmark-only exact partition-prefix workload for hard 10, with frozen
-   decisions/frontier identity and honest local proof scope. Seek completion in
-   tens of seconds before testing further exact basis or labeling changes.
+The measured calculations are permanent. [Prefix workloads](experiments/15-prefix-workloads.md)
+add exact frontier/path identities and selected-subtree proof scope. The [next screen](experiments/16-post-calculation-screen.md)
+has 26 fixed-prefix jobs and 12 whole jobs. Launched; awaiting analysis.
 
-See [the detailed recommendations](experiments/13-whole-results.md#recommendations).
-Keep scheduling opt-in. Revisit bounded donation only with evidence of idle
-workers and an expensive DFS tail. Existing cases suffice; no hard single-worker
-baseline is needed. Use normalized inputs/runtime facts, never benchmark labels.
+- Hard 10: six depth/pick recipes, best/all twice, 30 s caps. Discover completed
+  subtrees suitable for future calculation comparisons; no gain is claimed yet.
+- Hard 36: p1/p14 all twice at 240 s, separate 120 s diagnostics, and three
+  reference/combined optimal repeats at 60 s. All whole jobs use 32 workers.
+- Search caps total 38.167 minutes plus startup/preparation and cleanup. The serial
+  prefix jobs are bounded subtrees, not hard single-worker whole-profile baselines.
+
+Run root: `target/parallelism-ladder/post-calculation-20260828/`. Read its
+`BENCHMARK-STATUS.txt` and final completion/failure marker. Reverify frozen artifacts
+before analysis. No builds/tests during timing. Keep all defaults opt-in; revisit
+bounded donation only if a new trace shows idle workers and a long DFS tail.
+Existing cases suffice. Solver policy never uses corpus cyclicity labels.
 
 ## Validation records
+
+Prefix work: 211 solver-core library/integration/example tests passed, two ignored;
+strict all-target Clippy passed with and without `bench-internals`; release examples
+built. 30 Python tests passed, including native prefix identity/scope rejection. The
+38-job frozen plan passed; see the protocol for source identity.
+Logs: `target/prefix-{tests,clippy,default-clippy,build,tool-tests-final}.log`.
 
 Experiment 13 prelaunch: exact-L and witness variants each passed 209 solver-core
 library/integration/example tests, the combined basis variant passed 210, two

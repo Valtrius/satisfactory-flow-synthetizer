@@ -52,6 +52,7 @@ def prepare(manifest_path, root):
         variants[name] = str(destination)
     write(root / "variants.json", variants)
     schedule = []
+    prefix_certificates = {}
     for original in manifest["jobs"]:
         job = dict(original)
         variant = job.pop("variant", None)
@@ -89,6 +90,19 @@ def prepare(manifest_path, root):
         listed = subprocess.run([str(selected_binary), "--list", str(probe)], check=True,
                                 capture_output=True, text=True, timeout=30)
         expected = json.loads(listed.stdout)
+        if job.get("prefix") is not None:
+            if expand or job.get("profile") is None or job.get("workers") != 1:
+                raise ValueError("Prefix requires one selected profile and one worker")
+            if not expected.get("prefix_identity"):
+                raise ValueError("Binary does not support frozen prefix identities")
+            identity = expected["prefix_identity"]
+            if job.get("prefix_identity", identity) != identity:
+                raise ValueError("Requested frozen prefix identity changed")
+            recipe = json.dumps([expected["problem"], job["node_count"], job["link_count"],
+                                 job["profile"], job["prefix"]], sort_keys=True)
+            if prefix_certificates.setdefault(recipe, identity) != identity:
+                raise ValueError("Same prefix recipe changed between jobs or variants")
+            job["prefix_identity"] = expected["prefix_identity"]
         selections = expected["profiles"] if expand else [job.get("profile")]
         for index, profile in enumerate(selections):
             request = dict(job, profile=profile)
@@ -117,8 +131,13 @@ def profile_id(profile):
 
 
 def validate_result(job, result):
-    if result.get("kind") != "fixed_obligation" or result.get("scope") != "selected_profiles" or result.get("schema_version") != 1:
+    prefix = job["request"].get("prefix") is not None
+    expected_scope = "selected_prefix" if prefix else "selected_profiles"
+    if result.get("kind") != "fixed_obligation" or result.get("scope") != expected_scope or result.get("schema_version") != 1:
         raise ValueError("Wrong result scope/schema")
+    if prefix and (not job["request"].get("prefix_identity") or
+                   result.get("prefix_identity") != job["request"]["prefix_identity"]):
+        raise ValueError("Missing or changed prefix identity")
     if result.get("request") != job["request"] or result.get("problem") != job["problem"]:
         raise ValueError("Changed request or exact problem")
     if result.get("expected_profiles") != job["expected_profiles"] or result.get("validated") is not True:
@@ -131,6 +150,8 @@ def validate_result(job, result):
     if job["request"].get("must_exhaust") and result["status"] != "exhausted":
         raise ValueError("Control workload did not exhaust")
     for profile in profiles:
+        if prefix and profile["roots"] != 1:
+            raise ValueError("A selected prefix accounts for exactly one local root")
         if profile["roots"] < 1 or not 0 <= profile["roots_exhausted"] <= profile["roots"]:
             raise ValueError("Invalid root accounting")
         if profile["exhausted"] != (profile["roots"] == profile["roots_exhausted"]):
@@ -196,12 +217,13 @@ def verify(root):
             profiles = validate_result(job, result)
             for profile in profiles:
                 key = (json.dumps(job["problem"], sort_keys=True), job["request"]["node_count"],
-                       job["request"]["link_count"], profile_id(profile["profile"]))
+                       job["request"]["link_count"], profile_id(profile["profile"]),
+                       json.dumps(job["request"].get("prefix_identity"), sort_keys=True))
                 comparisons[key].append((job, profile))
             spans = defaultdict(list)
             for rec in result["activity"]["records"]:
                 spans[rec["kind"]].append((rec["end_ns"] - rec["start_ns"]) / 1e9)
-            summaries.append(dict(id=job["id"], variant=job.get("variant"), request=job["request"], status=result["status"],
+            summaries.append(dict(id=job["id"], variant=job.get("variant"), scope=result["scope"], request=job["request"], status=result["status"],
                 wall_s=result["wall_s"], profiles=profiles, hotspots=result["hotspots"],
                 trace_dropped=result["activity"]["dropped"],
                 phase_s={k:dict(count=len(v), sum=sum(v), maximum=max(v)) for k,v in spans.items()}))
@@ -232,7 +254,7 @@ def verify(root):
     write(root / "summary.json", dict(failures=failures, records=len(summaries), summary=summaries))
     if failures:
         raise ValueError("\n".join(failures))
-    print(f"Verified {len(summaries)}/{len(schedule)} fixed workloads. Exhaustion is local to selected profiles.")
+    print(f"Verified {len(summaries)}/{len(schedule)} fixed workloads. Exhaustion is local to the recorded profile/prefix scope.")
 
 
 def validate_replay(job, result):

@@ -52,7 +52,9 @@ Updated 2026-08-28.
   replay 14.87x, and completed basis workloads 7.3-8.3%. [Whole results](custom-solver/experiments/13-whole-results.md)
   improve short-case completion medians 5.6-12.3%; hard 36 optimal improves 25.0%
   in one sample. Its exact N=9/L=12 group now completes, but full all remains capped.
-  Next compare p1/p14 with cheaper calculations and freeze a complete hard-10 prefix.
+  [Exact prefix tooling](custom-solver/experiments/15-prefix-workloads.md) is implemented.
+  The [38-job follow-up](custom-solver/experiments/16-post-calculation-screen.md) tests
+  p1/p14, repeats hard optimal and seeks completed hard-10 subtrees.
   Scheduling defaults stay unchanged.
 
 The goal is shorter time to a proven optimum and complete minimum-node enumeration.

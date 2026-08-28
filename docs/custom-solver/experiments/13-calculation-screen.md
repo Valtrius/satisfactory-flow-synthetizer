@@ -1,5 +1,8 @@
 # 13 protocol - Calculation comparison
 
+Subsequent promotion is recorded in [14](14-calculation-promotion.md). The results
+and uncommitted-state descriptions below retain the analysis-time context.
+
 Date: 2026-08-28. Finished and independently verified, 80/80 jobs, no kills.
 [Implemented candidates and validation](13-calculation-changes.md).
 [Isolated results](13-calculation-results.md) and [whole results](13-whole-results.md)

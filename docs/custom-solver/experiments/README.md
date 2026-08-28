@@ -20,6 +20,8 @@ Record dates follow the analysis chronology, not necessarily every run's start t
 | [12](12-hard-obligation-profiling.md)       | 2026-08-28    | What dominates the remaining hard N/L/profile work?                                       | 24 verified; 36 witness tail, 10 basis/labeling cost; no kills                      |
 | [13](13-calculation-changes.md)             | 2026-08-28    | Can early exact-L checks, cached witness leaves and direct RREF bounds reduce hard costs? | 80 verified; isolated gains support three promotions; hard whole-all still capped   |
 | [14](14-calculation-promotion.md)           | 2026-08-28    | Promote the three measured calculations independently?                                    | Permanent in three separate commits                                                 |
+| [15](15-prefix-workloads.md)                | 2026-08-28    | Can exact subtrees supply completed hard-10 references?                                   | Feature-gated prefix certificates implemented; discovery pending                    |
+| [16](16-post-calculation-screen.md)         | 2026-08-28    | How do p1/p14 compare after cheaper calculations?                                         | 38-job prefix/whole run launched; awaiting analysis                                 |
 
 ## How the diagnosis changed
 

@@ -45,5 +45,5 @@ when checking a patch against an untracked frozen CRLF copy.
 [Implementation and validation](../../../docs/custom-solver/experiments/13-calculation-changes.md)
 and [comparison protocol](../../../docs/custom-solver/experiments/13-calculation-screen.md)
 record the source split. [Verified results](../../../docs/custom-solver/experiments/13-calculation-results.md)
-support separate promotion of all three changes; they remain uncommitted.
+supported the completed [separate promotions](../../../docs/custom-solver/experiments/14-calculation-promotion.md).
 Never apply the old deadline/legacy patches as part of this comparison.

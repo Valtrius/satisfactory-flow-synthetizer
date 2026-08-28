@@ -62,6 +62,24 @@ class AnalyzerTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             module.validate_result(job, result)
 
+    def test_prefix_scope_requires_exact_frozen_identity_and_one_local_root(self):
+        import copy
+        module, job, result = self.fixed_fixture()
+        identity = {"version": 1, "frontiers": [[[2, 3]]], "route": [0],
+                    "decisions": ["fixture decision"], "stable_key": [2, 3]}
+        job["request"].update(prefix={"depth": 1, "pick": 0}, prefix_identity=identity)
+        result.update(scope="selected_prefix", prefix_identity=copy.deepcopy(identity), request=copy.deepcopy(job["request"]))
+        result["profiles"][0].update(roots=1, roots_exhausted=1)
+        module.validate_result(job, result)
+        for mutation in [lambda r: r.update(scope="selected_profiles"),
+                         lambda r: r["prefix_identity"].update(route=[1]),
+                         lambda r: r["prefix_identity"].update(frontiers=[]),
+                         lambda r: r["profiles"][0].update(roots=2, roots_exhausted=2)]:
+            changed = copy.deepcopy(result)
+            mutation(changed)
+            with self.assertRaises(ValueError):
+                module.validate_result(job, changed)
+
     def test_fixed_variants_freeze_identity_and_reject_changed_files(self):
         module, job, result = self.fixed_fixture()
         with tempfile.TemporaryDirectory() as directory:
@@ -106,6 +124,23 @@ class AnalyzerTests(unittest.TestCase):
             path.write_text("different fixture")
             with self.assertRaisesRegex(ValueError, "Changed replay input"):
                 module.validate_replay(job, result)
+
+    def test_prefix_preparation_rejects_replacing_a_frozen_certificate(self):
+        module, job, _ = self.fixed_fixture()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "bin").mkdir()
+            (root / "bin/profile_obligation.exe").write_bytes(b"fixture binary")
+            module.write(root / "case.json", {"problem": job["problem"]})
+            request = dict(job["request"], id="prefix", case_file="case.json", timeout_s=5,
+                           profile=job["expected_profiles"][0], prefix={"depth": 1, "pick": 0},
+                           prefix_identity={"stable_key": [1]})
+            module.write(root / "manifest.json", {"jobs": [request]})
+            listed = subprocess.CompletedProcess([], 0, json.dumps(dict(problem=job["problem"],
+                profiles=job["expected_profiles"], prefix_identity={"stable_key": [2]})))
+            with patch.object(module.subprocess, "run", return_value=listed):
+                with self.assertRaisesRegex(ValueError, "Requested frozen prefix identity changed"):
+                    module.prepare(root / "manifest.json", root)
 
     def test_fixed_work_verifier_compares_exact_sets_and_process_identity(self):
         module, job, result = self.fixed_fixture()
@@ -166,6 +201,26 @@ class AnalyzerTests(unittest.TestCase):
                 self.assertEqual(result["activity"]["active"], [])
                 self.assertTrue(result_file.with_suffix(".heartbeat.log").exists())
                 if name == "tiny":
+                    selected = next(p["profile"] for p in result["profiles"] if p["solutions"])
+                    prefix_request = dict(request, workers=1, stage="baseline", profile=selected, prefix={"depth": 1, "pick": 0})
+                    prefix_file = root / "prefix.request.json"
+                    prefix_output = root / "prefix.json"
+                    module.write(prefix_file, prefix_request)
+                    listing = subprocess.run([str(binary), "--list", str(prefix_file)], check=True,
+                                             capture_output=True, text=True, timeout=10)
+                    prefix_request["prefix_identity"] = json.loads(listing.stdout)["prefix_identity"]
+                    module.write(prefix_file, prefix_request)
+                    subprocess.run([str(binary), str(prefix_file), str(prefix_output)], check=True,
+                                   capture_output=True, text=True, timeout=10)
+                    prefix_job = dict(request=prefix_request, problem=case["problem"], expected_profiles=[selected])
+                    module.validate_result(prefix_job, module.read(prefix_output))
+                    self.assertEqual(module.read(prefix_output)["scope"], "selected_prefix")
+                    prefix_request["prefix_identity"]["stable_key"].append(0)
+                    module.write(prefix_file, prefix_request)
+                    rejected = subprocess.run([str(binary), str(prefix_file), str(root / "rejected.json")],
+                                              capture_output=True, text=True, timeout=10)
+                    self.assertNotEqual(rejected.returncode, 0)
+                    self.assertFalse((root / "rejected.json").exists())
                     replay_binary = binary.with_name("profile_witness.exe")
                     if replay_binary.exists():
                         witness = next(s for p in result["profiles"] for s in p["solutions"])

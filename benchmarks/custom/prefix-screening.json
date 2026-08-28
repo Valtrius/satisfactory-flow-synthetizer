@@ -1,0 +1,608 @@
+{
+  "description": "Bounded hard-10 subtree discovery; one worker per selected prefix, never a full hard single-worker baseline.",
+  "seed": 280815,
+  "variants": {
+    "basis": "../../target/parallelism-ladder/prefix-variants-final-20260828/basis",
+    "reference": "../../target/parallelism-ladder/calculation-variants-20260828/reference"
+  },
+  "jobs": [
+    {
+      "id": "prefix10-d4-p0-best-r1",
+      "variant": "basis",
+      "case_file": "cases/cyclic10.json",
+      "node_count": 11,
+      "link_count": 18,
+      "profile": {
+        "splitter2": 5,
+        "splitter3": 2,
+        "merger2": 0,
+        "merger3": 4
+      },
+      "mode": "best",
+      "stage": "baseline",
+      "workers": 1,
+      "timeout_s": 30,
+      "hotspots": false,
+      "must_exhaust": false,
+      "prefix": {
+        "depth": 4,
+        "pick": 0
+      }
+    },
+    {
+      "id": "prefix10-d4-p0-best-r2",
+      "variant": "basis",
+      "case_file": "cases/cyclic10.json",
+      "node_count": 11,
+      "link_count": 18,
+      "profile": {
+        "splitter2": 5,
+        "splitter3": 2,
+        "merger2": 0,
+        "merger3": 4
+      },
+      "mode": "best",
+      "stage": "baseline",
+      "workers": 1,
+      "timeout_s": 30,
+      "hotspots": false,
+      "must_exhaust": false,
+      "prefix": {
+        "depth": 4,
+        "pick": 0
+      }
+    },
+    {
+      "id": "prefix10-d4-p0-all-r1",
+      "variant": "basis",
+      "case_file": "cases/cyclic10.json",
+      "node_count": 11,
+      "link_count": 18,
+      "profile": {
+        "splitter2": 5,
+        "splitter3": 2,
+        "merger2": 0,
+        "merger3": 4
+      },
+      "mode": "all",
+      "stage": "baseline",
+      "workers": 1,
+      "timeout_s": 30,
+      "hotspots": false,
+      "must_exhaust": false,
+      "prefix": {
+        "depth": 4,
+        "pick": 0
+      }
+    },
+    {
+      "id": "prefix10-d4-p0-all-r2",
+      "variant": "basis",
+      "case_file": "cases/cyclic10.json",
+      "node_count": 11,
+      "link_count": 18,
+      "profile": {
+        "splitter2": 5,
+        "splitter3": 2,
+        "merger2": 0,
+        "merger3": 4
+      },
+      "mode": "all",
+      "stage": "baseline",
+      "workers": 1,
+      "timeout_s": 30,
+      "hotspots": false,
+      "must_exhaust": false,
+      "prefix": {
+        "depth": 4,
+        "pick": 0
+      }
+    },
+    {
+      "id": "prefix10-d4-p2-best-r1",
+      "variant": "basis",
+      "case_file": "cases/cyclic10.json",
+      "node_count": 11,
+      "link_count": 18,
+      "profile": {
+        "splitter2": 5,
+        "splitter3": 2,
+        "merger2": 0,
+        "merger3": 4
+      },
+      "mode": "best",
+      "stage": "baseline",
+      "workers": 1,
+      "timeout_s": 30,
+      "hotspots": false,
+      "must_exhaust": false,
+      "prefix": {
+        "depth": 4,
+        "pick": 2
+      }
+    },
+    {
+      "id": "prefix10-d4-p2-best-r2",
+      "variant": "basis",
+      "case_file": "cases/cyclic10.json",
+      "node_count": 11,
+      "link_count": 18,
+      "profile": {
+        "splitter2": 5,
+        "splitter3": 2,
+        "merger2": 0,
+        "merger3": 4
+      },
+      "mode": "best",
+      "stage": "baseline",
+      "workers": 1,
+      "timeout_s": 30,
+      "hotspots": false,
+      "must_exhaust": false,
+      "prefix": {
+        "depth": 4,
+        "pick": 2
+      }
+    },
+    {
+      "id": "prefix10-d4-p2-all-r1",
+      "variant": "basis",
+      "case_file": "cases/cyclic10.json",
+      "node_count": 11,
+      "link_count": 18,
+      "profile": {
+        "splitter2": 5,
+        "splitter3": 2,
+        "merger2": 0,
+        "merger3": 4
+      },
+      "mode": "all",
+      "stage": "baseline",
+      "workers": 1,
+      "timeout_s": 30,
+      "hotspots": false,
+      "must_exhaust": false,
+      "prefix": {
+        "depth": 4,
+        "pick": 2
+      }
+    },
+    {
+      "id": "prefix10-d4-p2-all-r2",
+      "variant": "basis",
+      "case_file": "cases/cyclic10.json",
+      "node_count": 11,
+      "link_count": 18,
+      "profile": {
+        "splitter2": 5,
+        "splitter3": 2,
+        "merger2": 0,
+        "merger3": 4
+      },
+      "mode": "all",
+      "stage": "baseline",
+      "workers": 1,
+      "timeout_s": 30,
+      "hotspots": false,
+      "must_exhaust": false,
+      "prefix": {
+        "depth": 4,
+        "pick": 2
+      }
+    },
+    {
+      "id": "prefix10-d6-p0-best-r1",
+      "variant": "basis",
+      "case_file": "cases/cyclic10.json",
+      "node_count": 11,
+      "link_count": 18,
+      "profile": {
+        "splitter2": 5,
+        "splitter3": 2,
+        "merger2": 0,
+        "merger3": 4
+      },
+      "mode": "best",
+      "stage": "baseline",
+      "workers": 1,
+      "timeout_s": 30,
+      "hotspots": false,
+      "must_exhaust": false,
+      "prefix": {
+        "depth": 6,
+        "pick": 0
+      }
+    },
+    {
+      "id": "prefix10-d6-p0-best-r2",
+      "variant": "basis",
+      "case_file": "cases/cyclic10.json",
+      "node_count": 11,
+      "link_count": 18,
+      "profile": {
+        "splitter2": 5,
+        "splitter3": 2,
+        "merger2": 0,
+        "merger3": 4
+      },
+      "mode": "best",
+      "stage": "baseline",
+      "workers": 1,
+      "timeout_s": 30,
+      "hotspots": false,
+      "must_exhaust": false,
+      "prefix": {
+        "depth": 6,
+        "pick": 0
+      }
+    },
+    {
+      "id": "prefix10-d6-p0-all-r1",
+      "variant": "basis",
+      "case_file": "cases/cyclic10.json",
+      "node_count": 11,
+      "link_count": 18,
+      "profile": {
+        "splitter2": 5,
+        "splitter3": 2,
+        "merger2": 0,
+        "merger3": 4
+      },
+      "mode": "all",
+      "stage": "baseline",
+      "workers": 1,
+      "timeout_s": 30,
+      "hotspots": false,
+      "must_exhaust": false,
+      "prefix": {
+        "depth": 6,
+        "pick": 0
+      }
+    },
+    {
+      "id": "prefix10-d6-p0-all-r2",
+      "variant": "basis",
+      "case_file": "cases/cyclic10.json",
+      "node_count": 11,
+      "link_count": 18,
+      "profile": {
+        "splitter2": 5,
+        "splitter3": 2,
+        "merger2": 0,
+        "merger3": 4
+      },
+      "mode": "all",
+      "stage": "baseline",
+      "workers": 1,
+      "timeout_s": 30,
+      "hotspots": false,
+      "must_exhaust": false,
+      "prefix": {
+        "depth": 6,
+        "pick": 0
+      }
+    },
+    {
+      "id": "prefix10-d6-p2-best-r1",
+      "variant": "basis",
+      "case_file": "cases/cyclic10.json",
+      "node_count": 11,
+      "link_count": 18,
+      "profile": {
+        "splitter2": 5,
+        "splitter3": 2,
+        "merger2": 0,
+        "merger3": 4
+      },
+      "mode": "best",
+      "stage": "baseline",
+      "workers": 1,
+      "timeout_s": 30,
+      "hotspots": false,
+      "must_exhaust": false,
+      "prefix": {
+        "depth": 6,
+        "pick": 2
+      }
+    },
+    {
+      "id": "prefix10-d6-p2-best-r2",
+      "variant": "basis",
+      "case_file": "cases/cyclic10.json",
+      "node_count": 11,
+      "link_count": 18,
+      "profile": {
+        "splitter2": 5,
+        "splitter3": 2,
+        "merger2": 0,
+        "merger3": 4
+      },
+      "mode": "best",
+      "stage": "baseline",
+      "workers": 1,
+      "timeout_s": 30,
+      "hotspots": false,
+      "must_exhaust": false,
+      "prefix": {
+        "depth": 6,
+        "pick": 2
+      }
+    },
+    {
+      "id": "prefix10-d6-p2-all-r1",
+      "variant": "basis",
+      "case_file": "cases/cyclic10.json",
+      "node_count": 11,
+      "link_count": 18,
+      "profile": {
+        "splitter2": 5,
+        "splitter3": 2,
+        "merger2": 0,
+        "merger3": 4
+      },
+      "mode": "all",
+      "stage": "baseline",
+      "workers": 1,
+      "timeout_s": 30,
+      "hotspots": false,
+      "must_exhaust": false,
+      "prefix": {
+        "depth": 6,
+        "pick": 2
+      }
+    },
+    {
+      "id": "prefix10-d6-p2-all-r2",
+      "variant": "basis",
+      "case_file": "cases/cyclic10.json",
+      "node_count": 11,
+      "link_count": 18,
+      "profile": {
+        "splitter2": 5,
+        "splitter3": 2,
+        "merger2": 0,
+        "merger3": 4
+      },
+      "mode": "all",
+      "stage": "baseline",
+      "workers": 1,
+      "timeout_s": 30,
+      "hotspots": false,
+      "must_exhaust": false,
+      "prefix": {
+        "depth": 6,
+        "pick": 2
+      }
+    },
+    {
+      "id": "prefix10-d8-p0-best-r1",
+      "variant": "basis",
+      "case_file": "cases/cyclic10.json",
+      "node_count": 11,
+      "link_count": 18,
+      "profile": {
+        "splitter2": 5,
+        "splitter3": 2,
+        "merger2": 0,
+        "merger3": 4
+      },
+      "mode": "best",
+      "stage": "baseline",
+      "workers": 1,
+      "timeout_s": 30,
+      "hotspots": false,
+      "must_exhaust": false,
+      "prefix": {
+        "depth": 8,
+        "pick": 0
+      }
+    },
+    {
+      "id": "prefix10-d8-p0-best-r2",
+      "variant": "basis",
+      "case_file": "cases/cyclic10.json",
+      "node_count": 11,
+      "link_count": 18,
+      "profile": {
+        "splitter2": 5,
+        "splitter3": 2,
+        "merger2": 0,
+        "merger3": 4
+      },
+      "mode": "best",
+      "stage": "baseline",
+      "workers": 1,
+      "timeout_s": 30,
+      "hotspots": false,
+      "must_exhaust": false,
+      "prefix": {
+        "depth": 8,
+        "pick": 0
+      }
+    },
+    {
+      "id": "prefix10-d8-p0-all-r1",
+      "variant": "basis",
+      "case_file": "cases/cyclic10.json",
+      "node_count": 11,
+      "link_count": 18,
+      "profile": {
+        "splitter2": 5,
+        "splitter3": 2,
+        "merger2": 0,
+        "merger3": 4
+      },
+      "mode": "all",
+      "stage": "baseline",
+      "workers": 1,
+      "timeout_s": 30,
+      "hotspots": false,
+      "must_exhaust": false,
+      "prefix": {
+        "depth": 8,
+        "pick": 0
+      }
+    },
+    {
+      "id": "prefix10-d8-p0-all-r2",
+      "variant": "basis",
+      "case_file": "cases/cyclic10.json",
+      "node_count": 11,
+      "link_count": 18,
+      "profile": {
+        "splitter2": 5,
+        "splitter3": 2,
+        "merger2": 0,
+        "merger3": 4
+      },
+      "mode": "all",
+      "stage": "baseline",
+      "workers": 1,
+      "timeout_s": 30,
+      "hotspots": false,
+      "must_exhaust": false,
+      "prefix": {
+        "depth": 8,
+        "pick": 0
+      }
+    },
+    {
+      "id": "prefix10-d8-p2-best-r1",
+      "variant": "basis",
+      "case_file": "cases/cyclic10.json",
+      "node_count": 11,
+      "link_count": 18,
+      "profile": {
+        "splitter2": 5,
+        "splitter3": 2,
+        "merger2": 0,
+        "merger3": 4
+      },
+      "mode": "best",
+      "stage": "baseline",
+      "workers": 1,
+      "timeout_s": 30,
+      "hotspots": false,
+      "must_exhaust": false,
+      "prefix": {
+        "depth": 8,
+        "pick": 2
+      }
+    },
+    {
+      "id": "prefix10-d8-p2-best-r2",
+      "variant": "basis",
+      "case_file": "cases/cyclic10.json",
+      "node_count": 11,
+      "link_count": 18,
+      "profile": {
+        "splitter2": 5,
+        "splitter3": 2,
+        "merger2": 0,
+        "merger3": 4
+      },
+      "mode": "best",
+      "stage": "baseline",
+      "workers": 1,
+      "timeout_s": 30,
+      "hotspots": false,
+      "must_exhaust": false,
+      "prefix": {
+        "depth": 8,
+        "pick": 2
+      }
+    },
+    {
+      "id": "prefix10-d8-p2-all-r1",
+      "variant": "basis",
+      "case_file": "cases/cyclic10.json",
+      "node_count": 11,
+      "link_count": 18,
+      "profile": {
+        "splitter2": 5,
+        "splitter3": 2,
+        "merger2": 0,
+        "merger3": 4
+      },
+      "mode": "all",
+      "stage": "baseline",
+      "workers": 1,
+      "timeout_s": 30,
+      "hotspots": false,
+      "must_exhaust": false,
+      "prefix": {
+        "depth": 8,
+        "pick": 2
+      }
+    },
+    {
+      "id": "prefix10-d8-p2-all-r2",
+      "variant": "basis",
+      "case_file": "cases/cyclic10.json",
+      "node_count": 11,
+      "link_count": 18,
+      "profile": {
+        "splitter2": 5,
+        "splitter3": 2,
+        "merger2": 0,
+        "merger3": 4
+      },
+      "mode": "all",
+      "stage": "baseline",
+      "workers": 1,
+      "timeout_s": 30,
+      "hotspots": false,
+      "must_exhaust": false,
+      "prefix": {
+        "depth": 8,
+        "pick": 2
+      }
+    },
+    {
+      "id": "prefix-tiny-best",
+      "variant": "basis",
+      "case_file": "cases/tiny.json",
+      "node_count": 2,
+      "link_count": 1,
+      "profile": {
+        "splitter2": 1,
+        "splitter3": 0,
+        "merger2": 1,
+        "merger3": 0
+      },
+      "mode": "best",
+      "stage": "baseline",
+      "workers": 1,
+      "timeout_s": 5,
+      "hotspots": false,
+      "must_exhaust": true,
+      "prefix": {
+        "depth": 1,
+        "pick": 0
+      }
+    },
+    {
+      "id": "prefix-tiny-all",
+      "variant": "basis",
+      "case_file": "cases/tiny.json",
+      "node_count": 2,
+      "link_count": 1,
+      "profile": {
+        "splitter2": 1,
+        "splitter3": 0,
+        "merger2": 1,
+        "merger3": 0
+      },
+      "mode": "all",
+      "stage": "baseline",
+      "workers": 1,
+      "timeout_s": 5,
+      "hotspots": false,
+      "must_exhaust": true,
+      "prefix": {
+        "depth": 1,
+        "pick": 0
+      }
+    }
+  ]
+}

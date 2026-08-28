@@ -1,5 +1,8 @@
 # 13 results - Whole solves and remaining hard work
 
+Subsequent promotion is recorded in [14](14-calculation-promotion.md). The results
+and uncommitted-state descriptions below retain the analysis-time context.
+
 Date: 2026-08-28. Verified results, not a new launch.
 [Isolated evidence and provenance](13-calculation-results.md),
 [protocol](13-calculation-screen.md). Reference versus combined basis candidate,

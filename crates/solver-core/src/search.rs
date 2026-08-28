@@ -2,6 +2,8 @@
 
 mod donation;
 mod frontier;
+#[cfg(feature = "bench-internals")]
+pub(crate) mod prefix_benchmark;
 pub(crate) use donation::DonationPool;
 mod shared;
 pub(crate) use frontier::plan_adaptive_partitions;

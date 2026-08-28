@@ -7,11 +7,11 @@ No push is requested or performed.
 
 ## Separate source changes
 
-| Change                    | Promotion state           | Evidence                                   |
-| ------------------------- | ------------------------- | ------------------------------------------ |
-| Earlier exact-L rejection | `5ae5631`                 | 4.44-4.45x faster completed target profile |
-| Cached witness leaves     | `1fbe95d`                 | 14.87x replay, identical key and coverage  |
-| Direct RREF bounds        | Included with this update | 7.3-8.3% shorter completed proof workloads |
+| Change                    | Promotion state | Evidence                                   |
+| ------------------------- | --------------- | ------------------------------------------ |
+| Earlier exact-L rejection | `5ae5631`       | 4.44-4.45x faster completed target profile |
+| Cached witness leaves     | `1fbe95d`       | 14.87x replay, identical key and coverage  |
+| Direct RREF bounds        | `af1682c`       | 7.3-8.3% shorter completed proof workloads |
 
 The exact-L commit contains only `search.rs` and related documentation. It retains
 the focused mismatch/cancellation test and a local Clippy line-count allowance
@@ -40,5 +40,5 @@ patch payloads, not Rust or documentation files.
 
 Keep scheduling opt-in. Next compare p1/p14 after these improvements and add exact
 prefix workloads for hard 10. A completed subtree is not a whole-profile proof.
-All three source changes are now permanent. The next tooling commit records the
-last commit identity without rewriting these optimization commits.
+All three source changes are now permanent. [Prefix workloads](15-prefix-workloads.md)
+and the [scheduling screen](16-post-calculation-screen.md) continue the work.

@@ -33,7 +33,16 @@ cap limits the largest N, not the starting N. The N<=10 cyclic10 attempt was bel
 its lower bound and did no search. Before SAT, duplicate all-mode runs can repeat
 the same proof work without exercising remaining-group concurrency.
 
+The [prefix protocol](experiments/15-prefix-workloads.md) adds `scope: selected_prefix`.
+Its certificate includes frontier keys, decisions and the selected path. Compare
+only identical certificates; nested prefixes must not be added as disjoint work.
+Search wall time excludes separately recorded preparation; process time includes it.
+
 ## Running a screen
+
+The [38-job follow-up](experiments/16-post-calculation-screen.md) combines prefix
+discovery with whole p1/p14 timing and repeated hard optimal. It preserves one
+completion/failure signal after both phases.
 
 The verified [calculation comparison](experiments/13-calculation-screen.md) freezes
 four cumulative variants and runs fixed-work/replay then whole optimal/all phases

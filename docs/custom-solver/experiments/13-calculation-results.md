@@ -1,5 +1,8 @@
 # 13 results - Isolated calculation changes
 
+Subsequent promotion is recorded in [14](14-calculation-promotion.md). The results
+and uncommitted-state descriptions below retain the analysis-time context.
+
 Date: 2026-08-28. Both phases finished and independently reverified, 80/80 jobs.
 The three candidates remain active and uncommitted. Recommend separate promotion
 commits, each with its tests and related docs. No solver or scheduling change was
