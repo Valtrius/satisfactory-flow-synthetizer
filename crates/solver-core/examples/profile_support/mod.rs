@@ -4,6 +4,7 @@
 
 use std::{
     collections::{BTreeMap, BTreeSet},
+    fmt::Write as _,
     sync::{
         Arc, Mutex,
         atomic::{AtomicBool, Ordering},
@@ -19,11 +20,11 @@ use solver_api::{
     SolverEvent,
 };
 use solver_core::{
-    Preparation, SolveOptions,
+    ParallelismOptions, Preparation, SolveOptions,
     canonical::{canonicalize_effective_layout, canonicalize_witness},
     enumerate_with_observer,
     hotspot_profile::{self, HotspotSnapshot},
-    prepare_problem,
+    prepare_problem, solve_with_observer,
 };
 use solver_validation::validate_solution;
 
@@ -65,7 +66,9 @@ impl EngineSelection {
 
 struct CustomRun {
     wall: Duration,
+    first_valid: Option<Duration>,
     status: String,
+    preferred_key: Option<CanonicalGraphKey>,
     layouts: BTreeMap<CanonicalGraphKey, BestKnownSolution>,
     last_progress: Option<ProgressLine>,
     hotspots: HotspotSnapshot,
@@ -112,6 +115,17 @@ pub fn run(case: ProfileCase) {
         .unwrap_or(case.default_max_nodes);
     let engine_argument = argument(4);
     let engines = EngineSelection::parse(engine_argument.as_deref());
+    let parallelism = parallelism_stage(argument(5).as_deref());
+    let mode = match argument(7).as_deref().unwrap_or("all") {
+        "all" => solver_api::SolveMode::AllAtMinimumNodes,
+        "optimal" => solver_api::SolveMode::Optimal,
+        other => panic!("unknown mode: {other}; expected all or optimal"),
+    };
+    let record_hotspots = match argument(8).as_deref().unwrap_or("on") {
+        "on" => true,
+        "off" => false,
+        other => panic!("unknown hotspot recording setting: {other}"),
+    };
     let problem = api_problem(&case);
 
     println!("dual-engine profile: {} @{}", case.name, case.belt_rate);
@@ -120,13 +134,51 @@ pub fn run(case: ProfileCase) {
     );
     println!("Z3 manages its own portfolio from the machine's available parallelism.");
 
-    let custom = engines
-        .includes_custom()
-        .then(|| run_custom(&problem, seconds, workers, max_nodes));
-    let z3 = engines.includes_z3().then(|| run_z3(&case, seconds));
+    let custom = engines.includes_custom().then(|| {
+        run_custom(
+            &problem,
+            seconds,
+            workers,
+            max_nodes,
+            parallelism,
+            mode,
+            record_hotspots,
+        )
+    });
+    let z3 = engines.includes_z3().then(|| run_z3(&case, seconds, mode));
 
     if let Some(custom) = &custom {
         print_custom(&problem, custom);
+        if let Some(path) = argument(6) {
+            let keys: Vec<_> = custom
+                .layouts
+                .keys()
+                .map(|key| {
+                    key.as_bytes().iter().fold(String::new(), |mut text, byte| {
+                        write!(&mut text, "{byte:02x}").unwrap();
+                        text
+                    })
+                })
+                .collect();
+            for solution in custom.layouts.values() {
+                validate_solution(&problem, &solution.graph).expect("benchmark witness validation");
+            }
+            let result = serde_json::json!({
+                "case": case.name, "stage": argument(5).unwrap_or_else(|| "baseline".into()),
+                "mode": if mode == solver_api::SolveMode::Optimal { "optimal" } else { "all" },
+                "hotspot_recording": record_hotspots,
+                "workers": workers, "max_nodes": max_nodes, "timeout_s": seconds,
+                "status": custom.status, "wall_s": custom.wall.as_secs_f64(),
+                "first_valid_s": custom.first_valid.map(|time| time.as_secs_f64()),
+                "validated": true,
+                "accounted_timer_s": ns_to_s(custom.hotspots.accounted_ns()),
+                "hotspots": hotspot_json(&custom.hotspots),
+                "layout_keys": keys, "layouts": custom.layouts.len(),
+                "preferred_key": custom.preferred_key.as_ref().map(|key| key.as_bytes().iter().fold(String::new(), |mut text, byte| { write!(&mut text, "{byte:02x}").unwrap(); text })),
+                "diagnostics": custom.last_progress.as_ref().map(|p| &p.custom),
+            });
+            std::fs::write(path, serde_json::to_vec_pretty(&result).unwrap()).unwrap();
+        }
     }
     let cross_z3 = z3.as_ref().map(|run| canonicalize_z3(&problem, run));
     if let (Some(z3), Some(cross)) = (&z3, &cross_z3) {
@@ -135,6 +187,28 @@ pub fn run(case: ProfileCase) {
     if let (Some(custom), Some(z3)) = (&custom, &cross_z3) {
         print_comparison(&problem, custom, z3);
     }
+}
+
+fn parallelism_stage(stage: Option<&str>) -> ParallelismOptions {
+    let mut options = ParallelismOptions::default();
+    match stage.unwrap_or("baseline") {
+        "baseline" => {}
+        "p1" => options.deep_partitions = true,
+        "shared" => options.shared_state_cache = true,
+        "groups" => options.parallel_remaining_groups = true,
+        "p14" => {
+            options.deep_partitions = true;
+            options.parallel_remaining_groups = true;
+        }
+        "p12" | "p123" | "p124" | "p1234" => {
+            options.deep_partitions = true;
+            options.shared_state_cache = true;
+            options.work_stealing = matches!(stage, Some("p123" | "p1234"));
+            options.parallel_remaining_groups = matches!(stage, Some("p124" | "p1234"));
+        }
+        other => panic!("unknown parallelism stage: {other}"),
+    }
+    options
 }
 
 fn argument(index: usize) -> Option<String> {
@@ -153,10 +227,20 @@ fn api_problem(case: &ProfileCase) -> Problem {
     }
 }
 
-fn run_custom(problem: &Problem, seconds: u64, workers: usize, max_nodes: u32) -> CustomRun {
+#[allow(clippy::too_many_arguments)]
+fn run_custom(
+    problem: &Problem,
+    seconds: u64,
+    workers: usize,
+    max_nodes: u32,
+    parallelism: ParallelismOptions,
+    mode: solver_api::SolveMode,
+    record_hotspots: bool,
+) -> CustomRun {
     let options = SolveOptions {
         max_nodes: Some(max_nodes),
         worker_count: workers,
+        parallelism,
     };
     let cancel = Arc::new(AtomicBool::new(false));
     let last_progress = Arc::new(Mutex::new(None::<ProgressLine>));
@@ -165,6 +249,8 @@ fn run_custom(problem: &Problem, seconds: u64, workers: usize, max_nodes: u32) -
     ));
     let progress_slot = Arc::clone(&last_progress);
     let layout_slot = Arc::clone(&layouts);
+    let first_valid = Arc::new(Mutex::new(None::<Instant>));
+    let first_valid_slot = Arc::clone(&first_valid);
     let observer = move |event: SolverEvent| match event {
         SolverEvent::Progress(progress) => {
             *progress_slot.lock().expect("progress lock") = Some(ProgressLine {
@@ -177,15 +263,26 @@ fn run_custom(problem: &Problem, seconds: u64, workers: usize, max_nodes: u32) -
             });
         }
         SolverEvent::SolutionFound(solution) => {
+            first_valid_slot
+                .lock()
+                .expect("first witness lock")
+                .get_or_insert_with(Instant::now);
             layout_slot
                 .lock()
                 .expect("layout lock")
                 .insert(solution.canonical_graph_key.clone(), solution);
         }
-        SolverEvent::Incumbent(_) => {}
+        SolverEvent::Incumbent(_) => {
+            first_valid_slot
+                .lock()
+                .expect("first witness lock")
+                .get_or_insert_with(Instant::now);
+        }
     };
 
-    hotspot_profile::install_recorder();
+    if record_hotspots {
+        hotspot_profile::install_recorder();
+    }
     let (finished_tx, finished_rx) = mpsc::channel();
     let cancel_for_timer = Arc::clone(&cancel);
     let timer = thread::spawn(move || {
@@ -204,12 +301,41 @@ fn run_custom(problem: &Problem, seconds: u64, workers: usize, max_nodes: u32) -
         }
     });
     let started = Instant::now();
-    let result = enumerate_with_observer(problem, &options, &cancel, &observer);
+    let result = match mode {
+        solver_api::SolveMode::AllAtMinimumNodes => {
+            enumerate_with_observer(problem, &options, &cancel, &observer)
+        }
+        solver_api::SolveMode::Optimal => {
+            solve_with_observer(problem, &options, &cancel, &observer)
+        }
+    };
     let wall = started.elapsed();
     drop(observer);
     let _ = finished_tx.send(());
     let _ = timer.join();
     let hotspots = hotspot_profile::take_snapshot();
+    if let Ok(solver_api::SolveResult::Optimal(solution)) = &result
+        && mode == solver_api::SolveMode::Optimal
+    {
+        layouts.lock().expect("layout lock").insert(
+            solution.canonical_graph_key.clone(),
+            BestKnownSolution {
+                node_count: solution.node_count,
+                link_count: solution.link_count,
+                physical_link_count: solution.physical_link_count,
+                discard_link_count: solution.discard_link_count,
+                canonical_graph_key: solution.canonical_graph_key.clone(),
+                graph: solution.graph.clone(),
+                validation: solution.validation.clone(),
+            },
+        );
+    }
+    let preferred_key = match &result {
+        Ok(solver_api::SolveResult::Optimal(solution)) => {
+            Some(solution.canonical_graph_key.clone())
+        }
+        _ => None,
+    };
     let status = match result {
         Ok(solver_api::SolveResult::Optimal(solution)) => format!(
             "Optimal(N={}, L={})",
@@ -226,7 +352,12 @@ fn run_custom(problem: &Problem, seconds: u64, workers: usize, max_nodes: u32) -
 
     CustomRun {
         wall,
+        first_valid: first_valid
+            .lock()
+            .expect("first witness lock")
+            .map(|time| time.duration_since(started)),
         status,
+        preferred_key,
         layouts: Arc::try_unwrap(layouts)
             .expect("custom layout observer retained")
             .into_inner()
@@ -239,10 +370,10 @@ fn run_custom(problem: &Problem, seconds: u64, workers: usize, max_nodes: u32) -
     }
 }
 
-fn run_z3(case: &ProfileCase, seconds: u64) -> Z3Run {
+fn run_z3(case: &ProfileCase, seconds: u64, mode: solver_api::SolveMode) -> Z3Run {
     let problem = api_problem(case);
     let options = solver_api::RunOptions {
-        mode: solver_api::SolveMode::AllAtMinimumNodes,
+        mode,
         worker_count: available_workers(),
         max_nodes: Some(case.default_max_nodes),
     };
@@ -580,7 +711,7 @@ fn print_hotspots(hotspots: &HotspotSnapshot, wall: Duration) {
     ];
     rows.sort_by_key(|(_, ns)| std::cmp::Reverse(*ns));
     println!(
-        "hotspots wall={:.3}s accounted_worker_cpu={:.3}s",
+        "hotspots wall={:.3}s accounted_elapsed={:.3}s",
         wall.as_secs_f64(),
         ns_to_s(hotspots.accounted_ns())
     );
@@ -597,6 +728,27 @@ fn print_hotspots(hotspots: &HotspotSnapshot, wall: Duration) {
         ns_to_s(hotspots.graph_canon_ns),
         hotspots.graph_canon_calls,
     );
+    println!("  canonical_subphases_ns={}", hotspot_json(hotspots));
+}
+
+fn hotspot_json(h: &HotspotSnapshot) -> serde_json::Value {
+    serde_json::json!({
+        "state_canonicalize_ns": h.state_canonicalize_ns,
+        "legal_decisions_ns": h.legal_decisions_ns,
+        "propagation_sync_ns": h.propagation_sync_ns,
+        "evaluate_complete_ns": h.evaluate_complete_ns,
+        "scc_canonicalize_ns": h.scc_canonicalize_ns,
+        "scc_algebra_ns": h.scc_algebra_ns,
+        "graph_canon_ns": h.graph_canon_ns,
+        "graph_canon_calls": h.graph_canon_calls,
+        "incidence_build_ns": h.incidence_build_ns,
+        "dense_graph_ns": h.dense_graph_ns,
+        "labeling_ns": h.labeling_ns,
+        "relabel_ns": h.relabel_ns,
+        "equality_ns": h.equality_ns,
+        "inequality_ns": h.inequality_ns,
+        "semantic_encoding_ns": h.semantic_encoding_ns,
+    })
 }
 
 fn ns_to_s(ns: u64) -> f64 {

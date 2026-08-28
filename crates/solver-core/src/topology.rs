@@ -630,8 +630,11 @@ impl TopologyState {
         &self,
         cancel: Option<&AtomicBool>,
     ) -> Option<Option<OpenPortOrbit>> {
-        let topology = self.partial_topology();
-        let mut orbits = Vec::new();
+        // The canonical key is only a tie-break after these inexpensive fields.
+        // Discard losing prefixes before doing graph canonicalization, preserving
+        // the exact same selected orbit and final raw-reference tie-break.
+        let mut finalists = Vec::new();
+        let mut best_prefix = None;
         for representative in self.open_representatives() {
             if cancel.is_some_and(|flag| flag.load(Ordering::Relaxed)) {
                 return None;
@@ -655,38 +658,55 @@ impl TopologyState {
                     )
                 }
             };
+            let prefix = (
+                legal_partner_count,
+                !has_known_flow,
+                !is_external,
+                matches!(symmetry_class, PortClass::Unique),
+            );
+            if best_prefix.is_some_and(|best| prefix > best) {
+                continue;
+            }
+            if best_prefix.is_none_or(|best| prefix < best) {
+                finalists.clear();
+                best_prefix = Some(prefix);
+            }
+            finalists.push((
+                representative,
+                legal_partner_count,
+                has_known_flow,
+                is_external,
+                symmetry_class,
+            ));
+        }
+        if finalists.is_empty() {
+            return Some(None);
+        }
+        let topology = self.partial_topology();
+        let mut best: Option<OpenPortOrbit> = None;
+        for (representative, legal_partner_count, has_known_flow, is_external, symmetry_class) in
+            finalists
+        {
             let canonical_key = match cancel {
                 Some(flag) => canonicalize_open_port_cancellable(&topology, representative, flag)?,
                 None => canonicalize_open_port(&topology, representative),
             };
-            orbits.push(OpenPortOrbit {
+            let orbit = OpenPortOrbit {
                 representative,
                 legal_partner_count,
                 has_known_flow,
                 is_external,
                 symmetry_class,
                 canonical_key,
-            });
+            };
+            if best.as_ref().is_none_or(|current| {
+                (&orbit.canonical_key, orbit.representative)
+                    < (&current.canonical_key, current.representative)
+            }) {
+                best = Some(orbit);
+            }
         }
-        Some(orbits.into_iter().min_by(|left, right| {
-            let left_key = (
-                left.legal_partner_count,
-                !left.has_known_flow,
-                !left.is_external,
-                matches!(left.symmetry_class, PortClass::Unique),
-                &left.canonical_key,
-                left.representative,
-            );
-            let right_key = (
-                right.legal_partner_count,
-                !right.has_known_flow,
-                !right.is_external,
-                matches!(right.symmetry_class, PortClass::Unique),
-                &right.canonical_key,
-                right.representative,
-            );
-            left_key.cmp(&right_key)
-        }))
+        Some(best)
     }
 
     /// Lists legal decisions in canonical marked-child order.
@@ -1134,6 +1154,71 @@ mod tests {
         }
     }
 
+    // Independent eager implementation checks the lazy prefix filter.
+    #[allow(clippy::option_option)]
+    fn eager_orbit(
+        state: &TopologyState,
+        cancel: Option<&AtomicBool>,
+    ) -> Option<Option<OpenPortOrbit>> {
+        let topology = state.partial_topology();
+        let mut orbits = Vec::new();
+        for representative in state.open_representatives() {
+            if cancel.is_some_and(|flag| flag.load(Ordering::Relaxed)) {
+                return None;
+            }
+            let legal_partner_count = state.decisions_for(representative).len();
+            let (has_known_flow, is_external, symmetry_class) = match representative {
+                OpenPortRef::Producer(reference) => {
+                    let port = &state.producer_ports[&reference];
+                    (
+                        port.known_flow.is_some(),
+                        matches!(port.owner, PortOwner::Input(_)),
+                        port.symmetry_class,
+                    )
+                }
+                OpenPortRef::Consumer(reference) => {
+                    let port = &state.consumer_ports[&reference];
+                    (
+                        port.known_flow.is_some(),
+                        matches!(port.owner, PortOwner::Output(_) | PortOwner::Discard(_)),
+                        port.symmetry_class,
+                    )
+                }
+            };
+            let canonical_key = match cancel {
+                Some(flag) => canonicalize_open_port_cancellable(&topology, representative, flag)?,
+                None => canonicalize_open_port(&topology, representative),
+            };
+            orbits.push(OpenPortOrbit {
+                representative,
+                legal_partner_count,
+                has_known_flow,
+                is_external,
+                symmetry_class,
+                canonical_key,
+            });
+        }
+        Some(orbits.into_iter().min_by(|left, right| {
+            let left_key = (
+                left.legal_partner_count,
+                !left.has_known_flow,
+                !left.is_external,
+                matches!(left.symmetry_class, PortClass::Unique),
+                &left.canonical_key,
+                left.representative,
+            );
+            let right_key = (
+                right.legal_partner_count,
+                !right.has_known_flow,
+                !right.is_external,
+                matches!(right.symmetry_class, PortClass::Unique),
+                &right.canonical_key,
+                right.representative,
+            );
+            left_key.cmp(&right_key)
+        }))
+    }
+
     #[test]
     fn root_contains_only_external_ports_and_direct_link_completes() {
         let mut state =
@@ -1337,6 +1422,10 @@ mod tests {
     #[test]
     fn legal_decision_paths_cover_splitter_and_merger() {
         fn walk(state: &mut TopologyState, depth: usize) -> usize {
+            assert_eq!(
+                state.selected_open_orbit(),
+                eager_orbit(state, None).unwrap()
+            );
             if state.is_complete() {
                 assert!(depth > 0);
                 return 1;
@@ -1463,6 +1552,10 @@ mod tests {
                     let topology = fixture(permutation, swapped_ports, swap_equal_inputs);
                     assert_eq!(canonicalize_state(&topology), baseline_state_key);
                     let mut state = TopologyState::from_partial_topology(&topology).unwrap();
+                    assert_eq!(
+                        state.selected_open_orbit(),
+                        eager_orbit(&state, None).unwrap()
+                    );
                     let orbit = state.selected_open_orbit().unwrap();
                     raw_representatives.insert(orbit.representative);
                     assert_eq!(

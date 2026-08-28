@@ -1,5 +1,12 @@
 //! Exhaustive production search for one fixed physical node profile.
 
+mod donation;
+mod frontier;
+pub(crate) use donation::DonationPool;
+mod shared;
+pub(crate) use frontier::plan_adaptive_partitions;
+pub(crate) use shared::SharedStateCache;
+
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap},
     sync::atomic::{AtomicBool, Ordering},
@@ -250,7 +257,7 @@ impl RootPartitionId {
 pub(crate) struct RootPartition {
     id: RootPartitionId,
     stable_key: Vec<u8>,
-    first_decision: Option<TopologyDecision>,
+    path: Vec<TopologyDecision>,
 }
 
 impl RootPartition {
@@ -381,7 +388,7 @@ pub(crate) fn plan_profile_root_partitions_with_accounting(
         partitions.push(RootPartition {
             id: RootPartitionId(0),
             stable_key: augmentation_partition_key(&marked_key),
-            first_decision: Some(decision),
+            path: vec![decision],
         });
         state.rollback(checkpoint);
     }
@@ -410,6 +417,7 @@ pub(crate) fn plan_profile_root_partitions_with_accounting(
 /// remain visible to the parent proof ledger.
 #[must_use]
 #[allow(clippy::too_many_arguments)]
+#[cfg(test)]
 pub(crate) fn search_profile_root_partition(
     problem: &NormalizedProblem,
     profile: NodeProfile,
@@ -418,6 +426,35 @@ pub(crate) fn search_profile_root_partition(
     partition: &RootPartition,
     collect_all_witnesses: bool,
     progress: Option<&(dyn Fn(&SearchInstrumentation) + Sync)>,
+) -> ProfileSearchResult {
+    search_profile_root_partition_with_execution(
+        problem,
+        profile,
+        cancel,
+        accounting,
+        partition,
+        collect_all_witnesses,
+        progress,
+        SearchExecution::default(),
+    )
+}
+
+#[derive(Clone, Copy, Default)]
+pub(crate) struct SearchExecution<'a> {
+    pub shared: Option<&'a SharedStateCache>,
+    pub donations: Option<&'a DonationPool>,
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn search_profile_root_partition_with_execution<'a>(
+    problem: &NormalizedProblem,
+    profile: NodeProfile,
+    cancel: &'a AtomicBool,
+    accounting: Option<ProfileLinkAccounting>,
+    partition: &RootPartition,
+    collect_all_witnesses: bool,
+    progress: Option<&'a (dyn Fn(&SearchInstrumentation) + Sync)>,
+    execution: SearchExecution<'a>,
 ) -> ProfileSearchResult {
     let initialized = initialize_profile_search(
         problem,
@@ -436,58 +473,82 @@ pub(crate) fn search_profile_root_partition(
         Err(result) => return *result,
     };
     context.collect_all_witnesses = collect_all_witnesses;
+    context.shared = execution.shared;
+    context.donations = execution.donations;
     context.progress = progress;
 
-    let result = match partition.first_decision {
-        None => {
-            if partition.stable_key == terminal_root_partition().stable_key {
-                search_state(&mut state, &mut propagation, &mut context)
-            } else {
-                DfsResult::Failed(ProfileSearchError::InvalidRootPartition(
-                    "terminal partition key is malformed",
-                ))
-            }
-        }
-        Some(decision) => {
-            if cancel.load(Ordering::Relaxed) {
-                return context.incomplete(IncompleteReason::Cancelled, started);
-            }
-            let Ok(decision_id) = state.apply_legal_decision(decision) else {
-                return context.failed(
-                    ProfileSearchError::InvalidRootPartition(
-                        "first decision is not legal at this root",
-                    ),
-                    started,
-                );
-            };
-            let Some(link_index) = state.link_index_for(decision_id) else {
-                return context.failed(ProfileSearchError::MissingAppliedLink, started);
-            };
-            let topology = state.partial_topology();
-            let Some(actual_key) =
-                canonicalize_marked_link_cancellable(&topology, link_index, cancel)
-                    .map(|key| augmentation_partition_key(&key))
-            else {
-                return context.incomplete(IncompleteReason::Cancelled, started);
-            };
-            if actual_key == partition.stable_key {
-                increment(&mut context.stats.instrumentation.raw_structural_decisions);
-                evaluate_applied_child(&mut state, &mut propagation, &mut context, link_index)
-            } else {
-                DfsResult::Failed(ProfileSearchError::InvalidRootPartition(
-                    "first decision does not match its partition key",
-                ))
-            }
-        }
+    let result = match replay_prefix(&mut state, &mut propagation, &mut context, partition) {
+        Ok(()) => search_state(&mut state, &mut propagation, &mut context),
+        Err(result) => result,
     };
     finish_profile_search(context, started, result)
+}
+
+fn replay_prefix(
+    state: &mut TopologyState,
+    propagation: &mut Option<PropagationState>,
+    context: &mut SearchContext<'_>,
+    partition: &RootPartition,
+) -> Result<(), DfsResult> {
+    let mut last_link = None;
+    for &decision in &partition.path {
+        if context.cancel.load(Ordering::Relaxed) {
+            return Err(DfsResult::Incomplete);
+        }
+        let id = state
+            .apply_legal_decision(decision)
+            .map_err(|error| DfsResult::Failed(topology_error(&error)))?;
+        let link = state
+            .link_index_for(id)
+            .ok_or(DfsResult::Failed(ProfileSearchError::MissingAppliedLink))?;
+        increment(&mut context.stats.instrumentation.raw_structural_decisions);
+        prepare_applied_child(state, propagation, context, link)?;
+        last_link = Some(link);
+    }
+    let actual = match (partition.stable_key.first(), last_link) {
+        (Some(0), None) => vec![0],
+        (Some(1), Some(link)) => {
+            canonicalize_marked_link_cancellable(&state.partial_topology(), link, context.cancel)
+                .map(|key| augmentation_partition_key(&key))
+                .ok_or(DfsResult::Incomplete)?
+        }
+        (Some(2), Some(_)) => prefix_state_key(state, propagation.as_ref(), context.cancel)?,
+        _ => {
+            return Err(DfsResult::Failed(ProfileSearchError::InvalidRootPartition(
+                "malformed prefix key",
+            )));
+        }
+    };
+    if actual != partition.stable_key {
+        return Err(DfsResult::Failed(ProfileSearchError::InvalidRootPartition(
+            "prefix does not match its key",
+        )));
+    }
+    Ok(())
+}
+
+fn prefix_state_key(
+    state: &TopologyState,
+    propagation: Option<&PropagationState>,
+    cancel: &AtomicBool,
+) -> Result<Vec<u8>, DfsResult> {
+    let snapshot = match propagation {
+        Some(p) => p
+            .partial_topology_with_known_link_flows(state)
+            .map_err(|error| DfsResult::Failed(propagation_error(&error)))?,
+        None => state.partial_topology(),
+    };
+    let key = canonicalize_state_cancellable(&snapshot, cancel).ok_or(DfsResult::Incomplete)?;
+    let mut bytes = vec![2];
+    bytes.extend_from_slice(key.as_bytes());
+    Ok(bytes)
 }
 
 fn terminal_root_partition() -> RootPartition {
     RootPartition {
         id: RootPartitionId(0),
         stable_key: vec![0],
-        first_decision: None,
+        path: Vec::new(),
     }
 }
 
@@ -704,6 +765,9 @@ struct SearchContext<'a> {
     expected_discard_link_count: u32,
     cancel: &'a AtomicBool,
     cache: HashMap<StateKey, StateStatus>,
+    profile: NodeProfile,
+    shared: Option<&'a SharedStateCache>,
+    donations: Option<&'a DonationPool>,
     scc_cache: HashMap<SccSummaryKey, CachedOpenSccSummary>,
     owned_cache_bytes: u64,
     best_witness: Option<ProfileWitness>,
@@ -739,6 +803,9 @@ impl<'a> SearchContext<'a> {
             expected_discard_link_count: 0,
             cancel,
             cache: HashMap::new(),
+            profile,
+            shared: None,
+            donations: None,
             scc_cache: HashMap::new(),
             owned_cache_bytes: 0,
             best_witness: None,
@@ -791,6 +858,9 @@ impl<'a> SearchContext<'a> {
     }
 
     fn retain_witness(&mut self, candidate: ProfileWitness) {
+        if let Some(shared) = self.shared {
+            shared.retain(self.profile, &candidate);
+        }
         if self.collect_all_witnesses {
             self.witnesses
                 .entry(candidate.canonical_graph_key.clone())
@@ -811,6 +881,11 @@ impl<'a> SearchContext<'a> {
     /// deliberately excludes allocator buckets and process-global memory,
     /// whose sizes can depend on randomized hashing or unrelated threads.
     fn insert_state_status(&mut self, key: StateKey, status: StateStatus) {
+        if !matches!(status, StateStatus::InProgress)
+            && let Some(shared) = self.shared
+        {
+            shared.insert(self.expected_link_count, key.clone(), status.clone());
+        }
         let old_bytes = self
             .cache
             .get(&key)
@@ -927,7 +1002,26 @@ fn search_state(
     // completion sets. Completed statuses may be reused as equivalence proofs.
     // InProgress remains distinct because its owner has not discharged that
     // obligation yet.
-    if let Some(status) = context.cache.get(&state_key).cloned() {
+    let status = context.cache.get(&state_key).cloned().or_else(|| {
+        let hit = context
+            .shared?
+            .lookup(context.expected_link_count, &state_key);
+        if hit.is_some() {
+            increment(&mut context.stats.instrumentation.shared_cache_hits);
+        }
+        hit
+    });
+    if let Some(status) = status {
+        if let StateStatus::SatWitness(key) = &status
+            && let Some(shared) = context.shared
+        {
+            let Some(witness) = shared.witness(context.profile, key) else {
+                return DfsResult::Failed(ProfileSearchError::InvalidRootPartition(
+                    "cached SAT witness missing from registry",
+                ));
+            };
+            context.retain_witness(witness);
+        }
         increment(&mut context.stats.state_cache_hits);
         increment(
             &mut context
@@ -979,39 +1073,48 @@ fn search_state(
         return DfsResult::Incomplete;
     };
 
-    let mut best_key = None;
-    let mut attempted_transition = false;
+    let mut decisions = decisions;
+    let attempted_transition = !decisions.is_empty();
+    let joins = context
+        .donations
+        .map(|pool| pool.donate(state, propagation.as_ref(), context, &mut decisions))
+        .unwrap_or_default();
+    let mut result = DfsResult::Exhausted(None);
     for decision in decisions {
-        attempted_transition = true;
         if context.cancel.load(Ordering::Relaxed) {
-            context.remove_state_status(&state_key);
-            return DfsResult::Incomplete;
+            donation::fold_result(&mut result, DfsResult::Incomplete);
+            break;
         }
         increment(&mut context.stats.instrumentation.raw_structural_decisions);
         context.publish_progress();
-        match search_decision(state, propagation, context, decision) {
-            DfsResult::Exhausted(child_key) => retain_smallest_key(&mut best_key, child_key),
-            DfsResult::Incomplete => {
-                context.remove_state_status(&state_key);
-                return DfsResult::Incomplete;
-            }
-            DfsResult::Failed(error) => {
-                context.remove_state_status(&state_key);
-                return DfsResult::Failed(error);
-            }
+        donation::fold_result(
+            &mut result,
+            search_decision(state, propagation, context, decision),
+        );
+        if !matches!(result, DfsResult::Exhausted(_)) {
+            break;
         }
     }
-
-    if !attempted_transition {
-        context.insert_state_status(state_key, StateStatus::ProvenDead);
-        return DfsResult::Exhausted(None);
+    if let Some(pool) = context.donations {
+        pool.join(joins, context, &mut result);
     }
-
-    let status = best_key.as_ref().map_or(StateStatus::Exhausted, |key| {
-        StateStatus::SatWitness(key.clone())
-    });
-    context.insert_state_status(state_key, status);
-    DfsResult::Exhausted(best_key)
+    match &result {
+        DfsResult::Exhausted(best_key) => {
+            let status = best_key.as_ref().map_or_else(
+                || {
+                    if attempted_transition {
+                        StateStatus::Exhausted
+                    } else {
+                        StateStatus::ProvenDead
+                    }
+                },
+                |key| StateStatus::SatWitness(key.clone()),
+            );
+            context.insert_state_status(state_key, status);
+        }
+        DfsResult::Incomplete | DfsResult::Failed(_) => context.remove_state_status(&state_key),
+    }
+    result
 }
 
 fn operator_link_count(topology: &PartialTopology) -> u32 {
@@ -1077,6 +1180,18 @@ fn evaluate_applied_child(
     context: &mut SearchContext<'_>,
     link_index: usize,
 ) -> DfsResult {
+    if let Err(result) = prepare_applied_child(state, propagation, context, link_index) {
+        return result;
+    }
+    search_state(state, propagation, context)
+}
+
+fn prepare_applied_child(
+    state: &mut TopologyState,
+    propagation: &mut Option<PropagationState>,
+    context: &mut SearchContext<'_>,
+    link_index: usize,
+) -> Result<(), DfsResult> {
     if let Some(propagation) = propagation.as_mut() {
         let propagation_started = Instant::now();
         let outcome = propagation.synchronize_after_topology_mutation(state);
@@ -1085,11 +1200,11 @@ fn evaluate_applied_child(
         hotspot_profile::record_propagation_sync(elapsed);
         let outcome = match outcome {
             Ok(outcome) => outcome,
-            Err(error) => return DfsResult::Failed(propagation_error(&error)),
+            Err(error) => return Err(DfsResult::Failed(propagation_error(&error))),
         };
         if let PropagationOutcome::Pruned(conflict) = outcome {
             context.record_propagation_prune(&conflict);
-            return DfsResult::Exhausted(None);
+            return Err(DfsResult::Exhausted(None));
         }
     }
 
@@ -1097,9 +1212,9 @@ fn evaluate_applied_child(
         match analyze_affected_dynamic_sccs(state, propagation.as_mut(), context, Some(link_index))
         {
             Ok(DynamicSccVerdict::Open) => {}
-            Ok(DynamicSccVerdict::ProvenDead) => return DfsResult::Exhausted(None),
-            Ok(DynamicSccVerdict::Cancelled) => return DfsResult::Incomplete,
-            Err(error) => return DfsResult::Failed(error),
+            Ok(DynamicSccVerdict::ProvenDead) => return Err(DfsResult::Exhausted(None)),
+            Ok(DynamicSccVerdict::Cancelled) => return Err(DfsResult::Incomplete),
+            Err(error) => return Err(DfsResult::Failed(error)),
         }
     }
 
@@ -1109,13 +1224,13 @@ fn evaluate_applied_child(
         hotspot_profile::record_reachability(reachability_started.elapsed());
         if matches!(reachability.verdict, ReachabilityVerdict::ProvenDead(_)) {
             increment(&mut context.stats.instrumentation.lower_bound_prunes);
-            return DfsResult::Exhausted(None);
+            return Err(DfsResult::Exhausted(None));
         }
     }
 
     // Canonical state memoization below removes equivalent construction
     // histories directly.
-    search_state(state, propagation, context)
+    Ok(())
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -2927,5 +3042,92 @@ mod tests {
             DfsResult::Incomplete => panic!("uncancelled partial search became incomplete"),
             DfsResult::Failed(error) => panic!("partial search failed: {error}"),
         }
+    }
+    #[test]
+    fn shared_completed_hits_preserve_each_partition_sat_witness() {
+        let normalized = normalized(&problem(&["2", "3"], &["1", "4"], "5"));
+        let fixed = profile(1, 0, 1, 0);
+        let cancel = AtomicBool::new(false);
+        let shared = SharedStateCache::default();
+        let partitions = root_partitions(&normalized, fixed);
+        let mut expected = Vec::new();
+        for partition in &partitions {
+            let result = search_profile_root_partition_with_execution(
+                &normalized,
+                fixed,
+                &cancel,
+                None,
+                partition,
+                true,
+                None,
+                SearchExecution {
+                    shared: Some(&shared),
+                    donations: None,
+                },
+            );
+            expected.push(exhausted_result(result).0);
+        }
+        assert!(!shared.witnesses(fixed).is_empty());
+        let mut hits = 0;
+        for (partition, expected) in partitions.iter().zip(expected) {
+            let result = search_profile_root_partition_with_execution(
+                &normalized,
+                fixed,
+                &cancel,
+                None,
+                partition,
+                true,
+                None,
+                SearchExecution {
+                    shared: Some(&shared),
+                    donations: None,
+                },
+            );
+            let (actual, stats) = exhausted_result(result);
+            assert_eq!(actual, expected);
+            hits += stats.instrumentation.shared_cache_hits;
+        }
+        assert!(hits > 0);
+    }
+
+    #[test]
+    fn shared_completed_proofs_are_isolated_by_exact_l() {
+        let normalized = normalized(&problem(&["2"], &["1", "1"], "2"));
+        let state = TopologyState::new(&normalized, profile(1, 0, 0, 0)).unwrap();
+        let key = canonicalize_state(&state.partial_topology());
+        let shared = SharedStateCache::default();
+        shared.insert(Some(1), key.clone(), StateStatus::ProvenDead);
+        assert_eq!(shared.lookup(Some(1), &key), Some(StateStatus::ProvenDead));
+        assert_eq!(shared.lookup(Some(2), &key), None);
+        assert_eq!(shared.lookup(None, &key), None);
+    }
+
+    #[test]
+    fn donated_child_panic_returns_failure_without_publishing_parent_proof() {
+        let normalized = normalized(&problem(&["2", "3"], &["1", "4"], "5"));
+        let fixed = profile(1, 0, 1, 0);
+        let cancel = AtomicBool::new(false);
+        let shared = SharedStateCache::default();
+        let pool = DonationPool::new(1);
+        pool.panic_next_job.store(true, Ordering::Relaxed);
+        let mut failed = false;
+        for partition in root_partitions(&normalized, fixed) {
+            let result = search_profile_root_partition_with_execution(
+                &normalized,
+                fixed,
+                &cancel,
+                None,
+                &partition,
+                true,
+                None,
+                SearchExecution {
+                    shared: Some(&shared),
+                    donations: Some(&pool),
+                },
+            );
+            failed |= matches!(result, ProfileSearchResult::Failed { .. });
+        }
+        assert!(failed);
+        assert!(!pool.panic_next_job.load(Ordering::Relaxed));
     }
 }

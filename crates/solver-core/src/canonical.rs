@@ -19,7 +19,10 @@ use solver_api::{
     ProducerPortRef, Rational,
 };
 
-use crate::{hotspot_profile, topology::OpenPortRef};
+use crate::{
+    hotspot_profile::{self, CanonicalPhase, CanonicalTimer},
+    topology::OpenPortRef,
+};
 
 /// One structural connection in a partial topology.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -585,11 +588,13 @@ fn select_canonical_cancellable_inner(
     cancel: Option<&AtomicBool>,
 ) -> Option<SelectedCanonical> {
     let started = Instant::now();
+    let build_timer = CanonicalTimer::start(CanonicalPhase::IncidenceBuild);
     let incidence = IncidenceGraph::build(
         topology,
         marked_link,
         matches!(encoding, EncodingKind::Witness),
     );
+    drop(build_timer);
     let selected = select_canonical_with_incidence(topology, &incidence, encoding, None, cancel);
     hotspot_profile::record_graph_canon(started.elapsed());
     selected
@@ -607,7 +612,9 @@ fn select_canonical_open_port(
     cancel: Option<&AtomicBool>,
 ) -> Option<SelectedCanonical> {
     let started = Instant::now();
+    let build_timer = CanonicalTimer::start(CanonicalPhase::IncidenceBuild);
     let mut incidence = IncidenceGraph::build(topology, None, false);
+    drop(build_timer);
     let marked = match port {
         OpenPortRef::Producer(reference) => MarkedPort::Producer(reference),
         OpenPortRef::Consumer(reference) => MarkedPort::Consumer(reference),
@@ -673,6 +680,7 @@ fn select_canonical_with_canonaut(
     cancel: Option<&AtomicBool>,
 ) -> Option<SelectedCanonical> {
     let original_vertex_count = incidence.base_colors.len();
+    let dense_timer = CanonicalTimer::start(CanonicalPhase::DenseGraph);
     let edge_count = incidence
         .adjacency
         .iter()
@@ -710,15 +718,19 @@ fn select_canonical_with_canonaut(
             .expect("canonical color count must fit u32");
     }
     graph.set_colors(color_ids);
+    drop(dense_timer);
     if cancel.is_some_and(|flag| flag.load(Ordering::Relaxed)) {
         return None;
     }
+    let labeling_timer = CanonicalTimer::start(CanonicalPhase::Labeling);
     let mut manager = CanonautManager::new(graph.number_of_vertices()).with_canonization();
     manager.canonize_graph(&graph);
+    drop(labeling_timer);
     if cancel.is_some_and(|flag| flag.load(Ordering::Relaxed)) {
         return None;
     }
 
+    let relabel_timer = CanonicalTimer::start(CanonicalPhase::Relabel);
     let mut positions = vec![usize::MAX; original_vertex_count];
     for (position, &raw_vertex) in manager.labeling().iter().enumerate() {
         let vertex = usize::try_from(raw_vertex).expect("canonical vertex index must fit usize");
@@ -736,6 +748,7 @@ fn select_canonical_with_canonaut(
         }
     }
     let candidate = incidence.relabel(topology, &ranks);
+    drop(relabel_timer);
     let bytes = match encoding {
         EncodingKind::State => {
             let mut bytes = encode_partial_state(topology, &candidate, PartialMark::None);
@@ -1722,6 +1735,7 @@ fn encode_semantic_system(
     topology: &CanonicalPartialTopology,
     bytes: &mut Vec<u8>,
 ) {
+    let equality_timer = CanonicalTimer::start(CanonicalPhase::Equality);
     let producers = canonical_producer_ports(source.problem.inputs.len(), &topology.nodes);
     let consumers = canonical_consumer_ports(
         source.problem.outputs.len(),
@@ -1748,6 +1762,8 @@ fn encode_semantic_system(
         &producer_indices,
         &consumer_indices,
     );
+    drop(equality_timer);
+    let encoding_timer = CanonicalTimer::start(CanonicalPhase::SemanticEncoding);
     write_len(bytes, variable_count);
     write_len(bytes, equalities.len());
     for row in &equalities {
@@ -1755,9 +1771,13 @@ fn encode_semantic_system(
             write_rational(bytes, value);
         }
     }
+    drop(encoding_timer);
 
+    let inequality_timer = CanonicalTimer::start(CanonicalPhase::Inequality);
     let inequalities =
         primitive_inequality_basis(&source.problem.max_link_rate, variable_count, &equalities);
+    drop(inequality_timer);
+    let _encoding_timer = CanonicalTimer::start(CanonicalPhase::SemanticEncoding);
     write_len(bytes, inequalities.len());
     for (relation, row) in inequalities {
         bytes.push(match relation {
@@ -1940,17 +1960,36 @@ fn rational_rref(mut rows: Vec<Vec<Rational>>, variable_count: usize) -> Vec<Vec
         };
         rows.swap(pivot_row, selected);
         let pivot = rows[pivot_row][column].clone();
-        for value in &mut rows[pivot_row] {
-            *value = &*value / &pivot;
+        if pivot.numerator() != pivot.denominator() {
+            for value in &mut rows[pivot_row][column..] {
+                if !value.is_zero() {
+                    *value = &*value / &pivot;
+                }
+            }
         }
-        let normalized_pivot = rows[pivot_row].clone();
-        for (row_index, row) in rows.iter_mut().enumerate() {
-            if row_index == pivot_row || row[column].is_zero() {
+        // Earlier columns in this pivot row are zero. Borrow its nonzero suffix
+        // once, avoiding a full rational-row clone and zero multiplications for
+        // every elimination. Pivot order and exact normalized rows are unchanged.
+        let (before, pivot_and_after) = rows.split_at_mut(pivot_row);
+        let (normalized_pivot, after) = pivot_and_after.split_first_mut().unwrap();
+        let nonzero = normalized_pivot
+            .iter()
+            .enumerate()
+            .skip(column + 1)
+            .filter(|(_, value)| !value.is_zero())
+            .collect::<Vec<_>>();
+        for row in before.iter_mut().chain(after) {
+            if row[column].is_zero() {
                 continue;
             }
-            let factor = row[column].clone();
-            for (value, pivot_value) in row.iter_mut().zip(&normalized_pivot) {
-                *value = &*value - &factor * pivot_value;
+            let factor = std::mem::replace(&mut row[column], Rational::zero());
+            let unit_factor = factor.numerator() == factor.denominator();
+            for &(index, pivot_value) in &nonzero {
+                row[index] = if unit_factor {
+                    &row[index] - pivot_value
+                } else {
+                    &row[index] - &factor * pivot_value
+                };
             }
         }
         pivot_row += 1;
@@ -1994,31 +2033,55 @@ fn reduce_modulo_equalities(
             continue;
         }
         let factor = row[pivot].clone();
+        let unit_factor = factor.numerator() == factor.denominator();
         for (value, equality_value) in row.iter_mut().zip(equality) {
-            *value = &*value - &factor * equality_value;
+            if !equality_value.is_zero() {
+                *value = if unit_factor {
+                    &*value - equality_value
+                } else {
+                    &*value - &factor * equality_value
+                };
+            }
         }
     }
 }
 
 fn normalize_positive_scale(row: &mut [Rational]) {
-    let denominator_lcm = row.iter().fold(BigInt::one(), |accumulator, value| {
-        accumulator.lcm(value.denominator())
-    });
+    let denominator_lcm = row
+        .iter()
+        .filter(|value| !value.is_zero() && !value.denominator().is_one())
+        .fold(BigInt::one(), |accumulator, value| {
+            accumulator.lcm(value.denominator())
+        });
     let integers = row
         .iter()
-        .map(|value| value.numerator() * (&denominator_lcm / value.denominator()))
+        .enumerate()
+        .filter(|(_, value)| !value.is_zero())
+        .map(|(index, value)| {
+            (
+                index,
+                value.numerator() * (&denominator_lcm / value.denominator()),
+            )
+        })
         .collect::<Vec<_>>();
     let gcd = integers
         .iter()
-        .filter(|value| !value.is_zero())
-        .fold(BigInt::zero(), |accumulator, value| {
-            accumulator.gcd(&value.abs())
+        .fold(BigInt::zero(), |accumulator, (_, value)| {
+            if accumulator.is_one() {
+                accumulator
+            } else {
+                accumulator.gcd(&value.abs())
+            }
         });
     if gcd.is_zero() {
         return;
     }
-    for (value, integer) in row.iter_mut().zip(integers) {
-        *value = Rational::from(integer / &gcd);
+    for (index, integer) in integers {
+        row[index] = Rational::from(if gcd.is_one() {
+            integer
+        } else {
+            integer / &gcd
+        });
     }
 }
 
@@ -2230,6 +2293,160 @@ mod tests {
                 })
                 .collect(),
             remaining_profile: remaining,
+        }
+    }
+
+    fn dense_reference_normalize_positive_scale(row: &mut [Rational]) {
+        let denominator_lcm = row.iter().fold(BigInt::one(), |accumulator, value| {
+            accumulator.lcm(value.denominator())
+        });
+        let integers = row
+            .iter()
+            .map(|value| value.numerator() * (&denominator_lcm / value.denominator()))
+            .collect::<Vec<_>>();
+        let gcd = integers
+            .iter()
+            .filter(|value| !value.is_zero())
+            .fold(BigInt::zero(), |accumulator, value| {
+                accumulator.gcd(&value.abs())
+            });
+        if gcd.is_zero() {
+            return;
+        }
+        for (value, integer) in row.iter_mut().zip(integers) {
+            *value = Rational::from(integer / &gcd);
+        }
+    }
+    fn dense_reference_rational_rref(
+        mut rows: Vec<Vec<Rational>>,
+        variable_count: usize,
+    ) -> Vec<Vec<Rational>> {
+        rows.retain(|row| row.iter().any(|value| !value.is_zero()));
+        let mut pivot_row = 0;
+        for column in 0..variable_count {
+            let Some(selected) = (pivot_row..rows.len()).find(|&row| !rows[row][column].is_zero())
+            else {
+                continue;
+            };
+            rows.swap(pivot_row, selected);
+            let pivot = rows[pivot_row][column].clone();
+            for value in &mut rows[pivot_row] {
+                *value = &*value / &pivot;
+            }
+            let normalized_pivot = rows[pivot_row].clone();
+            for (row_index, row) in rows.iter_mut().enumerate() {
+                if row_index == pivot_row || row[column].is_zero() {
+                    continue;
+                }
+                let factor = row[column].clone();
+                for (value, pivot_value) in row.iter_mut().zip(&normalized_pivot) {
+                    *value = &*value - &factor * pivot_value;
+                }
+            }
+            pivot_row += 1;
+            if pivot_row == rows.len() {
+                break;
+            }
+        }
+        let inconsistent = rows.iter().any(|row| {
+            row[..variable_count].iter().all(Rational::is_zero) && !row[variable_count].is_zero()
+        });
+        if inconsistent {
+            let mut contradiction = vec![Rational::zero(); variable_count + 1];
+            contradiction[variable_count] = Rational::one();
+            // Every inconsistent affine system has the empty solution set. Once
+            // `0 = 1` belongs to the augmented row space, retaining variable-pivot
+            // rows would make equivalent contradictions depend on their generating
+            // rows because pivots intentionally stop before the RHS column.
+            rows.clear();
+            rows.push(contradiction);
+        } else {
+            rows.retain(|row| row[..variable_count].iter().any(|value| !value.is_zero()));
+        }
+        rows.sort();
+        rows.dedup();
+        rows
+    }
+    fn dense_reference_reduce_modulo_equalities(
+        row: &mut [Rational],
+        equalities: &[Vec<Rational>],
+        variable_count: usize,
+    ) {
+        for equality in equalities {
+            let Some(pivot) = equality[..variable_count]
+                .iter()
+                .position(|value| !value.is_zero())
+            else {
+                continue;
+            };
+            if row[pivot].is_zero() {
+                continue;
+            }
+            let factor = row[pivot].clone();
+            for (value, equality_value) in row.iter_mut().zip(equality) {
+                *value = &*value - &factor * equality_value;
+            }
+        }
+    }
+    fn dense_reference_primitive_inequality_basis(
+        capacity: &Rational,
+        variable_count: usize,
+        equalities: &[Vec<Rational>],
+    ) -> Vec<(SemanticInequalityRelation, Vec<Rational>)> {
+        let mut rows = Vec::with_capacity(variable_count.saturating_mul(2));
+        for variable in 0..variable_count {
+            let mut positive = vec![Rational::zero(); variable_count + 1];
+            positive[variable] = Rational::from(-1);
+            rows.push((SemanticInequalityRelation::LessThan, positive));
+
+            let mut bounded = vec![Rational::zero(); variable_count + 1];
+            bounded[variable] = Rational::one();
+            bounded[variable_count] = capacity.clone();
+            rows.push((SemanticInequalityRelation::LessThanOrEqual, bounded));
+        }
+        for (_, row) in &mut rows {
+            dense_reference_reduce_modulo_equalities(row, equalities, variable_count);
+            dense_reference_normalize_positive_scale(row);
+        }
+        rows.sort();
+        rows.dedup();
+        rows
+    }
+
+    #[test]
+    fn sparse_elimination_matches_dense_reference_exactly() {
+        let mut seed = 0x7b19_c21d_u64;
+        for variables in 1..=7 {
+            for sample in 0..24 {
+                let rows = (0..sample % 9)
+                    .map(|_| {
+                        (0..=variables)
+                            .map(|_| {
+                                seed = seed.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(1);
+                                let numerator = i64::try_from(seed % 13).unwrap() - 6;
+                                let denominator = 1 + (seed >> 8) % 7;
+                                let mut value: Rational =
+                                    format!("{numerator}/{denominator}").parse().unwrap();
+                                if sample % 8 == 0 {
+                                    value = &value
+                                        * &rational("100000000000000000000000000000000000003");
+                                }
+                                value
+                            })
+                            .collect::<Vec<_>>()
+                    })
+                    .collect::<Vec<_>>();
+                let expected = dense_reference_rational_rref(rows.clone(), variables);
+                let actual = rational_rref(rows, variables);
+                assert_eq!(actual, expected, "variables={variables}, sample={sample}");
+                for capacity in ["1/7", "5", "100000000000000000000000000000000000003"] {
+                    let capacity = rational(capacity);
+                    assert_eq!(
+                        primitive_inequality_basis(&capacity, variables, &actual),
+                        dense_reference_primitive_inequality_basis(&capacity, variables, &expected)
+                    );
+                }
+            }
         }
     }
 

@@ -20,6 +20,16 @@ pub struct ProofObligation {
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 
 pub struct SearchInstrumentation {
+    /// Sibling subtrees published to the bounded work queue.
+    pub donated_tasks: u64,
+    /// Completed proofs borrowed from another search context.
+    pub shared_cache_hits: u64,
+    /// Largest group-owned completed-state payload, counted once per group.
+    pub shared_cache_bytes: u64,
+    /// Static root obligations dispatched.
+    pub root_partitions: u64,
+    /// Elapsed time planning the static frontier.
+    pub partition_planning_ns: u64,
     /// Structural edge decisions attempted.
     pub raw_structural_decisions: u64,
     /// Canonical states retained for search.
@@ -56,6 +66,27 @@ impl SearchInstrumentation {
     #[must_use]
     pub fn diagnostics(&self) -> Vec<Diagnostic> {
         vec![
+            Diagnostic::counter("custom.donated_tasks", "Donated tasks", self.donated_tasks),
+            Diagnostic::counter(
+                "custom.shared_cache_hits",
+                "Shared completed hits",
+                self.shared_cache_hits,
+            ),
+            Diagnostic::counter(
+                "custom.shared_cache_bytes",
+                "Shared state bytes",
+                self.shared_cache_bytes,
+            ),
+            Diagnostic::counter(
+                "custom.root_partitions",
+                "Root partitions",
+                self.root_partitions,
+            ),
+            Diagnostic::counter(
+                "custom.partition_planning_ns",
+                "Partition planning ns",
+                self.partition_planning_ns,
+            ),
             Diagnostic::counter(
                 "custom.raw_structural_decisions",
                 "Structural decisions",

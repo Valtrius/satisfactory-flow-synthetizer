@@ -94,6 +94,7 @@ fn run_case(inputs: &[u32], outputs: &[u32], capacity: u32, coverage: &mut Cover
         &SolveOptions {
             max_nodes: Some(MAX_NODES),
             worker_count: 1,
+            ..SolveOptions::default()
         },
         &AtomicBool::new(false),
     )

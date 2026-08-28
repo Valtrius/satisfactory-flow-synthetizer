@@ -13,6 +13,7 @@ solver-validation = { path = "../solver-validation" }
 thiserror = "2.0"
 
 [dev-dependencies]
+serde_json = "1"
 solver-reference = { path = "../solver-reference" }
 solver-z3 = { path = "../solver-z3" }
 

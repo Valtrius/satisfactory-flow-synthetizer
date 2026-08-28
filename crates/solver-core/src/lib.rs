@@ -18,7 +18,8 @@ pub use problem::{
     InvalidProblem, NormalizedProblem, Preparation, RateMultiset, TerminalMapping, prepare_problem,
 };
 pub use solver::{
-    SolveObserver, SolveOptions, SolverError, enumerate_with_observer, solve, solve_with_observer,
+    ParallelismOptions, SolveObserver, SolveOptions, SolverError, enumerate_with_observer, solve,
+    solve_with_observer,
 };
 
 /// Solve through the shared contract, retaining enumeration without an external observer.
@@ -35,6 +36,7 @@ pub fn solve_problem(
     let native = SolveOptions {
         max_nodes: options.max_nodes,
         worker_count: options.worker_count,
+        ..SolveOptions::default()
     };
     let result = match options.mode {
         solver_api::SolveMode::Optimal => solve_with_observer(problem, &native, cancel, &collector),
@@ -46,7 +48,7 @@ pub fn solve_problem(
         SolverError::InvalidProblem(_) => {
             solver_api::SolverError::InvalidProblem(error.to_string())
         }
-        SolverError::InvalidWorkerCount => {
+        SolverError::InvalidWorkerCount | SolverError::InvalidParallelism => {
             solver_api::SolverError::InvalidOptions(error.to_string())
         }
         _ => solver_api::SolverError::Internal(error.to_string()),

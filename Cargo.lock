@@ -3152,6 +3152,7 @@ dependencies = [
  "canonaut",
  "num",
  "petgraph",
+ "serde_json",
  "solver-api",
  "solver-reference",
  "solver-validation",

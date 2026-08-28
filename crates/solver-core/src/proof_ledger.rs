@@ -97,6 +97,8 @@ pub(crate) enum ParentProofStatus {
 
 #[derive(Clone, Debug, Error, PartialEq, Eq)]
 pub(crate) enum ProofLedgerError {
+    #[error("invalid completed-group import for ({node_count}, {link_count})")]
+    InvalidGroupImport { node_count: u32, link_count: u32 },
     #[error("proof ledger already registered node {node_count}")]
     DuplicateNode { node_count: u32 },
     #[error("proof ledger has no registered node {node_count}")]
@@ -169,6 +171,50 @@ struct ProfileLedger {
 }
 
 impl ProofLedger {
+    /// Import only into a pre-registered, untouched group with identical profiles.
+    pub(crate) fn import_group(
+        &mut self,
+        node_count: u32,
+        link_count: u32,
+        mut other: Self,
+    ) -> Result<(), ProofLedgerError> {
+        let error = || ProofLedgerError::InvalidGroupImport {
+            node_count,
+            link_count,
+        };
+        let incoming = other
+            .nodes
+            .get_mut(&node_count)
+            .and_then(|node| node.link_groups.remove(&link_count))
+            .ok_or_else(error)?;
+        let target = self
+            .nodes
+            .get_mut(&node_count)
+            .and_then(|node| node.link_groups.get_mut(&link_count))
+            .ok_or_else(error)?;
+        if !target.profiles.keys().eq(incoming.profiles.keys())
+            || target.profiles.values().any(Option::is_some)
+        {
+            return Err(error());
+        }
+        *target = incoming;
+        Ok(())
+    }
+
+    /// SAT existence is insufficient for full-N enumeration.
+    pub(crate) fn all_groups_exhausted(
+        &self,
+        node_count: u32,
+        expected: impl Iterator<Item = u32>,
+    ) -> bool {
+        expected.into_iter().all(|link_count| {
+            matches!(
+                self.link_group_status(node_count, link_count),
+                ParentProofStatus::Sat { .. } | ParentProofStatus::Unsat
+            )
+        })
+    }
+
     pub(crate) fn begin_node(&mut self, node_count: u32) -> Result<(), ProofLedgerError> {
         if self.nodes.contains_key(&node_count) {
             return Err(ProofLedgerError::DuplicateNode { node_count });
@@ -801,5 +847,13 @@ mod tests {
             ledger.node_status(0),
             ParentProofStatus::Sat { .. }
         ));
+        assert!(ledger.all_groups_exhausted(0, [1, 2].into_iter()));
+        assert!(!ledger.all_groups_exhausted(0, [1, 2, 3].into_iter()));
+        ledger.register_link_group(0, 3, [profile(0, 0)]).unwrap();
+        assert!(matches!(
+            ledger.node_status(0),
+            ParentProofStatus::Sat { .. }
+        ));
+        assert!(!ledger.all_groups_exhausted(0, [1, 2, 3].into_iter()));
     }
 }

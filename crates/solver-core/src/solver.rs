@@ -29,7 +29,7 @@ use crate::{
     lower_bound::{LowerBoundError, baseline_lower_bounds},
     problem::{InvalidProblem, NormalizedProblem, Preparation, prepare_problem},
     profile::{
-        AccountedProfile, ProfileArithmeticError, ProfileLinkAccounting,
+        AccountedProfile, AccountedProfileGroup, ProfileArithmeticError, ProfileLinkAccounting,
         enumerate_accounted_profile_groups,
     },
     proof_ledger::{
@@ -37,9 +37,10 @@ use crate::{
         ProofLedgerError,
     },
     search::{
-        ProfileSearchError, ProfileSearchResult, ProfileSearchStats, ProfileWitness, RootPartition,
-        RootPartitionPlan, plan_profile_root_partitions_with_accounting,
-        search_profile_root_partition,
+        DonationPool, ProfileSearchError, ProfileSearchResult, ProfileSearchStats, ProfileWitness,
+        RootPartition, RootPartitionPlan, SearchExecution, SharedStateCache,
+        plan_adaptive_partitions, plan_profile_root_partitions_with_accounting,
+        search_profile_root_partition_with_execution,
     },
     telemetry::{ProofObligation, SearchInstrumentation},
 };
@@ -58,6 +59,22 @@ pub struct SolveOptions {
     pub max_nodes: Option<u32>,
     /// Maximum fixed-profile proof workers in the current equal-link group.
     pub worker_count: usize,
+    /// Experimental scheduling controls; production defaults remain disabled.
+    pub parallelism: ParallelismOptions,
+}
+
+/// Independently selectable Custom search experiments.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[allow(clippy::struct_excessive_bools)] // Independent experiment flags, not a state machine.
+pub struct ParallelismOptions {
+    /// Refine the static proof frontier before dispatch.
+    pub deep_partitions: bool,
+    /// Reuse completed states and their validated witnesses within a group.
+    pub shared_state_cache: bool,
+    /// Donate DFS siblings to the bounded group pool.
+    pub work_stealing: bool,
+    /// Search higher-L groups concurrently after the first SAT group, in enumeration only.
+    pub parallel_remaining_groups: bool,
 }
 
 impl Default for SolveOptions {
@@ -65,6 +82,7 @@ impl Default for SolveOptions {
         Self {
             max_nodes: None,
             worker_count: 1,
+            parallelism: ParallelismOptions::default(),
         }
     }
 }
@@ -86,6 +104,9 @@ pub enum SolverError {
     /// A zero-worker configuration cannot discharge proof obligations.
     #[error("worker_count must be at least one")]
     InvalidWorkerCount,
+    /// Work donation requires transferable completed results.
+    #[error("work_stealing requires shared_state_cache")]
+    InvalidParallelism,
     /// One fixed-profile proof failed internally.
     #[error(transparent)]
     ProfileSearch(#[from] ProfileSearchError),
@@ -234,6 +255,9 @@ fn solve_internal(
     if options.worker_count == 0 {
         return Err(SolverError::InvalidWorkerCount);
     }
+    if options.parallelism.work_stealing && !options.parallelism.shared_state_cache {
+        return Err(SolverError::InvalidParallelism);
+    }
     let solve_started = Instant::now();
     let mut instrumentation = SearchInstrumentation::default();
     emit_progress(
@@ -333,9 +357,49 @@ fn solve_internal(
             &normalized.max_link_rate,
         )?;
         proof_ledger.begin_node(node_count)?;
-        for group in groups {
+        let mut parallel_outputs = BTreeMap::new();
+        let mut parallel_started = false;
+        for (group_index, group) in groups.iter().enumerate() {
             if cancel.load(Ordering::Relaxed) {
                 return Ok(incomplete(IncompleteReason::Cancelled, best_known, proof));
+            }
+
+            if enumerate_all_at_n
+                && options.parallelism.parallel_remaining_groups
+                && winning_node == Some(node_count)
+                && !parallel_started
+            {
+                let runner = ProfileGroupRun {
+                    problem: &normalized,
+                    node_count,
+                    link_count: group.link_count,
+                    requested_workers: options.worker_count,
+                    parallelism: options.parallelism,
+                    cancel,
+                    collect_all_witnesses: true,
+                    #[cfg(test)]
+                    panic_next_root_worker,
+                };
+                parallel_outputs =
+                    runner.run_remaining(&groups[group_index..], &mut proof_ledger, &|live| {
+                        let mut snapshot = instrumentation.clone();
+                        merge_instrumentation(&mut snapshot, live);
+                        emit_progress(
+                            observer,
+                            SolvePhase::Searching,
+                            Some(ProofObligation {
+                                node_count,
+                                link_count: None,
+                                profile: None,
+                                root_partition: None,
+                            }),
+                            0,
+                            None,
+                            &snapshot,
+                            solve_started,
+                        );
+                    })?;
+                parallel_started = true;
             }
 
             // A concrete validated witness in the first satisfiable structural group
@@ -344,7 +408,7 @@ fn solve_internal(
             // visited earlier at this N were folded UNSAT. This optional small
             // acyclic constructor proves only existence; a miss leaves the
             // exhaustive search unchanged.
-            if node_count >= 3 {
+            if node_count >= 3 && !parallel_outputs.contains_key(&group.link_count) {
                 for accounted in &group.profiles {
                     if let Some(graph) =
                         find_small_acyclic_witness(&normalized, accounted.profile, cancel)
@@ -432,34 +496,39 @@ fn solve_internal(
                 &instrumentation,
                 solve_started,
             );
-            let profile_tasks = ProfileGroupRun {
-                problem: &normalized,
-                node_count,
-                link_count: group.link_count,
-                requested_workers: options.worker_count,
-                cancel,
-                collect_all_witnesses: enumerate_all_at_n,
-                #[cfg(test)]
-                panic_next_root_worker,
-            }
-            .run(group.profiles, &mut proof_ledger, &|live| {
-                let mut snapshot = instrumentation.clone();
-                merge_instrumentation(&mut snapshot, live);
-                emit_progress(
-                    observer,
-                    SolvePhase::Searching,
-                    Some(ProofObligation {
-                        node_count,
-                        link_count: Some(group.link_count),
-                        profile: None,
-                        root_partition: None,
-                    }),
-                    0,
-                    Some(total_profiles),
-                    &snapshot,
-                    solve_started,
-                );
-            })?;
+            let profile_tasks = if let Some(outputs) = parallel_outputs.remove(&group.link_count) {
+                outputs
+            } else {
+                ProfileGroupRun {
+                    problem: &normalized,
+                    node_count,
+                    link_count: group.link_count,
+                    requested_workers: options.worker_count,
+                    parallelism: options.parallelism,
+                    cancel,
+                    collect_all_witnesses: enumerate_all_at_n,
+                    #[cfg(test)]
+                    panic_next_root_worker,
+                }
+                .run(group.profiles.clone(), &mut proof_ledger, &|live| {
+                    let mut snapshot = instrumentation.clone();
+                    merge_instrumentation(&mut snapshot, live);
+                    emit_progress(
+                        observer,
+                        SolvePhase::Searching,
+                        Some(ProofObligation {
+                            node_count,
+                            link_count: Some(group.link_count),
+                            profile: None,
+                            root_partition: None,
+                        }),
+                        0,
+                        Some(total_profiles),
+                        &snapshot,
+                        solve_started,
+                    );
+                })?
+            };
             // Live counters already include unfinished roots. Fold all final counters
             // before replaying ordered proof events so telemetry never moves backwards.
             for task in &profile_tasks {
@@ -685,6 +754,11 @@ fn solve_internal(
         }
 
         if winning_node == Some(node_count) {
+            if !proof_ledger.all_groups_exhausted(node_count, groups.iter().map(|g| g.link_count)) {
+                return Err(SolverError::ProofLedgerInvariant {
+                    detail: "enumeration retained unfinished or missing groups".into(),
+                });
+            }
             let best = preferred.ok_or_else(|| SolverError::ProofLedgerInvariant {
                 detail: format!(
                     "enumeration exhausted satisfiable node obligation {node_count} without a preferred witness"
@@ -755,6 +829,7 @@ struct RootTask {
     profile_index: usize,
     accounted: AccountedProfile,
     partition: RootPartition,
+    planning_ns: u64,
 }
 
 #[derive(Debug)]
@@ -772,11 +847,13 @@ enum RootTaskResult {
     WorkerPanicked,
 }
 
+#[derive(Clone, Copy)]
 struct ProfileGroupRun<'a> {
     problem: &'a NormalizedProblem,
     node_count: u32,
     link_count: u32,
     requested_workers: usize,
+    parallelism: ParallelismOptions,
     cancel: &'a AtomicBool,
     collect_all_witnesses: bool,
     #[cfg(test)]
@@ -791,6 +868,78 @@ struct ProfileGroupRun<'a> {
 /// before proof counters or incumbents become observable. Advisory instrumentation
 /// is sampled independently while workers are running.
 impl ProfileGroupRun<'_> {
+    fn run_remaining(
+        &self,
+        groups: &[AccountedProfileGroup],
+        ledger: &mut ProofLedger,
+        progress: &(dyn Fn(&SearchInstrumentation) + Sync),
+    ) -> Result<BTreeMap<u32, Vec<ProfileTaskOutput>>, SolverError> {
+        for group in groups {
+            ledger.register_link_group(
+                self.node_count,
+                group.link_count,
+                group.profiles.iter().map(|p| p.profile),
+            )?;
+        }
+        let slots = groups.len().min(self.requested_workers);
+        let next = AtomicUsize::new(0);
+        let live = Mutex::new(vec![SearchInstrumentation::default(); groups.len()]);
+        let completed = thread::scope(|scope| {
+            let mut handles = Vec::new();
+            for slot in 0..slots {
+                let next = &next;
+                let live = &live;
+                // The fixed allocations sum to the requested budget, even when G > W.
+                let allocation = self.requested_workers / slots
+                    + usize::from(slot < self.requested_workers % slots);
+                handles.push(scope.spawn(move || -> Result<Vec<_>, SolverError> {
+                    let mut completed = Vec::new();
+                    loop {
+                        let index = next.fetch_add(1, Ordering::Relaxed);
+                        let Some(group) = groups.get(index) else {
+                            break;
+                        };
+                        let run = Self {
+                            link_count: group.link_count,
+                            requested_workers: allocation,
+                            ..*self
+                        };
+                        let mut local = ProofLedger::default();
+                        local.begin_node(self.node_count)?;
+                        let outputs = run.run(group.profiles.clone(), &mut local, &|snapshot| {
+                            let mut live = live
+                                .lock()
+                                .unwrap_or_else(std::sync::PoisonError::into_inner);
+                            live[index] = snapshot.clone();
+                            let mut aggregate = SearchInstrumentation::default();
+                            for item in live.iter() {
+                                merge_instrumentation(&mut aggregate, item);
+                            }
+                            progress(&aggregate);
+                        })?;
+                        completed.push((index, outputs, local));
+                    }
+                    Ok(completed)
+                }));
+            }
+            let mut completed = Vec::new();
+            for handle in handles {
+                let outputs = handle
+                    .join()
+                    .map_err(|_| SolverError::ProfileWorkerPanicked { profile_index: 0 })??;
+                completed.extend(outputs);
+            }
+            Ok::<_, SolverError>(completed)
+        })?;
+        let mut outputs = BTreeMap::new();
+        for (index, result, local) in completed {
+            let link_count = groups[index].link_count;
+            ledger.import_group(self.node_count, link_count, local)?;
+            outputs.insert(link_count, result);
+        }
+        Ok(outputs)
+    }
+
     fn run(
         &self,
         profiles: Vec<AccountedProfile>,
@@ -809,14 +958,29 @@ impl ProfileGroupRun<'_> {
                 merge_instrumentation(&mut immediate, &profile_result_metadata(result).1);
             }
         }
-        root_outputs.extend(self.execute_roots(&root_tasks, &|live| {
+        let shared = self
+            .parallelism
+            .shared_state_cache
+            .then(SharedStateCache::default);
+        root_outputs.extend(self.execute_roots(&root_tasks, shared.as_ref(), &|live| {
             let mut snapshot = immediate.clone();
             merge_instrumentation(&mut snapshot, live);
             progress(&snapshot);
         }));
         root_outputs.sort_unstable_by_key(|task| (task.profile_index, task.partition));
         let mut completions = self.record_roots(&profiles, root_outputs, ledger)?;
-        self.fold_profiles(profiles, &mut completions, ledger)
+        let mut outputs = self.fold_profiles(profiles, &mut completions, ledger)?;
+        if let Some(shared) = &shared {
+            for output in &mut outputs {
+                if self.collect_all_witnesses {
+                    output.witnesses = shared.witnesses(output.accounted.profile);
+                }
+            }
+            if let Some(root) = outputs.first_mut().and_then(|p| p.roots.first_mut()) {
+                root.instrumentation.shared_cache_bytes = shared.bytes();
+            }
+        }
+        Ok(outputs)
     }
 
     fn plan_roots(
@@ -837,12 +1001,26 @@ impl ProfileGroupRun<'_> {
                 immediate.push(cancelled_root_output(profile_index, 0));
                 continue;
             }
-            match plan_profile_root_partitions_with_accounting(
-                self.problem,
-                accounted.profile,
-                self.cancel,
-                Some(accounted.accounting),
-            ) {
+            let planning_started = Instant::now();
+            let plan = if self.parallelism.deep_partitions {
+                plan_adaptive_partitions(
+                    self.problem,
+                    accounted.profile,
+                    self.cancel,
+                    accounted.accounting,
+                    self.requested_workers.saturating_mul(4),
+                )
+            } else {
+                plan_profile_root_partitions_with_accounting(
+                    self.problem,
+                    accounted.profile,
+                    self.cancel,
+                    Some(accounted.accounting),
+                )
+            };
+            let planning_ns =
+                u64::try_from(planning_started.elapsed().as_nanos()).unwrap_or(u64::MAX);
+            match plan {
                 RootPartitionPlan::Partitions(partitions) => {
                     ledger.register_profile_partitions(
                         self.node_count,
@@ -850,11 +1028,17 @@ impl ProfileGroupRun<'_> {
                         accounted.profile,
                         partitions.iter().map(|partition| partition.id().ordinal()),
                     )?;
-                    tasks.extend(partitions.into_iter().map(|partition| RootTask {
-                        profile_index,
-                        accounted,
-                        partition,
-                    }));
+                    tasks.extend(
+                        partitions
+                            .into_iter()
+                            .enumerate()
+                            .map(|(index, partition)| RootTask {
+                                profile_index,
+                                accounted,
+                                partition,
+                                planning_ns: if index == 0 { planning_ns } else { 0 },
+                            }),
+                    );
                 }
                 RootPartitionPlan::Immediate(result) => {
                     ledger.register_profile_partitions(
@@ -877,9 +1061,19 @@ impl ProfileGroupRun<'_> {
     fn execute_roots(
         &self,
         tasks: &[RootTask],
+        shared: Option<&SharedStateCache>,
         progress: &(dyn Fn(&SearchInstrumentation) + Sync),
     ) -> Vec<RootTaskOutput> {
-        let worker_count = self.requested_workers.min(tasks.len());
+        let worker_count = if self.parallelism.work_stealing && !tasks.is_empty() {
+            self.requested_workers
+        } else {
+            self.requested_workers.min(tasks.len())
+        };
+        let donations = self
+            .parallelism
+            .work_stealing
+            .then(|| DonationPool::new(worker_count));
+        let pending_roots = AtomicUsize::new(tasks.len());
         if worker_count == 0 {
             return Vec::new();
         }
@@ -909,6 +1103,8 @@ impl ProfileGroupRun<'_> {
             let mut handles = Vec::with_capacity(worker_count);
             for telemetry in live {
                 let next_task = &next_task;
+                let donations = donations.as_ref();
+                let pending_roots = &pending_roots;
                 let handle = scope.spawn(move || {
                     let mut completed = Vec::new();
                     let mut totals = SearchInstrumentation::default();
@@ -920,15 +1116,29 @@ impl ProfileGroupRun<'_> {
                         }
                         let index = next_task.fetch_add(1, Ordering::Relaxed);
                         let Some(task) = tasks.get(index) else {
+                            if let Some(pool) = donations
+                                && pending_roots.load(Ordering::Acquire) != 0
+                            {
+                                if !pool
+                                    .help(self.cancel, shared.expect("validated sharing option"))
+                                {
+                                    thread::park_timeout(Duration::from_millis(1));
+                                }
+                                continue;
+                            }
                             break;
                         };
-                        let output = self.execute_root(task, &|current| {
-                            let mut snapshot = totals.clone();
-                            merge_instrumentation(&mut snapshot, current);
-                            *telemetry
-                                .lock()
-                                .unwrap_or_else(std::sync::PoisonError::into_inner) = snapshot;
-                        });
+                        let output = self.execute_root(
+                            task,
+                            SearchExecution { shared, donations },
+                            &|current| {
+                                let mut snapshot = totals.clone();
+                                merge_instrumentation(&mut snapshot, current);
+                                *telemetry
+                                    .lock()
+                                    .unwrap_or_else(std::sync::PoisonError::into_inner) = snapshot;
+                            },
+                        );
                         if let RootTaskResult::Search(result) = &output.result {
                             merge_instrumentation(&mut totals, &profile_result_metadata(result).1);
                         }
@@ -936,6 +1146,7 @@ impl ProfileGroupRun<'_> {
                             .lock()
                             .unwrap_or_else(std::sync::PoisonError::into_inner) = totals.clone();
                         completed.push(output);
+                        pending_roots.fetch_sub(1, Ordering::Release);
                     }
                     completed
                 });
@@ -953,6 +1164,7 @@ impl ProfileGroupRun<'_> {
     fn execute_root(
         &self,
         task: &RootTask,
+        execution: SearchExecution<'_>,
         progress: &(dyn Fn(&SearchInstrumentation) + Sync),
     ) -> RootTaskOutput {
         let partition = task.partition.id().ordinal();
@@ -964,7 +1176,7 @@ impl ProfileGroupRun<'_> {
                     .is_some_and(|flag| flag.swap(false, Ordering::Relaxed)),
                 "injected worker failure"
             );
-            search_profile_root_partition(
+            let mut result = search_profile_root_partition_with_execution(
                 self.problem,
                 task.accounted.profile,
                 self.cancel,
@@ -972,7 +1184,16 @@ impl ProfileGroupRun<'_> {
                 &task.partition,
                 self.collect_all_witnesses,
                 Some(progress),
-            )
+                execution,
+            );
+            let stats = match &mut result {
+                ProfileSearchResult::Exhausted { stats, .. }
+                | ProfileSearchResult::Incomplete { stats, .. }
+                | ProfileSearchResult::Failed { stats, .. } => stats,
+            };
+            stats.instrumentation.root_partitions = 1;
+            stats.instrumentation.partition_planning_ns = task.planning_ns;
+            result
         }))
         .map_or(RootTaskResult::WorkerPanicked, |result| {
             RootTaskResult::Search(Box::new(result))
@@ -1305,7 +1526,21 @@ fn retain_best(target: &mut Option<BestKnownSolution>, candidate: BestKnownSolut
     }
 }
 
-fn merge_instrumentation(total: &mut SearchInstrumentation, profile: &SearchInstrumentation) {
+pub(crate) fn merge_instrumentation(
+    total: &mut SearchInstrumentation,
+    profile: &SearchInstrumentation,
+) {
+    total.donated_tasks = total.donated_tasks.saturating_add(profile.donated_tasks);
+    total.shared_cache_hits = total
+        .shared_cache_hits
+        .saturating_add(profile.shared_cache_hits);
+    total.shared_cache_bytes = total.shared_cache_bytes.max(profile.shared_cache_bytes);
+    total.root_partitions = total
+        .root_partitions
+        .saturating_add(profile.root_partitions);
+    total.partition_planning_ns = total
+        .partition_planning_ns
+        .saturating_add(profile.partition_planning_ns);
     total.raw_structural_decisions = total
         .raw_structural_decisions
         .saturating_add(profile.raw_structural_decisions);
@@ -1777,6 +2012,7 @@ mod tests {
                     &SolveOptions {
                         max_nodes: Some(6),
                         worker_count,
+                        ..SolveOptions::default()
                     },
                     &cancel,
                     &|event| {
@@ -1876,6 +2112,7 @@ mod tests {
             &SolveOptions {
                 max_nodes: Some(7),
                 worker_count: 1,
+                ..SolveOptions::default()
             },
             &cancel,
             &|event| {
@@ -1921,6 +2158,7 @@ mod tests {
             &SolveOptions {
                 max_nodes: Some(7),
                 worker_count: thread::available_parallelism().map_or(4, std::num::NonZero::get),
+                ..SolveOptions::default()
             },
             cancel.as_ref(),
             &|_| {},
@@ -1957,6 +2195,7 @@ mod tests {
                 // One worker leaves a deep backlog so cancel must fill unclaimed
                 // roots as Cancelled rather than inventing worker panics.
                 worker_count: 1,
+                ..SolveOptions::default()
             },
             cancel.as_ref(),
         );
@@ -1986,6 +2225,7 @@ mod tests {
             &SolveOptions {
                 max_nodes: Some(7),
                 worker_count: 5,
+                ..SolveOptions::default()
             },
             cancel.as_ref(),
             &|event| {
@@ -2054,6 +2294,7 @@ mod tests {
                     &SolveOptions {
                         max_nodes: Some(1),
                         worker_count,
+                        ..SolveOptions::default()
                     },
                     &AtomicBool::new(false),
                 )
@@ -2077,6 +2318,7 @@ mod tests {
             &SolveOptions {
                 max_nodes: Some(0),
                 worker_count: 4,
+                ..SolveOptions::default()
             },
             &AtomicBool::new(false),
             &|event| events.lock().unwrap().push(event),
@@ -2137,6 +2379,7 @@ mod tests {
             &SolveOptions {
                 max_nodes: Some(1),
                 worker_count: 4,
+                ..SolveOptions::default()
             },
             &cancel,
             &|event| {
@@ -2171,6 +2414,7 @@ mod tests {
             &SolveOptions {
                 max_nodes: Some(0),
                 worker_count: 4,
+                ..SolveOptions::default()
             },
             &cancel,
             &|event| {
@@ -2251,6 +2495,7 @@ mod tests {
             &SolveOptions {
                 max_nodes: Some(0),
                 worker_count: 0,
+                ..SolveOptions::default()
             },
             &AtomicBool::new(false),
         )
@@ -2268,6 +2513,7 @@ mod tests {
             &SolveOptions {
                 max_nodes: Some(1),
                 worker_count: 2,
+                ..SolveOptions::default()
             },
             &AtomicBool::new(false),
             &|_| {},
@@ -2288,6 +2534,7 @@ mod tests {
             &SolveOptions {
                 max_nodes: Some(0),
                 worker_count: 1,
+                ..SolveOptions::default()
             },
             &AtomicBool::new(false),
             &|_| panic!("injected observer failure"),
