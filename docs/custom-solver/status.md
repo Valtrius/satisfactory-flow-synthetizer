@@ -21,8 +21,8 @@ lower overhead alone does not justify slower completion.
 
 Each optimization commit includes its related docs. Experiment 13 tooling/results
 are committed in `473aba7`. [Calculation promotion](experiments/14-calculation-promotion.md)
-is in progress: exact-L is included in its own commit; witness and basis remain
-active and await their separate commits. No push is performed. The five-second
+is in progress: exact-L is committed in `5ae5631`; cached witness leaves are
+included in their separate commit. Direct RREF bounds remain active and uncommitted. No push is performed. The five-second
 constructor deadline remains unapplied; all scheduling flags remain opt-in.
 
 ## Latest measured findings

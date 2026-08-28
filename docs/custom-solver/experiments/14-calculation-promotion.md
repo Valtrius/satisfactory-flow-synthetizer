@@ -9,8 +9,8 @@ No push is requested or performed.
 
 | Change                    | Promotion state                 | Evidence                                   |
 | ------------------------- | ------------------------------- | ------------------------------------------ |
-| Earlier exact-L rejection | Included with this record       | 4.44-4.45x faster completed target profile |
-| Cached witness leaves     | Active, separate commit pending | 14.87x replay, identical key and coverage  |
+| Earlier exact-L rejection | `5ae5631`                       | 4.44-4.45x faster completed target profile |
+| Cached witness leaves     | Included with this update       | 14.87x replay, identical key and coverage  |
 | Direct RREF bounds        | Active, separate commit pending | 7.3-8.3% shorter completed proof workloads |
 
 The exact-L commit contains only `search.rs` and related documentation. It retains
@@ -18,7 +18,8 @@ the focused mismatch/cancellation test and a local Clippy line-count allowance
 that keeps the failure sequence together. The allowance was present in the measured
 combined variant and does not change runtime behavior.
 
-The witness and basis changes remain active in the working tree during this split.
+The witness commit includes its cached encoder and differential byte tests in
+`canonical.rs`. The basis change remains active but excluded from that commit.
 The frozen sequential patches preserve their independent review/build boundaries.
 No benchmark label, scheduling default, public witness identity or proof rule changes.
 

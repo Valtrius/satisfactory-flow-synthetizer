@@ -664,8 +664,17 @@ fn select_canonical_with_incidence(
     let groups = incidence.labeling_groups(topology);
     let ranks = vec![None; incidence.base_colors.len()];
     let mut best = None;
+    let mut encoder = WitnessEncoder::new(topology, incidence, &groups);
     if !search_individualizations(
-        topology, incidence, &groups, 0, 0, ranks, encoding, cancel, &mut best,
+        topology,
+        incidence,
+        &groups,
+        0,
+        0,
+        ranks,
+        &mut encoder,
+        cancel,
+        &mut best,
     ) {
         return None;
     }
@@ -780,7 +789,7 @@ fn search_individualizations(
     group_index: usize,
     rank_in_group: usize,
     ranks: Vec<Option<u32>>,
-    encoding: EncodingKind,
+    encoder: &mut WitnessEncoder,
     cancel: Option<&AtomicBool>,
     best: &mut Option<SelectedCanonical>,
 ) -> bool {
@@ -798,7 +807,7 @@ fn search_individualizations(
                 group_index + 1,
                 0,
                 ranks,
-                encoding,
+                encoder,
                 cancel,
                 best,
             );
@@ -826,7 +835,7 @@ fn search_individualizations(
                 group_index,
                 rank_in_group + 1,
                 next_ranks,
-                encoding,
+                encoder,
                 cancel,
                 best,
             ) {
@@ -838,27 +847,201 @@ fn search_individualizations(
 
     hotspot_profile::record_witness_leaf();
     let _leaf_timer = CanonicalTimer::start(CanonicalPhase::WitnessLeaf);
-    let candidate = incidence.relabel(topology, &ranks);
-    let bytes = match encoding {
-        EncodingKind::State => {
-            let mut bytes = encode_partial_state(topology, &candidate, PartialMark::None);
-            encode_semantic_system(topology, &candidate, &mut bytes);
-            bytes
-        }
-        EncodingKind::Layout => encode_partial_state(topology, &candidate, PartialMark::None),
-        EncodingKind::SccSummary => encode_scc_summary_input(topology, &candidate),
-        EncodingKind::Marked => encode_partial_state(topology, &candidate, PartialMark::Link),
-        EncodingKind::MarkedPort => encode_partial_state(topology, &candidate, PartialMark::Port),
-        EncodingKind::Witness => encode_witness(&topology.problem, &candidate),
-    };
-    if best.as_ref().is_none_or(|current| bytes < current.bytes) {
+    let bytes = encoder.encode(&ranks);
+    if best
+        .as_ref()
+        .is_none_or(|current| bytes < current.bytes.as_slice())
+    {
         *best = Some(SelectedCanonical {
-            bytes,
-            topology: candidate,
+            bytes: bytes.to_vec(),
+            topology: incidence.relabel(topology, &ranks),
             ranks,
         });
     }
     true
+}
+
+/// Ranks are consecutive within the exact groups enumerated by the witness
+/// search. Offsets turn those ranks into the same labels as `relabel`.
+#[derive(Clone, Copy)]
+struct WitnessLabel {
+    vertex: VertexId,
+    offset: u32,
+}
+
+impl WitnessLabel {
+    fn get(self, ranks: &[Option<u32>]) -> u32 {
+        self.offset + ranks[self.vertex].expect("witness label must be ranked")
+    }
+}
+
+struct WitnessLinkPlan {
+    producer: ProducerPortRef,
+    consumer: ConsumerPortRef,
+    producer_label: WitnessLabel,
+    consumer_label: WitnessLabel,
+    producer_port: Option<VertexId>,
+    consumer_port: Option<VertexId>,
+    flow_bytes: Vec<u8>,
+}
+
+struct WitnessEncoder {
+    prefix_len: usize,
+    bytes: Vec<u8>,
+    links: Vec<WitnessLinkPlan>,
+    ordered_links: Vec<(ProducerPortRef, ConsumerPortRef, usize)>,
+}
+
+impl WitnessEncoder {
+    fn new(
+        topology: &PartialTopology,
+        incidence: &IncidenceGraph,
+        groups: &[Vec<VertexId>],
+    ) -> Self {
+        // One ordinary relabeling supplies invariant node/type and terminal-rate
+        // ordering. Every later leaf uses only rank lookups and cached flow bytes.
+        let mut ranks = vec![None; incidence.base_colors.len()];
+        for group in groups {
+            for (rank, &vertex) in group.iter().enumerate() {
+                ranks[vertex] = Some(u32::try_from(rank).unwrap());
+            }
+        }
+        let initial = incidence.relabel(topology, &ranks);
+        let inputs =
+            canonical_terminal_labels(&topology.problem.inputs, &incidence.input_terminals, &ranks);
+        let outputs = canonical_terminal_labels(
+            &topology.problem.outputs,
+            &incidence.output_terminals,
+            &ranks,
+        );
+        let nodes = canonical_node_labels(topology, &incidence.node_vertices, &ranks);
+        let types = topology
+            .nodes
+            .iter()
+            .map(|n| (n.id, n.node_type))
+            .collect::<BTreeMap<_, _>>();
+        let label = |vertex, initial_label| WitnessLabel {
+            vertex,
+            offset: initial_label - ranks[vertex].unwrap(),
+        };
+        let links = topology
+            .links
+            .iter()
+            .map(|link| {
+                let (producer_label, producer_port) = match link.producer {
+                    ProducerPortRef::Input(index) => (
+                        label(
+                            incidence.input_terminals[index.0 as usize],
+                            inputs[index.0 as usize],
+                        ),
+                        None,
+                    ),
+                    ProducerPortRef::Node { node, .. } => (
+                        label(incidence.node_vertices[&node], nodes[&node].0),
+                        matches!(types[&node], NodeType::Splitter2 | NodeType::Splitter3)
+                            .then(|| incidence.producer_ports[&link.producer]),
+                    ),
+                };
+                let (consumer_label, consumer_port) = match link.consumer {
+                    ConsumerPortRef::Output(index) => (
+                        label(
+                            incidence.output_terminals[index.0 as usize],
+                            outputs[index.0 as usize],
+                        ),
+                        None,
+                    ),
+                    ConsumerPortRef::Discard(index) => (
+                        WitnessLabel {
+                            vertex: incidence.discard_terminals[index.0 as usize],
+                            offset: 0,
+                        },
+                        None,
+                    ),
+                    ConsumerPortRef::Node { node, .. } => (
+                        label(incidence.node_vertices[&node], nodes[&node].0),
+                        matches!(types[&node], NodeType::Merger2 | NodeType::Merger3)
+                            .then(|| incidence.consumer_ports[&link.consumer]),
+                    ),
+                };
+                let mut flow_bytes = Vec::new();
+                write_rational(
+                    &mut flow_bytes,
+                    link.flow.as_ref().expect("full witness flow"),
+                );
+                WitnessLinkPlan {
+                    producer: link.producer,
+                    consumer: link.consumer,
+                    producer_label,
+                    consumer_label,
+                    producer_port,
+                    consumer_port,
+                    flow_bytes,
+                }
+            })
+            .collect::<Vec<_>>();
+        let mut bytes = b"satisfactory-canonical-graph\0\x01".to_vec();
+        let mut inputs = topology.problem.inputs.clone();
+        let mut outputs = topology.problem.outputs.clone();
+        inputs.sort();
+        outputs.sort();
+        write_rates(&mut bytes, &inputs);
+        write_rates(&mut bytes, &outputs);
+        write_len(&mut bytes, initial.nodes.len());
+        for node in &initial.nodes {
+            write_u32(&mut bytes, node.id.0);
+            bytes.push(node_type_tag(node.node_type));
+        }
+        write_len(&mut bytes, links.len());
+        Self {
+            prefix_len: bytes.len(),
+            bytes,
+            ordered_links: Vec::with_capacity(links.len()),
+            links,
+        }
+    }
+
+    fn encode(&mut self, ranks: &[Option<u32>]) -> &[u8] {
+        self.ordered_links.clear();
+        let port = |vertex: Option<VertexId>| {
+            vertex.map_or(0, |v| u8::try_from(ranks[v].unwrap()).unwrap())
+        };
+        for (index, link) in self.links.iter().enumerate() {
+            let producer_label = link.producer_label.get(ranks);
+            let consumer_label = link.consumer_label.get(ranks);
+            let producer = match link.producer {
+                ProducerPortRef::Input(_) => {
+                    ProducerPortRef::Input(InputTerminalIndex(producer_label))
+                }
+                ProducerPortRef::Node { .. } => ProducerPortRef::Node {
+                    node: NodeId(producer_label),
+                    port: port(link.producer_port),
+                },
+            };
+            let consumer = match link.consumer {
+                ConsumerPortRef::Output(_) => {
+                    ConsumerPortRef::Output(OutputTerminalIndex(consumer_label))
+                }
+                ConsumerPortRef::Discard(_) => {
+                    ConsumerPortRef::Discard(DiscardTerminalIndex(consumer_label))
+                }
+                ConsumerPortRef::Node { .. } => ConsumerPortRef::Node {
+                    node: NodeId(consumer_label),
+                    port: port(link.consumer_port),
+                },
+            };
+            self.ordered_links.push((producer, consumer, index));
+        }
+        // IncidenceGraph::build rejects repeated physical ports, so endpoint
+        // pairs are unique. Flows never break a sorting tie for valid witnesses.
+        self.ordered_links.sort_unstable_by_key(|&(p, c, _)| (p, c));
+        self.bytes.truncate(self.prefix_len);
+        for &(producer, consumer, index) in &self.ordered_links {
+            write_producer(&mut self.bytes, producer);
+            write_consumer(&mut self.bytes, consumer);
+            self.bytes.extend_from_slice(&self.links[index].flow_bytes);
+        }
+        &self.bytes
+    }
 }
 
 type VertexId = usize;
@@ -1546,6 +1729,7 @@ fn relabel_consumer(
     }
 }
 
+#[cfg(test)]
 fn encode_witness(problem: &Problem, topology: &CanonicalPartialTopology) -> Vec<u8> {
     let mut bytes = b"satisfactory-canonical-graph\0\x01".to_vec();
     let mut inputs = problem.inputs.clone();
@@ -2285,6 +2469,31 @@ mod tests {
         }
     }
 
+    fn assert_witness_leaf_encoder_matches_reference(problem: &Problem, graph: &PhysicalGraph) {
+        let topology = partial(problem.clone(), graph, NodeProfile::default());
+        let incidence = IncidenceGraph::build(&topology, None, true);
+        let groups = incidence.labeling_groups(&topology);
+        let mut encoder = WitnessEncoder::new(&topology, &incidence, &groups);
+        let mut seed = 0x1317_a125_u64;
+        for _ in 0..128 {
+            let mut ranks = vec![None; incidence.base_colors.len()];
+            for group in &groups {
+                let mut shuffled = group.clone();
+                for i in (1..shuffled.len()).rev() {
+                    seed = seed.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(1);
+                    shuffled.swap(i, usize::try_from(seed % (i as u64 + 1)).unwrap());
+                }
+                for (rank, vertex) in shuffled.into_iter().enumerate() {
+                    ranks[vertex] = Some(u32::try_from(rank).unwrap());
+                }
+            }
+            assert_eq!(
+                encoder.encode(&ranks),
+                encode_witness(problem, &incidence.relabel(&topology, &ranks))
+            );
+        }
+    }
+
     fn dense_reference_normalize_positive_scale(row: &mut [Rational]) {
         let denominator_lcm = row.iter().fold(BigInt::one(), |accumulator, value| {
             accumulator.lcm(value.denominator())
@@ -2624,6 +2833,7 @@ mod tests {
                 link(input(1), output(0), "1"),
             ],
         };
+        assert_witness_leaf_encoder_matches_reference(&specification, &left);
         let production = canonicalize_witness(&specification, &left);
         assert_eq!(production, canonicalize_witness(&specification, &right));
         assert_eq!(
@@ -3165,12 +3375,25 @@ mod tests {
             ],
         };
 
+        let ternary_problem = problem(&["3"], &["3"]);
+        let ternary = PhysicalGraph {
+            nodes: vec![node(29, NodeType::Splitter3), node(8, NodeType::Merger3)],
+            links: vec![
+                link(input(0), consumer(29, 0), "3"),
+                link(producer(29, 0), consumer(8, 2), "1"),
+                link(producer(29, 1), consumer(8, 0), "1"),
+                link(producer(29, 2), consumer(8, 1), "1"),
+                link(producer(8, 0), output(0), "3"),
+            ],
+        };
         for (problem, graph) in [
             (&direct_problem, &direct),
             (&unit_problem, &parallel),
             (&unit_problem, &feedback),
             (&tree_problem, &tree),
+            (&ternary_problem, &ternary),
         ] {
+            assert_witness_leaf_encoder_matches_reference(problem, graph);
             let production = canonicalize_witness(problem, graph);
             let reference = solver_reference::canonicalize_graph(problem, graph);
             assert_eq!(
