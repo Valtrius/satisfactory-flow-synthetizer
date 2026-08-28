@@ -203,6 +203,16 @@
     onDeleteAll();
   }
 
+  /** Mount overlays on `document.body` so sticky/overflow ancestors cannot trap their stacking context. */
+  function portalToBody(node: HTMLElement) {
+    document.body.appendChild(node);
+    return {
+      destroy() {
+        node.remove();
+      },
+    };
+  }
+
   function clearFilters(): void {
     statusFilters = [];
     engineFilters = [];
@@ -865,7 +875,8 @@
 
 {#if confirmDeleteAll}
   <div
-    class="fixed inset-0 z-90 flex items-center justify-center bg-[#040a0f]/70 p-4"
+    class="fixed inset-0 z-110 flex items-center justify-center bg-[#040a0f]/70 p-4"
+    use:portalToBody
     role="presentation"
     onclick={closeConfirmDeleteAll}
   >
