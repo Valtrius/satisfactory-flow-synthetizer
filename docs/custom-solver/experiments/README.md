@@ -17,6 +17,7 @@ Record dates follow the analysis chronology, not necessarily every run's start t
 | [09](09-serializer-and-find-all.md)         | 2026-08-28    | Does isolated encoding explain the regression; does p14 help hard all?  | 42 verified; encoding favors all seven medians; p14 earlier witness, all unfinished |
 | [10](10-constructor-promotion.md)           | 2026-08-28    | Promote the validated constructor without the deadline?                 | Permanent, separate from compact keys; not pushed                                   |
 | [11](11-compact-key-promotion.md)           | 2026-08-28    | Promote compact exact keys independently?                               | Permanent with isolated encoding evidence; not pushed                               |
+| [12](12-hard-obligation-profiling.md)       | 2026-08-28    | What dominates the remaining hard N/L/profile work?                     | Profiler validated; 24-job diagnostic plan, results pending                         |
 
 ## How the diagnosis changed
 

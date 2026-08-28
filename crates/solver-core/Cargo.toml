@@ -4,6 +4,13 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 
+[features]
+bench-internals = []
+
+[[example]]
+name = "profile_obligation"
+required-features = ["bench-internals"]
+
 [dependencies]
 canonaut = "1.0.0"
 num = "0.4.3"

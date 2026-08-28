@@ -35,6 +35,9 @@ the same proof work without exercising remaining-group concurrency.
 
 ## Running a screen
 
+For exact N/L/profile diagnostics, use the separate [fixed-work protocol](experiments/12-hard-obligation-profiling.md).
+Its `best` mode is profile-local; keep it separate from whole `optimal` solve results.
+
 Do not build/test concurrently with timing runs. Use a separate Cargo target
 directory for an isolated checkout; sharing targets across different uncommitted
 sources previously produced stale metadata. Do not delete evidence to fix a build.
@@ -100,7 +103,7 @@ portable conclusions; obtain raw archives for independent rechecking on another 
 The old compact analysis JSON/report still says push failed; publication was later
 completed by the user. Historical artifacts are not rewritten to change that history.
 
-Before the current run: 297 workspace Rust tests passed, five ignored; 22 runner/
+Before experiment 08: 297 workspace Rust tests passed, five ignored; 22 runner/
 analyzer tests, strict workspace Clippy, release build and formatting passed. See
 experiment 08 for exact logs. After that run, isolated commit `92b111c` passed
 194 solver-core library/integration/example tests, two ignored, strict solver-core

@@ -44,31 +44,38 @@ proposal. Release builds use `panic = "abort"`; a panic can terminate the proces
 
 Paths are relative to the repository root.
 
-| File or area                                                                         | Responsibility                                                                |
-| ------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------- |
-| `crates/solver-core/src/solver.rs`                                                   | Solve modes, current N/L, constructor coordination, group scheduling          |
-| `crates/solver-core/src/search.rs`                                                   | Root planning/DFS, caches, donation, finalization and teardown                |
-| `crates/solver-core/src/canonical.rs`                                                | Full-witness key, partial canonicalization, state/SCC key serialization       |
-| `crates/solver-core/src/acyclic_incumbent.rs`                                        | Optional exact certificate constructor, eligibility, reuse and subset sums    |
-| `crates/solver-core/src/algebra/`                                                    | Exact equality/inequality calculations                                        |
-| `crates/solver-core/src/lower_bound.rs`                                              | Proven lower bounds and required source denominator                           |
-| `crates/solver-core/src/proof_ledger.rs`                                             | Exhaustion accounting                                                         |
-| `crates/solver-core/src/hotspot_profile.rs`                                          | Optional aggregate timers/counters                                            |
-| `crates/solver-core/src/diagnostics.rs`                                              | Bounded activity trace, phase spans, in-flight/heartbeat observations         |
-| `crates/solver-core/examples/profile_support/mod.rs`                                 | Real API profiling, independent validation, saved results, diagnostic writers |
-| `profile_case.rs`, `profile_witness.rs`, `profile_tiny.rs` in the examples directory | File cases, isolated saved-witness replay, fixed-overhead regression case     |
-| `crates/solver-core/tests/parallelism.rs`                                            | Complete result maps, preferred witnesses, stages and worker counts           |
-| `scripts/parallelism-ladder.ps1`, `start-benchmark-screen.ps1`                       | Randomized fresh processes, provenance, freeze/launch/watchdog/notification   |
-| `scripts/analyze-parallelism.py`, `test_analyze_parallelism.py`                      | Exact result and capped-run verification, regression tests                    |
+| File or area                                                                         | Responsibility                                                                 |
+| ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------ |
+| `crates/solver-core/src/solver.rs`                                                   | Solve modes, current N/L, constructor coordination, group scheduling           |
+| `crates/solver-core/src/solver/benchmark.rs`                                         | Feature-gated exact N/L/profile entry using production group search            |
+| `crates/solver-core/src/search.rs`                                                   | Root planning/DFS, caches, donation, finalization and teardown                 |
+| `crates/solver-core/src/canonical.rs`                                                | Full-witness key, partial canonicalization, state/SCC key serialization        |
+| `crates/solver-core/src/acyclic_incumbent.rs`                                        | Optional exact certificate constructor, eligibility, reuse and subset sums     |
+| `crates/solver-core/src/algebra/`                                                    | Exact equality/inequality calculations                                         |
+| `crates/solver-core/src/lower_bound.rs`                                              | Proven lower bounds and required source denominator                            |
+| `crates/solver-core/src/proof_ledger.rs`                                             | Exhaustion accounting                                                          |
+| `crates/solver-core/src/hotspot_profile.rs`                                          | Optional aggregate timers/counters                                             |
+| `crates/solver-core/src/diagnostics.rs`                                              | Bounded activity trace, phase spans, in-flight/heartbeat observations          |
+| `crates/solver-core/examples/profile_support/mod.rs`                                 | Real API profiling, independent validation, saved results, diagnostic writers  |
+| `profile_case.rs`, `profile_witness.rs`, `profile_tiny.rs` in the examples directory | File cases, isolated saved-witness replay, fixed-overhead regression case      |
+| `crates/solver-core/tests/parallelism.rs`                                            | Complete result maps, preferred witnesses, stages and worker counts            |
+| `scripts/parallelism-ladder.ps1`, `start-benchmark-screen.ps1`                       | Randomized fresh processes, provenance, freeze/launch/watchdog/notification    |
+| `scripts/analyze-parallelism.py`, `test_analyze_parallelism.py`                      | Exact result and capped-run verification, regression tests                     |
+| `profile_obligation.rs`, `scripts/hard-profile.py`, `scripts/start-hard-profile.ps1` | Fixed-work profiling, strict local-scope verification, freeze and notification |
 
 Diagnostics are disabled for ordinary timing runs. The current diagnostic example
 writes independent heartbeat counters every five seconds without a trace mutex or
 JSON allocation. Full post-cancellation sidecars use a separate thread and 15-second
 cadence. Both writers are joined; their work is not hidden after process completion.
 
-The optional constructor has no elapsed-time deadline in the active candidate.
+The optional constructor has no elapsed-time deadline in the permanent version.
 The previous five-second policy is a separate, unapplied benchmark patch. See
 [experiment 09](experiments/09-serializer-and-find-all.md) for source variants.
+
+The `bench-internals` feature is off by default. Its fixed-work entry bypasses the
+constructor and earlier groups; it does not change ordinary solver defaults.
+It supports baseline/p1 and best/all collection. Both exhaust selected profiles;
+neither produces global optimality. See [12](experiments/12-hard-obligation-profiling.md).
 
 The exact [contracts](contracts.md) take precedence over scheduler heuristics.
 Before editing, check [status](status.md) for the committed/uncommitted boundary.

@@ -6,7 +6,7 @@ Updated 2026-08-28.
 ## Read in this order
 
 1. [Current decisions and handoff](custom-solver/status.md): permanent changes,
-   uncommitted candidates, pending measurement and open questions.
+   candidates, pending measurement and open questions.
 2. [Experiment history](custom-solver/experiments/README.md): every major trial,
    its evidence, limitations and subsequent decision.
 3. [Correctness contracts](custom-solver/contracts.md): proof, identity,
@@ -25,7 +25,7 @@ Updated 2026-08-28.
   Its isolated witness replay improved 6.54x with identical keys and coverage.
 - [Constructor improvements](custom-solver/experiments/10-constructor-promotion.md)
   are permanent in `099cc12`. [Compact exact keys](custom-solver/experiments/11-compact-key-promotion.md)
-  are permanent in a separate commit. Both remain local, not pushed. The isolated encoding comparison favors
+  are permanent in `2716fac`. Both remain local, not pushed. The isolated encoding comparison favors
   all seven short-case medians, including 24 all/baseline, with large memory savings.
   This does not establish the cause of experiment 08's earlier bundle regression.
 - All experimental scheduling flags still default to false. Their benefits vary
@@ -38,7 +38,11 @@ Updated 2026-08-28.
   42 verified records, 34 optimal, eight incomplete, no kills. Compact encoding
   reduces 24 all/baseline median time 12.7%. P14/32 finds the first hard-36 witness
   3.01x sooner than groups/32; all hard enumeration runs remain unfinished at 240 s.
-  The helper deadline stays removed. No new benchmark is running.
+  The helper deadline stays removed.
+- [Fixed hard-work profiling](custom-solver/experiments/12-hard-obligation-profiling.md)
+  isolates exact N/L/profile work through the production search. The 24-job plan
+  has 18.7 minutes of search caps, both collection modes and completion notification.
+  Results are pending; local profile exhaustion is not a whole-solve proof.
 
 The goal is shorter time to a proven optimum and complete minimum-node enumeration.
 First-witness latency is a separate measure. More occupied workers, a partial

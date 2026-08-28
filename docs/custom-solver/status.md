@@ -22,14 +22,15 @@ lower overhead alone does not justify slower completion.
 | Candidate                                                    | Evidence                                                                                                   | Decision                                                            |
 | ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
 | Constructor eligibility, per-N reuse and integer subset sums | Earlier avoided helper work and 143.962 to 6.516 s construction; isolated tests; stable no-deadline screen | `099cc12`, local; see [10](experiments/10-constructor-promotion.md) |
-| Compact state/SCC keys                                       | Isolated encoding comparison favors all seven short-case medians; large memory savings                     | Permanent; see [11](experiments/11-compact-key-promotion.md)        |
+| Compact state/SCC keys                                       | Isolated encoding comparison favors all seven short-case medians; large memory savings                     | `2716fac`, local; see [11](experiments/11-compact-key-promotion.md) |
 | Five-second constructor deadline                             | No prior expiry established a benefit                                                                      | Removed; preserved as an unapplied benchmark patch                  |
 | Adaptive partitions and remaining groups                     | Earlier witnesses, but hard enumeration still incomplete                                                   | Keep opt-in; no default change                                      |
 
 Constructor improvements are permanent in `099cc12`; compact keys are permanent
-in the commit accompanying [11](experiments/11-compact-key-promotion.md). Both include
+in `2716fac`; see [11](experiments/11-compact-key-promotion.md). Both include
 their related documentation and remain local, not pushed. The unproven helper
-deadline is not included. New hard-work profiling follows in a separate commit.
+deadline is not included. Hard-work profiling is a separate tooling commit,
+documented in [12](experiments/12-hard-obligation-profiling.md).
 
 ## Latest measured findings
 
@@ -60,25 +61,33 @@ without a deadline and the same boxed key storage; only row encoding differs.
    and [11](experiments/11-compact-key-promotion.md).
 2. Use p1/32 for the next hard-optimal comparison and p14/32 as the next hard-all
    candidate for earlier witnesses. Do not claim faster hard enumeration yet.
-3. Add a benchmark-only path for fixed exact N/L/profile work around 36 N=9/L=12
-   and 10 N=11/L=18. Profile hard obligations, then select manageable complete ones
-   where possible. Preserve exact witnesses and explicit incomplete/exhausted status.
+3. Run the prepared fixed-work profiler at 36 N=9/L=12 and 10 N=11/L=18:
+   24 instrumented jobs, 18.7 minutes of search caps, no hard single-worker runs.
+   Analyze [12](experiments/12-hard-obligation-profiling.md), then select manageable
+   complete obligations where possible. No new performance conclusion yet.
 4. Target repeated canonical graph construction, exact basis generation or witness
    work according to those hard traces. The short-case codec is no longer the first
    suspect. A common coarse pool is not justified by occupancy alone.
 
-No benchmark is running. Last status:
-`target/parallelism-ladder/serializer-scheduling-20260828/BENCHMARK-STATUS.txt`.
+The next launch follows the tooling commit. Its authoritative status is
+`target/parallelism-ladder/hard-obligations-20260828/BENCHMARK-STATUS.txt`.
+The launcher shows completion/failure; message the task when it finishes.
 Existing difficult cases suffice. Automatic worker selection, sharing/donation
 defaults, allocator replacement and a new coarse scheduler remain unpromoted.
 Use only normalized inputs and runtime facts, never benchmark cyclicity labels.
 
 ## Validation records
 
+Fixed-work profiling checks: 208 solver-core library/integration/example tests
+passed with `bench-internals`, two ignored; 26 Python checks passed, including a
+real tiny completion and one-second hard cancellation contract test. Strict
+solver-core all-target Clippy passed with and without the feature; release build
+passed. See [12](experiments/12-hard-obligation-profiling.md) for logs and scope.
+
 Experiment 09 prelaunch checks: constructor-only source passed 199 solver-core
 library/integration/example tests; both encoder variants passed 200 each, with two
 ignored per run. All three passed strict all-target Clippy. The 22 tooling tests,
-release builds and formatting passed. No solver changes or test reruns in this analysis.
+release builds and formatting passed. Those checks cover the promoted source split.
 
 The earlier isolated benchmark commit `92b111c` passed 194 solver-core tests, two
 ignored, strict Clippy and 22 tooling tests in `target/benchmark-commit-validation-20260828/`

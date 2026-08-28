@@ -1,6 +1,6 @@
 # 11. Permanent compact exact keys
 
-Date: 2026-08-28. State: promoted in the commit containing this record; not pushed.
+Date: 2026-08-28. State: promoted in `2716fac`; not pushed.
 The user approved a separate compact-key commit with its documentation.
 
 ## Included and unchanged

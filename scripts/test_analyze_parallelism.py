@@ -1,6 +1,7 @@
 """Regression checks for mode-aware benchmark verification."""
 import csv
 import hashlib
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -12,6 +13,113 @@ import unittest
 
 
 class AnalyzerTests(unittest.TestCase):
+    def fixed_fixture(self):
+        spec = importlib.util.spec_from_file_location("hard_profile", Path(__file__).with_name("hard-profile.py"))
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        profile = {"splitter2": 1, "splitter3": 0, "merger2": 1, "merger3": 0}
+        request = {"node_count": 2, "link_count": 1, "mode": "all", "stage": "baseline", "workers": 1}
+        problem = {"inputs": ["2", "3"], "outputs": ["1", "4"], "maxLinkRate": "1200"}
+        job = {"id": "fixture", "request": request, "problem": problem, "expected_profiles": [profile]}
+        result = {"schema_version": 1, "kind": "fixed_obligation", "scope": "selected_profiles",
+                  "request": dict(request), "problem": problem, "expected_profiles": [profile],
+                  "validated": True, "status": "exhausted", "deadline_fired": False, "wall_s": 0.1,
+                  "hotspots": {}, "activity": {"active": [], "records": [], "dropped": 0},
+                  "profiles": [{"profile": profile, "exhausted": True, "incomplete_reason": None,
+                                "roots": 2, "roots_exhausted": 2, "solutions": [
+                                    {"canonicalGraphKey": [1], "nodeCount": 2, "linkCount": 1}]}]}
+        return module, job, result
+
+    def test_fixed_work_rejects_wrong_scope_selection_and_partial_proof(self):
+        mutations = [
+            lambda r: r.update(scope="global"),
+            lambda r: r["request"].update(link_count=2),
+            lambda r: r.update(profiles=[]),
+            lambda r: r["profiles"][0].update(roots_exhausted=1),
+            lambda r: r["profiles"][0]["solutions"][0].update(nodeCount=3),
+            lambda r: r.update(validated=False),
+        ]
+        for mutation in mutations:
+            module, job, result = self.fixed_fixture()
+            self.assertEqual(len(module.validate_result(job, result)), 1)
+            mutation(result)
+            with self.assertRaises(ValueError):
+                module.validate_result(job, result)
+
+    def test_fixed_work_timeout_is_incomplete_and_controls_must_exhaust(self):
+        module, job, result = self.fixed_fixture()
+        result.update(status="incomplete", deadline_fired=True)
+        result["profiles"][0].update(exhausted=False, roots_exhausted=1,
+                                     incomplete_reason={"kind": "cancelled"})
+        self.assertEqual(len(module.validate_result(job, result)), 1)
+        result["deadline_fired"] = False
+        with self.assertRaises(ValueError):
+            module.validate_result(job, result)
+        result["deadline_fired"] = True
+        job["request"]["must_exhaust"] = True
+        result["request"]["must_exhaust"] = True
+        with self.assertRaises(ValueError):
+            module.validate_result(job, result)
+
+    def test_fixed_work_verifier_compares_exact_sets_and_process_identity(self):
+        module, job, result = self.fixed_fixture()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "results").mkdir()
+            binary = root / "fixture.exe"
+            binary.write_bytes(b"fixture binary")
+            module.write(root / "binary.json", {"path": str(binary), "sha256": module.digest(binary)})
+            jobs = [dict(job, id=f"fixture-{i}") for i in range(2)]
+            module.write(root / "schedule.json", jobs)
+            for j in jobs:
+                module.write(root / "results" / (j["id"] + ".json"), result)
+            with (root / "process-metrics.csv").open("w", newline="") as stream:
+                writer = csv.DictWriter(stream, fieldnames=["id", "watchdog_killed", "exit_code"])
+                writer.writeheader()
+                writer.writerows({"id": j["id"], "watchdog_killed": False, "exit_code": 0} for j in jobs)
+            module.verify(root)
+            result["profiles"][0]["solutions"] = []
+            module.write(root / "results/fixture-1.json", result)
+            with self.assertRaisesRegex(ValueError, "witness set|results disagree"):
+                module.verify(root)
+            module.write(root / "results/fixture-0.json", result)
+            binary.write_bytes(b"changed")
+            with self.assertRaisesRegex(ValueError, "Binary hash mismatch"):
+                module.verify(root)
+
+    @unittest.skipUnless(os.name == "nt", "Windows profiling executable")
+    def test_fixed_work_executable_returns_valid_local_proof_and_cancellation(self):
+        binary = Path(__file__).resolve().parent.parent / "target/release/examples/profile_obligation.exe"
+        if not binary.exists():
+            self.skipTest("Build the bench-internals profile_obligation example first")
+        module, _, _ = self.fixed_fixture()
+        with tempfile.TemporaryDirectory(prefix="fixed work contract ") as directory:
+            root = Path(directory)
+            for name, inputs, outputs, nodes, links, seconds in [
+                ("tiny", ["2", "3"], ["1", "4"], 2, 1, 10),
+                ("cancel", ["36"], ["11", "9", "7", "5", "3", "1"], 9, 12, 1),
+            ]:
+                case = {"problem": {"inputs": inputs, "outputs": outputs, "maxLinkRate": "1200"}}
+                module.write(root / "case.json", case)
+                request = {"case_file": "case.json", "node_count": nodes, "link_count": links,
+                           "mode": "all", "stage": "p1", "workers": 2, "timeout_s": seconds,
+                           "profile": None, "hotspots": True}
+                request_file = root / (name + ".request.json")
+                result_file = root / (name + ".json")
+                module.write(request_file, request)
+                listing = subprocess.run([str(binary), "--list", str(request_file)], check=True,
+                                         capture_output=True, text=True, timeout=10)
+                expected = json.loads(listing.stdout)
+                subprocess.run([str(binary), str(request_file), str(result_file)], check=True,
+                               capture_output=True, text=True, timeout=20)
+                result = module.read(result_file)
+                job = dict(request=request, problem=expected["problem"], expected_profiles=expected["profiles"])
+                module.validate_result(job, result)
+                self.assertEqual(result["status"], "exhausted" if name == "tiny" else "incomplete")
+                self.assertEqual(result["deadline_fired"], name == "cancel")
+                self.assertEqual(result["activity"]["active"], [])
+                self.assertTrue(result_file.with_suffix(".heartbeat.log").exists())
+
     @unittest.skipUnless(os.name == "nt" and shutil.which("pwsh") and shutil.which("rustc"), "Windows runner integration")
     def test_runner_preserves_watchdog_failure_and_runs_the_next_job(self):
         # A synthetic child exercises process handling without running a solver benchmark.

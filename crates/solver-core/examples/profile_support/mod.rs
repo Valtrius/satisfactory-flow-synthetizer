@@ -857,6 +857,9 @@ fn print_hotspots(hotspots: &HotspotSnapshot, wall: Duration) {
 
 pub fn hotspot_json(h: &HotspotSnapshot) -> serde_json::Value {
     serde_json::json!({
+        "snapshot_ns": h.snapshot_ns,
+        "apply_decision_ns": h.apply_decision_ns,
+        "reachability_ns": h.reachability_ns,
         "witness_search_ns": h.witness_search_ns,
         "witness_refine_ns": h.witness_refine_ns,
         "witness_leaf_ns": h.witness_leaf_ns,
@@ -898,7 +901,10 @@ pub fn activity_json(trace: &solver_core::diagnostics::ActivitySnapshot) -> serd
     })
 }
 
-fn write_live_snapshot(path: &std::path::Path, value: &serde_json::Value) -> std::io::Result<()> {
+pub fn write_live_snapshot(
+    path: &std::path::Path,
+    value: &serde_json::Value,
+) -> std::io::Result<()> {
     // Each sample has a unique name. A killed writer leaves only a .tmp file,
     // so an earlier complete diagnostic remains available.
     use std::io::Write as _;
@@ -911,7 +917,7 @@ fn write_live_snapshot(path: &std::path::Path, value: &serde_json::Value) -> std
     std::fs::rename(pending, path)
 }
 
-fn write_heartbeat(
+pub fn write_heartbeat(
     writer: &mut impl std::io::Write,
     elapsed: Duration,
     cancelled: bool,

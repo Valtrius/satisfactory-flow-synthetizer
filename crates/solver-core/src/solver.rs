@@ -1,5 +1,8 @@
 //! Outer lexicographic production proof orchestration.
 
+#[cfg(feature = "bench-internals")]
+pub mod benchmark;
+
 use std::{
     collections::BTreeMap,
     panic::{AssertUnwindSafe, catch_unwind},
