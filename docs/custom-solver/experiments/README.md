@@ -28,7 +28,7 @@ Record dates follow the analysis chronology, not necessarily every run's start t
 | [20](20-constructor-and-medium-cases.md)      | 2026-08-29    | Can post-winning constructor work be removed; what causes medium-case CPU troughs?        | 26 verified; guard permanent; troughs are uneven root-search tails                  |
 | [21](21-adaptive-root-profiling.md)           | 2026-08-29    | Which calculations dominate the longest 238 adaptive root?                                | 6 verified; 80.6M witness leaves dominate; best/all do identical work               |
 | [22](22-analytic-witness-ports.md)            | 2026-08-29    | Can exact symmetric-port labels replace their factorial witness enumeration?              | 6 verified; exact 559,872x leaf reduction; root 2.38-2.57x faster; permanent        |
-| [23](23-whole-translation-and-dfs-profile.md) | 2026-08-29    | Does the port gain translate whole; which exact DFS identity dominates next?              | 27-job A/B and diagnostic screen preparing                                          |
+| [23](23-whole-translation-and-dfs-profile.md) | 2026-08-29    | Does the port gain translate whole; which exact DFS identity dominates next?              | 27 verified; 238 improves 43-52%; legal/state identity dominate next                |
 
 ## How the diagnosis changed
 
@@ -84,6 +84,10 @@ Record dates follow the analysis chronology, not necessarily every run's start t
 18. [Whole translation and DFS profiling](23-whole-translation-and-dfs-profile.md)
     compares the preserved pre-port solver with current production on 115, 238 and
     hard 36, then profiles hard 10 and remaining whole DFS/canonicalization costs.
+    [Results](23-results.md) verify 27 jobs. The 238 whole solve improves 43-52%,
+    115 all improves 10%, and hard-36 optimal is unchanged. Legal-decision and state
+    canonicalization dominate the remaining measured work. Split their exact key
+    purposes before changing DFS identity construction.
 
 ## Evidence conventions
 

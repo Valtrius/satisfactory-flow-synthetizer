@@ -1,7 +1,9 @@
 # 23 - Whole translation and DFS profiling
 
-Date: 2026-08-29. State: validated; ready to launch.
+Date: 2026-08-29. State: completed and verified.
 Related: [analytic witness-port results](22-results.md).
+
+Results: [whole translation and DFS profile](23-results.md).
 
 ## Questions
 

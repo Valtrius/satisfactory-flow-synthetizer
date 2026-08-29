@@ -19,7 +19,7 @@ lower overhead alone does not justify slower completion.
 | Compact exact state/SCC keys                          | Seven short-case medians favor compact rows; memory savings         | `2716fac`, [11](experiments/11-compact-key-promotion.md)      |
 | Fixed hard-work profiling                             | Feature-gated production search and strict local-scope verification | `1b558a6`, [12](experiments/12-hard-obligation-profiling.md)  |
 | Unconditional adaptive partitions                     | 180 verified jobs; accepted hard-10 resource cost                   | `49ae34c`, [19](experiments/19-unconditional-p1-promotion.md) |
-| Skip constructor after winning N                      | 26 exact jobs; removes redundant existence work                     | This commit, [20](experiments/20-results.md)                  |
+| Skip constructor after winning N                      | 26 exact jobs; removes redundant existence work                     | `57e34c0`, [20](experiments/20-results.md)                    |
 | Derive exact symmetric witness ports                  | 559,872x fewer leaves; root 2.38-2.57x faster                       | `f5df873`, [22](experiments/22-results.md)                    |
 
 Each optimization commit includes its related docs. Experiment 13 tooling/results
@@ -85,11 +85,19 @@ root: best/all do identical structural work and 80,621,568 witness leaves consum
 about 34 seconds. [Experiment 22](experiments/22-analytic-witness-ports.md) replaces
 only the 559,872-fold symmetric-port factor with an exact analytic minimum. The
 six-job replay preserves every exact identity, reduces the root median 58.03-61.15%
-and makes the optimization permanent. [Experiment 23](experiments/23-whole-translation-and-dfs-profile.md)
-prepares whole-solve A/B plus updated state/legal-decision diagnostics. It will test
-whether canonical labeling or DFS identity construction is the next safe target.
+and makes the optimization permanent. [Experiment 23](experiments/23-results.md)
+verifies the whole translation: 238 improves 43.10% all and 51.74% optimal, 115 all
+improves 9.98%, while 115 and hard-36 optimal are effectively unchanged. Exact
+search coverage and results agree. Remaining diagnostics put 30-52% of accounted
+worker time in legal-decision identity and 28-34% in state keys. Split open-port
+and marked-child costs before attempting reuse; scheduling remains paused.
 
 ## Validation records
+
+Experiment 23 post-run: 27/27 records verify; 20 completed references preserve
+full result identities and seven capped diagnostics remain explicitly incomplete.
+No kills or failures occurred. The original and rechecked summaries have identical
+SHA-256. See [results](experiments/23-results.md).
 
 Experiment 22 post-run: 6/6 selected-root workloads verify and match experiment 21
 requests, plan identities, statuses and full solutions. No kills, failures or open

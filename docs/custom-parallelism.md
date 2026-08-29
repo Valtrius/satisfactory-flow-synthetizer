@@ -76,9 +76,12 @@ Updated 2026-08-29.
   longest 238 root. Best/all perform identical work; 80.6 million full-witness
   leaves consume about 34 seconds. [Experiment 22 results](custom-solver/experiments/22-results.md)
   preserve exact results while reducing witness leaves 559,872x and isolated root
-  time 58-61%. The calculation change is permanent. [Experiment 23](custom-solver/experiments/23-whole-translation-and-dfs-profile.md)
-  measures whole translation and the remaining state/open-port/marked-child DFS
-  identity cost; scheduling stays paused.
+  time 58-61%. The calculation change is permanent. [Experiment 23](custom-solver/experiments/23-results.md)
+  verifies whole translation: 238 improves 43-52% and 115 all improves 10%, with
+  identical exact results and search coverage. Hard-36 optimal is unchanged and
+  all remains capped. Legal-decision and state canonicalization dominate next;
+  their open-port/marked-child purposes need a diagnostic split. Scheduling stays
+  paused.
 
 The goal is shorter time to a proven optimum and complete minimum-node enumeration.
 First-witness latency is a separate measure. More occupied workers, a partial
