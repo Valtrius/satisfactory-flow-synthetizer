@@ -82,7 +82,10 @@ Updated 2026-08-29.
   all remains capped. Legal-decision and state canonicalization dominate next;
   their open-port/marked-child purposes need a diagnostic split. Scheduling stays
   paused. [Experiment 24](custom-solver/experiments/24-canonical-purpose-profile.md)
-  implements the diagnostic split and prepares a short four-job screen.
+  verifies the diagnostic split across four jobs. Open-port and marked-child keys
+  account for 94.5-96.2% of legal-decision time. Marked keys remove fewer than 0.3%
+  of measured candidates, so an internal-DFS-only bypass is the next isolated test;
+  root partition identities remain canonical.
 
 The goal is shorter time to a proven optimum and complete minimum-node enumeration.
 First-witness latency is a separate measure. More occupied workers, a partial

@@ -92,9 +92,17 @@ search coverage and results agree. Remaining diagnostics put 30-52% of accounted
 worker time in legal-decision identity and 28-34% in state keys. Split open-port
 and marked-child costs before attempting reuse; scheduling remains paused.
 [Experiment 24](experiments/24-canonical-purpose-profile.md) implements this
-diagnostic-only split and prepares two completed controls plus two capped hard runs.
+diagnostic-only split. Four verified jobs put 94.5-96.2% of legal-decision time in
+open-port and marked-child keys. Marked keys remove fewer than 0.3% of candidate
+decisions in these samples. The next candidate bypasses them only inside dispatched
+DFS roots, retaining canonical root and adaptive-frontier identities.
 
 ## Validation records
+
+Experiment 24 post-run: 4/4 records verify; 115/238 complete with experiment 23's
+exact full results and structural counters, while hard 36/10 remain explicitly
+capped. No kills or failures occurred. See
+[purpose profile](experiments/24-canonical-purpose-profile.md).
 
 Experiment 23 post-run: 27/27 records verify; 20 completed references preserve
 full result identities and seven capped diagnostics remain explicitly incomplete.
