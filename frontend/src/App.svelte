@@ -467,7 +467,11 @@
 
       <div
         class={`flex min-w-0 flex-col gap-4 ${
-          showResultsTable ? 'xl:min-h-[calc(100dvh-2rem)]' : solution ? 'xl:h-[calc(100dvh-2rem)]' : ''
+          showResultsTable
+            ? 'xl:h-[calc(100dvh-2rem)]'
+            : solution
+              ? 'xl:h-[calc(100dvh-2rem)]'
+              : ''
         }`}
       >
         <FlowInputsPanel

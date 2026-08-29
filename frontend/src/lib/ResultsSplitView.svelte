@@ -91,7 +91,7 @@
   });
 </script>
 
-<section class="flex min-h-112 flex-1 flex-col" aria-label="Search results">
+<section class="flex min-h-112 flex-1 flex-col overflow-hidden" aria-label="Search results">
   <Panel class="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
     <div class="shrink-0">
       <SearchTelemetry
@@ -113,9 +113,9 @@
     </div>
 
     <div
-      class="grid min-h-0 flex-1 grid-cols-1 items-stretch max-xl:grid-rows-[minmax(16rem,50vh)_minmax(16rem,50vh)] xl:grid-cols-[minmax(280px,360px)_minmax(0,1fr)]"
+      class="grid min-h-0 flex-1 grid-cols-1 items-stretch max-xl:grid-rows-[minmax(16rem,50vh)_minmax(16rem,50vh)] xl:grid-cols-[minmax(280px,360px)_minmax(0,1fr)] xl:grid-rows-[minmax(0,1fr)]"
     >
-      <div class="border-line min-h-0 border-b xl:border-r xl:border-b-0">
+      <div class="border-line h-full min-h-0 overflow-hidden border-b xl:border-r xl:border-b-0">
         <SolutionsTable {solutions} {selectedIndex} columns={sortColumns} {onSelect} {onColumnsChange} />
       </div>
       <TopologyGraphPanel
@@ -124,7 +124,7 @@
         {fitRevision}
         {fullscreen}
         subtitle={graphSubtitle}
-        class={`min-h-0 ${fullscreen ? 'fixed inset-0 z-100 !h-dvh !min-h-0 bg-[#08141c]' : ''}`}
+        class={`h-full min-h-0 ${fullscreen ? 'fixed inset-0 z-100 !h-dvh !min-h-0 bg-[#08141c]' : ''}`}
         {onRotate}
         {canUndo}
         {canRedo}
