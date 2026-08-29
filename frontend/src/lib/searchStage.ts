@@ -49,6 +49,8 @@ function phaseLabel(phase: string | null): string {
       return 'Running global checks';
     case 'computing_lower_bound':
       return 'Computing lower bound';
+    case 'constructing_incumbent':
+      return 'Trying an acyclic incumbent';
     case 'validating_witness':
       return 'Validating witness';
     case 'optimizing_links':

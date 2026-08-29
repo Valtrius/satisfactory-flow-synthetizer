@@ -12,6 +12,8 @@ pub enum SolvePhase {
     GlobalChecks,
     /// Computing the proven starting node lower bound.
     ComputingLowerBound,
+    /// Trying the optional serial acyclic incumbent constructor before exact search.
+    ConstructingIncumbent,
     /// Exhausting profiles in node-count and structural-link-group order.
     Searching,
     /// Flattening and independently validating a candidate witness.

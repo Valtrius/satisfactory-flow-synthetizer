@@ -25,6 +25,7 @@ Record dates follow the analysis chronology, not necessarily every run's start t
 | [17](17-p1-promotion-and-followups.md)      | 2026-08-29    | Can p1 become a default; do the constructor, sharing, donation and deeper prefixes help?  | 180 verified; p1 gains accepted despite hard-10 memory; other candidates need work  |
 | [18](18-guarded-p1-promotion.md)            | 2026-08-29    | Promote p1 without the measured hard-10 memory failure?                                   | N<=9 guard validated, then rejected before commit                                   |
 | [19](19-unconditional-p1-promotion.md)      | 2026-08-29    | Make p1 the production policy despite its hard-10 resource cost?                          | Unconditional p1 selected; memory issue explicitly deferred                         |
+| [20](20-constructor-and-medium-cases.md)    | 2026-08-29    | Can post-winning constructor work be removed; what causes medium-case CPU troughs?        | 26 verified; guard permanent; troughs are uneven root-search tails                  |
 
 ## How the diagnosis changed
 
@@ -65,6 +66,10 @@ Record dates follow the analysis chronology, not necessarily every run's start t
 14. [Unconditional p1 promotion](19-unconditional-p1-promotion.md) applies adaptive
     partitions for every N in the shared production Custom adapter. Sharing, donation
     and remaining groups stay off. The hard-10 memory cost remains documented.
+15. [The constructor and medium-case results](20-results.md) preserve all exact
+    outputs across 26 jobs. Timing is mixed, but the guard removes redundant
+    post-winning work and becomes permanent. Process samples show that the medium-case
+    CPU troughs are uneven root-search tails, sometimes with one root left running.
 
 ## Evidence conventions
 

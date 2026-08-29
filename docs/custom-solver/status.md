@@ -11,14 +11,15 @@ lower overhead alone does not justify slower completion.
 
 ## Permanent changes and commit state
 
-| Change                                                | Evidence                                                            | Commit                                                          |
-| ----------------------------------------------------- | ------------------------------------------------------------------- | --------------------------------------------------------------- |
-| Lazy MRV and exact RREF/inequality arithmetic         | 792 verified runs, 1.81-2.36x serial gains                          | `319191e`                                                       |
-| Remove ordering-only full-witness refinement          | 6.54x isolated replay, same keys/permutations                       | `3e804e8`                                                       |
-| Constructor eligibility, per-N reuse, integer subsets | Avoided helper work; stable no-deadline screen                      | `099cc12`, [10](experiments/10-constructor-promotion.md)        |
-| Compact exact state/SCC keys                          | Seven short-case medians favor compact rows; memory savings         | `2716fac`, [11](experiments/11-compact-key-promotion.md)        |
-| Fixed hard-work profiling                             | Feature-gated production search and strict local-scope verification | `1b558a6`, [12](experiments/12-hard-obligation-profiling.md)    |
-| Unconditional adaptive partitions                     | 180 verified jobs; accepted hard-10 resource cost                   | This commit, [19](experiments/19-unconditional-p1-promotion.md) |
+| Change                                                | Evidence                                                            | Commit                                                        |
+| ----------------------------------------------------- | ------------------------------------------------------------------- | ------------------------------------------------------------- |
+| Lazy MRV and exact RREF/inequality arithmetic         | 792 verified runs, 1.81-2.36x serial gains                          | `319191e`                                                     |
+| Remove ordering-only full-witness refinement          | 6.54x isolated replay, same keys/permutations                       | `3e804e8`                                                     |
+| Constructor eligibility, per-N reuse, integer subsets | Avoided helper work; stable no-deadline screen                      | `099cc12`, [10](experiments/10-constructor-promotion.md)      |
+| Compact exact state/SCC keys                          | Seven short-case medians favor compact rows; memory savings         | `2716fac`, [11](experiments/11-compact-key-promotion.md)      |
+| Fixed hard-work profiling                             | Feature-gated production search and strict local-scope verification | `1b558a6`, [12](experiments/12-hard-obligation-profiling.md)  |
+| Unconditional adaptive partitions                     | 180 verified jobs; accepted hard-10 resource cost                   | `49ae34c`, [19](experiments/19-unconditional-p1-promotion.md) |
+| Skip constructor after winning N                      | 26 exact jobs; removes redundant existence work                     | This commit, [20](experiments/20-results.md)                  |
 
 Each optimization commit includes its related docs. Experiment 13 tooling/results
 are committed in `473aba7`. [Calculation promotion](experiments/14-calculation-promotion.md)
@@ -69,11 +70,16 @@ The user explicitly accepted the memory cost and deferred that issue. Production
 therefore uses p1 at every N for both modes. Sharing, donation and parallel remaining
 groups remain off.
 
-Keep the constructor guard uncommitted until a completed all-mode A/B. Do not promote
-sharing/donation from one UNSAT profile. Use the completed depth-10/pick-4 certificate
-for the next hard-10 calculation comparison. No benchmark is running. The corrected
-run is `target/parallelism-ladder/p1-promotion-20260829-retry1/`; the first path-alias
-failure remains preserved.
+[Experiment 20](experiments/20-results.md) verifies all 26 jobs and exact result
+identities. The post-winning constructor guard is permanent. The timing screen is
+mixed: 24 all improves 2.51%, 65 and 115 are effectively neutral, and the noisy
+two-sample 238 comparison regresses 9.36% despite identical structural work. The
+guard's basis is proof-state redundancy plus the earlier measured 26.366-second
+hard-36 opportunity, not a claimed universal speedup.
+
+The 238/115 process samples attribute their low-CPU intervals to uneven root-search
+tails, not the optional constructor. Sharing, donation and parallel remaining groups
+stay paused. Profile the longest individual roots before another scheduling change.
 
 ## Validation records
 

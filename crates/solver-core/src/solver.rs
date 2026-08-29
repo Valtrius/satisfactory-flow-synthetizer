@@ -406,13 +406,31 @@ fn solve_internal(
                 parallel_started = true;
             }
 
+            let total_profiles = u32::try_from(group.profiles.len())
+                .map_err(|_| SolverError::ProofAccountingOverflow)?;
+            let has_parallel_output = parallel_outputs.contains_key(&group.link_count);
+
             // A concrete validated witness in the first satisfiable structural group
             // is already a complete minimum-node certificate: the proven
             // node lower bound discharges every smaller N, and the groups
             // visited earlier at this N were folded UNSAT. This optional small
             // acyclic constructor proves only existence; a miss leaves the
             // exhaustive search unchanged.
-            if node_count >= 3 && !parallel_outputs.contains_key(&group.link_count) {
+            if should_try_acyclic_constructor(node_count, winning_node, has_parallel_output) {
+                emit_progress(
+                    observer,
+                    SolvePhase::ConstructingIncumbent,
+                    Some(ProofObligation {
+                        node_count,
+                        link_count: Some(group.link_count),
+                        profile: None,
+                        root_partition: None,
+                    }),
+                    0,
+                    Some(total_profiles),
+                    &instrumentation,
+                    solve_started,
+                );
                 for accounted in &group.profiles {
                     if let Some(graph) = constructor
                         .get_or_insert_with(|| AcyclicConstructor::new(&normalized))
@@ -494,8 +512,6 @@ fn solve_internal(
 
             // A SAT profile does not discharge the equal-link obligation. Every profile with this
             // exact L is exhausted so the canonical witness choice is scheduling-independent.
-            let total_profiles = u32::try_from(group.profiles.len())
-                .map_err(|_| SolverError::ProofAccountingOverflow)?;
             emit_progress(
                 observer,
                 SolvePhase::Searching,
@@ -813,6 +829,14 @@ fn solve_internal(
         };
         node_count = next_node_count;
     }
+}
+
+fn should_try_acyclic_constructor(
+    node_count: u32,
+    winning_node: Option<u32>,
+    has_parallel_output: bool,
+) -> bool {
+    node_count >= 3 && winning_node != Some(node_count) && !has_parallel_output
 }
 
 #[derive(Debug)]
@@ -1753,6 +1777,14 @@ mod tests {
             solution.validation,
             validate_solution(&problem, &solution.graph).unwrap()
         );
+    }
+
+    #[test]
+    fn optional_constructor_stops_after_the_current_node_is_won() {
+        assert!(should_try_acyclic_constructor(3, None, false));
+        assert!(!should_try_acyclic_constructor(3, Some(3), false));
+        assert!(!should_try_acyclic_constructor(2, None, false));
+        assert!(!should_try_acyclic_constructor(3, None, true));
     }
 
     #[test]

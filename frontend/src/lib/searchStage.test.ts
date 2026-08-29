@@ -160,6 +160,10 @@ describe('shared search progress', () => {
     const view = searchStageView(progress({ phase: 'computing_lower_bound' }));
     expect(searchSubline(snapshot(), view, context)).toBe('Computing lower bound.');
   });
+  it('names the serial optional constructor phase', () => {
+    const view = searchStageView(progress({ phase: 'constructing_incumbent', nodeCount: null }));
+    expect(searchSubline(snapshot(), view, context)).toBe('Trying an acyclic incumbent.');
+  });
 });
 
 describe('diagnostic profile bars', () => {

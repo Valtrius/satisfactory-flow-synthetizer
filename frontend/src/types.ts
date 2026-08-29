@@ -100,6 +100,7 @@ export type SolvePhase =
   | 'normalizing'
   | 'global_checks'
   | 'computing_lower_bound'
+  | 'constructing_incumbent'
   | 'searching'
   | 'validating_witness'
   | 'optimizing_links'

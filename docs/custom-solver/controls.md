@@ -69,8 +69,12 @@ Diagnostics are disabled for ordinary timing runs. The current diagnostic exampl
 writes independent heartbeat counters every five seconds without a trace mutex or
 JSON allocation. Full post-cancellation sidecars use a separate thread and 15-second
 cadence. Both writers are joined; their work is not hidden after process completion.
+Live progress reports the optional serial helper as `constructing_incumbent`; its
+activity trace kind remains `acyclic_construct`.
 
 The optional constructor has no elapsed-time deadline in the permanent version.
+After find-all validates a witness at the current N, later link groups skip this
+optional existence helper and continue exact enumeration directly.
 The previous five-second policy is a separate, unapplied benchmark patch. See
 [experiment 09](experiments/09-serializer-and-find-all.md) for source variants.
 

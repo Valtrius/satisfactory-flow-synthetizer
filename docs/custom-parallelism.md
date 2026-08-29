@@ -67,6 +67,11 @@ Updated 2026-08-29.
 - The [N<=9 guard](custom-solver/experiments/18-guarded-p1-promotion.md) was validated
   then rejected before commit. [Unconditional p1](custom-solver/experiments/19-unconditional-p1-promotion.md)
   is the production policy for both modes. Sharing, donation and remaining groups stay off.
+- [Experiment 20](custom-solver/experiments/20-results.md) verifies the post-winning
+  constructor guard across 26 jobs and makes it permanent. The mixed timing screen
+  does not establish a general speedup; it preserves exact results and removes
+  redundant existence work. Medium-case CPU troughs track uneven root-search tails,
+  sometimes leaving one root running alone. Scheduler experiments remain paused.
 
 The goal is shorter time to a proven optimum and complete minimum-node enumeration.
 First-witness latency is a separate measure. More occupied workers, a partial
