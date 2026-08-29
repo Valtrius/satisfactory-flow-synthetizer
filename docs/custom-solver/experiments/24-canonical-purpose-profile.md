@@ -1,7 +1,9 @@
 # 24 - Canonicalization purpose profile
 
-Date: 2026-08-29. State: validated; ready to launch.
+Date: 2026-08-29. State: launched; awaiting analysis.
 Related: [experiment 23 results](23-results.md).
+
+Run: ignored `target/parallelism-ladder/canonical-purpose-20260829/`.
 
 ## Question
 
