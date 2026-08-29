@@ -96,6 +96,8 @@ diagnostic-only split. Four verified jobs put 94.5-96.2% of legal-decision time 
 open-port and marked-child keys. Marked keys remove fewer than 0.3% of candidate
 decisions in these samples. The next candidate bypasses them only inside dispatched
 DFS roots, retaining canonical root and adaptive-frontier identities.
+[Experiment 25](experiments/25-internal-dfs-marked-bypass.md) implements that path
+behind a benchmark-only Cargo feature. Production behavior remains keyed.
 
 ## Validation records
 

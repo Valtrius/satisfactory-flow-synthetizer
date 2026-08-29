@@ -85,7 +85,8 @@ Updated 2026-08-29.
   verifies the diagnostic split across four jobs. Open-port and marked-child keys
   account for 94.5-96.2% of legal-decision time. Marked keys remove fewer than 0.3%
   of measured candidates, so an internal-DFS-only bypass is the next isolated test;
-  root partition identities remain canonical.
+  root partition identities remain canonical. [Experiment 25](custom-solver/experiments/25-internal-dfs-marked-bypass.md)
+  implements the benchmark-only candidate and prepares a whole-solve screen.
 
 The goal is shorter time to a proven optimum and complete minimum-node enumeration.
 First-witness latency is a separate measure. More occupied workers, a partial

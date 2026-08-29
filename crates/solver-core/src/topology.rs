@@ -747,6 +747,32 @@ impl TopologyState {
         )
     }
 
+    /// Lists the decisions used inside a dispatched DFS root.
+    ///
+    /// The benchmark-only variant skips marked-child ordering and deduplication.
+    /// Local port representatives still remove explicit physical-port symmetry,
+    /// and the recursive propagated state key remains the authoritative completion
+    /// identity. Root and adaptive-frontier planning continue to call the keyed
+    /// method above so their stable proof-ledger identities do not change.
+    pub(crate) fn dfs_decisions_for_orbit_cancellable(
+        &mut self,
+        orbit: &OpenPortOrbit,
+        cancel: &AtomicBool,
+    ) -> Option<Vec<TopologyDecision>> {
+        #[cfg(feature = "bench-unkeyed-dfs")]
+        {
+            if cancel.load(Ordering::Relaxed) {
+                return None;
+            }
+            let decisions = self.decisions_for(orbit.representative);
+            (!cancel.load(Ordering::Relaxed)).then_some(decisions)
+        }
+        #[cfg(not(feature = "bench-unkeyed-dfs"))]
+        {
+            self.legal_decisions_for_orbit_cancellable(orbit, cancel)
+        }
+    }
+
     /// Returns the invariant ordered marked-child keys of all legal decisions.
     #[must_use]
     pub fn ordered_decision_child_keys(&mut self) -> Vec<MarkedLinkCanonicalKey> {

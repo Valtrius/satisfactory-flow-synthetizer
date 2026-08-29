@@ -1113,7 +1113,7 @@ fn search_state(
         return DfsResult::Exhausted(None);
     };
     let Some(decisions) = ({
-        let decisions = state.legal_decisions_for_orbit_cancellable(&orbit, context.cancel);
+        let decisions = state.dfs_decisions_for_orbit_cancellable(&orbit, context.cancel);
         hotspot_profile::record_legal_decisions(orbit_started.elapsed());
         decisions
     }) else {

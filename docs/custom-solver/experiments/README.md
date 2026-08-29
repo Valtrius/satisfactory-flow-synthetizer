@@ -30,6 +30,7 @@ Record dates follow the analysis chronology, not necessarily every run's start t
 | [22](22-analytic-witness-ports.md)            | 2026-08-29    | Can exact symmetric-port labels replace their factorial witness enumeration?              | 6 verified; exact 559,872x leaf reduction; root 2.38-2.57x faster; permanent        |
 | [23](23-whole-translation-and-dfs-profile.md) | 2026-08-29    | Does the port gain translate whole; which exact DFS identity dominates next?              | 27 verified; 238 improves 43-52%; legal/state identity dominate next                |
 | [24](24-canonical-purpose-profile.md)         | 2026-08-29    | Which exact state/open-port/marked-child/SCC identity consumes canonicalization time?     | 4 verified; internal marked-child bypass is the next isolated test                  |
+| [25](25-internal-dfs-marked-bypass.md)        | 2026-08-29    | Can dispatched DFS defer marked-child equivalence to propagated canonical state keys?     | Benchmark-only candidate implemented; screening validation in progress              |
 
 ## How the diagnosis changed
 
@@ -94,6 +95,9 @@ Record dates follow the analysis chronology, not necessarily every run's start t
     keys. Four verified jobs attribute 94.5-96.2% of legal-decision time to open and
     marked keys. Marked keys remove fewer than 0.3% of measured candidates but also
     stabilize root obligations. Test bypass only inside dispatched DFS roots.
+20. [Internal DFS marked-child bypass](25-internal-dfs-marked-bypass.md) retains
+    keyed root/frontier identities while testing raw decisions inside dispatched
+    roots. The candidate is benchmark-only until exact A/B evidence supports it.
 
 ## Evidence conventions
 
