@@ -1,7 +1,7 @@
 # 22 - Analytic full-witness port minimization
 
-Date: 2026-08-29. State: candidate committed; frozen replay launching.
-Related: [experiment 21 results](21-results.md).
+Date: 2026-08-29. State: completed; optimization permanent.
+Related: [experiment 21 results](21-results.md), [experiment 22 results](22-results.md).
 
 ## Hypothesis
 
@@ -65,4 +65,4 @@ Compare exact requests and witness objects with experiment 21, ordinary best/all
 timings separately, and diagnostic witness branch/leaf counts. The replay must
 exhaust the selected root with no kill, failure or open activity.
 
-No speedup is claimed until that run finishes and frozen verification passes.
+The run completed and passed frozen verification. See the [results](22-results.md).

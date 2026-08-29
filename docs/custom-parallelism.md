@@ -74,9 +74,9 @@ Updated 2026-08-29.
   sometimes leaving one root running alone. Scheduler experiments remain paused.
 - [Experiment 21 results](custom-solver/experiments/21-results.md) verify the frozen
   longest 238 root. Best/all perform identical work; 80.6 million full-witness
-  leaves consume about 34 seconds. [Experiment 22](custom-solver/experiments/22-analytic-witness-ports.md)
-  analytically removes the 559,872-fold symmetric-port factor and has passed the
-  exhaustive reference matrix. Its frozen replay is pending; scheduling stays paused.
+  leaves consume about 34 seconds. [Experiment 22 results](custom-solver/experiments/22-results.md)
+  preserve exact results while reducing witness leaves 559,872x and isolated root
+  time 58-61%. The calculation change is permanent; scheduling stays paused.
 
 The goal is shorter time to a proven optimum and complete minimum-node enumeration.
 First-witness latency is a separate measure. More occupied workers, a partial

@@ -20,6 +20,7 @@ lower overhead alone does not justify slower completion.
 | Fixed hard-work profiling                             | Feature-gated production search and strict local-scope verification | `1b558a6`, [12](experiments/12-hard-obligation-profiling.md)  |
 | Unconditional adaptive partitions                     | 180 verified jobs; accepted hard-10 resource cost                   | `49ae34c`, [19](experiments/19-unconditional-p1-promotion.md) |
 | Skip constructor after winning N                      | 26 exact jobs; removes redundant existence work                     | This commit, [20](experiments/20-results.md)                  |
+| Derive exact symmetric witness ports                  | 559,872x fewer leaves; root 2.38-2.57x faster                       | `f5df873`, [22](experiments/22-results.md)                    |
 
 Each optimization commit includes its related docs. Experiment 13 tooling/results
 are committed in `473aba7`. [Calculation promotion](experiments/14-calculation-promotion.md)
@@ -83,9 +84,15 @@ stay paused. [Experiment 21](experiments/21-results.md) verifies the isolated 23
 root: best/all do identical structural work and 80,621,568 witness leaves consume
 about 34 seconds. [Experiment 22](experiments/22-analytic-witness-ports.md) replaces
 only the 559,872-fold symmetric-port factor with an exact analytic minimum. The
-candidate passes exhaustive reference validation; frozen replay is pending.
+six-job replay preserves every exact identity, reduces the root median 58.03-61.15%
+and makes the optimization permanent. Whole-solve confirmation is the next step.
 
 ## Validation records
+
+Experiment 22 post-run: 6/6 selected-root workloads verify and match experiment 21
+requests, plan identities, statuses and full solutions. No kills, failures or open
+activity spans occurred. The rechecked summary is byte-identical. See
+[results](experiments/22-results.md).
 
 Experiment 22 prelaunch: 183 solver-core tests pass with two manual benchmarks
 ignored, plus one exhaustive outer differential, four parallelism integrations and

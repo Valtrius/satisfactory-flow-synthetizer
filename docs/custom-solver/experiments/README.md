@@ -27,7 +27,7 @@ Record dates follow the analysis chronology, not necessarily every run's start t
 | [19](19-unconditional-p1-promotion.md)      | 2026-08-29    | Make p1 the production policy despite its hard-10 resource cost?                          | Unconditional p1 selected; memory issue explicitly deferred                         |
 | [20](20-constructor-and-medium-cases.md)    | 2026-08-29    | Can post-winning constructor work be removed; what causes medium-case CPU troughs?        | 26 verified; guard permanent; troughs are uneven root-search tails                  |
 | [21](21-adaptive-root-profiling.md)         | 2026-08-29    | Which calculations dominate the longest 238 adaptive root?                                | 6 verified; 80.6M witness leaves dominate; best/all do identical work               |
-| [22](22-analytic-witness-ports.md)          | 2026-08-29    | Can exact symmetric-port labels replace their factorial witness enumeration?              | Candidate validated; frozen 238 root replay pending                                 |
+| [22](22-analytic-witness-ports.md)          | 2026-08-29    | Can exact symmetric-port labels replace their factorial witness enumeration?              | 6 verified; exact 559,872x leaf reduction; root 2.38-2.57x faster; permanent        |
 
 ## How the diagnosis changed
 
@@ -77,8 +77,9 @@ Record dates follow the analysis chronology, not necessarily every run's start t
     results](21-results.md) isolate 80.6 million witness leaves and show that best
     and all perform identical canonicalization work.
 17. [Analytic witness ports](22-analytic-witness-ports.md) retain terminal/node
-    permutations but derive the exact minimum symmetric ports. The candidate passes
-    the exhaustive reference matrix; its frozen root replay is pending.
+    permutations but derive the exact minimum symmetric ports. [Six verified
+    results](22-results.md) preserve every exact result, reduce witness leaves
+    559,872x and improve the isolated root 2.38-2.57x. The change is permanent.
 
 ## Evidence conventions
 
