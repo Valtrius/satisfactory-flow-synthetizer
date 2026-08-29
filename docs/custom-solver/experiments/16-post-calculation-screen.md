@@ -1,8 +1,10 @@
 # 16 - Scheduling after cheaper calculations
 
-Date: 2026-08-28. Launched; awaiting analysis after the completion notification.
+Date: 2026-08-28. Finished; all 38 jobs verified after correcting reference selection.
 [Promoted calculations](14-calculation-promotion.md), [prefix implementation](15-prefix-workloads.md).
-No new performance conclusion or scheduling default is implied.
+[Results and verifier correction](16-post-calculation-results.md),
+[diagnostics and next steps](16-diagnostics-and-next-steps.md). Original failure evidence retained.
+The sections below preserve the launch protocol. Scheduling defaults remain unchanged.
 
 ## Questions
 

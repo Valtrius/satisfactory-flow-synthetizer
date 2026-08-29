@@ -1,6 +1,6 @@
 # 15 - Exact prefix workloads for hard 10
 
-Date: 2026-08-28. Implemented; discovery timings pending.
+Date: 2026-08-28. Implemented in `809f7c9`; initial discovery finished.
 [Motivation](13-whole-results.md#hard-10-diagnosis), [run protocol](16-post-calculation-screen.md).
 The existing N=11/L=18 profile remains too long for completed comparisons.
 The hypothesis is that a frozen subtree can supply a useful complete reference
@@ -62,6 +62,11 @@ Before another calculation change, freeze the selected exact certificate and run
 fresh repeated before/after processes on it. Retain whole optimal/all SAT regressions.
 If all candidates are too short or capped, adjust selection depth/path in a new
 record rather than claiming better completion from more visited states.
+
+The [first screen](16-diagnostics-and-next-steps.md#hard-10-prefix-discovery) passed
+certificate/scope verification but all 24 hard jobs hit 30 s with no witnesses.
+Both tiny controls exhausted. No hard prefix is yet a useful completed control.
+Next, try deeper paths with one short all-mode trial per recipe before repeats.
 
 ## Validation and provenance
 

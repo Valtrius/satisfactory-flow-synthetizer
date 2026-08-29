@@ -1,0 +1,404 @@
+{
+  "description": "Fixed group sharing/donation comparison plus short deeper-prefix discovery. Production defaults unchanged.",
+  "seed": 290817,
+  "variants": {
+    "reference": "../../target/parallelism-ladder/p1-promotion-variants-20260829/reference",
+    "basis": "../../target/parallelism-ladder/p1-promotion-variants-20260829/candidate"
+  },
+  "jobs": [
+    {
+      "id": "group36-p1-best-r1",
+      "variant": "basis",
+      "case_file": "cases/acyclic36.json",
+      "node_count": 9,
+      "link_count": 12,
+      "profile": {
+        "splitter2": 4,
+        "splitter3": 2,
+        "merger2": 3,
+        "merger3": 0
+      },
+      "mode": "best",
+      "stage": "p1",
+      "workers": 32,
+      "timeout_s": 120,
+      "hotspots": false,
+      "must_exhaust": false
+    },
+    {
+      "id": "group36-p1-best-r2",
+      "variant": "basis",
+      "case_file": "cases/acyclic36.json",
+      "node_count": 9,
+      "link_count": 12,
+      "profile": {
+        "splitter2": 4,
+        "splitter3": 2,
+        "merger2": 3,
+        "merger3": 0
+      },
+      "mode": "best",
+      "stage": "p1",
+      "workers": 32,
+      "timeout_s": 120,
+      "hotspots": false,
+      "must_exhaust": false
+    },
+    {
+      "id": "group36-p1-all-r1",
+      "variant": "basis",
+      "case_file": "cases/acyclic36.json",
+      "node_count": 9,
+      "link_count": 12,
+      "profile": {
+        "splitter2": 4,
+        "splitter3": 2,
+        "merger2": 3,
+        "merger3": 0
+      },
+      "mode": "all",
+      "stage": "p1",
+      "workers": 32,
+      "timeout_s": 120,
+      "hotspots": false,
+      "must_exhaust": false
+    },
+    {
+      "id": "group36-p1-all-r2",
+      "variant": "basis",
+      "case_file": "cases/acyclic36.json",
+      "node_count": 9,
+      "link_count": 12,
+      "profile": {
+        "splitter2": 4,
+        "splitter3": 2,
+        "merger2": 3,
+        "merger3": 0
+      },
+      "mode": "all",
+      "stage": "p1",
+      "workers": 32,
+      "timeout_s": 120,
+      "hotspots": false,
+      "must_exhaust": false
+    },
+    {
+      "id": "group36-p12-best-r1",
+      "variant": "basis",
+      "case_file": "cases/acyclic36.json",
+      "node_count": 9,
+      "link_count": 12,
+      "profile": {
+        "splitter2": 4,
+        "splitter3": 2,
+        "merger2": 3,
+        "merger3": 0
+      },
+      "mode": "best",
+      "stage": "p12",
+      "workers": 32,
+      "timeout_s": 120,
+      "hotspots": false,
+      "must_exhaust": false
+    },
+    {
+      "id": "group36-p12-best-r2",
+      "variant": "basis",
+      "case_file": "cases/acyclic36.json",
+      "node_count": 9,
+      "link_count": 12,
+      "profile": {
+        "splitter2": 4,
+        "splitter3": 2,
+        "merger2": 3,
+        "merger3": 0
+      },
+      "mode": "best",
+      "stage": "p12",
+      "workers": 32,
+      "timeout_s": 120,
+      "hotspots": false,
+      "must_exhaust": false
+    },
+    {
+      "id": "group36-p12-all-r1",
+      "variant": "basis",
+      "case_file": "cases/acyclic36.json",
+      "node_count": 9,
+      "link_count": 12,
+      "profile": {
+        "splitter2": 4,
+        "splitter3": 2,
+        "merger2": 3,
+        "merger3": 0
+      },
+      "mode": "all",
+      "stage": "p12",
+      "workers": 32,
+      "timeout_s": 120,
+      "hotspots": false,
+      "must_exhaust": false
+    },
+    {
+      "id": "group36-p12-all-r2",
+      "variant": "basis",
+      "case_file": "cases/acyclic36.json",
+      "node_count": 9,
+      "link_count": 12,
+      "profile": {
+        "splitter2": 4,
+        "splitter3": 2,
+        "merger2": 3,
+        "merger3": 0
+      },
+      "mode": "all",
+      "stage": "p12",
+      "workers": 32,
+      "timeout_s": 120,
+      "hotspots": false,
+      "must_exhaust": false
+    },
+    {
+      "id": "group36-p123-best-r1",
+      "variant": "basis",
+      "case_file": "cases/acyclic36.json",
+      "node_count": 9,
+      "link_count": 12,
+      "profile": {
+        "splitter2": 4,
+        "splitter3": 2,
+        "merger2": 3,
+        "merger3": 0
+      },
+      "mode": "best",
+      "stage": "p123",
+      "workers": 32,
+      "timeout_s": 120,
+      "hotspots": false,
+      "must_exhaust": false
+    },
+    {
+      "id": "group36-p123-best-r2",
+      "variant": "basis",
+      "case_file": "cases/acyclic36.json",
+      "node_count": 9,
+      "link_count": 12,
+      "profile": {
+        "splitter2": 4,
+        "splitter3": 2,
+        "merger2": 3,
+        "merger3": 0
+      },
+      "mode": "best",
+      "stage": "p123",
+      "workers": 32,
+      "timeout_s": 120,
+      "hotspots": false,
+      "must_exhaust": false
+    },
+    {
+      "id": "group36-p123-all-r1",
+      "variant": "basis",
+      "case_file": "cases/acyclic36.json",
+      "node_count": 9,
+      "link_count": 12,
+      "profile": {
+        "splitter2": 4,
+        "splitter3": 2,
+        "merger2": 3,
+        "merger3": 0
+      },
+      "mode": "all",
+      "stage": "p123",
+      "workers": 32,
+      "timeout_s": 120,
+      "hotspots": false,
+      "must_exhaust": false
+    },
+    {
+      "id": "group36-p123-all-r2",
+      "variant": "basis",
+      "case_file": "cases/acyclic36.json",
+      "node_count": 9,
+      "link_count": 12,
+      "profile": {
+        "splitter2": 4,
+        "splitter3": 2,
+        "merger2": 3,
+        "merger3": 0
+      },
+      "mode": "all",
+      "stage": "p123",
+      "workers": 32,
+      "timeout_s": 120,
+      "hotspots": false,
+      "must_exhaust": false
+    },
+    {
+      "id": "prefix10-d10-p0-all",
+      "variant": "basis",
+      "case_file": "cases/cyclic10.json",
+      "node_count": 11,
+      "link_count": 18,
+      "profile": {
+        "splitter2": 5,
+        "splitter3": 2,
+        "merger2": 0,
+        "merger3": 4
+      },
+      "mode": "all",
+      "stage": "baseline",
+      "workers": 1,
+      "timeout_s": 8,
+      "hotspots": false,
+      "must_exhaust": false,
+      "prefix": {
+        "depth": 10,
+        "pick": 0
+      }
+    },
+    {
+      "id": "prefix10-d10-p2-all",
+      "variant": "basis",
+      "case_file": "cases/cyclic10.json",
+      "node_count": 11,
+      "link_count": 18,
+      "profile": {
+        "splitter2": 5,
+        "splitter3": 2,
+        "merger2": 0,
+        "merger3": 4
+      },
+      "mode": "all",
+      "stage": "baseline",
+      "workers": 1,
+      "timeout_s": 8,
+      "hotspots": false,
+      "must_exhaust": false,
+      "prefix": {
+        "depth": 10,
+        "pick": 2
+      }
+    },
+    {
+      "id": "prefix10-d10-p4-all",
+      "variant": "basis",
+      "case_file": "cases/cyclic10.json",
+      "node_count": 11,
+      "link_count": 18,
+      "profile": {
+        "splitter2": 5,
+        "splitter3": 2,
+        "merger2": 0,
+        "merger3": 4
+      },
+      "mode": "all",
+      "stage": "baseline",
+      "workers": 1,
+      "timeout_s": 8,
+      "hotspots": false,
+      "must_exhaust": false,
+      "prefix": {
+        "depth": 10,
+        "pick": 4
+      }
+    },
+    {
+      "id": "prefix10-d12-p0-all",
+      "variant": "basis",
+      "case_file": "cases/cyclic10.json",
+      "node_count": 11,
+      "link_count": 18,
+      "profile": {
+        "splitter2": 5,
+        "splitter3": 2,
+        "merger2": 0,
+        "merger3": 4
+      },
+      "mode": "all",
+      "stage": "baseline",
+      "workers": 1,
+      "timeout_s": 8,
+      "hotspots": false,
+      "must_exhaust": false,
+      "prefix": {
+        "depth": 12,
+        "pick": 0
+      }
+    },
+    {
+      "id": "prefix10-d12-p2-all",
+      "variant": "basis",
+      "case_file": "cases/cyclic10.json",
+      "node_count": 11,
+      "link_count": 18,
+      "profile": {
+        "splitter2": 5,
+        "splitter3": 2,
+        "merger2": 0,
+        "merger3": 4
+      },
+      "mode": "all",
+      "stage": "baseline",
+      "workers": 1,
+      "timeout_s": 8,
+      "hotspots": false,
+      "must_exhaust": false,
+      "prefix": {
+        "depth": 12,
+        "pick": 2
+      }
+    },
+    {
+      "id": "prefix10-d12-p4-all",
+      "variant": "basis",
+      "case_file": "cases/cyclic10.json",
+      "node_count": 11,
+      "link_count": 18,
+      "profile": {
+        "splitter2": 5,
+        "splitter3": 2,
+        "merger2": 0,
+        "merger3": 4
+      },
+      "mode": "all",
+      "stage": "baseline",
+      "workers": 1,
+      "timeout_s": 8,
+      "hotspots": false,
+      "must_exhaust": false,
+      "prefix": {
+        "depth": 12,
+        "pick": 4
+      }
+    },
+    {
+      "id": "tiny-best",
+      "variant": "basis",
+      "case_file": "cases/tiny.json",
+      "node_count": 2,
+      "link_count": 1,
+      "profile": null,
+      "mode": "best",
+      "stage": "p123",
+      "workers": 4,
+      "timeout_s": 5,
+      "hotspots": false,
+      "must_exhaust": true
+    },
+    {
+      "id": "tiny-all",
+      "variant": "basis",
+      "case_file": "cases/tiny.json",
+      "node_count": 2,
+      "link_count": 1,
+      "profile": null,
+      "mode": "all",
+      "stage": "p123",
+      "workers": 4,
+      "timeout_s": 5,
+      "hotspots": false,
+      "must_exhaust": true
+    }
+  ]
+}

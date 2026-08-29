@@ -20,7 +20,8 @@ pub struct FixedWorkload {
     /// None selects every feasible profile at this exact N/L.
     pub profile: Option<NodeProfile>,
     pub worker_count: usize,
-    pub deep_partitions: bool,
+    /// Within-group policies only; remaining-group concurrency has no meaning here.
+    pub parallelism: ParallelismOptions,
     /// False retains the best witness per profile, but still exhausts each profile.
     pub collect_all_witnesses: bool,
 }
@@ -68,6 +69,13 @@ fn prepare(
 > {
     if workload.worker_count == 0 {
         return Err(BenchmarkError::Invalid("worker count must be positive"));
+    }
+    if workload.parallelism.parallel_remaining_groups
+        || (workload.parallelism.work_stealing && !workload.parallelism.shared_state_cache)
+    {
+        return Err(BenchmarkError::Invalid(
+            "fixed work needs within-group policies and sharing for donation",
+        ));
     }
     let Preparation::Prepared(normalized) = prepare_problem(problem).map_err(SolverError::from)?
     else {
@@ -120,10 +128,7 @@ pub fn run(
         node_count: workload.node_count,
         link_count: workload.link_count,
         requested_workers: workload.worker_count,
-        parallelism: ParallelismOptions {
-            deep_partitions: workload.deep_partitions,
-            ..ParallelismOptions::default()
-        },
+        parallelism: workload.parallelism,
         cancel,
         collect_all_witnesses: workload.collect_all_witnesses,
         #[cfg(test)]
@@ -201,7 +206,10 @@ mod tests {
                 link_count: 1,
                 profile: None,
                 worker_count: 4,
-                deep_partitions: true,
+                parallelism: ParallelismOptions {
+                    deep_partitions: true,
+                    ..ParallelismOptions::default()
+                },
                 collect_all_witnesses: true,
             },
         )
@@ -209,7 +217,7 @@ mod tests {
 
     #[test]
     fn exact_group_matches_the_corresponding_full_enumeration() {
-        let (problem, workload) = fixture();
+        let (problem, mut workload) = fixture();
         let cancel = AtomicBool::new(false);
         let expected = std::sync::Mutex::new(BTreeMap::<CanonicalGraphKey, PhysicalGraph>::new());
         let outcome = super::super::enumerate_with_observer(
@@ -233,19 +241,27 @@ mod tests {
         )
         .unwrap();
         assert!(matches!(outcome, solver_api::SolveResult::Optimal(_)));
-        let results = run(&problem, &workload, &cancel, &|_| {}).unwrap();
-        assert!(
-            results
-                .iter()
-                .all(|r| r.exhausted && r.roots == r.roots_exhausted)
-        );
-        let actual = results
-            .into_iter()
-            .flat_map(|r| r.witnesses)
-            .map(|s| (s.canonical_graph_key, s.graph))
-            .collect::<BTreeMap<_, _>>();
-        assert!(!actual.is_empty());
-        assert_eq!(actual, expected.into_inner().unwrap());
+        let expected = expected.into_inner().unwrap();
+        assert!(!expected.is_empty());
+        for (shared_state_cache, work_stealing) in [(false, false), (true, false), (true, true)] {
+            workload.parallelism.shared_state_cache = shared_state_cache;
+            workload.parallelism.work_stealing = work_stealing;
+            for workers in [1, 4] {
+                workload.worker_count = workers;
+                let results = run(&problem, &workload, &cancel, &|_| {}).unwrap();
+                assert!(
+                    results
+                        .iter()
+                        .all(|r| r.exhausted && r.roots == r.roots_exhausted)
+                );
+                let actual = results
+                    .into_iter()
+                    .flat_map(|r| r.witnesses)
+                    .map(|s| (s.canonical_graph_key, s.graph))
+                    .collect::<BTreeMap<_, _>>();
+                assert_eq!(actual, expected);
+            }
+        }
     }
 
     #[test]
@@ -266,12 +282,24 @@ mod tests {
     #[test]
     fn cancellation_and_invalid_selection_never_prove_an_empty_group() {
         let (problem, mut workload) = fixture();
-        let cancelled = run(&problem, &workload, &AtomicBool::new(true), &|_| {}).unwrap();
-        assert!(
-            cancelled
-                .iter()
-                .all(|r| !r.exhausted && r.incomplete_reason.is_some() && r.witnesses.is_empty())
-        );
+        for (sharing, donation) in [(false, false), (true, false), (true, true)] {
+            workload.parallelism.shared_state_cache = sharing;
+            workload.parallelism.work_stealing = donation;
+            let cancelled = run(&problem, &workload, &AtomicBool::new(true), &|_| {}).unwrap();
+            assert!(
+                cancelled.iter().all(|r| !r.exhausted
+                    && r.incomplete_reason.is_some()
+                    && r.witnesses.is_empty())
+            );
+        }
+        workload.parallelism.shared_state_cache = false;
+        assert!(profiles(&problem, &workload).is_err());
+        workload.parallelism = ParallelismOptions {
+            parallel_remaining_groups: true,
+            ..ParallelismOptions::default()
+        };
+        assert!(profiles(&problem, &workload).is_err());
+        workload.parallelism = ParallelismOptions::default();
         workload.link_count = 99;
         assert!(profiles(&problem, &workload).is_err());
         workload.link_count = 1;

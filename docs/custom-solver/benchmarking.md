@@ -42,7 +42,9 @@ Search wall time excludes separately recorded preparation; process time includes
 
 The [38-job follow-up](experiments/16-post-calculation-screen.md) combines prefix
 discovery with whole p1/p14 timing and repeated hard optimal. It preserves one
-completion/failure signal after both phases.
+completion/failure signal after both phases. [Results](experiments/16-post-calculation-results.md)
+pass after a reference-selection fix; all hard prefixes capped, so discovery must
+go deeper before another repeated prefix comparison.
 
 The verified [calculation comparison](experiments/13-calculation-screen.md) freezes
 four cumulative variants and runs fixed-work/replay then whole optimal/all phases
@@ -73,6 +75,9 @@ plus `BENCHMARK-FINISHED.txt` or `BENCHMARK-FAILED.txt`. Current job status is u
 File-manifest jobs accept `Variant: before|after`, default `after`. Before jobs
 require a compatible `profile_case.exe` in `ReferenceBinaryDirectory`. They do not
 implicitly duplicate every expensive job. Per-job `Hotspots` may be `on` or `off`.
+The sequential hard-profile wrapper expects fixed-manifest variants named `basis`
+and `reference` when it feeds them into a whole before/after phase. Preserve a path
+alias failure and relaunch into a new directory; never rewrite its failure marker.
 
 Named profiler positional arguments are:
 
@@ -91,6 +96,13 @@ Reference jobs must complete and preserve exact results. `--allow-incomplete`
 accepts only correctly classified stress caps, never watchdog kills. It checks
 deadline cancellation or exhaustion through the requested N, valid incumbents,
 partial key sets against available complete references, and proof consistency.
+
+A completed preserved `before` variant can supply the exact-result reference
+without baseline scheduling, for example p1 before versus p1 after. This does not
+create a baseline-stage timing ratio. Matched timing cohorts still require the
+same stage/settings; reference selection never permits incomplete reference jobs.
+When fixing a verifier, retain its original failure and frozen script, reproduce
+the failure, then write corrected summaries separately. Never replace raw results.
 
 ```powershell
 python scripts/analyze-parallelism.py C:/absolute/path/to/RUN/results --allow-incomplete --output C:/absolute/path/to/RUN/results/summary-rechecked.json

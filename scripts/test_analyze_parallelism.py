@@ -283,11 +283,11 @@ fn main() {
             hashes = json.loads((output / "binaries.json").read_text(encoding="utf-8-sig"))
             self.assertEqual({item["variant"] for item in hashes}, {"before", "after"})
 
-    def analyze(self, mutation=None, *, stress=False, allow=False, watchdog=False, no_results=False, corrupt_binary=False):
+    def analyze(self, mutation=None, *, stress=False, allow=False, watchdog=False, no_results=False, corrupt_binary=False, stage="baseline", variants=("before", "after")):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             rows = []
-            for variant in ("before", "after"):
+            for variant in variants:
                 for mode in ("all", "optimal"):
                     result = {
                         "mode": mode, "status": "Optimal(N=2, L=1)",
@@ -305,7 +305,7 @@ fn main() {
                     path.write_text(json.dumps(result))
                     rows.append({
                         "case": "fixture", "mode": mode, "variant": variant,
-                        "stage": "baseline", "workers": 1, "wall_s": 2 if variant == "before" else 1,
+                        "stage": stage, "workers": 1, "wall_s": 2 if variant == "before" else 1,
                         "status": result["status"], "result_file": str(path),
                         "process_cpu_s": 1, "cpu_utilization": 1,
                         "sampled_peak_working_set_bytes": 1024,
@@ -343,6 +343,23 @@ fn main() {
         self.assertEqual(status, 0)
         self.assertEqual(len(summary["summary"]), 4)
         self.assertTrue(all(s["kernel_speedup_same_stage"] == 2 for s in summary["summary"] if s["variant"] == "after"))
+
+    def test_preserved_before_is_a_reference_without_baseline_scheduling(self):
+        status, summary = self.analyze(stage="p1")
+        self.assertEqual(status, 0, summary["failures"])
+        self.assertTrue(all(s["speedup_vs_same_workers"] is None for s in summary["summary"]))
+        self.assertTrue(all(s["kernel_speedup_same_stage"] == 2 for s in summary["summary"] if s["variant"] == "after"))
+
+    def test_nonbaseline_reference_still_requires_an_anchor_and_exact_agreement(self):
+        status, summary = self.analyze(stage="p1", variants=("after",))
+        self.assertNotEqual(status, 0)
+        self.assertTrue(any("Missing completed baseline" in f for f in summary["failures"]))
+        def mutate(variant, _mode, result):
+            if variant == "after":
+                result["solutions"] = [{"graph": "changed physical solution"}]
+        status, summary = self.analyze(mutate, stage="p1")
+        self.assertNotEqual(status, 0)
+        self.assertTrue(any("Saved solution objects differ" in f for f in summary["failures"]))
 
     def test_watchdog_failure_is_not_accepted_as_a_stress_timeout(self):
         status, summary = self.analyze(watchdog=True, stress=True, allow=True)

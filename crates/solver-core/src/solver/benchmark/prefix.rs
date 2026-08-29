@@ -46,7 +46,7 @@ pub fn prepare_prefix(
     if !(1..=12).contains(&depth)
         || workload.worker_count != 1
         || workload.profile.is_none()
-        || workload.deep_partitions
+        || workload.parallelism != crate::ParallelismOptions::default()
     {
         return Err(BenchmarkError::Invalid(
             "prefix needs depth 1..=12, baseline scheduling, one worker and one profile",
@@ -161,7 +161,7 @@ mod tests {
     fn prefix_identity_cancellation_and_witnesses_are_scope_local() {
         let (problem, mut workload) = super::super::tests::fixture();
         workload.worker_count = 1;
-        workload.deep_partitions = false;
+        workload.parallelism = crate::ParallelismOptions::default();
         let full =
             super::super::run(&problem, &workload, &AtomicBool::new(false), &|_| {}).unwrap();
         let reference = full.iter().find(|p| !p.witnesses.is_empty()).unwrap();
@@ -219,6 +219,9 @@ mod tests {
                 .is_err()
         );
         assert!(prepare_prefix(&problem, &workload, 0, 0).is_err());
+        workload.parallelism.shared_state_cache = true;
+        assert!(prepare_prefix(&problem, &workload, 2, 0).is_err());
+        workload.parallelism = crate::ParallelismOptions::default();
         workload.worker_count = 2;
         assert!(prepare_prefix(&problem, &workload, 2, 0).is_err());
     }

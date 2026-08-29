@@ -161,7 +161,10 @@ def classify(row):
 baselines = {}
 for row in rows:
     row["completion"] = classify(row)
-    if row["stage"] == "baseline" and row["completion"] == "optimal":
+    # A preserved before binary is also an exact-result reference when the
+    # comparison deliberately holds a non-baseline scheduling policy fixed.
+    # Timing ratios below still require their own matching stage/settings.
+    if (row["stage"] == "baseline" or row["variant"] == "before") and row["completion"] == "optimal":
         key = case_key(row)
         if key not in baselines or row["variant"] == "before":
             baselines[key] = row["result"]

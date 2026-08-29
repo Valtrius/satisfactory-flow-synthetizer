@@ -29,7 +29,7 @@ fn workload(value: &Value) -> FixedWorkload {
     let stage = value["stage"].as_str().expect("stage");
     assert!(matches!(mode, "best" | "all"), "unknown fixed-work mode");
     assert!(
-        matches!(stage, "baseline" | "p1"),
+        matches!(stage, "baseline" | "p1" | "p12" | "p123"),
         "a fixed group has no remaining-group scheduler"
     );
     assert!(number("node_count") <= 64, "benchmark N cap must be <=64");
@@ -44,7 +44,7 @@ fn workload(value: &Value) -> FixedWorkload {
             .filter(|p| !p.is_null())
             .map(|p| serde_json::from_value(p.clone()).expect("profile")),
         worker_count: usize::try_from(number("workers")).unwrap(),
-        deep_partitions: stage == "p1",
+        parallelism: profile_support::parallelism_stage(Some(stage)),
         collect_all_witnesses: mode == "all",
     }
 }
@@ -222,6 +222,6 @@ mod tests {
             "workers":32,"timeout_s":60,"hotspots":true}));
         assert_eq!((selected.node_count, selected.link_count), (11, 18));
         assert!(!selected.collect_all_witnesses);
-        assert!(selected.deep_partitions && selected.profile.is_some());
+        assert!(selected.parallelism.deep_partitions && selected.profile.is_some());
     }
 }

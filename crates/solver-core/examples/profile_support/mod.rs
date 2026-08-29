@@ -229,7 +229,7 @@ fn run_problem(
     }
 }
 
-fn parallelism_stage(stage: Option<&str>) -> ParallelismOptions {
+pub(super) fn parallelism_stage(stage: Option<&str>) -> ParallelismOptions {
     let mut options = ParallelismOptions::default();
     match stage.unwrap_or("baseline") {
         "baseline" => {}
