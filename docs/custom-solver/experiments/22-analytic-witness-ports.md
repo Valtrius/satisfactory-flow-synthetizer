@@ -1,6 +1,6 @@
 # 22 - Analytic full-witness port minimization
 
-Date: 2026-08-29. State: implemented candidate; validation passed; replay pending.
+Date: 2026-08-29. State: candidate committed; frozen replay launching.
 Related: [experiment 21 results](21-results.md).
 
 ## Hypothesis
@@ -54,9 +54,15 @@ used that candidate. Sorting by explicit protocol tags fixes the mismatch.
 
 ## Frozen replay
 
-Re-run the six-job `benchmarks/custom/root238-screening.json` screen from a clean
-committed candidate. Compare exact requests and witness objects with experiment 21,
-ordinary best/all timings separately, and diagnostic witness branch/leaf counts.
-The replay must exhaust the selected root with no kill, failure or open activity.
+Candidate implementation: `f5df873`. Re-run the six-job
+`benchmarks/custom/root238-screening.json` screen from its clean descendant at
+`target/parallelism-ladder/root238-port-20260829`. It has two ordinary repeats and
+one diagnostic in each of best/all mode, 120/150-second search caps and a 13-minute
+aggregate cap. The hidden launcher writes a status file and displays a completion
+or failure dialog.
+
+Compare exact requests and witness objects with experiment 21, ordinary best/all
+timings separately, and diagnostic witness branch/leaf counts. The replay must
+exhaust the selected root with no kill, failure or open activity.
 
 No speedup is claimed until that run finishes and frozen verification passes.
