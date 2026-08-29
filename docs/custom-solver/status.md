@@ -79,7 +79,9 @@ hard-36 opportunity, not a claimed universal speedup.
 
 The 238/115 process samples attribute their low-CPU intervals to uneven root-search
 tails, not the optional constructor. Sharing, donation and parallel remaining groups
-stay paused. Profile the longest individual roots before another scheduling change.
+stay paused. [Experiment 21](experiments/21-adaptive-root-profiling.md) adds frozen
+replay for 238 N=8/L=13 root 28, the 82.731-second tail. Its six-job best/all hotspot
+screen is awaiting results; no calculation conclusion exists yet.
 
 ## Validation records
 

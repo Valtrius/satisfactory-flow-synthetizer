@@ -72,6 +72,10 @@ Updated 2026-08-29.
   does not establish a general speedup; it preserves exact results and removes
   redundant existence work. Medium-case CPU troughs track uneven root-search tails,
   sometimes leaving one root running alone. Scheduler experiments remain paused.
+- [Experiment 21](custom-solver/experiments/21-adaptive-root-profiling.md) adds
+  benchmark-only frozen replay for the longest 238 adaptive root. The pending
+  best/all hotspot screen will choose a calculation target without changing the
+  scheduler.
 
 The goal is shorter time to a proven optimum and complete minimum-node enumeration.
 First-witness latency is a separate measure. More occupied workers, a partial

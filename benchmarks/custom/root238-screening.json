@@ -1,0 +1,120 @@
+{
+  "description": "Frozen replay of cyclic238 N8/L13 adaptive root 28. Root exhaustion is local and never proves the containing profile or solve.",
+  "seed": 290821,
+  "jobs": [
+    {
+      "id": "root238-r28-all-r1",
+      "case_file": "cases/cyclic238.json",
+      "node_count": 8,
+      "link_count": 13,
+      "profile": {
+        "splitter2": 1,
+        "splitter3": 4,
+        "merger2": 0,
+        "merger3": 3
+      },
+      "mode": "all",
+      "stage": "p1",
+      "workers": 32,
+      "timeout_s": 120,
+      "hotspots": false,
+      "must_exhaust": true,
+      "root": { "ordinal": 28 }
+    },
+    {
+      "id": "root238-r28-all-r2",
+      "case_file": "cases/cyclic238.json",
+      "node_count": 8,
+      "link_count": 13,
+      "profile": {
+        "splitter2": 1,
+        "splitter3": 4,
+        "merger2": 0,
+        "merger3": 3
+      },
+      "mode": "all",
+      "stage": "p1",
+      "workers": 32,
+      "timeout_s": 120,
+      "hotspots": false,
+      "must_exhaust": true,
+      "root": { "ordinal": 28 }
+    },
+    {
+      "id": "root238-r28-best-r1",
+      "case_file": "cases/cyclic238.json",
+      "node_count": 8,
+      "link_count": 13,
+      "profile": {
+        "splitter2": 1,
+        "splitter3": 4,
+        "merger2": 0,
+        "merger3": 3
+      },
+      "mode": "best",
+      "stage": "p1",
+      "workers": 32,
+      "timeout_s": 120,
+      "hotspots": false,
+      "must_exhaust": true,
+      "root": { "ordinal": 28 }
+    },
+    {
+      "id": "root238-r28-best-r2",
+      "case_file": "cases/cyclic238.json",
+      "node_count": 8,
+      "link_count": 13,
+      "profile": {
+        "splitter2": 1,
+        "splitter3": 4,
+        "merger2": 0,
+        "merger3": 3
+      },
+      "mode": "best",
+      "stage": "p1",
+      "workers": 32,
+      "timeout_s": 120,
+      "hotspots": false,
+      "must_exhaust": true,
+      "root": { "ordinal": 28 }
+    },
+    {
+      "id": "root238-r28-all-diagnostic",
+      "case_file": "cases/cyclic238.json",
+      "node_count": 8,
+      "link_count": 13,
+      "profile": {
+        "splitter2": 1,
+        "splitter3": 4,
+        "merger2": 0,
+        "merger3": 3
+      },
+      "mode": "all",
+      "stage": "p1",
+      "workers": 32,
+      "timeout_s": 150,
+      "hotspots": true,
+      "must_exhaust": true,
+      "root": { "ordinal": 28 }
+    },
+    {
+      "id": "root238-r28-best-diagnostic",
+      "case_file": "cases/cyclic238.json",
+      "node_count": 8,
+      "link_count": 13,
+      "profile": {
+        "splitter2": 1,
+        "splitter3": 4,
+        "merger2": 0,
+        "merger3": 3
+      },
+      "mode": "best",
+      "stage": "p1",
+      "workers": 32,
+      "timeout_s": 150,
+      "hotspots": true,
+      "must_exhaust": true,
+      "root": { "ordinal": 28 }
+    }
+  ]
+}

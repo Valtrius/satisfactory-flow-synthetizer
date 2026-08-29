@@ -80,6 +80,26 @@ class AnalyzerTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 module.validate_result(job, changed)
 
+    def test_adaptive_root_scope_requires_frozen_plan_and_one_local_root(self):
+        import copy
+        module, job, result = self.fixed_fixture()
+        identity = {"version": 1, "target": 8, "ordinal": 1,
+                    "plan_keys": [[1], [2]], "stable_key": [2]}
+        job["request"].update(root={"ordinal": 1}, root_identity=identity,
+                              stage="p1", workers=2)
+        result.update(scope="selected_root", root_identity=copy.deepcopy(identity),
+                      request=copy.deepcopy(job["request"]))
+        result["profiles"][0].update(roots=1, roots_exhausted=1)
+        module.validate_result(job, result)
+        for mutation in [lambda r: r.update(scope="selected_profiles"),
+                         lambda r: r["root_identity"].update(ordinal=0),
+                         lambda r: r["root_identity"].update(plan_keys=[]),
+                         lambda r: r["profiles"][0].update(roots=2, roots_exhausted=2)]:
+            changed = copy.deepcopy(result)
+            mutation(changed)
+            with self.assertRaises(ValueError):
+                module.validate_result(job, changed)
+
     def test_fixed_variants_freeze_identity_and_reject_changed_files(self):
         module, job, result = self.fixed_fixture()
         with tempfile.TemporaryDirectory() as directory:
@@ -221,6 +241,28 @@ class AnalyzerTests(unittest.TestCase):
                                               capture_output=True, text=True, timeout=10)
                     self.assertNotEqual(rejected.returncode, 0)
                     self.assertFalse((root / "rejected.json").exists())
+                    root_request = dict(request, workers=2, stage="p1", profile=selected,
+                                        root={"ordinal": 0})
+                    root_file = root / "root.request.json"
+                    root_output = root / "root.json"
+                    module.write(root_file, root_request)
+                    listing = subprocess.run([str(binary), "--list", str(root_file)], check=True,
+                                             capture_output=True, text=True, timeout=10)
+                    root_request["root_identity"] = json.loads(listing.stdout)["root_identity"]
+                    module.write(root_file, root_request)
+                    subprocess.run([str(binary), str(root_file), str(root_output)], check=True,
+                                   capture_output=True, text=True, timeout=10)
+                    root_job = dict(request=root_request, problem=case["problem"],
+                                    expected_profiles=[selected])
+                    module.validate_result(root_job, module.read(root_output))
+                    self.assertEqual(module.read(root_output)["scope"], "selected_root")
+                    root_request["root_identity"]["stable_key"].append(0)
+                    module.write(root_file, root_request)
+                    rejected = subprocess.run([str(binary), str(root_file),
+                                               str(root / "rejected-root.json")],
+                                              capture_output=True, text=True, timeout=10)
+                    self.assertNotEqual(rejected.returncode, 0)
+                    self.assertFalse((root / "rejected-root.json").exists())
                     replay_binary = binary.with_name("profile_witness.exe")
                     if replay_binary.exists():
                         witness = next(s for p in result["profiles"] for s in p["solutions"])

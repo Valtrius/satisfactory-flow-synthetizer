@@ -26,6 +26,7 @@ Record dates follow the analysis chronology, not necessarily every run's start t
 | [18](18-guarded-p1-promotion.md)            | 2026-08-29    | Promote p1 without the measured hard-10 memory failure?                                   | N<=9 guard validated, then rejected before commit                                   |
 | [19](19-unconditional-p1-promotion.md)      | 2026-08-29    | Make p1 the production policy despite its hard-10 resource cost?                          | Unconditional p1 selected; memory issue explicitly deferred                         |
 | [20](20-constructor-and-medium-cases.md)    | 2026-08-29    | Can post-winning constructor work be removed; what causes medium-case CPU troughs?        | 26 verified; guard permanent; troughs are uneven root-search tails                  |
+| [21](21-adaptive-root-profiling.md)         | 2026-08-29    | Which calculations dominate the longest 238 adaptive root?                                | Frozen root replay implemented; six-job profile awaiting results                    |
 
 ## How the diagnosis changed
 
@@ -70,6 +71,9 @@ Record dates follow the analysis chronology, not necessarily every run's start t
     outputs across 26 jobs. Timing is mixed, but the guard removes redundant
     post-winning work and becomes permanent. Process samples show that the medium-case
     CPU troughs are uneven root-search tails, sometimes with one root left running.
+16. [Adaptive root profiling](21-adaptive-root-profiling.md) freezes one production
+    p1 root plan and replays its 82.731-second tail independently. This diagnosis
+    does not change scheduler policy or promote a calculation before measurement.
 
 ## Evidence conventions
 

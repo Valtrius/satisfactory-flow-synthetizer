@@ -5,6 +5,8 @@
 
 mod prefix;
 pub use prefix::{PrefixIdentity, PreparedPrefix, prepare_prefix};
+mod root;
+pub use root::{PreparedRoot, RootIdentity, prepare_root};
 
 use super::{
     AtomicBool, BTreeMap, ParallelismOptions, Preparation, Problem, ProfileGroupRun,

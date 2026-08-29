@@ -39,6 +39,10 @@ The [prefix protocol](experiments/15-prefix-workloads.md) adds `scope: selected_
 Its certificate includes frontier keys, decisions and the selected path. Compare
 only identical certificates; nested prefixes must not be added as disjoint work.
 Search wall time excludes separately recorded preparation; process time includes it.
+The [adaptive-root protocol](experiments/21-adaptive-root-profiling.md) instead
+freezes the full ordered production partition-key plan and one ordinal, then reports
+`scope: selected_root`. Its exhaustion applies only to that root. Root recipes require
+one profile and p1; prefix and root selections are mutually exclusive.
 
 ## Running a screen
 

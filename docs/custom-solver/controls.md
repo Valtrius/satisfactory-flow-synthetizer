@@ -50,6 +50,7 @@ Paths are relative to the repository root.
 | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------ |
 | `crates/solver-core/src/solver.rs`                                                   | Solve modes, current N/L, constructor coordination, group scheduling           |
 | `crates/solver-core/src/solver/benchmark.rs`                                         | Feature-gated exact N/L/profile entry using production group search            |
+| `crates/solver-core/src/solver/benchmark/root.rs`                                    | Frozen adaptive-root identity and exact serial replay                          |
 | `crates/solver-core/src/search.rs`                                                   | Root planning/DFS, caches, donation, finalization and teardown                 |
 | `crates/solver-core/src/canonical.rs`                                                | Full-witness key, partial canonicalization, state/SCC key serialization        |
 | `crates/solver-core/src/acyclic_incumbent.rs`                                        | Optional exact certificate constructor, eligibility, reuse and subset sums     |
@@ -82,6 +83,9 @@ The `bench-internals` feature is off by default. Its fixed-work entry bypasses t
 constructor and earlier groups; it does not change ordinary solver defaults.
 It supports baseline/p1/p12/p123 and best/all collection. All exhaust selected profiles;
 neither produces global optimality. See [12](experiments/12-hard-obligation-profiling.md).
+Frozen adaptive-root replay regenerates the production p1 plan and verifies its full
+canonical-key identity before searching one serial root. Root exhaustion cannot
+discharge the containing profile. See [21](experiments/21-adaptive-root-profiling.md).
 
 The exact [contracts](contracts.md) take precedence over scheduler heuristics.
 Before editing, check [status](status.md) for the committed/uncommitted boundary.

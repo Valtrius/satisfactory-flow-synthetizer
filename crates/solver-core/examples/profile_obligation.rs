@@ -9,7 +9,7 @@ use solver_core::{
     telemetry::SearchInstrumentation,
 };
 use std::{
-    path::Path,
+    path::{Path, PathBuf},
     sync::{
         Mutex,
         atomic::{AtomicBool, Ordering},
@@ -86,6 +86,42 @@ fn prepare_prefix(
     (prefix, prefix_identity)
 }
 
+fn prepare_root(
+    request: &Value,
+    problem: &Problem,
+    selection: &FixedWorkload,
+    list_only: bool,
+) -> (Option<benchmark::PreparedRoot>, Option<Value>) {
+    let root = request.get("root").map(|recipe| {
+        benchmark::prepare_root(
+            problem,
+            selection,
+            u32::try_from(recipe["ordinal"].as_u64().expect("root ordinal")).unwrap(),
+        )
+        .expect("valid adaptive root selection")
+    });
+    let root_identity = root.as_ref().map(|prepared| {
+        let id = prepared.identity();
+        json!({"version":1,"target":id.target,"ordinal":id.ordinal,
+            "plan_keys":id.plan_keys,"stable_key":id.stable_key})
+    });
+    if !list_only {
+        if let Some(identity) = &root_identity {
+            assert_eq!(
+                request.get("root_identity"),
+                Some(identity),
+                "changed or missing frozen adaptive root identity"
+            );
+        } else {
+            assert!(
+                request.get("root_identity").is_none(),
+                "root identity without a selection"
+            );
+        }
+    }
+    (root, root_identity)
+}
+
 fn load_request(request_path: &Path) -> (Value, Problem) {
     let request: Value = serde_json::from_slice(&std::fs::read(request_path).unwrap()).unwrap();
     let case_path = request_path
@@ -110,7 +146,36 @@ fn profile_reports(result: Vec<benchmark::FixedProfileResult>) -> Vec<Value> {
     }).collect::<Vec<_>>()
 }
 
-fn main() {
+fn print_listing(
+    problem: &Problem,
+    profiles: &[solver_api::NodeProfile],
+    identities: [Option<&Value>; 2],
+) {
+    let [prefix_identity, root_identity] = identities;
+    println!(
+        "{}",
+        json!({"problem":problem,"profiles":profiles,"prefix_identity":prefix_identity,
+            "root_identity":root_identity})
+    );
+}
+
+fn assert_exclusive_selection(request: &Value) {
+    assert!(
+        request.get("prefix").is_none() || request.get("root").is_none(),
+        "prefix and adaptive root selections are mutually exclusive"
+    );
+}
+
+fn proof_scope(has_prefix: bool, has_root: bool) -> &'static str {
+    match (has_prefix, has_root) {
+        (true, false) => "selected_prefix",
+        (false, true) => "selected_root",
+        (false, false) => "selected_profiles",
+        (true, true) => unreachable!("exclusive selection checked before preparation"),
+    }
+}
+
+fn request_path() -> (bool, PathBuf, PathBuf) {
     let args = std::env::args().collect::<Vec<_>>();
     assert_eq!(
         args.len(),
@@ -118,21 +183,29 @@ fn main() {
         "usage: profile_obligation request.json output.json | --list request.json"
     );
     let list_only = args[1] == "--list";
-    let request_path = Path::new(if list_only { &args[2] } else { &args[1] });
-    let (request, problem) = load_request(request_path);
+    let path = Path::new(if list_only { &args[2] } else { &args[1] }).to_path_buf();
+    (list_only, path, PathBuf::from(&args[2]))
+}
+
+fn main() {
+    let (list_only, request_path, output_path) = request_path();
+    let (request, problem) = load_request(&request_path);
     let selection = workload(&request);
+    assert_exclusive_selection(&request);
     let expected = benchmark::profiles(&problem, &selection).expect("valid exact selection");
     let preparation_started = Instant::now();
     let (prefix, prefix_identity) = prepare_prefix(&request, &problem, &selection, list_only);
+    let (root, root_identity) = prepare_root(&request, &problem, &selection, list_only);
     let preparation_s = preparation_started.elapsed().as_secs_f64();
     if list_only {
-        println!(
-            "{}",
-            json!({"problem":problem,"profiles":expected,"prefix_identity":prefix_identity})
+        print_listing(
+            &problem,
+            &expected,
+            [prefix_identity.as_ref(), root_identity.as_ref()],
         );
         return;
     }
-    let output = Path::new(&args[2]);
+    let output = output_path.as_path();
     let record = request["hotspots"].as_bool().unwrap();
     if record {
         hotspot_profile::install_recorder();
@@ -183,9 +256,15 @@ fn main() {
         let publish = |snapshot: &SearchInstrumentation| {
             *progress.lock().unwrap() = snapshot.clone();
         };
-        let result = match &prefix {
-            Some(prepared) => prepared.run(prepared.identity(), &cancel, &publish).map(|r| vec![r]),
-            None => benchmark::run(&problem, &selection, &cancel, &publish),
+        let result = match (&prefix, &root) {
+            (Some(prepared), None) => prepared
+                .run(prepared.identity(), &cancel, &publish)
+                .map(|r| vec![r]),
+            (None, Some(prepared)) => prepared
+                .run(prepared.identity(), &cancel, &publish)
+                .map(|r| vec![r]),
+            (None, None) => benchmark::run(&problem, &selection, &cancel, &publish),
+            (Some(_), Some(_)) => unreachable!("exclusive selection checked before preparation"),
         };
         let _ = finished_tx.send(());
         let _ = heartbeat_tx.send(());
@@ -195,14 +274,11 @@ fn main() {
     let wall_s = started.elapsed().as_secs_f64();
     let exhausted = result.iter().all(|p| p.exhausted);
     let profiles = profile_reports(result);
-    let proof_scope = if prefix.is_some() {
-        "selected_prefix"
-    } else {
-        "selected_profiles"
-    };
+    let proof_scope = proof_scope(prefix.is_some(), root.is_some());
     let report = json!({"schema_version":1,"kind":"fixed_obligation","scope":proof_scope,
         "request":request,"problem":problem,"expected_profiles":expected,
-        "prefix_identity":prefix_identity,"preparation_s":preparation_s,
+        "prefix_identity":prefix_identity,"root_identity":root_identity,
+        "preparation_s":preparation_s,
         "status":if exhausted {"exhausted"} else {"incomplete"}, "profiles":profiles,
         "validated":true,"wall_s":wall_s,"deadline_fired":deadline_fired.load(Ordering::Relaxed),
         "hotspots":profile_support::hotspot_json(&hotspot_profile::take_snapshot()),

@@ -53,6 +53,7 @@ def prepare(manifest_path, root):
     write(root / "variants.json", variants)
     schedule = []
     prefix_certificates = {}
+    root_certificates = {}
     for original in manifest["jobs"]:
         job = dict(original)
         variant = job.pop("variant", None)
@@ -91,6 +92,8 @@ def prepare(manifest_path, root):
                                 capture_output=True, text=True, timeout=30)
         expected = json.loads(listed.stdout)
         if job.get("prefix") is not None:
+            if job.get("root") is not None:
+                raise ValueError("Prefix and adaptive root selections are mutually exclusive")
             if expand or job.get("profile") is None or job.get("workers") != 1:
                 raise ValueError("Prefix requires one selected profile and one worker")
             if not expected.get("prefix_identity"):
@@ -103,6 +106,19 @@ def prepare(manifest_path, root):
             if prefix_certificates.setdefault(recipe, identity) != identity:
                 raise ValueError("Same prefix recipe changed between jobs or variants")
             job["prefix_identity"] = expected["prefix_identity"]
+        if job.get("root") is not None:
+            if expand or job.get("profile") is None or job.get("stage") != "p1":
+                raise ValueError("Adaptive root requires one selected profile and p1")
+            if not expected.get("root_identity"):
+                raise ValueError("Binary does not support frozen adaptive root identities")
+            identity = expected["root_identity"]
+            if job.get("root_identity", identity) != identity:
+                raise ValueError("Requested frozen adaptive root identity changed")
+            recipe = json.dumps([expected["problem"], job["node_count"], job["link_count"],
+                                 job["profile"], job["workers"], job["root"]], sort_keys=True)
+            if root_certificates.setdefault(recipe, identity) != identity:
+                raise ValueError("Same adaptive root recipe changed between jobs or variants")
+            job["root_identity"] = expected["root_identity"]
         selections = expected["profiles"] if expand else [job.get("profile")]
         for index, profile in enumerate(selections):
             request = dict(job, profile=profile)
@@ -132,12 +148,18 @@ def profile_id(profile):
 
 def validate_result(job, result):
     prefix = job["request"].get("prefix") is not None
-    expected_scope = "selected_prefix" if prefix else "selected_profiles"
+    root = job["request"].get("root") is not None
+    if prefix and root:
+        raise ValueError("Ambiguous fixed-work selection")
+    expected_scope = "selected_prefix" if prefix else "selected_root" if root else "selected_profiles"
     if result.get("kind") != "fixed_obligation" or result.get("scope") != expected_scope or result.get("schema_version") != 1:
         raise ValueError("Wrong result scope/schema")
     if prefix and (not job["request"].get("prefix_identity") or
                    result.get("prefix_identity") != job["request"]["prefix_identity"]):
         raise ValueError("Missing or changed prefix identity")
+    if root and (not job["request"].get("root_identity") or
+                 result.get("root_identity") != job["request"]["root_identity"]):
+        raise ValueError("Missing or changed adaptive root identity")
     if result.get("request") != job["request"] or result.get("problem") != job["problem"]:
         raise ValueError("Changed request or exact problem")
     if result.get("expected_profiles") != job["expected_profiles"] or result.get("validated") is not True:
@@ -150,8 +172,8 @@ def validate_result(job, result):
     if job["request"].get("must_exhaust") and result["status"] != "exhausted":
         raise ValueError("Control workload did not exhaust")
     for profile in profiles:
-        if prefix and profile["roots"] != 1:
-            raise ValueError("A selected prefix accounts for exactly one local root")
+        if (prefix or root) and profile["roots"] != 1:
+            raise ValueError("A selected prefix or adaptive root accounts for one local root")
         if profile["roots"] < 1 or not 0 <= profile["roots_exhausted"] <= profile["roots"]:
             raise ValueError("Invalid root accounting")
         if profile["exhausted"] != (profile["roots"] == profile["roots_exhausted"]):
@@ -217,8 +239,9 @@ def verify(root):
             profiles = validate_result(job, result)
             for profile in profiles:
                 key = (json.dumps(job["problem"], sort_keys=True), job["request"]["node_count"],
-                       job["request"]["link_count"], profile_id(profile["profile"]),
-                       json.dumps(job["request"].get("prefix_identity"), sort_keys=True))
+                        job["request"]["link_count"], profile_id(profile["profile"]),
+                        json.dumps(job["request"].get("prefix_identity"), sort_keys=True),
+                        json.dumps(job["request"].get("root_identity"), sort_keys=True))
                 comparisons[key].append((job, profile))
             spans = defaultdict(list)
             for rec in result["activity"]["records"]:
@@ -254,7 +277,7 @@ def verify(root):
     write(root / "summary.json", dict(failures=failures, records=len(summaries), summary=summaries))
     if failures:
         raise ValueError("\n".join(failures))
-    print(f"Verified {len(summaries)}/{len(schedule)} fixed workloads. Exhaustion is local to the recorded profile/prefix scope.")
+    print(f"Verified {len(summaries)}/{len(schedule)} fixed workloads. Exhaustion is local to the recorded profile/prefix/root scope.")
 
 
 def validate_replay(job, result):
