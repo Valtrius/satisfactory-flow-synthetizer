@@ -264,17 +264,17 @@
 
 .flow-wrap .svelte-flow__edge-text {
   fill: #d8e5e9;
-  font-size: 10px;
+  font-size: 14px;
   font-weight: 700;
 }
 
 .flow-wrap .svelte-flow__edge-textbg {
   fill: #0b1922;
-  fill-opacity: 0.94;
+  fill-opacity: 0.75;
 }
 
 .flow-wrap .svelte-flow__edge-label {
-  @apply rounded-sm bg-[#0b1922]/95 px-1.5 py-0.5 text-[10px] font-bold text-[#d8e5e9];
+  @apply rounded-sm bg-[#0b1922]/75 px-1.5 py-0.5 text-[14px] font-bold text-[#d8e5e9];
 }
 
 .flow-wrap .svelte-flow__handle {
