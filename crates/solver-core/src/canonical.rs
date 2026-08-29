@@ -661,7 +661,10 @@ fn select_canonical_with_incidence(
         );
     }
     let _witness_timer = CanonicalTimer::start(CanonicalPhase::WitnessSearch);
-    let groups = incidence.labeling_groups(topology);
+    // Symmetric physical ports have an exact lexicographic minimum once the
+    // terminal and node labels are fixed. Enumerating their independent
+    // permutations only repeats that deterministic choice factorially.
+    let groups = incidence.witness_labeling_groups(topology);
     let ranks = vec![None; incidence.base_colors.len()];
     let mut best = None;
     let mut encoder = WitnessEncoder::new(topology, incidence, &groups);
@@ -847,6 +850,8 @@ fn search_individualizations(
 
     hotspot_profile::record_witness_leaf();
     let _leaf_timer = CanonicalTimer::start(CanonicalPhase::WitnessLeaf);
+    let mut ranks = ranks;
+    encoder.complete_port_ranks(&mut ranks);
     let bytes = encoder.encode(&ranks);
     if best
         .as_ref()
@@ -890,6 +895,23 @@ struct WitnessEncoder {
     bytes: Vec<u8>,
     links: Vec<WitnessLinkPlan>,
     ordered_links: Vec<(ProducerPortRef, ConsumerPortRef, usize)>,
+    port_groups: Vec<Vec<VertexId>>,
+}
+
+fn canonical_witness_nodes(
+    topology: &PartialTopology,
+    labels: &BTreeMap<NodeId, NodeId>,
+) -> Vec<PhysicalNode> {
+    let mut nodes = topology
+        .nodes
+        .iter()
+        .map(|node| PhysicalNode {
+            id: labels[&node.id],
+            node_type: node.node_type,
+        })
+        .collect::<Vec<_>>();
+    nodes.sort();
+    nodes
 }
 
 impl WitnessEncoder {
@@ -898,7 +920,7 @@ impl WitnessEncoder {
         incidence: &IncidenceGraph,
         groups: &[Vec<VertexId>],
     ) -> Self {
-        // One ordinary relabeling supplies invariant node/type and terminal-rate
+        // One ordinary labeling supplies invariant node/type and terminal-rate
         // ordering. Every later leaf uses only rank lookups and cached flow bytes.
         let mut ranks = vec![None; incidence.base_colors.len()];
         for group in groups {
@@ -906,7 +928,6 @@ impl WitnessEncoder {
                 ranks[vertex] = Some(u32::try_from(rank).unwrap());
             }
         }
-        let initial = incidence.relabel(topology, &ranks);
         let inputs =
             canonical_terminal_labels(&topology.problem.inputs, &incidence.input_terminals, &ranks);
         let outputs = canonical_terminal_labels(
@@ -915,6 +936,7 @@ impl WitnessEncoder {
             &ranks,
         );
         let nodes = canonical_node_labels(topology, &incidence.node_vertices, &ranks);
+        let initial_nodes = canonical_witness_nodes(topology, &nodes);
         let types = topology
             .nodes
             .iter()
@@ -986,8 +1008,8 @@ impl WitnessEncoder {
         outputs.sort();
         write_rates(&mut bytes, &inputs);
         write_rates(&mut bytes, &outputs);
-        write_len(&mut bytes, initial.nodes.len());
-        for node in &initial.nodes {
+        write_len(&mut bytes, initial_nodes.len());
+        for node in &initial_nodes {
             write_u32(&mut bytes, node.id.0);
             bytes.push(node_type_tag(node.node_type));
         }
@@ -997,6 +1019,98 @@ impl WitnessEncoder {
             bytes,
             ordered_links: Vec::with_capacity(links.len()),
             links,
+            port_groups: incidence.symmetric_port_groups(topology),
+        }
+    }
+
+    /// Completes the unique lexicographically minimal symmetric-port labeling
+    /// for fixed terminal, discard and node labels.
+    ///
+    /// A splitter's links form one contiguous producer block. Assigning its
+    /// output ranks by `(consumer-without-symmetric-port, flow)` therefore
+    /// minimizes that block. Once those blocks are fixed, global producer order
+    /// is fixed, and assigning each merger's input ranks in first-occurrence
+    /// order minimizes every consumer endpoint. Parallel splitter-to-merger
+    /// links are covered: their consumer base is equal, so exact flow orders
+    /// them, and the merger ranks then follow that same producer order.
+    fn complete_port_ranks(&self, ranks: &mut [Option<u32>]) {
+        // Use protocol tag order, which deliberately differs from the public
+        // enum's declaration order for discard and node consumers.
+        let consumer_bases = self
+            .links
+            .iter()
+            .map(|link| match link.consumer {
+                ConsumerPortRef::Output(_) => (0_u8, link.consumer_label.get(ranks)),
+                ConsumerPortRef::Node { .. } => (1, link.consumer_label.get(ranks)),
+                ConsumerPortRef::Discard(_) => (2, link.consumer_label.get(ranks)),
+            })
+            .collect::<Vec<_>>();
+        let mut splitter_links = BTreeMap::<NodeId, Vec<usize>>::new();
+        for (index, link) in self.links.iter().enumerate() {
+            if link.producer_port.is_some() {
+                let ProducerPortRef::Node { node, .. } = link.producer else {
+                    unreachable!("only splitter node producers have symmetric ports")
+                };
+                splitter_links.entry(node).or_default().push(index);
+            }
+        }
+        for links in splitter_links.values_mut() {
+            links.sort_unstable_by(|&left, &right| {
+                consumer_bases[left]
+                    .cmp(&consumer_bases[right])
+                    .then_with(|| {
+                        self.links[left]
+                            .flow_bytes
+                            .cmp(&self.links[right].flow_bytes)
+                    })
+                    .then_with(|| left.cmp(&right))
+            });
+            for (rank, &index) in links.iter().enumerate() {
+                ranks[self.links[index].producer_port.unwrap()] =
+                    Some(u32::try_from(rank).expect("physical arity must fit u32"));
+            }
+        }
+
+        let producer = |link: &WitnessLinkPlan| match link.producer {
+            ProducerPortRef::Input(_) => {
+                ProducerPortRef::Input(InputTerminalIndex(link.producer_label.get(ranks)))
+            }
+            ProducerPortRef::Node { .. } => ProducerPortRef::Node {
+                node: NodeId(link.producer_label.get(ranks)),
+                port: link
+                    .producer_port
+                    .map_or(0, |vertex| u8::try_from(ranks[vertex].unwrap()).unwrap()),
+            },
+        };
+        let mut producer_order = (0..self.links.len()).collect::<Vec<_>>();
+        producer_order.sort_unstable_by_key(|&index| producer(&self.links[index]));
+        let mut merger_ranks = BTreeMap::<NodeId, u32>::new();
+        for index in producer_order {
+            let link = &self.links[index];
+            let Some(vertex) = link.consumer_port else {
+                continue;
+            };
+            let ConsumerPortRef::Node { node, .. } = link.consumer else {
+                unreachable!("only merger node consumers have symmetric ports")
+            };
+            let rank = merger_ranks.entry(node).or_default();
+            ranks[vertex] = Some(*rank);
+            *rank += 1;
+        }
+
+        // A malformed but structurally accepted graph may leave a physical port
+        // unused. Such a rank cannot affect the witness bytes; fill it stably so
+        // the canonical concrete topology can still be produced.
+        for group in &self.port_groups {
+            let free = (0..u32::try_from(group.len()).unwrap())
+                .filter(|rank| !group.iter().any(|&vertex| ranks[vertex] == Some(*rank)))
+                .collect::<Vec<_>>();
+            let mut free = free.into_iter();
+            for &vertex in group {
+                if ranks[vertex].is_none() {
+                    ranks[vertex] = Some(free.next().expect("every port group has enough ranks"));
+                }
+            }
         }
     }
 
@@ -1284,6 +1398,12 @@ impl IncidenceGraph {
     }
 
     fn labeling_groups(&self, topology: &PartialTopology) -> Vec<Vec<VertexId>> {
+        let mut groups = self.witness_labeling_groups(topology);
+        groups.extend(self.symmetric_port_groups(topology));
+        groups
+    }
+
+    fn witness_labeling_groups(&self, topology: &PartialTopology) -> Vec<Vec<VertexId>> {
         let mut groups = Vec::new();
 
         let mut input_classes = BTreeMap::<Rational, Vec<VertexId>>::new();
@@ -1316,6 +1436,11 @@ impl IncidenceGraph {
         }
         groups.extend(node_classes.into_values());
 
+        groups
+    }
+
+    fn symmetric_port_groups(&self, topology: &PartialTopology) -> Vec<Vec<VertexId>> {
+        let mut groups = Vec::new();
         let mut nodes = topology.nodes.iter().collect::<Vec<_>>();
         nodes.sort_by_key(|node| node.id);
         for node in nodes {
@@ -3506,6 +3631,42 @@ mod tests {
                     assert_eq!(production.graph, reference.graph);
                 }
             }
+        }
+    }
+
+    #[test]
+    fn analytic_witness_port_minimum_matches_reference_with_protocol_tags_and_flows() {
+        let surplus_problem = problem(&["3"], &["2"]);
+        let surplus = PhysicalGraph {
+            nodes: vec![node(9, NodeType::Splitter3), node(4, NodeType::Merger2)],
+            links: vec![
+                link(producer(9, 0), discard(0), "1"),
+                link(producer(4, 0), output(0), "2"),
+                link(producer(9, 2), consumer(4, 0), "1"),
+                link(input(0), consumer(9, 0), "3"),
+                link(producer(9, 1), consumer(4, 1), "1"),
+            ],
+        };
+        let unequal_problem = problem(&["6"], &["6"]);
+        let unequal_parallel = PhysicalGraph {
+            nodes: vec![node(29, NodeType::Splitter3), node(8, NodeType::Merger3)],
+            links: vec![
+                link(producer(29, 0), consumer(8, 2), "3"),
+                link(input(0), consumer(29, 0), "6"),
+                link(producer(29, 1), consumer(8, 0), "1"),
+                link(producer(8, 0), output(0), "6"),
+                link(producer(29, 2), consumer(8, 1), "2"),
+            ],
+        };
+
+        for (problem, graph) in [
+            (&surplus_problem, &surplus),
+            (&unequal_problem, &unequal_parallel),
+        ] {
+            let production = canonicalize_witness(problem, graph);
+            let reference = canonicalize_graph(problem, graph);
+            assert_eq!(production.key, reference.key);
+            assert_eq!(production.graph, reference.graph);
         }
     }
 

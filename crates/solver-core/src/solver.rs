@@ -2220,13 +2220,16 @@ mod tests {
 
     #[test]
     fn cancellation_returns_promptly_once_search_workers_are_busy() {
-        let problem = problem(&[216], &[66, 150], 1_200);
+        // Keep this cancellation probe materially harder than the ordinary
+        // seven-node witness path so calculation optimizations cannot let the
+        // solve win the race against the timer.
+        let problem = problem(&[1_000], &[604, 396], 1_200);
         let cancel = Arc::new(AtomicBool::new(false));
         let cancel_started = Arc::new(Mutex::new(None));
         let timer_cancel = Arc::clone(&cancel);
         let timer_started = Arc::clone(&cancel_started);
         thread::spawn(move || {
-            // Let workers enter the hard seven-node search before cancelling.
+            // Let workers enter the hard search before cancelling.
             thread::sleep(std::time::Duration::from_millis(200));
             *timer_started.lock().unwrap() = Some(Instant::now());
             timer_cancel.store(true, Ordering::Relaxed);
@@ -2234,7 +2237,7 @@ mod tests {
         let result = solve_with_observer(
             &problem,
             &SolveOptions {
-                max_nodes: Some(7),
+                max_nodes: Some(11),
                 worker_count: thread::available_parallelism().map_or(4, std::num::NonZero::get),
                 ..SolveOptions::default()
             },
@@ -2243,7 +2246,7 @@ mod tests {
         )
         .unwrap();
         let SolveResult::Incomplete(incomplete) = result else {
-            panic!("busy-worker cancellation must stop the seven-node search");
+            panic!("busy-worker cancellation must stop the hard search");
         };
         assert_eq!(incomplete.reason, IncompleteReason::Cancelled);
         let cancel_started = cancel_started
@@ -2259,7 +2262,7 @@ mod tests {
 
     #[test]
     fn cancellation_with_backlogged_roots_never_reports_worker_panic() {
-        let problem = problem(&[216], &[66, 150], 1_200);
+        let problem = problem(&[1_000], &[604, 396], 1_200);
         let cancel = Arc::new(AtomicBool::new(false));
         let timer_cancel = Arc::clone(&cancel);
         thread::spawn(move || {
@@ -2269,7 +2272,7 @@ mod tests {
         let result = solve(
             &problem,
             &SolveOptions {
-                max_nodes: Some(7),
+                max_nodes: Some(11),
                 // One worker leaves a deep backlog so cancel must fill unclaimed
                 // roots as Cancelled rather than inventing worker panics.
                 worker_count: 1,

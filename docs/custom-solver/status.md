@@ -79,11 +79,23 @@ hard-36 opportunity, not a claimed universal speedup.
 
 The 238/115 process samples attribute their low-CPU intervals to uneven root-search
 tails, not the optional constructor. Sharing, donation and parallel remaining groups
-stay paused. [Experiment 21](experiments/21-adaptive-root-profiling.md) adds frozen
-replay for 238 N=8/L=13 root 28, the 82.731-second tail. Its six-job best/all hotspot
-screen is awaiting results; no calculation conclusion exists yet.
+stay paused. [Experiment 21](experiments/21-results.md) verifies the isolated 238
+root: best/all do identical structural work and 80,621,568 witness leaves consume
+about 34 seconds. [Experiment 22](experiments/22-analytic-witness-ports.md) replaces
+only the 559,872-fold symmetric-port factor with an exact analytic minimum. The
+candidate passes exhaustive reference validation; frozen replay is pending.
 
 ## Validation records
+
+Experiment 22 prelaunch: 183 solver-core tests pass with two manual benchmarks
+ignored, plus one exhaustive outer differential, four parallelism integrations and
+26 example tests. Strict all-target Clippy passes with `bench-internals`. The first
+protocol-tag ordering attempt failed the outer oracle and was corrected before any
+benchmark.
+
+Experiment 21 post-run: 6/6 frozen root workloads verify with identical requests,
+plan identity and exact witness. Reverification preserves the summary SHA-256. No
+kills, failures or open activity spans occurred. See [results](experiments/21-results.md).
 
 Experiment 18 guarded trial: 212 solver-core library/integration/example tests passed,
 two ignored; six synthetizer-app unit and ten shared-API tests passed. Strict

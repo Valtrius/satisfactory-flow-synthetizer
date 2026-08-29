@@ -72,10 +72,11 @@ Updated 2026-08-29.
   does not establish a general speedup; it preserves exact results and removes
   redundant existence work. Medium-case CPU troughs track uneven root-search tails,
   sometimes leaving one root running alone. Scheduler experiments remain paused.
-- [Experiment 21](custom-solver/experiments/21-adaptive-root-profiling.md) adds
-  benchmark-only frozen replay for the longest 238 adaptive root. The pending
-  best/all hotspot screen will choose a calculation target without changing the
-  scheduler.
+- [Experiment 21 results](custom-solver/experiments/21-results.md) verify the frozen
+  longest 238 root. Best/all perform identical work; 80.6 million full-witness
+  leaves consume about 34 seconds. [Experiment 22](custom-solver/experiments/22-analytic-witness-ports.md)
+  analytically removes the 559,872-fold symmetric-port factor and has passed the
+  exhaustive reference matrix. Its frozen replay is pending; scheduling stays paused.
 
 The goal is shorter time to a proven optimum and complete minimum-node enumeration.
 First-witness latency is a separate measure. More occupied workers, a partial

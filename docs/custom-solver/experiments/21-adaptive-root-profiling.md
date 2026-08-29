@@ -1,8 +1,8 @@
 # 21 - Adaptive root-tail profiling
 
-Date: 2026-08-29. State: implemented; awaiting profiling results.
+Date: 2026-08-29. State: completed and verified.
 Related: [experiment 20 results](20-results.md),
-[exact prefix workloads](15-prefix-workloads.md).
+[exact prefix workloads](15-prefix-workloads.md), [results](21-results.md).
 
 ## Question
 
@@ -61,5 +61,5 @@ and no open activity spans.
 - A 238 probe reconstructs 38 partitions, target 128, ordinal 28. The selected key
   SHA-256 is `7f4c94106307e880770a4b59c138e71022d37aff5b4fbe525753c9f77324072f`.
 
-No calculation or production scheduling code changes in this experiment. No timing
-or hotspot conclusion exists until the final marker and frozen verification pass.
+No calculation or production scheduling code changed in this experiment. The run
+completed and its frozen verification passed; see the [results](21-results.md).
