@@ -25,6 +25,15 @@ static REACHABILITY_NS: AtomicU64 = AtomicU64::new(0);
 static EVALUATE_COMPLETE_NS: AtomicU64 = AtomicU64::new(0);
 static GRAPH_CANON_NS: AtomicU64 = AtomicU64::new(0);
 static GRAPH_CANON_CALLS: AtomicU64 = AtomicU64::new(0);
+static STATE_GRAPH_CANON_NS: AtomicU64 = AtomicU64::new(0);
+static STATE_GRAPH_CANON_CALLS: AtomicU64 = AtomicU64::new(0);
+static OPEN_PORT_GRAPH_CANON_NS: AtomicU64 = AtomicU64::new(0);
+static OPEN_PORT_GRAPH_CANON_CALLS: AtomicU64 = AtomicU64::new(0);
+static MARKED_LINK_GRAPH_CANON_NS: AtomicU64 = AtomicU64::new(0);
+static MARKED_LINK_GRAPH_CANON_CALLS: AtomicU64 = AtomicU64::new(0);
+static OTHER_GRAPH_CANON_NS: AtomicU64 = AtomicU64::new(0);
+static OTHER_GRAPH_CANON_CALLS: AtomicU64 = AtomicU64::new(0);
+static SCC_CANONICALIZE_CALLS: AtomicU64 = AtomicU64::new(0);
 static INCIDENCE_BUILD_NS: AtomicU64 = AtomicU64::new(0);
 static DENSE_GRAPH_NS: AtomicU64 = AtomicU64::new(0);
 static LABELING_NS: AtomicU64 = AtomicU64::new(0);
@@ -52,6 +61,15 @@ pub struct HotspotSnapshot {
     pub evaluate_complete_ns: u64,
     pub graph_canon_ns: u64,
     pub graph_canon_calls: u64,
+    pub state_graph_canon_ns: u64,
+    pub state_graph_canon_calls: u64,
+    pub open_port_graph_canon_ns: u64,
+    pub open_port_graph_canon_calls: u64,
+    pub marked_link_graph_canon_ns: u64,
+    pub marked_link_graph_canon_calls: u64,
+    pub other_graph_canon_ns: u64,
+    pub other_graph_canon_calls: u64,
+    pub scc_canonicalize_calls: u64,
     pub incidence_build_ns: u64,
     pub dense_graph_ns: u64,
     pub labeling_ns: u64,
@@ -115,6 +133,15 @@ fn load_snapshot() -> HotspotSnapshot {
         evaluate_complete_ns: EVALUATE_COMPLETE_NS.load(Ordering::Relaxed),
         graph_canon_ns: GRAPH_CANON_NS.load(Ordering::Relaxed),
         graph_canon_calls: GRAPH_CANON_CALLS.load(Ordering::Relaxed),
+        state_graph_canon_ns: STATE_GRAPH_CANON_NS.load(Ordering::Relaxed),
+        state_graph_canon_calls: STATE_GRAPH_CANON_CALLS.load(Ordering::Relaxed),
+        open_port_graph_canon_ns: OPEN_PORT_GRAPH_CANON_NS.load(Ordering::Relaxed),
+        open_port_graph_canon_calls: OPEN_PORT_GRAPH_CANON_CALLS.load(Ordering::Relaxed),
+        marked_link_graph_canon_ns: MARKED_LINK_GRAPH_CANON_NS.load(Ordering::Relaxed),
+        marked_link_graph_canon_calls: MARKED_LINK_GRAPH_CANON_CALLS.load(Ordering::Relaxed),
+        other_graph_canon_ns: OTHER_GRAPH_CANON_NS.load(Ordering::Relaxed),
+        other_graph_canon_calls: OTHER_GRAPH_CANON_CALLS.load(Ordering::Relaxed),
+        scc_canonicalize_calls: SCC_CANONICALIZE_CALLS.load(Ordering::Relaxed),
         incidence_build_ns: INCIDENCE_BUILD_NS.load(Ordering::Relaxed),
         dense_graph_ns: DENSE_GRAPH_NS.load(Ordering::Relaxed),
         labeling_ns: LABELING_NS.load(Ordering::Relaxed),
@@ -143,6 +170,15 @@ fn clear_buckets() {
         &EVALUATE_COMPLETE_NS,
         &GRAPH_CANON_NS,
         &GRAPH_CANON_CALLS,
+        &STATE_GRAPH_CANON_NS,
+        &STATE_GRAPH_CANON_CALLS,
+        &OPEN_PORT_GRAPH_CANON_NS,
+        &OPEN_PORT_GRAPH_CANON_CALLS,
+        &MARKED_LINK_GRAPH_CANON_NS,
+        &MARKED_LINK_GRAPH_CANON_CALLS,
+        &OTHER_GRAPH_CANON_NS,
+        &OTHER_GRAPH_CANON_CALLS,
+        &SCC_CANONICALIZE_CALLS,
         &INCIDENCE_BUILD_NS,
         &DENSE_GRAPH_NS,
         &LABELING_NS,
@@ -159,8 +195,11 @@ fn add_bucket(target: &AtomicU64, elapsed: Duration) {
     if !ENABLED.load(Ordering::Relaxed) {
         return;
     }
-    let ns = u64::try_from(elapsed.as_nanos()).unwrap_or(u64::MAX);
-    target.fetch_add(ns, Ordering::Relaxed);
+    target.fetch_add(duration_ns(elapsed), Ordering::Relaxed);
+}
+
+fn duration_ns(elapsed: Duration) -> u64 {
+    u64::try_from(elapsed.as_nanos()).unwrap_or(u64::MAX)
 }
 
 fn add_count(target: &AtomicU64, count: u64) {
@@ -191,7 +230,11 @@ pub(crate) fn record_propagation_sync(elapsed: Duration) {
 }
 
 pub(crate) fn record_scc_canonicalize(elapsed: Duration) {
-    add_bucket(&SCC_CANONICALIZE_NS, elapsed);
+    if !ENABLED.load(Ordering::Relaxed) {
+        return;
+    }
+    SCC_CANONICALIZE_NS.fetch_add(duration_ns(elapsed), Ordering::Relaxed);
+    SCC_CANONICALIZE_CALLS.fetch_add(1, Ordering::Relaxed);
 }
 
 pub(crate) fn record_scc_algebra(elapsed: Duration) {
@@ -206,9 +249,31 @@ pub(crate) fn record_evaluate_complete(elapsed: Duration) {
     add_bucket(&EVALUATE_COMPLETE_NS, elapsed);
 }
 
-pub(crate) fn record_graph_canon(elapsed: Duration) {
-    add_bucket(&GRAPH_CANON_NS, elapsed);
-    add_count(&GRAPH_CANON_CALLS, 1);
+#[derive(Clone, Copy)]
+pub(crate) enum GraphCanonPurpose {
+    State,
+    OpenPort,
+    MarkedLink,
+    Other,
+}
+
+pub(crate) fn record_graph_canon(elapsed: Duration, purpose: GraphCanonPurpose) {
+    if !ENABLED.load(Ordering::Relaxed) {
+        return;
+    }
+    let ns = duration_ns(elapsed);
+    GRAPH_CANON_NS.fetch_add(ns, Ordering::Relaxed);
+    GRAPH_CANON_CALLS.fetch_add(1, Ordering::Relaxed);
+    let (time, calls) = match purpose {
+        GraphCanonPurpose::State => (&STATE_GRAPH_CANON_NS, &STATE_GRAPH_CANON_CALLS),
+        GraphCanonPurpose::OpenPort => (&OPEN_PORT_GRAPH_CANON_NS, &OPEN_PORT_GRAPH_CANON_CALLS),
+        GraphCanonPurpose::MarkedLink => {
+            (&MARKED_LINK_GRAPH_CANON_NS, &MARKED_LINK_GRAPH_CANON_CALLS)
+        }
+        GraphCanonPurpose::Other => (&OTHER_GRAPH_CANON_NS, &OTHER_GRAPH_CANON_CALLS),
+    };
+    time.fetch_add(ns, Ordering::Relaxed);
+    calls.fetch_add(1, Ordering::Relaxed);
 }
 
 /// Sub-buckets overlap the existing top-level search buckets; never sum both.

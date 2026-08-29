@@ -29,6 +29,7 @@ Record dates follow the analysis chronology, not necessarily every run's start t
 | [21](21-adaptive-root-profiling.md)           | 2026-08-29    | Which calculations dominate the longest 238 adaptive root?                                | 6 verified; 80.6M witness leaves dominate; best/all do identical work               |
 | [22](22-analytic-witness-ports.md)            | 2026-08-29    | Can exact symmetric-port labels replace their factorial witness enumeration?              | 6 verified; exact 559,872x leaf reduction; root 2.38-2.57x faster; permanent        |
 | [23](23-whole-translation-and-dfs-profile.md) | 2026-08-29    | Does the port gain translate whole; which exact DFS identity dominates next?              | 27 verified; 238 improves 43-52%; legal/state identity dominate next                |
+| [24](24-canonical-purpose-profile.md)         | 2026-08-29    | Which exact state/open-port/marked-child/SCC identity consumes canonicalization time?     | Diagnostic counters implemented; four-job screen preparing                          |
 
 ## How the diagnosis changed
 
@@ -88,6 +89,10 @@ Record dates follow the analysis chronology, not necessarily every run's start t
     115 all improves 10%, and hard-36 optimal is unchanged. Legal-decision and state
     canonicalization dominate the remaining measured work. Split their exact key
     purposes before changing DFS identity construction.
+19. [Canonicalization purpose profiling](24-canonical-purpose-profile.md) splits
+    graph calls into state, open-port, marked-child and other keys, and counts SCC
+    keys. It changes measurement only. A short screen will select the next exact
+    calculation target without removing any DFS identity rule.
 
 ## Evidence conventions
 

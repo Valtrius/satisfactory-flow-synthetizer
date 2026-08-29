@@ -81,7 +81,8 @@ Updated 2026-08-29.
   identical exact results and search coverage. Hard-36 optimal is unchanged and
   all remains capped. Legal-decision and state canonicalization dominate next;
   their open-port/marked-child purposes need a diagnostic split. Scheduling stays
-  paused.
+  paused. [Experiment 24](custom-solver/experiments/24-canonical-purpose-profile.md)
+  implements the diagnostic split and prepares a short four-job screen.
 
 The goal is shorter time to a proven optimum and complete minimum-node enumeration.
 First-witness latency is a separate measure. More occupied workers, a partial

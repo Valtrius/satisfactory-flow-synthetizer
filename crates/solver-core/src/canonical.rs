@@ -20,7 +20,7 @@ use solver_api::{
 };
 
 use crate::{
-    hotspot_profile::{self, CanonicalPhase, CanonicalTimer},
+    hotspot_profile::{self, CanonicalPhase, CanonicalTimer, GraphCanonPurpose},
     topology::OpenPortRef,
 };
 
@@ -606,7 +606,15 @@ fn select_canonical_cancellable_inner(
     );
     drop(build_timer);
     let selected = select_canonical_with_incidence(topology, &incidence, encoding, None, cancel);
-    hotspot_profile::record_graph_canon(started.elapsed());
+    let purpose = match encoding {
+        EncodingKind::State => GraphCanonPurpose::State,
+        EncodingKind::Marked => GraphCanonPurpose::MarkedLink,
+        EncodingKind::Witness
+        | EncodingKind::Layout
+        | EncodingKind::SccSummary
+        | EncodingKind::MarkedPort => GraphCanonPurpose::Other,
+    };
+    hotspot_profile::record_graph_canon(started.elapsed(), purpose);
     selected
 }
 
@@ -637,7 +645,7 @@ fn select_canonical_open_port(
         Some(marked_vertex),
         cancel,
     );
-    hotspot_profile::record_graph_canon(started.elapsed());
+    hotspot_profile::record_graph_canon(started.elapsed(), GraphCanonPurpose::OpenPort);
     selected
 }
 

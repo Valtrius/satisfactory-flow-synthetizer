@@ -91,6 +91,8 @@ improves 9.98%, while 115 and hard-36 optimal are effectively unchanged. Exact
 search coverage and results agree. Remaining diagnostics put 30-52% of accounted
 worker time in legal-decision identity and 28-34% in state keys. Split open-port
 and marked-child costs before attempting reuse; scheduling remains paused.
+[Experiment 24](experiments/24-canonical-purpose-profile.md) implements this
+diagnostic-only split and prepares two completed controls plus two capped hard runs.
 
 ## Validation records
 
