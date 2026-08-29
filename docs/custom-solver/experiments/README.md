@@ -4,30 +4,31 @@ All timings are historical observations on this machine unless stated otherwise.
 Read [current status](../status.md) before treating an old recommendation as current.
 Record dates follow the analysis chronology, not necessarily every run's start time.
 
-| ID                                          | Date          | Question                                                                                  | Outcome                                                                             |
-| ------------------------------------------- | ------------- | ----------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
-| [01](01-parallelism-ladder.md)              | 2026-08-27    | Which parallelism stages help?                                                            | Large-worker wins; extra CPU/memory and small-worker regressions                    |
-| [02](02-exact-kernel.md)                    | 2026-08-27/28 | Can exact calculations be cheaper without changing search?                                | 792 verified runs; kernel made permanent                                            |
-| [03](03-hard-case-screen.md)                | 2026-08-28    | Do those findings extend to difficult inputs?                                             | Slow witness/constructor phases; incomplete enumeration; N<=10 cutoff error         |
-| [04](04-witness-constructor-diagnostics.md) | 2026-08-28    | Which serial work and cancellation phase dominate?                                        | Full-witness refinement, repeated helper work; root teardown still unresolved       |
-| [05](05-refinement-and-reuse.md)            | 2026-08-28    | Remove redundant refinement and avoid ineligible/repeated construction?                   | 6.54x isolated replay; first solver job killed; refinement later committed          |
-| [06](06-cancellation-recovery.md)           | 2026-08-28    | Preserve failure evidence and locate the cancellation tail?                               | 9 valid results, 3 kills; cache destruction observed; allocator cause unproved      |
-| [07](07-compact-keys-and-constructor.md)    | 2026-08-28    | Reduce key storage and exact subset arithmetic?                                           | 16 verified records, no kills; strong bundle gains; six incomplete solves           |
-| [08](08-repeat-scheduling.md)               | 2026-08-28    | Are gains repeatable; how do partitions and 16/32 workers compare?                        | 62 verified; p1 hard optimal 2.96x faster; 24 all/baseline median regresses 6.2%    |
-| [09](09-serializer-and-find-all.md)         | 2026-08-28    | Does isolated encoding explain the regression; does p14 help hard all?                    | 42 verified; encoding favors all seven medians; p14 earlier witness, all unfinished |
-| [10](10-constructor-promotion.md)           | 2026-08-28    | Promote the validated constructor without the deadline?                                   | Permanent, separate from compact keys; not pushed                                   |
-| [11](11-compact-key-promotion.md)           | 2026-08-28    | Promote compact exact keys independently?                                                 | Permanent with isolated encoding evidence; not pushed                               |
-| [12](12-hard-obligation-profiling.md)       | 2026-08-28    | What dominates the remaining hard N/L/profile work?                                       | 24 verified; 36 witness tail, 10 basis/labeling cost; no kills                      |
-| [13](13-calculation-changes.md)             | 2026-08-28    | Can early exact-L checks, cached witness leaves and direct RREF bounds reduce hard costs? | 80 verified; isolated gains support three promotions; hard whole-all still capped   |
-| [14](14-calculation-promotion.md)           | 2026-08-28    | Promote the three measured calculations independently?                                    | Permanent in three separate commits                                                 |
-| [15](15-prefix-workloads.md)                | 2026-08-28    | Can exact subtrees supply completed hard-10 references?                                   | Exact certificates verified; all 24 hard prefixes capped; deeper discovery needed   |
-| [16](16-post-calculation-screen.md)         | 2026-08-28    | How do p1/p14 compare after cheaper calculations?                                         | 38 verified after analyzer fix; hard optimal 23.27% shorter; all still capped       |
-| [17](17-p1-promotion-and-followups.md)      | 2026-08-29    | Can p1 become a default; do the constructor, sharing, donation and deeper prefixes help?  | 180 verified; p1 gains accepted despite hard-10 memory; other candidates need work  |
-| [18](18-guarded-p1-promotion.md)            | 2026-08-29    | Promote p1 without the measured hard-10 memory failure?                                   | N<=9 guard validated, then rejected before commit                                   |
-| [19](19-unconditional-p1-promotion.md)      | 2026-08-29    | Make p1 the production policy despite its hard-10 resource cost?                          | Unconditional p1 selected; memory issue explicitly deferred                         |
-| [20](20-constructor-and-medium-cases.md)    | 2026-08-29    | Can post-winning constructor work be removed; what causes medium-case CPU troughs?        | 26 verified; guard permanent; troughs are uneven root-search tails                  |
-| [21](21-adaptive-root-profiling.md)         | 2026-08-29    | Which calculations dominate the longest 238 adaptive root?                                | 6 verified; 80.6M witness leaves dominate; best/all do identical work               |
-| [22](22-analytic-witness-ports.md)          | 2026-08-29    | Can exact symmetric-port labels replace their factorial witness enumeration?              | 6 verified; exact 559,872x leaf reduction; root 2.38-2.57x faster; permanent        |
+| ID                                            | Date          | Question                                                                                  | Outcome                                                                             |
+| --------------------------------------------- | ------------- | ----------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| [01](01-parallelism-ladder.md)                | 2026-08-27    | Which parallelism stages help?                                                            | Large-worker wins; extra CPU/memory and small-worker regressions                    |
+| [02](02-exact-kernel.md)                      | 2026-08-27/28 | Can exact calculations be cheaper without changing search?                                | 792 verified runs; kernel made permanent                                            |
+| [03](03-hard-case-screen.md)                  | 2026-08-28    | Do those findings extend to difficult inputs?                                             | Slow witness/constructor phases; incomplete enumeration; N<=10 cutoff error         |
+| [04](04-witness-constructor-diagnostics.md)   | 2026-08-28    | Which serial work and cancellation phase dominate?                                        | Full-witness refinement, repeated helper work; root teardown still unresolved       |
+| [05](05-refinement-and-reuse.md)              | 2026-08-28    | Remove redundant refinement and avoid ineligible/repeated construction?                   | 6.54x isolated replay; first solver job killed; refinement later committed          |
+| [06](06-cancellation-recovery.md)             | 2026-08-28    | Preserve failure evidence and locate the cancellation tail?                               | 9 valid results, 3 kills; cache destruction observed; allocator cause unproved      |
+| [07](07-compact-keys-and-constructor.md)      | 2026-08-28    | Reduce key storage and exact subset arithmetic?                                           | 16 verified records, no kills; strong bundle gains; six incomplete solves           |
+| [08](08-repeat-scheduling.md)                 | 2026-08-28    | Are gains repeatable; how do partitions and 16/32 workers compare?                        | 62 verified; p1 hard optimal 2.96x faster; 24 all/baseline median regresses 6.2%    |
+| [09](09-serializer-and-find-all.md)           | 2026-08-28    | Does isolated encoding explain the regression; does p14 help hard all?                    | 42 verified; encoding favors all seven medians; p14 earlier witness, all unfinished |
+| [10](10-constructor-promotion.md)             | 2026-08-28    | Promote the validated constructor without the deadline?                                   | Permanent, separate from compact keys; not pushed                                   |
+| [11](11-compact-key-promotion.md)             | 2026-08-28    | Promote compact exact keys independently?                                                 | Permanent with isolated encoding evidence; not pushed                               |
+| [12](12-hard-obligation-profiling.md)         | 2026-08-28    | What dominates the remaining hard N/L/profile work?                                       | 24 verified; 36 witness tail, 10 basis/labeling cost; no kills                      |
+| [13](13-calculation-changes.md)               | 2026-08-28    | Can early exact-L checks, cached witness leaves and direct RREF bounds reduce hard costs? | 80 verified; isolated gains support three promotions; hard whole-all still capped   |
+| [14](14-calculation-promotion.md)             | 2026-08-28    | Promote the three measured calculations independently?                                    | Permanent in three separate commits                                                 |
+| [15](15-prefix-workloads.md)                  | 2026-08-28    | Can exact subtrees supply completed hard-10 references?                                   | Exact certificates verified; all 24 hard prefixes capped; deeper discovery needed   |
+| [16](16-post-calculation-screen.md)           | 2026-08-28    | How do p1/p14 compare after cheaper calculations?                                         | 38 verified after analyzer fix; hard optimal 23.27% shorter; all still capped       |
+| [17](17-p1-promotion-and-followups.md)        | 2026-08-29    | Can p1 become a default; do the constructor, sharing, donation and deeper prefixes help?  | 180 verified; p1 gains accepted despite hard-10 memory; other candidates need work  |
+| [18](18-guarded-p1-promotion.md)              | 2026-08-29    | Promote p1 without the measured hard-10 memory failure?                                   | N<=9 guard validated, then rejected before commit                                   |
+| [19](19-unconditional-p1-promotion.md)        | 2026-08-29    | Make p1 the production policy despite its hard-10 resource cost?                          | Unconditional p1 selected; memory issue explicitly deferred                         |
+| [20](20-constructor-and-medium-cases.md)      | 2026-08-29    | Can post-winning constructor work be removed; what causes medium-case CPU troughs?        | 26 verified; guard permanent; troughs are uneven root-search tails                  |
+| [21](21-adaptive-root-profiling.md)           | 2026-08-29    | Which calculations dominate the longest 238 adaptive root?                                | 6 verified; 80.6M witness leaves dominate; best/all do identical work               |
+| [22](22-analytic-witness-ports.md)            | 2026-08-29    | Can exact symmetric-port labels replace their factorial witness enumeration?              | 6 verified; exact 559,872x leaf reduction; root 2.38-2.57x faster; permanent        |
+| [23](23-whole-translation-and-dfs-profile.md) | 2026-08-29    | Does the port gain translate whole; which exact DFS identity dominates next?              | 27-job A/B and diagnostic screen preparing                                          |
 
 ## How the diagnosis changed
 
@@ -80,6 +81,9 @@ Record dates follow the analysis chronology, not necessarily every run's start t
     permutations but derive the exact minimum symmetric ports. [Six verified
     results](22-results.md) preserve every exact result, reduce witness leaves
     559,872x and improve the isolated root 2.38-2.57x. The change is permanent.
+18. [Whole translation and DFS profiling](23-whole-translation-and-dfs-profile.md)
+    compares the preserved pre-port solver with current production on 115, 238 and
+    hard 36, then profiles hard 10 and remaining whole DFS/canonicalization costs.
 
 ## Evidence conventions
 

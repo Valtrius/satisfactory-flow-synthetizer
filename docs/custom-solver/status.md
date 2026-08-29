@@ -85,7 +85,9 @@ root: best/all do identical structural work and 80,621,568 witness leaves consum
 about 34 seconds. [Experiment 22](experiments/22-analytic-witness-ports.md) replaces
 only the 559,872-fold symmetric-port factor with an exact analytic minimum. The
 six-job replay preserves every exact identity, reduces the root median 58.03-61.15%
-and makes the optimization permanent. Whole-solve confirmation is the next step.
+and makes the optimization permanent. [Experiment 23](experiments/23-whole-translation-and-dfs-profile.md)
+prepares whole-solve A/B plus updated state/legal-decision diagnostics. It will test
+whether canonical labeling or DFS identity construction is the next safe target.
 
 ## Validation records
 

@@ -76,7 +76,9 @@ Updated 2026-08-29.
   longest 238 root. Best/all perform identical work; 80.6 million full-witness
   leaves consume about 34 seconds. [Experiment 22 results](custom-solver/experiments/22-results.md)
   preserve exact results while reducing witness leaves 559,872x and isolated root
-  time 58-61%. The calculation change is permanent; scheduling stays paused.
+  time 58-61%. The calculation change is permanent. [Experiment 23](custom-solver/experiments/23-whole-translation-and-dfs-profile.md)
+  measures whole translation and the remaining state/open-port/marked-child DFS
+  identity cost; scheduling stays paused.
 
 The goal is shorter time to a proven optimum and complete minimum-node enumeration.
 First-witness latency is a separate measure. More occupied workers, a partial
