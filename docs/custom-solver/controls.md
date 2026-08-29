@@ -1,9 +1,10 @@
 # Controls and code map
 
-All `ParallelismOptions` flags default to false. The shared application adapter
-uses those defaults. Native options and profiling examples expose experiments;
-this work did not add UI switches. Native `SolveOptions` defaults to one worker,
-but callers and benchmarks may request another count.
+All `ParallelismOptions` flags default to false. The shared production Custom
+adapter enables deep partitions without an N limit. Native options retain baseline
+scheduling unless a caller selects a stage; no UI switch was added. Native
+`SolveOptions` defaults to one worker, but callers and benchmarks may request another
+count.
 
 ## Stage names
 
@@ -29,6 +30,7 @@ The adaptive planner replaces a prefix with legal continuations. It stops at
 depth four, four roots per requested worker per profile, or its 250 ms budget.
 The deadline is checked between operations. Timing can alter the final frontier;
 canonical-sorted frontier IDs are local to the registered plan, not global identities.
+Production and experimental p1 both use it without an N limit.
 
 Completed-state sharing permits concurrent duplicate work and never waits on an
 in-flight cache owner. Exact-L scope and a group-owned witness registry preserve
@@ -74,7 +76,7 @@ The previous five-second policy is a separate, unapplied benchmark patch. See
 
 The `bench-internals` feature is off by default. Its fixed-work entry bypasses the
 constructor and earlier groups; it does not change ordinary solver defaults.
-It supports baseline/p1 and best/all collection. Both exhaust selected profiles;
+It supports baseline/p1/p12/p123 and best/all collection. All exhaust selected profiles;
 neither produces global optimality. See [12](experiments/12-hard-obligation-profiling.md).
 
 The exact [contracts](contracts.md) take precedence over scheduler heuristics.

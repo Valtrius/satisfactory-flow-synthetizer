@@ -20,8 +20,11 @@ Record dates follow the analysis chronology, not necessarily every run's start t
 | [12](12-hard-obligation-profiling.md)       | 2026-08-28    | What dominates the remaining hard N/L/profile work?                                       | 24 verified; 36 witness tail, 10 basis/labeling cost; no kills                      |
 | [13](13-calculation-changes.md)             | 2026-08-28    | Can early exact-L checks, cached witness leaves and direct RREF bounds reduce hard costs? | 80 verified; isolated gains support three promotions; hard whole-all still capped   |
 | [14](14-calculation-promotion.md)           | 2026-08-28    | Promote the three measured calculations independently?                                    | Permanent in three separate commits                                                 |
-| [15](15-prefix-workloads.md)                | 2026-08-28    | Can exact subtrees supply completed hard-10 references?                                   | Feature-gated prefix certificates implemented; discovery pending                    |
-| [16](16-post-calculation-screen.md)         | 2026-08-28    | How do p1/p14 compare after cheaper calculations?                                         | 38-job prefix/whole run launched; awaiting analysis                                 |
+| [15](15-prefix-workloads.md)                | 2026-08-28    | Can exact subtrees supply completed hard-10 references?                                   | Exact certificates verified; all 24 hard prefixes capped; deeper discovery needed   |
+| [16](16-post-calculation-screen.md)         | 2026-08-28    | How do p1/p14 compare after cheaper calculations?                                         | 38 verified after analyzer fix; hard optimal 23.27% shorter; all still capped       |
+| [17](17-p1-promotion-and-followups.md)      | 2026-08-29    | Can p1 become a default; do the constructor, sharing, donation and deeper prefixes help?  | 180 verified; p1 gains accepted despite hard-10 memory; other candidates need work  |
+| [18](18-guarded-p1-promotion.md)            | 2026-08-29    | Promote p1 without the measured hard-10 memory failure?                                   | N<=9 guard validated, then rejected before commit                                   |
+| [19](19-unconditional-p1-promotion.md)      | 2026-08-29    | Make p1 the production policy despite its hard-10 resource cost?                          | Unconditional p1 selected; memory issue explicitly deferred                         |
 
 ## How the diagnosis changed
 
@@ -47,6 +50,21 @@ Record dates follow the analysis chronology, not necessarily every run's start t
     [Whole results](13-whole-results.md) improve completed short solves and finish
     the fixed hard-36 group, but not full hard enumeration. Recompare p1/p14 with
     the cheaper calculations; seek a complete exact prefix for hard 10.
+11. [Post-calculation results](16-post-calculation-results.md) repeat the hard-optimal
+    gain. P1 closes L=12 with less CPU/memory than p14 at the cap; neither finishes
+    all. [Diagnostics](16-diagnostics-and-next-steps.md) identify optional constructor
+    work after the winning group, a p1 DFS tail and fixed p14 worker allocations.
+    Test the helper first, then isolate sharing/donation. All hard prefixes capped.
+12. [The focused promotion screen](17-p1-promotion-and-followups.md) evaluates p1
+    against current baseline across modes and worker counts. It separately measures
+    the post-winning constructor guard, p1/p12/p123 fixed work and deeper prefixes.
+    P1 fails the predeclared hard-10 memory gate but improves every completed N<=9
+    workload at 16/32 workers. Constructor and p123 advance work but are not promoted.
+13. The [guarded p1 proposal](18-guarded-p1-promotion.md) passed validation, then the
+    user rejected memory as a promotion gate before commit.
+14. [Unconditional p1 promotion](19-unconditional-p1-promotion.md) applies adaptive
+    partitions for every N in the shared production Custom adapter. Sharing, donation
+    and remaining groups stay off. The hard-10 memory cost remains documented.
 
 ## Evidence conventions
 

@@ -1,7 +1,7 @@
 # Custom solver optimization and parallelism
 
 Start here for the optimization history and for continuing this work.
-Updated 2026-08-28.
+Updated 2026-08-29.
 
 ## Read in this order
 
@@ -29,8 +29,9 @@ Updated 2026-08-28.
   The isolated encoding comparison favors
   all seven short-case medians, including 24 all/baseline, with large memory savings.
   This does not establish the cause of experiment 08's earlier bundle regression.
-- All experimental scheduling flags still default to false. Their benefits vary
-  with solve mode, problem, worker count and memory cost.
+- Native scheduling flags still default to false. The shared production Custom
+  adapter now selects adaptive partitions unconditionally. Other scheduler flags
+  remain off.
 - [The 62-job repeated comparison](custom-solver/experiments/08-repeat-scheduling.md)
   is verified: 56 optimal results, six capped incomplete, no watchdog kills.
   Adaptive partitions reduce hard 36 optimal from 92.9 to 31.4 seconds at 32 workers.
@@ -53,9 +54,19 @@ Updated 2026-08-28.
   improve short-case completion medians 5.6-12.3%; hard 36 optimal improves 25.0%
   in one sample. Its exact N=9/L=12 group now completes, but full all remains capped.
   [Exact prefix tooling](custom-solver/experiments/15-prefix-workloads.md) is implemented.
-  The [38-job follow-up](custom-solver/experiments/16-post-calculation-screen.md) tests
-  p1/p14, repeats hard optimal and seeks completed hard-10 subtrees.
-  Scheduling defaults stay unchanged.
+  The [38-job follow-up results](custom-solver/experiments/16-post-calculation-results.md)
+  pass after an analyzer reference-selection fix. Hard optimal is 23.27% shorter
+  over three samples per variant. P1 closes L=12 with less CPU/memory than p14 at
+  240 s, but neither completes all. Every hard-10 prefix capped.
+  [Next steps](custom-solver/experiments/16-diagnostics-and-next-steps.md) identified
+  optional constructor work, sharing/donation tests and deeper prefix discovery.
+- [Experiment 17 results](custom-solver/experiments/17-results.md) verify 180 jobs.
+  P1 wins completed N<=9 work at 16/32 workers but exceeds baseline memory 2.84-6.32x
+  on hard N=11. The memory gate was explicitly waived in favor of completion time.
+  Constructor and p123 remain candidates; depth-10/pick-4 is a completed prefix control.
+- The [N<=9 guard](custom-solver/experiments/18-guarded-p1-promotion.md) was validated
+  then rejected before commit. [Unconditional p1](custom-solver/experiments/19-unconditional-p1-promotion.md)
+  is the production policy for both modes. Sharing, donation and remaining groups stay off.
 
 The goal is shorter time to a proven optimum and complete minimum-node enumeration.
 First-witness latency is a separate measure. More occupied workers, a partial

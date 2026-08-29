@@ -23,6 +23,13 @@ pub use solver::{
     solve_with_observer,
 };
 
+fn production_parallelism() -> ParallelismOptions {
+    ParallelismOptions {
+        deep_partitions: true,
+        ..ParallelismOptions::default()
+    }
+}
+
 /// Solve through the shared contract, retaining enumeration without an external observer.
 ///
 /// # Errors
@@ -37,7 +44,7 @@ pub fn solve_problem(
     let native = SolveOptions {
         max_nodes: options.max_nodes,
         worker_count: options.worker_count,
-        ..SolveOptions::default()
+        parallelism: production_parallelism(),
     };
     let result = match options.mode {
         solver_api::SolveMode::Optimal => solve_with_observer(problem, &native, cancel, &collector),

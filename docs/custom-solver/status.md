@@ -1,6 +1,6 @@
 # Current decisions and handoff
 
-Updated 2026-08-28. Start at [the entry point](../custom-parallelism.md).
+Updated 2026-08-29. Start at [the entry point](../custom-parallelism.md).
 Historical hypotheses and results remain in the [experiment index](experiments/README.md).
 
 ## Objective
@@ -11,70 +11,91 @@ lower overhead alone does not justify slower completion.
 
 ## Permanent changes and commit state
 
-| Change                                                | Evidence                                                            | Commit                                                       |
-| ----------------------------------------------------- | ------------------------------------------------------------------- | ------------------------------------------------------------ |
-| Lazy MRV and exact RREF/inequality arithmetic         | 792 verified runs, 1.81-2.36x serial gains                          | `319191e`                                                    |
-| Remove ordering-only full-witness refinement          | 6.54x isolated replay, same keys/permutations                       | `3e804e8`                                                    |
-| Constructor eligibility, per-N reuse, integer subsets | Avoided helper work; stable no-deadline screen                      | `099cc12`, [10](experiments/10-constructor-promotion.md)     |
-| Compact exact state/SCC keys                          | Seven short-case medians favor compact rows; memory savings         | `2716fac`, [11](experiments/11-compact-key-promotion.md)     |
-| Fixed hard-work profiling                             | Feature-gated production search and strict local-scope verification | `1b558a6`, [12](experiments/12-hard-obligation-profiling.md) |
+| Change                                                | Evidence                                                            | Commit                                                          |
+| ----------------------------------------------------- | ------------------------------------------------------------------- | --------------------------------------------------------------- |
+| Lazy MRV and exact RREF/inequality arithmetic         | 792 verified runs, 1.81-2.36x serial gains                          | `319191e`                                                       |
+| Remove ordering-only full-witness refinement          | 6.54x isolated replay, same keys/permutations                       | `3e804e8`                                                       |
+| Constructor eligibility, per-N reuse, integer subsets | Avoided helper work; stable no-deadline screen                      | `099cc12`, [10](experiments/10-constructor-promotion.md)        |
+| Compact exact state/SCC keys                          | Seven short-case medians favor compact rows; memory savings         | `2716fac`, [11](experiments/11-compact-key-promotion.md)        |
+| Fixed hard-work profiling                             | Feature-gated production search and strict local-scope verification | `1b558a6`, [12](experiments/12-hard-obligation-profiling.md)    |
+| Unconditional adaptive partitions                     | 180 verified jobs; accepted hard-10 resource cost                   | This commit, [19](experiments/19-unconditional-p1-promotion.md) |
 
 Each optimization commit includes its related docs. Experiment 13 tooling/results
 are committed in `473aba7`. [Calculation promotion](experiments/14-calculation-promotion.md)
 has separate commits: exact-L `5ae5631`, witness `1fbe95d`, and direct RREF bounds
 `af1682c`. All three are permanent. No push was performed.
-The constructor deadline and scheduling flags remain unchanged.
+Exact prefix tooling is committed in `809f7c9`.
+Experiment 17 includes benchmark-only p12/p123 fixed-work access. The validated
+[N<=9 guard](experiments/18-guarded-p1-promotion.md) was rejected before commit.
+[Unconditional p1](experiments/19-unconditional-p1-promotion.md) is the shared
+production Custom policy for both modes. The constructor candidate is absent from
+the working production source.
 
 ## Latest measured findings
 
-[Experiment 13 isolated results](experiments/13-calculation-results.md) and
-[whole results](experiments/13-whole-results.md): 80/80 verified, no kills or
-verification failures, 28.669 process minutes. Original/rechecked summaries match;
-frozen hashes and job identities pass. At that analysis, Rust sources matched the measured combined candidate. Subsequent
-changes add benchmark-only prefix access, with no new production calculation policy.
+[Experiment 16 results](experiments/16-post-calculation-results.md): 38/38 verified,
+35.126 process minutes, no kills or solver failures. The original final analyzer
+failed on six p1 optimal jobs because it required baseline scheduling. The narrow
+reference-selection fix passes all records without changing summary statistics.
+Frozen scripts reproduce the original outcome; source/binary identities and exact
+result checks pass. Rust sources still match the measured combined snapshot.
 
-- Early exact-L rejection shortens the targeted complete 36 proof 77.5-77.6%,
-  4.44-4.45x, in three samples per variant/mode. Two discarded witness calls and
-  2,654,208 leaves disappear. Exact results and local exhaustion agree.
-- Cached witness leaves improve isolated replay 14.87x, from 15.845 to 1.066 s.
-  Exact public key, all 2,985,984 leaves and 13,214,106 branches agree.
-- Direct RREF bounds shorten another complete proof 7.3-8.3% in both modes, with
-  lower CPU. Separate diagnostics reduce summed inequality time 36.8%.
-- Real 24/65 optimal/all completion medians improve 5.6-12.3%, three samples each.
-  Hard 36 optimal improves 33.274 to 24.972 s in one sample, still provisional.
-- Combined 36 N=9/L=12 p1/32 finishes all five profiles and 392 roots in 62.409 s
-  all, with six witnesses. Reference remains incomplete at 110 s with five, an
-  exact subset. This new local reference has no fully exhausted baseline SAT set.
-- Whole 36 all/p14 remains incomplete at 120 s with the same two partial witnesses.
-  First witness improves 33.784 to 25.071 s in one sample. CPU and memory at the
-  cap increase; complete-enumeration speed is still unknown.
-- Hard 10 stays incomplete with 32 roots active at cancellation. Basis/labeling
-  costs remain substantial. The new 30 s diagnostics have 0.303-0.346 s root tails.
+- Hard 36 optimal, p1/32, three samples each: median 32.129 to 24.652 s, 23.27%
+  shorter. Before range 32.003-32.373, after 24.029-25.065 s. Full preferred
+  solution and proof agree across all six runs.
+- Hard 36 all, two repeats each: p1 and p14 both cap at 240 s. P1 closes L=12 and
+  reaches L=13, with nine partial witnesses; p14's earliest unfinished group is
+  L=12, with two visible witnesses. Exact common full solution objects agree.
+  First-witness medians are 24.485/24.616 s. P1 uses about 13.1% less CPU and
+  492-493 MiB peak versus p14's 699-728 MiB. No whole-all speedup is established.
+- Single diagnostic runs identify 26.366 s of p1 optional constructor work after
+  the winning group. P1 ends with one active DFS root for 4.617 s; p14 leaves eight
+  freed workers unreassigned while three groups retain eight workers each.
+- All 24 hard-10 prefix jobs cap at 30 s without witnesses. Two tiny controls
+  exhaust. Certificates and scope checks work, but no completed hard control exists.
 
-Earlier diagnoses remain in [12](experiments/12-hard-obligation-results.md).
-The current results support all three calculation changes without justifying a
-new scheduler default or a universal memory-saving claim.
+[Experiment 13](experiments/13-calculation-results.md) remains the isolated evidence
+for the three calculations: exact-L 4.44-4.45x, witness replay 14.87x, direct bounds
+7.3-8.3% shorter. Its [whole results](experiments/13-whole-results.md) improve 24/65
+optimal/all medians 5.6-12.3% and complete the fixed 36 N=9/L=12 group in 62.409 s.
+Neither experiment establishes complete hard enumeration or a universal scheduler.
 
-## Current run and next analysis
+## Current decision
 
-The measured calculations are permanent. [Prefix workloads](experiments/15-prefix-workloads.md)
-add exact frontier/path identities and selected-subtree proof scope. The [next screen](experiments/16-post-calculation-screen.md)
-has 26 fixed-prefix jobs and 12 whole jobs. Launched; awaiting analysis.
+[Experiment 17](experiments/17-results.md) verifies 180/180 records in 38.135 process
+minutes. Unconditional p1 fails the hard-10 memory gate by 2.84-6.32x. P1 improves
+every completed N<=9 workload at 16/32 workers, including hard-36 optimal by 64-73%.
+The user explicitly accepted the memory cost and deferred that issue. Production
+therefore uses p1 at every N for both modes. Sharing, donation and parallel remaining
+groups remain off.
 
-- Hard 10: six depth/pick recipes, best/all twice, 30 s caps. Discover completed
-  subtrees suitable for future calculation comparisons; no gain is claimed yet.
-- Hard 36: p1/p14 all twice at 240 s, separate 120 s diagnostics, and three
-  reference/combined optimal repeats at 60 s. All whole jobs use 32 workers.
-- Search caps total 38.167 minutes plus startup/preparation and cleanup. The serial
-  prefix jobs are bounded subtrees, not hard single-worker whole-profile baselines.
-
-Run root: `target/parallelism-ladder/post-calculation-20260828/`. Read its
-`BENCHMARK-STATUS.txt` and final completion/failure marker. Reverify frozen artifacts
-before analysis. No builds/tests during timing. Keep all defaults opt-in; revisit
-bounded donation only if a new trace shows idle workers and a long DFS tail.
-Existing cases suffice. Solver policy never uses corpus cyclicity labels.
+Keep the constructor guard uncommitted until a completed all-mode A/B. Do not promote
+sharing/donation from one UNSAT profile. Use the completed depth-10/pick-4 certificate
+for the next hard-10 calculation comparison. No benchmark is running. The corrected
+run is `target/parallelism-ladder/p1-promotion-20260829-retry1/`; the first path-alias
+failure remains preserved.
 
 ## Validation records
+
+Experiment 18 guarded trial: 212 solver-core library/integration/example tests passed,
+two ignored; six synthetizer-app unit and ten shared-API tests passed. Strict
+all-target solver-core Clippy passed with and without `bench-internals`. Experiment
+19 passes 211 solver-core tests, 16 application/shared-API tests, 32 analyzer tests
+and both strict Clippy configurations. Details and logs are in its promotion note.
+
+Experiment 17 post-run: 20/20 fixed and 160/160 whole records pass frozen
+verification and exact-result checks; no kills or failed processes. Rechecked
+summaries equal originals. Both 78-file variant snapshots and whole binary mappings
+pass hashes. See [results](experiments/17-results.md).
+
+Experiment 17 prelaunch: reference and candidate each passed 211 solver-core
+library/integration/example tests, two ignored. Strict all-target Clippy passed with
+`bench-internals`; candidate default-feature Clippy passed. 32 Python tooling tests,
+release builds, formatting and the frozen 180-job plan check passed. See [17](experiments/17-p1-promotion-and-followups.md).
+
+Experiment 16 analysis: 32 Python tests pass, including nonbaseline before-reference
+acceptance, missing-reference rejection and changed-full-object rejection.
+Log: `target/post-calculation-verifier-tests.log`. No Rust edits in this turn.
 
 Prefix work: 211 solver-core library/integration/example tests passed, two ignored;
 strict all-target Clippy passed with and without `bench-internals`; release examples

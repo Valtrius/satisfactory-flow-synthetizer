@@ -62,7 +62,7 @@ pub struct SolveOptions {
     pub max_nodes: Option<u32>,
     /// Maximum fixed-profile proof workers in the current equal-link group.
     pub worker_count: usize,
-    /// Experimental scheduling controls; production defaults remain disabled.
+    /// Native scheduling controls; `SolveOptions::default()` leaves them disabled.
     pub parallelism: ParallelismOptions,
 }
 
