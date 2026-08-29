@@ -1,7 +1,9 @@
 # 25 - Internal DFS marked-child bypass
 
-Date: 2026-08-29. State: validated; ready to launch.
+Date: 2026-08-29. State: launched; awaiting analysis.
 Related: [canonical purpose results](24-canonical-purpose-profile.md).
+
+Run: ignored `target/parallelism-ladder/unkeyed-dfs-20260829/`.
 
 ## Hypothesis
 
