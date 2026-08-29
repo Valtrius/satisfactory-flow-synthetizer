@@ -14,13 +14,15 @@ keep instrumented samples out of timing groups. Source patches live in
 Its [verified results](experiments/09-serializer-and-find-all-results.md) include
 eight incomplete hard enumerations; faster first witnesses do not prove faster completion.
 
-| Label          | Exact problem     | Role and last reviewed scope                                |
-| -------------- | ----------------- | ----------------------------------------------------------- |
-| `acyclic24`    | 24 = 7+6+5+4+2    | Complete optimal/all regression, N<=7                       |
-| `cyclic65`     | 65 = 40+25        | Complete optimal/all regression, N<=6                       |
-| `acyclic36`    | 36 = 11+9+7+5+3+1 | Difficult optimal/all, N<=9; known optimum N=9, L=11        |
-| `cyclic10`     | 10 = 6.04+3.96    | Difficult optimal, N<=11; starting proven lower bound is 11 |
-| `profile_tiny` | 2+3 = 1+4         | N<=2, fixed scheduler overhead                              |
+| Label          | Exact problem      | Role and last reviewed scope                                |
+| -------------- | ------------------ | ----------------------------------------------------------- |
+| `acyclic24`    | 24 = 7+6+5+4+2     | Complete optimal/all regression, N<=7                       |
+| `cyclic65`     | 65 = 40+25         | Complete optimal/all regression, N<=6                       |
+| `acyclic36`    | 36 = 11+9+7+5+3+1  | Difficult optimal/all, N<=9; known optimum N=9, L=11        |
+| `cyclic10`     | 10 = 6.04+3.96     | Difficult optimal, N<=11; starting proven lower bound is 11 |
+| `cyclic238`    | 238 = 60+20+108+50 | Medium optimal/all; measured 69-73 s / 101-111 s; 1 layout  |
+| `cyclic115`    | 115 = 75+40        | Medium optimal/all; measured 11 s / 160 s; 49 layouts       |
+| `profile_tiny` | 2+3 = 1+4          | N<=2, fixed scheduler overhead                              |
 
 The old tiny records used capacity 5. The newer example uses 1200. Do not silently
 merge them. The user originally reported roughly 2.5/30 s for 24 optimal/all and
@@ -75,6 +77,9 @@ plus `BENCHMARK-FINISHED.txt` or `BENCHMARK-FAILED.txt`. Current job status is u
 File-manifest jobs accept `Variant: before|after`, default `after`. Before jobs
 require a compatible `profile_case.exe` in `ReferenceBinaryDirectory`. They do not
 implicitly duplicate every expensive job. Per-job `Hotspots` may be `on` or `off`.
+Hotspot jobs also write `<job>.process-samples.csv` with cumulative process CPU,
+working set and thread count at one-second intervals. Use CPU deltas between samples;
+do not compare their instrumented timings with ordinary timing jobs.
 The sequential hard-profile wrapper expects fixed-manifest variants named `basis`
 and `reference` when it feeds them into a whole before/after phase. Preserve a path
 alias failure and relaunch into a new directory; never rewrite its failure marker.

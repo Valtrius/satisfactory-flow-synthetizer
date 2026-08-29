@@ -108,10 +108,25 @@ foreach ($job in $jobs) {
     $cpu = 0.0
     $peakWorkingSet = 0L
     $watchdogKilled = $false
+    $processSamples = [Collections.Generic.List[object]]::new()
+    $nextProcessSample = 0.0
+    $lastWorkingSet = 0L
+    $lastThreadCount = 0
     while (-not $process.WaitForExit(25)) {
         $process.Refresh()
         $cpu = [Math]::Max($cpu, $process.TotalProcessorTime.TotalSeconds)
         $peakWorkingSet = [Math]::Max($peakWorkingSet, $process.PeakWorkingSet64)
+        $lastWorkingSet = $process.WorkingSet64
+        $lastThreadCount = $process.Threads.Count
+        if ($jobHotspots -eq 'on' -and $watch.Elapsed.TotalSeconds -ge $nextProcessSample) {
+            $processSamples.Add([pscustomobject]@{
+                elapsed_s = $watch.Elapsed.TotalSeconds
+                cpu_s = $process.TotalProcessorTime.TotalSeconds
+                working_set_bytes = $lastWorkingSet
+                thread_count = $lastThreadCount
+            })
+            $nextProcessSample += 1.0
+        }
         if ($watch.Elapsed.TotalSeconds -gt ($timeout + $CancellationGraceSeconds)) {
             $process.Kill()
             $process.WaitForExit()
@@ -135,6 +150,15 @@ foreach ($job in $jobs) {
         Write-Warning "Watchdog terminated $name. Failure preserved; continuing the remaining jobs."
         $process.Dispose()
         continue
+    }
+    if ($jobHotspots -eq 'on') {
+        $processSamples.Add([pscustomobject]@{
+            elapsed_s = $watch.Elapsed.TotalSeconds
+            cpu_s = $process.TotalProcessorTime.TotalSeconds
+            working_set_bytes = $lastWorkingSet
+            thread_count = $lastThreadCount
+        })
+        $processSamples | Export-Csv -LiteralPath (Join-Path $outputRoot "$name.process-samples.csv") -NoTypeInformation
     }
     if ($process.ExitCode -ne 0 -or -not (Test-Path -LiteralPath $json)) { throw "Benchmark failed: $name" }
     $data = Get-Content -LiteralPath $json -Raw | ConvertFrom-Json
