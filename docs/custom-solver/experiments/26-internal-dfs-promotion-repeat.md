@@ -2,6 +2,7 @@
 
 Date: 2026-08-30. State: verified and promoted permanently.
 Related: [screening results](25-internal-dfs-marked-bypass.md).
+Promotion commit: `1b62e5e`.
 
 Run: ignored `target/parallelism-ladder/unkeyed-dfs-repeat-20260830/`.
 Manifest: `benchmarks/custom/unkeyed-dfs-repeat.json`.
