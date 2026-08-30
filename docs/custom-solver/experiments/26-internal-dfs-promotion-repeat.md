@@ -90,3 +90,17 @@ If memory work resumes, first split live state-cache and SCC-cache bytes per wor
 report their aggregate concurrent totals. Then test smaller exact state storage or a
 bounded completed-state policy. Never replace exact keys with unchecked hashes, and
 retain in-progress entries needed for cycle and proof accounting.
+
+## Next performance target
+
+Do not resume scheduler experiments yet. In the promoted hard-10 diagnostic,
+open-port canonicalization accounts for 303.6 of 316.5 legal-decision seconds. State
+canonicalization consumes 623.4 accounted seconds and propagation consumes 569.9.
+These are capped diagnostic totals, not completion-speed evidence.
+
+The next isolated hypothesis is to return canonical open-port or orbit coordinates
+from the state canonicalization already performed at each DFS node, then reuse that
+labeling for MRV's invariant tie-break. This could remove a second family of graph
+labelings without changing the state key or relying on known cyclicity. Preserve the
+current keyed root/frontier identity path and verify against the exhaustive reference
+matrix before timing whole solves.

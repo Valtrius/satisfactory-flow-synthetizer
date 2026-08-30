@@ -105,7 +105,10 @@ verifies all 16 repeat jobs. Combined three-sample medians improve 17.5-22.9% wi
 identical exact outputs, so the internal DFS bypass is permanent. Root and frontier
 planning remain keyed. Current telemetry attributes hard-run RAM mainly to 32 concurrent
 worker-local state and SCC caches; separate aggregate byte counters are the first step
-if memory optimization resumes. Scheduler experiments remain paused.
+if memory optimization resumes. Scheduler experiments remain paused. The next speed
+hypothesis is to reuse state-canonical labeling for invariant open-port selection;
+the promoted hard-10 diagnostic attributes 303.6 of 316.5 legal-decision seconds to
+open-port keys. Treat this as a capped profile, not completion evidence.
 
 ## Validation records
 
