@@ -85,6 +85,12 @@ impl StateKey {
     }
 }
 
+/// State identity plus canonical coordinates for every currently open port.
+pub(crate) struct CanonicalStateAndOpenPorts {
+    pub key: StateKey,
+    pub open_port_coordinates: BTreeMap<OpenPortRef, OpenPortRef>,
+}
+
 /// Canonical identity of every semantic input to one open-SCC summary.
 ///
 /// Besides the complete partial physical state, the key colors exactly the
@@ -182,6 +188,30 @@ pub(crate) fn canonicalize_state_cancellable(
 ) -> Option<StateKey> {
     select_canonical_cancellable(topology, None, EncodingKind::State, cancel)
         .map(|selected| StateKey(selected.bytes.into_boxed_slice()))
+}
+
+/// Computes the production state key and reuses its labeling for open-port coordinates.
+pub(crate) fn canonicalize_state_and_open_ports_cancellable(
+    topology: &PartialTopology,
+    cancel: &AtomicBool,
+) -> Option<CanonicalStateAndOpenPorts> {
+    let started = Instant::now();
+    let build_timer = CanonicalTimer::start(CanonicalPhase::IncidenceBuild);
+    let incidence = IncidenceGraph::build(topology, None, false);
+    drop(build_timer);
+    let selected = select_canonical_with_incidence(
+        topology,
+        &incidence,
+        EncodingKind::State,
+        None,
+        Some(cancel),
+    )?;
+    let open_port_coordinates = incidence.open_port_coordinates(topology, &selected.ranks);
+    hotspot_profile::record_graph_canon(started.elapsed(), GraphCanonPurpose::State);
+    Some(CanonicalStateAndOpenPorts {
+        key: StateKey(selected.bytes.into_boxed_slice()),
+        open_port_coordinates,
+    })
 }
 
 /// Canonicalizes the complete input of [`crate::scc::summarize_open_scc`].
@@ -1608,6 +1638,62 @@ impl IncidenceGraph {
             known_producers,
             known_consumers,
         }
+    }
+
+    fn open_port_coordinates(
+        &self,
+        topology: &PartialTopology,
+        ranks: &[Option<u32>],
+    ) -> BTreeMap<OpenPortRef, OpenPortRef> {
+        let input_labels =
+            canonical_terminal_labels(&topology.problem.inputs, &self.input_terminals, ranks);
+        let output_labels =
+            canonical_terminal_labels(&topology.problem.outputs, &self.output_terminals, ranks);
+        let discard_labels = canonical_anonymous_labels(&self.discard_terminals, ranks);
+        let node_labels = canonical_node_labels(topology, &self.node_vertices, ranks);
+        let (splitter_outputs, merger_inputs) = canonical_port_labels(topology, self, ranks);
+        let node_types = topology
+            .nodes
+            .iter()
+            .map(|node| (node.id, node.node_type))
+            .collect::<BTreeMap<_, _>>();
+        let mut coordinates = BTreeMap::new();
+        for (&reference, &vertex) in &self.producer_ports {
+            if matches!(
+                self.base_colors[vertex],
+                BaseColor::ProducerPort { open: true, .. }
+            ) {
+                coordinates.insert(
+                    OpenPortRef::Producer(reference),
+                    OpenPortRef::Producer(relabel_producer(
+                        reference,
+                        &input_labels,
+                        &node_labels,
+                        &splitter_outputs,
+                        &node_types,
+                    )),
+                );
+            }
+        }
+        for (&reference, &vertex) in &self.consumer_ports {
+            if matches!(
+                self.base_colors[vertex],
+                BaseColor::ConsumerPort { open: true, .. }
+            ) {
+                coordinates.insert(
+                    OpenPortRef::Consumer(reference),
+                    OpenPortRef::Consumer(relabel_consumer(
+                        reference,
+                        &output_labels,
+                        &discard_labels,
+                        &node_labels,
+                        &merger_inputs,
+                        &node_types,
+                    )),
+                );
+            }
+        }
+        coordinates
     }
 
     fn port_relabeling(

@@ -91,6 +91,12 @@ Updated 2026-08-30.
   verifies 16 repeat records. Combined three-sample medians improve 17.5-22.9%, so
   the internal DFS bypass is permanent. Existing telemetry attributes hard-run RAM
   mainly to concurrent worker-local exact caches. Scheduling remains paused.
+- [Experiment 27](custom-solver/experiments/27-minimum-link-enumeration-mode.md)
+  adds a third exact solve scope across Custom, Z3, Reference, Tauri, the UI, and
+  benchmark tooling. [Experiment 28](custom-solver/experiments/28-state-open-port-coordinate-reuse.md)
+  reuses the state labeling for recursive DFS open-port selection. All six completed
+  A/B pairs preserve exact outputs and improve 18.2-49.4%, so the change is permanent.
+  The capped hard-10 diagnostic advances more work with 12.8% higher sampled memory.
 
 The goal is shorter time to a proven optimum, complete minimum-link enumeration,
 and complete minimum-node enumeration. Benchmark modes are `optimal` for one layout,

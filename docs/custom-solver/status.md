@@ -13,6 +13,10 @@ The product now has three exact scopes: one optimum, all layouts at minimum N an
 minimum L, and all layouts across every L at minimum N. The benchmark names are
 `optimal`, `minimum_links`, and `all`.
 
+Experiment 28 is permanent. Recursive DFS reuses the existing state labeling for
+its final open-port MRV tie-break. All six completed A/B pairs preserve exact outputs
+and improve 18.2-49.4%. Root/frontier identity and p1 scheduling are unchanged.
+
 ## Permanent changes and commit state
 
 | Change                                                | Evidence                                                            | Commit                                                           |
@@ -26,6 +30,7 @@ minimum L, and all layouts across every L at minimum N. The benchmark names are
 | Skip constructor after winning N                      | 26 exact jobs; removes redundant existence work                     | `57e34c0`, [20](experiments/20-results.md)                       |
 | Derive exact symmetric witness ports                  | 559,872x fewer leaves; root 2.38-2.57x faster                       | `f5df873`, [22](experiments/22-results.md)                       |
 | Bypass marked-child keys inside recursive DFS         | 28 verified jobs; completed medians improve 17.5-22.9%              | `1b62e5e`, [26](experiments/26-internal-dfs-promotion-repeat.md) |
+| Reuse state coordinates for DFS open-port selection   | 14 verified jobs; completed pairs improve 18.2-49.4%                | [28](experiments/28-state-open-port-coordinate-reuse.md)         |
 
 Each optimization commit includes its related docs. Experiment 13 tooling/results
 are committed in `473aba7`. [Calculation promotion](experiments/14-calculation-promotion.md)
@@ -114,7 +119,18 @@ hypothesis is to reuse state-canonical labeling for invariant open-port selectio
 the promoted hard-10 diagnostic attributes 303.6 of 316.5 legal-decision seconds to
 open-port keys. Treat this as a capped profile, not completion evidence.
 
+[Experiment 28](experiments/28-state-open-port-coordinate-reuse.md) verifies all
+14 records. Six completed pairs improve 18.2-49.4% and preserve exact results across
+optimal, minimum-link, and full enumeration. The capped hard-10 diagnostic processes
+45.1% more states while sampled peak working set rises 12.8%; it does not establish
+completion speed. State-coordinate reuse is permanent. Scheduler work remains paused.
+
 ## Validation records
+
+Experiment 28 post-run and promotion: 14/14 records verify with no analyzer failures.
+All six completed pairs match their frozen references. The hard-10 pair reaches the
+same 60-second cap without a witness. Full workspace tests, 92 frontend tests,
+frontend diagnostics, formatting, and strict all-target Clippy pass.
 
 Experiment 26 post-run and promotion: 16/16 repeat records complete optimally and
 match their references. Combined with experiment 25, all 12 completed A/B pairs

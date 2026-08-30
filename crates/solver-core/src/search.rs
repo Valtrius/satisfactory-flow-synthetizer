@@ -27,7 +27,8 @@ use crate::{
     canonical::{
         CanonicalFlowEndpoint, MarkedLinkCanonicalKey, PartialTopology, SccSummaryKey, StateKey,
         canonicalize_marked_link_cancellable,
-        canonicalize_scc_summary_input_with_relabeling_cancellable, canonicalize_state_cancellable,
+        canonicalize_scc_summary_input_with_relabeling_cancellable,
+        canonicalize_state_and_open_ports_cancellable, canonicalize_state_cancellable,
         canonicalize_witness_cancellable,
     },
     hotspot_profile,
@@ -1035,9 +1036,12 @@ fn search_state(
         return DfsResult::Exhausted(None);
     }
     let canonical_started = Instant::now();
-    let Some(state_key) = canonicalize_state_cancellable(&snapshot, context.cancel) else {
+    let Some(canonical_state) =
+        canonicalize_state_and_open_ports_cancellable(&snapshot, context.cancel)
+    else {
         return DfsResult::Incomplete;
     };
+    let state_key = canonical_state.key;
     let elapsed = canonical_started.elapsed();
     context.record_canonicalization(elapsed);
     hotspot_profile::record_state_canonicalize(elapsed);
@@ -1099,12 +1103,14 @@ fn search_state(
     }
 
     let orbit_started = Instant::now();
-    let Some(orbit) = state.selected_open_orbit_cancellable(context.cancel) else {
+    let Some(open_port) = state
+        .selected_dfs_open_port_cancellable(&canonical_state.open_port_coordinates, context.cancel)
+    else {
         hotspot_profile::record_legal_decisions(orbit_started.elapsed());
         context.remove_state_status(&state_key);
         return DfsResult::Incomplete;
     };
-    let Some(orbit) = orbit else {
+    let Some(open_port) = open_port else {
         hotspot_profile::record_legal_decisions(orbit_started.elapsed());
         // No open port means no future structural decision can attach a remaining
         // node or occupy a missing mandatory port. Since this state is not
@@ -1113,7 +1119,7 @@ fn search_state(
         return DfsResult::Exhausted(None);
     };
     let Some(decisions) = ({
-        let decisions = state.dfs_decisions_for_orbit_cancellable(&orbit, context.cancel);
+        let decisions = state.dfs_decisions_for_open_port_cancellable(open_port, context.cancel);
         hotspot_profile::record_legal_decisions(orbit_started.elapsed());
         decisions
     }) else {

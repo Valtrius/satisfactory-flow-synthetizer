@@ -168,6 +168,15 @@ pub struct OpenPortOrbit {
     pub canonical_key: CanonicalOpenPortKey,
 }
 
+#[derive(Clone, Copy)]
+struct OpenPortCandidate {
+    representative: OpenPortRef,
+    legal_partner_count: usize,
+    has_known_flow: bool,
+    is_external: bool,
+    symmetry_class: PortClass,
+}
+
 /// Producer endpoint selected by one topology decision.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum ProducerChoice {
@@ -630,6 +639,37 @@ impl TopologyState {
         &self,
         cancel: Option<&AtomicBool>,
     ) -> Option<Option<OpenPortOrbit>> {
+        let finalists = self.open_orbit_finalists(cancel)?;
+        if finalists.is_empty() {
+            return Some(None);
+        }
+        let topology = self.partial_topology();
+        let mut best: Option<OpenPortOrbit> = None;
+        for candidate in finalists {
+            let representative = candidate.representative;
+            let canonical_key = match cancel {
+                Some(flag) => canonicalize_open_port_cancellable(&topology, representative, flag)?,
+                None => canonicalize_open_port(&topology, representative),
+            };
+            let orbit = OpenPortOrbit {
+                representative,
+                legal_partner_count: candidate.legal_partner_count,
+                has_known_flow: candidate.has_known_flow,
+                is_external: candidate.is_external,
+                symmetry_class: candidate.symmetry_class,
+                canonical_key,
+            };
+            if best.as_ref().is_none_or(|current| {
+                (&orbit.canonical_key, orbit.representative)
+                    < (&current.canonical_key, current.representative)
+            }) {
+                best = Some(orbit);
+            }
+        }
+        Some(best)
+    }
+
+    fn open_orbit_finalists(&self, cancel: Option<&AtomicBool>) -> Option<Vec<OpenPortCandidate>> {
         // The canonical key is only a tie-break after these inexpensive fields.
         // Discard losing prefixes before doing graph canonicalization, preserving
         // the exact same selected orbit and final raw-reference tie-break.
@@ -671,42 +711,37 @@ impl TopologyState {
                 finalists.clear();
                 best_prefix = Some(prefix);
             }
-            finalists.push((
+            finalists.push(OpenPortCandidate {
                 representative,
                 legal_partner_count,
                 has_known_flow,
                 is_external,
                 symmetry_class,
-            ));
+            });
         }
-        if finalists.is_empty() {
-            return Some(None);
-        }
-        let topology = self.partial_topology();
-        let mut best: Option<OpenPortOrbit> = None;
-        for (representative, legal_partner_count, has_known_flow, is_external, symmetry_class) in
-            finalists
-        {
-            let canonical_key = match cancel {
-                Some(flag) => canonicalize_open_port_cancellable(&topology, representative, flag)?,
-                None => canonicalize_open_port(&topology, representative),
-            };
-            let orbit = OpenPortOrbit {
-                representative,
-                legal_partner_count,
-                has_known_flow,
-                is_external,
-                symmetry_class,
-                canonical_key,
-            };
-            if best.as_ref().is_none_or(|current| {
-                (&orbit.canonical_key, orbit.representative)
-                    < (&current.canonical_key, current.representative)
-            }) {
-                best = Some(orbit);
-            }
-        }
-        Some(best)
+        Some(finalists)
+    }
+
+    /// Selects the DFS open port from coordinates produced by this state's canonical labeling.
+    #[allow(clippy::option_option)]
+    pub(crate) fn selected_dfs_open_port_cancellable(
+        &self,
+        coordinates: &BTreeMap<OpenPortRef, OpenPortRef>,
+        cancel: &AtomicBool,
+    ) -> Option<Option<OpenPortRef>> {
+        let finalists = self.open_orbit_finalists(Some(cancel))?;
+        let selected = finalists
+            .into_iter()
+            .map(|candidate| {
+                let representative = candidate.representative;
+                let coordinate = *coordinates
+                    .get(&representative)
+                    .expect("state canonicalization must label every open representative");
+                (coordinate, representative)
+            })
+            .min()
+            .map(|(_, representative)| representative);
+        Some(selected)
     }
 
     /// Lists legal decisions in canonical marked-child order.
@@ -754,15 +789,15 @@ impl TopologyState {
     /// state key remains the authoritative completion identity. Root and
     /// adaptive-frontier planning continue to call the keyed method above so their
     /// stable proof-ledger identities do not change.
-    pub(crate) fn dfs_decisions_for_orbit_cancellable(
+    pub(crate) fn dfs_decisions_for_open_port_cancellable(
         &mut self,
-        orbit: &OpenPortOrbit,
+        open_port: OpenPortRef,
         cancel: &AtomicBool,
     ) -> Option<Vec<TopologyDecision>> {
         if cancel.load(Ordering::Relaxed) {
             return None;
         }
-        let decisions = self.decisions_for(orbit.representative);
+        let decisions = self.decisions_for(open_port);
         (!cancel.load(Ordering::Relaxed)).then_some(decisions)
     }
 
@@ -1147,10 +1182,39 @@ fn direct_self_link(producer: ProducerPortRef, consumer: ConsumerPortRef) -> boo
 
 #[cfg(test)]
 mod tests {
-    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::{
+        collections::BTreeSet,
+        sync::atomic::{AtomicBool, Ordering},
+    };
 
     use super::*;
-    use crate::{Preparation, canonical::canonicalize_state, prepare_problem};
+    use crate::{
+        Preparation,
+        canonical::{StateKey, canonicalize_state, canonicalize_state_and_open_ports_cancellable},
+        prepare_problem,
+    };
+
+    fn dfs_coordinate_child_keys(topology: &PartialTopology) -> BTreeSet<StateKey> {
+        let cancel = AtomicBool::new(false);
+        let canonical = canonicalize_state_and_open_ports_cancellable(topology, &cancel).unwrap();
+        let mut state = TopologyState::from_partial_topology(topology).unwrap();
+        let Some(open_port) = state
+            .selected_dfs_open_port_cancellable(&canonical.open_port_coordinates, &cancel)
+            .unwrap()
+        else {
+            return BTreeSet::new();
+        };
+        state
+            .dfs_decisions_for_open_port_cancellable(open_port, &cancel)
+            .unwrap()
+            .into_iter()
+            .map(|decision| {
+                let mut child = state.clone();
+                child.apply_legal_decision(decision).unwrap();
+                canonicalize_state(&child.partial_topology())
+            })
+            .collect()
+    }
 
     fn normalized(inputs: &[&str], outputs: &[&str]) -> NormalizedProblem {
         let problem = Problem {
@@ -1562,7 +1626,9 @@ mod tests {
         let mut baseline = TopologyState::from_partial_topology(&baseline_topology).unwrap();
         let baseline_orbit = baseline.selected_open_orbit().unwrap();
         let baseline_children = baseline.ordered_decision_child_keys();
+        let baseline_dfs_children = dfs_coordinate_child_keys(&baseline_topology);
         assert!(!baseline_children.is_empty());
+        assert!(!baseline_dfs_children.is_empty());
         let mut raw_representatives = std::collections::BTreeSet::new();
 
         for permutation in PERMUTATIONS {
@@ -1586,6 +1652,7 @@ mod tests {
                     assert_eq!(orbit.symmetry_class, baseline_orbit.symmetry_class);
                     assert_eq!(orbit.canonical_key, baseline_orbit.canonical_key);
                     assert_eq!(state.ordered_decision_child_keys(), baseline_children);
+                    assert_eq!(dfs_coordinate_child_keys(&topology), baseline_dfs_children);
                 }
             }
         }

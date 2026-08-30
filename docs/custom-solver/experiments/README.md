@@ -33,6 +33,7 @@ Record dates follow the analysis chronology, not necessarily every run's start t
 | [25](25-internal-dfs-marked-bypass.md)        | 2026-08-30    | Can dispatched DFS defer marked-child equivalence to propagated canonical state keys?     | 12 verified; four completed pairs improve 16.6-21.1%; repeat before promotion       |
 | [26](26-internal-dfs-promotion-repeat.md)     | 2026-08-30    | Do repeated completed solves confirm the bypass; what owns hard-run memory?               | 16 verified; combined medians improve 17.5-22.9%; permanent; RAM is local caches    |
 | [27](27-minimum-link-enumeration-mode.md)     | 2026-08-30    | Can users enumerate only the proven minimum-N/minimum-L layouts?                          | Implemented across all solvers, UI and benchmark runner; differential test passed   |
+| [28](28-state-open-port-coordinate-reuse.md)  | 2026-08-30    | Can DFS reuse state labeling for its final open-port tie-break?                           | 14 verified; all completed pairs improve 18.2-49.4%; permanent                      |
 
 ## How the diagnosis changed
 
@@ -110,6 +111,11 @@ Record dates follow the analysis chronology, not necessarily every run's start t
     exact solve scope across Custom, Z3 and Reference. It exhausts only the first
     satisfiable L group at minimum N and is available to the benchmark runner as
     `minimum_links`.
+23. [State-coordinate reuse](28-state-open-port-coordinate-reuse.md) removes the
+    recursive DFS open-port individualization pass while retaining keyed root and
+    frontier planning. All six completed pairs preserve exact outputs and improve
+    18.2-49.4%, so the change is permanent. Hard 10 advances 45% more states within
+    the common cap while sampled working set rises 12.8%.
 
 ## Evidence conventions
 
