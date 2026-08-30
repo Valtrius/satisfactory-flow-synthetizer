@@ -11,16 +11,17 @@ lower overhead alone does not justify slower completion.
 
 ## Permanent changes and commit state
 
-| Change                                                | Evidence                                                            | Commit                                                        |
-| ----------------------------------------------------- | ------------------------------------------------------------------- | ------------------------------------------------------------- |
-| Lazy MRV and exact RREF/inequality arithmetic         | 792 verified runs, 1.81-2.36x serial gains                          | `319191e`                                                     |
-| Remove ordering-only full-witness refinement          | 6.54x isolated replay, same keys/permutations                       | `3e804e8`                                                     |
-| Constructor eligibility, per-N reuse, integer subsets | Avoided helper work; stable no-deadline screen                      | `099cc12`, [10](experiments/10-constructor-promotion.md)      |
-| Compact exact state/SCC keys                          | Seven short-case medians favor compact rows; memory savings         | `2716fac`, [11](experiments/11-compact-key-promotion.md)      |
-| Fixed hard-work profiling                             | Feature-gated production search and strict local-scope verification | `1b558a6`, [12](experiments/12-hard-obligation-profiling.md)  |
-| Unconditional adaptive partitions                     | 180 verified jobs; accepted hard-10 resource cost                   | `49ae34c`, [19](experiments/19-unconditional-p1-promotion.md) |
-| Skip constructor after winning N                      | 26 exact jobs; removes redundant existence work                     | `57e34c0`, [20](experiments/20-results.md)                    |
-| Derive exact symmetric witness ports                  | 559,872x fewer leaves; root 2.38-2.57x faster                       | `f5df873`, [22](experiments/22-results.md)                    |
+| Change                                                | Evidence                                                            | Commit                                                                   |
+| ----------------------------------------------------- | ------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| Lazy MRV and exact RREF/inequality arithmetic         | 792 verified runs, 1.81-2.36x serial gains                          | `319191e`                                                                |
+| Remove ordering-only full-witness refinement          | 6.54x isolated replay, same keys/permutations                       | `3e804e8`                                                                |
+| Constructor eligibility, per-N reuse, integer subsets | Avoided helper work; stable no-deadline screen                      | `099cc12`, [10](experiments/10-constructor-promotion.md)                 |
+| Compact exact state/SCC keys                          | Seven short-case medians favor compact rows; memory savings         | `2716fac`, [11](experiments/11-compact-key-promotion.md)                 |
+| Fixed hard-work profiling                             | Feature-gated production search and strict local-scope verification | `1b558a6`, [12](experiments/12-hard-obligation-profiling.md)             |
+| Unconditional adaptive partitions                     | 180 verified jobs; accepted hard-10 resource cost                   | `49ae34c`, [19](experiments/19-unconditional-p1-promotion.md)            |
+| Skip constructor after winning N                      | 26 exact jobs; removes redundant existence work                     | `57e34c0`, [20](experiments/20-results.md)                               |
+| Derive exact symmetric witness ports                  | 559,872x fewer leaves; root 2.38-2.57x faster                       | `f5df873`, [22](experiments/22-results.md)                               |
+| Bypass marked-child keys inside recursive DFS         | 28 verified jobs; completed medians improve 17.5-22.9%              | Current promotion, [26](experiments/26-internal-dfs-promotion-repeat.md) |
 
 Each optimization commit includes its related docs. Experiment 13 tooling/results
 are committed in `473aba7`. [Calculation promotion](experiments/14-calculation-promotion.md)
@@ -99,14 +100,20 @@ DFS roots, retaining canonical root and adaptive-frontier identities.
 [Experiment 25](experiments/25-internal-dfs-marked-bypass.md) verifies all 12
 screening records. Its four completed pairs preserve full exact outputs and improve
 wall time 16.6-21.1%. Hard-10 processes 20.4% more states within the cap but raises
-sampled peak working set 26.2%. The candidate remains benchmark-only until two more
-samples per variant confirm the completed-work medians. Production behavior remains
-keyed, and scheduler experiments remain paused. [Experiment 26](experiments/26-internal-dfs-promotion-repeat.md)
-runs that 16-job repeat. Current telemetry attributes hard-run RAM mainly to 32
-concurrent worker-local state and SCC caches; separate aggregate byte counters are
-the first step if memory optimization resumes.
+sampled peak working set 26.2%. [Experiment 26](experiments/26-internal-dfs-promotion-repeat.md)
+verifies all 16 repeat jobs. Combined three-sample medians improve 17.5-22.9% with
+identical exact outputs, so the internal DFS bypass is permanent. Root and frontier
+planning remain keyed. Current telemetry attributes hard-run RAM mainly to 32 concurrent
+worker-local state and SCC caches; separate aggregate byte counters are the first step
+if memory optimization resumes. Scheduler experiments remain paused.
 
 ## Validation records
+
+Experiment 26 post-run and promotion: 16/16 repeat records complete optimally and
+match their references. Combined with experiment 25, all 12 completed A/B pairs
+preserve every compared exact result field. Solver-core, exhaustive reference,
+parallelism and shared application tests pass; strict default and benchmark-feature
+Clippy pass. See [promotion repeat](experiments/26-internal-dfs-promotion-repeat.md).
 
 Experiment 25 post-run: 12/12 records verify; eight complete optimally and four
 fixed-time diagnostics remain explicitly incomplete. All completed and capped

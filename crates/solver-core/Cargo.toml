@@ -6,7 +6,6 @@ license.workspace = true
 
 [features]
 bench-internals = []
-bench-unkeyed-dfs = ["bench-internals"]
 
 [[example]]
 name = "profile_obligation"

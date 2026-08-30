@@ -1,6 +1,6 @@
 # 26 - Internal DFS promotion repeat
 
-Date: 2026-08-30. State: repeat run launched; results pending.
+Date: 2026-08-30. State: verified and promoted permanently.
 Related: [screening results](25-internal-dfs-marked-bypass.md).
 
 Run: ignored `target/parallelism-ladder/unkeyed-dfs-repeat-20260830/`.
@@ -22,6 +22,43 @@ The run reuses experiment 25's frozen binaries. Their required SHA-256 values ar
 
 - keyed reference: `743ecf14efeda83b708651c2b33042a89d1ce58b555fd3ee4328939e0515a7fd`;
 - internal unkeyed candidate: `f15d49bba7a3263ae23711e553cb978eb0bdcb0902b17072596d1cd626f5dd73`.
+
+## Results and decision
+
+All 16 repeat records complete optimally and match their keyed references. No run
+fails or is killed. The repeat `results/summary.json` has SHA-256
+`6277ee8cb6c0de55fa895621d1511fdde39c5f8b695d1c583e033d21fb0a41b6`.
+
+Combined with experiment 25, every variant has three samples:
+
+| Workload    |      Keyed median (range) |     Bypass median (range) | Reduction |
+| ----------- | ------------------------: | ------------------------: | --------: |
+| 36 optimal  |    23.883 (23.314-24.291) |    18.404 (17.997-18.665) |    22.94% |
+| 115 all     | 137.338 (135.907-137.975) | 113.342 (110.521-115.847) |    17.47% |
+| 238 all     |    60.680 (60.345-61.754) |    47.746 (47.566-49.831) |    21.31% |
+| 238 optimal |    30.110 (29.655-30.744) |    23.964 (20.110-24.767) |    20.41% |
+
+All 12 completed A/B pairs preserve the problem, mode, optimal status, validation,
+outcome, full solution objects, canonical layout-key set, layout count and preferred
+key. Every predeclared gate passes, so the internal DFS bypass is permanent.
+
+Production recursive DFS now enumerates local physical representatives directly and
+lets the propagated canonical state cache remove the small number of equivalent child
+states. Root partition planning and adaptive-frontier refinement remain keyed, so
+stable proof-ledger partition identities do not change. The benchmark Cargo feature
+has been removed. Scheduler experiments remain paused.
+
+## Promotion validation
+
+- Solver-core all-target tests with `bench-internals`: 183 passed, two manual
+  benchmarks ignored.
+- Exhaustive outer-reference integration: one passed.
+- Parallelism integrations: four passed, including full enumeration across stages
+  and worker counts.
+- Shared application tests: 16 passed.
+- Strict solver-core all-target Clippy passes with default features and with
+  `bench-internals`.
+- `npm run format` and `git diff --check` pass.
 
 ## Hard-run memory attribution
 
