@@ -1,6 +1,6 @@
 # Current decisions and handoff
 
-Updated 2026-08-29. Start at [the entry point](../custom-parallelism.md).
+Updated 2026-08-30. Start at [the entry point](../custom-parallelism.md).
 Historical hypotheses and results remain in the [experiment index](experiments/README.md).
 
 ## Objective
@@ -96,10 +96,19 @@ diagnostic-only split. Four verified jobs put 94.5-96.2% of legal-decision time 
 open-port and marked-child keys. Marked keys remove fewer than 0.3% of candidate
 decisions in these samples. The next candidate bypasses them only inside dispatched
 DFS roots, retaining canonical root and adaptive-frontier identities.
-[Experiment 25](experiments/25-internal-dfs-marked-bypass.md) implements that path
-behind a benchmark-only Cargo feature. Production behavior remains keyed.
+[Experiment 25](experiments/25-internal-dfs-marked-bypass.md) verifies all 12
+screening records. Its four completed pairs preserve full exact outputs and improve
+wall time 16.6-21.1%. Hard-10 processes 20.4% more states within the cap but raises
+sampled peak working set 26.2%. The candidate remains benchmark-only until two more
+samples per variant confirm the completed-work medians. Production behavior remains
+keyed, and scheduler experiments remain paused.
 
 ## Validation records
+
+Experiment 25 post-run: 12/12 records verify; eight complete optimally and four
+fixed-time diagnostics remain explicitly incomplete. All completed and capped
+pairs preserve their respective exact or partial result identities. No kills or
+failures occurred. See [internal DFS bypass](experiments/25-internal-dfs-marked-bypass.md).
 
 Experiment 24 post-run: 4/4 records verify; 115/238 complete with experiment 23's
 exact full results and structural counters, while hard 36/10 remain explicitly

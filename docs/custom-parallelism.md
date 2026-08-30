@@ -1,7 +1,7 @@
 # Custom solver optimization and parallelism
 
 Start here for the optimization history and for continuing this work.
-Updated 2026-08-29.
+Updated 2026-08-30.
 
 ## Read in this order
 
@@ -86,7 +86,9 @@ Updated 2026-08-29.
   account for 94.5-96.2% of legal-decision time. Marked keys remove fewer than 0.3%
   of measured candidates, so an internal-DFS-only bypass is the next isolated test;
   root partition identities remain canonical. [Experiment 25](custom-solver/experiments/25-internal-dfs-marked-bypass.md)
-  implements the benchmark-only candidate and prepares a whole-solve screen.
+  verifies 12 screening records. Four completed pairs preserve exact outputs and
+  improve 16.6-21.1%. Two more samples per variant are required before promotion;
+  scheduling remains paused.
 
 The goal is shorter time to a proven optimum and complete minimum-node enumeration.
 First-witness latency is a separate measure. More occupied workers, a partial
