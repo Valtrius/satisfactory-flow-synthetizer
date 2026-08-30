@@ -11,13 +11,15 @@ pub(crate) use shared::SharedStateCache;
 
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap},
+    hash::{DefaultHasher, Hash, Hasher},
     sync::atomic::{AtomicBool, Ordering},
     time::{Duration, Instant},
 };
 
 use solver_api::{
-    CanonicalGraphKey, IncompleteReason, NodeProfile, PhysicalGraph, PhysicalLink, Problem,
-    Rational, ValidationSummary,
+    CanonicalGraphKey, ConsumerPortRef, IncompleteReason, NodeId, NodeProfile, NodeType,
+    PhysicalGraph, PhysicalLink, PhysicalNode, Problem, ProducerPortRef, Rational,
+    ValidationSummary,
 };
 use solver_validation::{ValidationError, solve_topology, validate_solution};
 use thiserror::Error;
@@ -25,8 +27,8 @@ use thiserror::Error;
 use crate::{
     algebra::sparse::Consistency,
     canonical::{
-        CanonicalFlowEndpoint, MarkedLinkCanonicalKey, PartialTopology, SccSummaryKey, StateKey,
-        canonicalize_marked_link_cancellable,
+        CanonicalFlowEndpoint, MarkedLinkCanonicalKey, PartialLink, PartialTopology, SccSummaryKey,
+        StateKey, canonicalize_marked_link_cancellable,
         canonicalize_scc_summary_input_with_relabeling_cancellable,
         canonicalize_state_and_open_ports_cancellable, canonicalize_state_cancellable,
         canonicalize_witness_cancellable,
@@ -79,6 +81,79 @@ pub enum StateStatus {
     SatWitness(CanonicalGraphKey),
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+struct StateFingerprint {
+    remaining_profile: NodeProfile,
+    link_count: u32,
+    digest: u64,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+enum FingerprintOwner {
+    Input(Rational),
+    Output(Rational),
+    Discard,
+    Node(NodeType),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+enum FingerprintIncident {
+    Incoming(FingerprintOwner, Option<Rational>),
+    Outgoing(FingerprintOwner, Option<Rational>),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+struct DeferredSnapshot {
+    nodes: Vec<PhysicalNode>,
+    links: Vec<PartialLink>,
+    discard_count: u32,
+    remaining_profile: NodeProfile,
+}
+
+impl DeferredSnapshot {
+    fn from_partial(topology: PartialTopology) -> Self {
+        Self {
+            nodes: topology.nodes,
+            links: topology.links,
+            discard_count: topology.discard_count,
+            remaining_profile: topology.remaining_profile,
+        }
+    }
+
+    fn restore(&self, problem: &Problem) -> PartialTopology {
+        PartialTopology {
+            problem: problem.clone(),
+            nodes: self.nodes.clone(),
+            links: self.links.clone(),
+            discard_count: self.discard_count,
+            remaining_profile: self.remaining_profile,
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+struct DeferredStateEntry {
+    snapshot: DeferredSnapshot,
+    status: StateStatus,
+}
+
+#[derive(Clone, Debug)]
+enum DeferredStateBucket {
+    Unique(DeferredStateEntry),
+    Canonicalized,
+}
+
+#[derive(Clone, Debug)]
+enum StateCacheToken {
+    Exact(StateKey),
+    Deferred(StateFingerprint),
+}
+
+enum StateOpenPortOrder {
+    Canonical(BTreeMap<crate::topology::OpenPortRef, crate::topology::OpenPortRef>),
+    Raw,
+}
+
 /// One exact SCC value consequence in canonical physical-port coordinates.
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct CachedKnownValue {
@@ -121,6 +196,125 @@ fn state_cache_entry_bytes(key: &StateKey, status: &StateStatus) -> u64 {
             .saturating_add(witness_key_bytes),
     )
     .unwrap_or(u64::MAX)
+}
+
+fn deferred_state_entry_bytes(entry: &DeferredStateEntry) -> u64 {
+    let witness_key_bytes = match &entry.status {
+        StateStatus::SatWitness(key) => key.as_bytes().len(),
+        StateStatus::InProgress | StateStatus::ProvenDead | StateStatus::Exhausted => 0,
+    };
+    let rational_payload = entry
+        .snapshot
+        .links
+        .iter()
+        .filter_map(|link| link.flow.as_ref())
+        .map(rational_payload_bytes)
+        .fold(0_usize, usize::saturating_add);
+    u64::try_from(
+        std::mem::size_of::<StateFingerprint>()
+            .saturating_add(std::mem::size_of::<DeferredStateEntry>())
+            .saturating_add(
+                entry
+                    .snapshot
+                    .nodes
+                    .len()
+                    .saturating_mul(std::mem::size_of::<PhysicalNode>()),
+            )
+            .saturating_add(
+                entry
+                    .snapshot
+                    .links
+                    .len()
+                    .saturating_mul(std::mem::size_of::<PartialLink>()),
+            )
+            .saturating_add(rational_payload)
+            .saturating_add(witness_key_bytes),
+    )
+    .unwrap_or(u64::MAX)
+}
+
+fn state_fingerprint(topology: &PartialTopology, cancel: &AtomicBool) -> Option<StateFingerprint> {
+    let node_types = topology
+        .nodes
+        .iter()
+        .map(|node| (node.id, node.node_type))
+        .collect::<BTreeMap<_, _>>();
+    let mut node_incidents = topology
+        .nodes
+        .iter()
+        .map(|node| (node.id, Vec::new()))
+        .collect::<BTreeMap<NodeId, Vec<FingerprintIncident>>>();
+    let mut link_descriptors = Vec::with_capacity(topology.links.len());
+
+    for (index, link) in topology.links.iter().enumerate() {
+        if index % 64 == 0 && cancel.load(Ordering::Relaxed) {
+            return None;
+        }
+        let producer = fingerprint_producer_owner(topology, &node_types, link.producer);
+        let consumer = fingerprint_consumer_owner(topology, &node_types, link.consumer);
+        link_descriptors.push((producer.clone(), consumer.clone(), link.flow.clone()));
+        if let ProducerPortRef::Node { node, .. } = link.producer {
+            node_incidents
+                .get_mut(&node)
+                .expect("partial topology link producer must own a materialized node")
+                .push(FingerprintIncident::Outgoing(consumer, link.flow.clone()));
+        }
+        if let ConsumerPortRef::Node { node, .. } = link.consumer {
+            node_incidents
+                .get_mut(&node)
+                .expect("partial topology link consumer must own a materialized node")
+                .push(FingerprintIncident::Incoming(producer, link.flow.clone()));
+        }
+    }
+    link_descriptors.sort();
+    let mut node_descriptors = topology
+        .nodes
+        .iter()
+        .map(|node| {
+            let mut incidents = node_incidents.remove(&node.id).unwrap_or_default();
+            incidents.sort();
+            (node.node_type, incidents)
+        })
+        .collect::<Vec<_>>();
+    node_descriptors.sort();
+
+    let mut hasher = DefaultHasher::new();
+    topology.remaining_profile.hash(&mut hasher);
+    topology.discard_count.hash(&mut hasher);
+    link_descriptors.hash(&mut hasher);
+    node_descriptors.hash(&mut hasher);
+    Some(StateFingerprint {
+        remaining_profile: topology.remaining_profile,
+        link_count: u32::try_from(topology.links.len()).unwrap_or(u32::MAX),
+        digest: hasher.finish(),
+    })
+}
+
+fn fingerprint_producer_owner(
+    topology: &PartialTopology,
+    node_types: &BTreeMap<NodeId, NodeType>,
+    producer: ProducerPortRef,
+) -> FingerprintOwner {
+    match producer {
+        ProducerPortRef::Input(index) => {
+            FingerprintOwner::Input(topology.problem.inputs[index.0 as usize].clone())
+        }
+        ProducerPortRef::Node { node, .. } => FingerprintOwner::Node(node_types[&node]),
+    }
+}
+
+fn fingerprint_consumer_owner(
+    topology: &PartialTopology,
+    node_types: &BTreeMap<NodeId, NodeType>,
+    consumer: ConsumerPortRef,
+) -> FingerprintOwner {
+    match consumer {
+        ConsumerPortRef::Output(index) => {
+            FingerprintOwner::Output(topology.problem.outputs[index.0 as usize].clone())
+        }
+        ConsumerPortRef::Discard(_) => FingerprintOwner::Discard,
+        ConsumerPortRef::Node { node, .. } => FingerprintOwner::Node(node_types[&node]),
+    }
 }
 
 fn scc_cache_entry_bytes(key: &SccSummaryKey, summary: &CachedOpenSccSummary) -> u64 {
@@ -593,6 +787,7 @@ struct SearchFeatures {
     reachability: bool,
     dynamic_scc: bool,
     scc_cache: SccCacheMode,
+    state_cache: StateCacheMode,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -600,6 +795,13 @@ struct SearchFeatures {
 enum SccCacheMode {
     Disabled,
     Enabled,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(not(test), allow(dead_code))]
+enum StateCacheMode {
+    Deferred,
+    Exact,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -612,6 +814,7 @@ impl SearchFeatures {
         reachability: true,
         dynamic_scc: true,
         scc_cache: SccCacheMode::Enabled,
+        state_cache: StateCacheMode::Deferred,
     };
 
     #[cfg(test)]
@@ -621,6 +824,7 @@ impl SearchFeatures {
         reachability: false,
         dynamic_scc: false,
         scc_cache: SccCacheMode::Disabled,
+        state_cache: StateCacheMode::Deferred,
     };
 
     #[cfg(test)]
@@ -630,6 +834,7 @@ impl SearchFeatures {
         reachability: false,
         dynamic_scc: false,
         scc_cache: SccCacheMode::Disabled,
+        state_cache: StateCacheMode::Deferred,
     };
 
     #[cfg(test)]
@@ -639,6 +844,7 @@ impl SearchFeatures {
         reachability: true,
         dynamic_scc: false,
         scc_cache: SccCacheMode::Disabled,
+        state_cache: StateCacheMode::Deferred,
     };
 
     #[cfg(test)]
@@ -648,6 +854,7 @@ impl SearchFeatures {
         reachability: true,
         dynamic_scc: false,
         scc_cache: SccCacheMode::Disabled,
+        state_cache: StateCacheMode::Deferred,
     };
 
     #[cfg(test)]
@@ -657,6 +864,13 @@ impl SearchFeatures {
         reachability: true,
         dynamic_scc: true,
         scc_cache: SccCacheMode::Disabled,
+        state_cache: StateCacheMode::Deferred,
+    };
+
+    #[cfg(test)]
+    const EXACT_STATE_CACHE: Self = Self {
+        state_cache: StateCacheMode::Exact,
+        ..Self::PRODUCTION
     };
 }
 
@@ -792,6 +1006,7 @@ struct SearchContext<'a> {
     expected_discard_link_count: u32,
     cancel: &'a AtomicBool,
     cache: HashMap<StateKey, StateStatus>,
+    deferred_cache: HashMap<StateFingerprint, DeferredStateBucket>,
     profile: NodeProfile,
     shared: Option<&'a SharedStateCache>,
     donations: Option<&'a DonationPool>,
@@ -830,6 +1045,7 @@ impl<'a> SearchContext<'a> {
             expected_discard_link_count: 0,
             cancel,
             cache: HashMap::new(),
+            deferred_cache: HashMap::new(),
             profile,
             shared: None,
             donations: None,
@@ -922,6 +1138,83 @@ impl<'a> SearchContext<'a> {
         self.replace_owned_cache_bytes(old_bytes, new_bytes);
     }
 
+    fn insert_deferred_state(
+        &mut self,
+        fingerprint: StateFingerprint,
+        snapshot: DeferredSnapshot,
+        status: StateStatus,
+    ) {
+        let entry = DeferredStateEntry { snapshot, status };
+        let new_bytes = deferred_state_entry_bytes(&entry);
+        let old_bytes = self
+            .deferred_cache
+            .insert(fingerprint, DeferredStateBucket::Unique(entry))
+            .and_then(|bucket| match bucket {
+                DeferredStateBucket::Unique(entry) => Some(deferred_state_entry_bytes(&entry)),
+                DeferredStateBucket::Canonicalized => None,
+            })
+            .unwrap_or(0);
+        self.replace_owned_cache_bytes(old_bytes, new_bytes);
+    }
+
+    fn promote_deferred_state(
+        &mut self,
+        fingerprint: StateFingerprint,
+    ) -> Option<DeferredStateEntry> {
+        let previous = self
+            .deferred_cache
+            .insert(fingerprint, DeferredStateBucket::Canonicalized)?;
+        match previous {
+            DeferredStateBucket::Unique(entry) => {
+                let removed = deferred_state_entry_bytes(&entry);
+                self.owned_cache_bytes = self.owned_cache_bytes.saturating_sub(removed);
+                Some(entry)
+            }
+            DeferredStateBucket::Canonicalized => None,
+        }
+    }
+
+    fn update_cache_status(&mut self, token: StateCacheToken, status: StateStatus) {
+        match token {
+            StateCacheToken::Exact(key) => self.insert_state_status(key, status),
+            StateCacheToken::Deferred(fingerprint) => {
+                let Some(DeferredStateBucket::Unique(entry)) =
+                    self.deferred_cache.get_mut(&fingerprint)
+                else {
+                    debug_assert!(false, "live deferred state was promoted unexpectedly");
+                    return;
+                };
+                let old_bytes = deferred_state_entry_bytes(entry);
+                entry.status = status;
+                let new_bytes = deferred_state_entry_bytes(entry);
+                self.replace_owned_cache_bytes(old_bytes, new_bytes);
+            }
+        }
+    }
+
+    fn remove_cache_status(&mut self, token: &StateCacheToken) {
+        match token {
+            StateCacheToken::Exact(key) => self.remove_state_status(key),
+            StateCacheToken::Deferred(fingerprint) => {
+                if let Some(DeferredStateBucket::Unique(entry)) =
+                    self.deferred_cache.remove(fingerprint)
+                {
+                    let removed = deferred_state_entry_bytes(&entry);
+                    self.owned_cache_bytes = self.owned_cache_bytes.saturating_sub(removed);
+                }
+            }
+        }
+    }
+
+    fn state_cache_len(&self) -> usize {
+        self.cache.len()
+            + self
+                .deferred_cache
+                .values()
+                .filter(|bucket| matches!(bucket, DeferredStateBucket::Unique(_)))
+                .count()
+    }
+
     fn remove_state_status(&mut self, key: &StateKey) {
         if let Some((owned_key, status)) = self.cache.remove_entry(key) {
             let removed = state_cache_entry_bytes(&owned_key, &status);
@@ -964,6 +1257,17 @@ impl<'a> SearchContext<'a> {
                 1,
             );
             drop(std::mem::take(&mut self.cache));
+        }
+        {
+            let _activity = crate::diagnostics::ActivitySpan::start(
+                "deferred_state_cache_drop",
+                self.expected_node_count,
+                self.expected_link_count,
+                Some(self.profile),
+                None,
+                1,
+            );
+            drop(std::mem::take(&mut self.deferred_cache));
         }
         {
             let _activity = crate::diagnostics::ActivitySpan::start(
@@ -1035,34 +1339,76 @@ fn search_state(
         increment(&mut context.stats.instrumentation.lower_bound_prunes);
         return DfsResult::Exhausted(None);
     }
-    let canonical_started = Instant::now();
-    let Some(canonical_state) =
-        canonicalize_state_and_open_ports_cancellable(&snapshot, context.cancel)
-    else {
-        return DfsResult::Incomplete;
-    };
-    let state_key = canonical_state.key;
-    let elapsed = canonical_started.elapsed();
-    context.record_canonicalization(elapsed);
-    hotspot_profile::record_state_canonicalize(elapsed);
-
-    // A StateKey includes the complete colored partial incidence graph, exact
-    // external semantics, open ports, and remaining node inventory. MRV's final
-    // tie-break individualizes the open port canonically, and legal decisions are
-    // ordered and deduplicated by their marked-child canonical keys. Thus equal
-    // states traverse the same child equivalence classes and have identical legal
-    // completion sets. Completed statuses may be reused as equivalence proofs.
-    // InProgress remains distinct because its owner has not discharged that
-    // obligation yet.
-    let status = context.cache.get(&state_key).cloned().or_else(|| {
-        let hit = context
-            .shared?
-            .lookup(context.expected_link_count, &state_key);
-        if hit.is_some() {
-            increment(&mut context.stats.instrumentation.shared_cache_hits);
+    let defer = context.features.state_cache == StateCacheMode::Deferred
+        && context.shared.is_none()
+        && context.donations.is_none();
+    let (state_token, open_port_order, status) = if defer {
+        let Some(fingerprint) = state_fingerprint(&snapshot, context.cancel) else {
+            return DfsResult::Incomplete;
+        };
+        match context.deferred_cache.get(&fingerprint) {
+            None => {
+                increment(&mut context.stats.instrumentation.deferred_state_visits);
+                context.insert_deferred_state(
+                    fingerprint,
+                    DeferredSnapshot::from_partial(snapshot),
+                    StateStatus::InProgress,
+                );
+                (
+                    StateCacheToken::Deferred(fingerprint),
+                    StateOpenPortOrder::Raw,
+                    None,
+                )
+            }
+            Some(DeferredStateBucket::Unique(_)) => {
+                increment(&mut context.stats.instrumentation.deferred_state_promotions);
+                let prior = context
+                    .promote_deferred_state(fingerprint)
+                    .expect("unique deferred bucket must contain its first state");
+                let prior_snapshot = prior.snapshot.restore(&context.problem);
+                let Some(prior_key) = canonicalize_search_state(&prior_snapshot, context) else {
+                    return DfsResult::Incomplete;
+                };
+                context.insert_state_status(prior_key, prior.status);
+                let Some(canonical) = canonicalize_search_state_with_open_ports(&snapshot, context)
+                else {
+                    return DfsResult::Incomplete;
+                };
+                let status = state_status(context, &canonical.key);
+                (
+                    StateCacheToken::Exact(canonical.key),
+                    StateOpenPortOrder::Canonical(canonical.open_port_coordinates),
+                    status,
+                )
+            }
+            Some(DeferredStateBucket::Canonicalized) => {
+                let Some(canonical) = canonicalize_search_state_with_open_ports(&snapshot, context)
+                else {
+                    return DfsResult::Incomplete;
+                };
+                let status = state_status(context, &canonical.key);
+                (
+                    StateCacheToken::Exact(canonical.key),
+                    StateOpenPortOrder::Canonical(canonical.open_port_coordinates),
+                    status,
+                )
+            }
         }
-        hit
-    });
+    } else {
+        let Some(canonical) = canonicalize_search_state_with_open_ports(&snapshot, context) else {
+            return DfsResult::Incomplete;
+        };
+        let status = state_status(context, &canonical.key);
+        (
+            StateCacheToken::Exact(canonical.key),
+            StateOpenPortOrder::Canonical(canonical.open_port_coordinates),
+            status,
+        )
+    };
+
+    // Exact keys remain authoritative whenever a cheap invariant bucket repeats.
+    // A first visit uses raw traversal order but still enumerates every decision.
+    // Cache equality is never inferred from the fingerprint alone.
     if let Some(status) = status {
         if let StateStatus::SatWitness(key) = &status
             && let Some(shared) = context.shared
@@ -1090,24 +1436,30 @@ fn search_state(
         };
     }
 
-    context.insert_state_status(state_key.clone(), StateStatus::InProgress);
+    if let StateCacheToken::Exact(key) = &state_token {
+        context.insert_state_status(key.clone(), StateStatus::InProgress);
+    }
     increment(&mut context.stats.instrumentation.canonical_states_retained);
     context.stats.instrumentation.peak_state_cache_size = context
         .stats
         .instrumentation
         .peak_state_cache_size
-        .max(u64::try_from(context.cache.len()).unwrap_or(u64::MAX));
+        .max(u64::try_from(context.state_cache_len()).unwrap_or(u64::MAX));
 
     if state.is_complete() {
-        return evaluate_complete_state(state, context, state_key);
+        return evaluate_complete_state(state, context, state_token);
     }
 
     let orbit_started = Instant::now();
-    let Some(open_port) = state
-        .selected_dfs_open_port_cancellable(&canonical_state.open_port_coordinates, context.cancel)
-    else {
+    let selected = match &open_port_order {
+        StateOpenPortOrder::Canonical(coordinates) => {
+            state.selected_dfs_open_port_cancellable(coordinates, context.cancel)
+        }
+        StateOpenPortOrder::Raw => state.selected_raw_dfs_open_port_cancellable(context.cancel),
+    };
+    let Some(open_port) = selected else {
         hotspot_profile::record_legal_decisions(orbit_started.elapsed());
-        context.remove_state_status(&state_key);
+        context.remove_cache_status(&state_token);
         return DfsResult::Incomplete;
     };
     let Some(open_port) = open_port else {
@@ -1115,7 +1467,7 @@ fn search_state(
         // No open port means no future structural decision can attach a remaining
         // node or occupy a missing mandatory port. Since this state is not
         // complete, its completion set is empty.
-        context.insert_state_status(state_key, StateStatus::ProvenDead);
+        context.update_cache_status(state_token, StateStatus::ProvenDead);
         return DfsResult::Exhausted(None);
     };
     let Some(decisions) = ({
@@ -1123,7 +1475,7 @@ fn search_state(
         hotspot_profile::record_legal_decisions(orbit_started.elapsed());
         decisions
     }) else {
-        context.remove_state_status(&state_key);
+        context.remove_cache_status(&state_token);
         return DfsResult::Incomplete;
     };
 
@@ -1164,11 +1516,45 @@ fn search_state(
                 },
                 |key| StateStatus::SatWitness(key.clone()),
             );
-            context.insert_state_status(state_key, status);
+            context.update_cache_status(state_token, status);
         }
-        DfsResult::Incomplete | DfsResult::Failed(_) => context.remove_state_status(&state_key),
+        DfsResult::Incomplete | DfsResult::Failed(_) => context.remove_cache_status(&state_token),
     }
     result
+}
+
+fn canonicalize_search_state(
+    snapshot: &PartialTopology,
+    context: &mut SearchContext<'_>,
+) -> Option<StateKey> {
+    let started = Instant::now();
+    let key = canonicalize_state_cancellable(snapshot, context.cancel)?;
+    let elapsed = started.elapsed();
+    context.record_canonicalization(elapsed);
+    hotspot_profile::record_state_canonicalize(elapsed);
+    Some(key)
+}
+
+fn canonicalize_search_state_with_open_ports(
+    snapshot: &PartialTopology,
+    context: &mut SearchContext<'_>,
+) -> Option<crate::canonical::CanonicalStateAndOpenPorts> {
+    let started = Instant::now();
+    let canonical = canonicalize_state_and_open_ports_cancellable(snapshot, context.cancel)?;
+    let elapsed = started.elapsed();
+    context.record_canonicalization(elapsed);
+    hotspot_profile::record_state_canonicalize(elapsed);
+    Some(canonical)
+}
+
+fn state_status(context: &mut SearchContext<'_>, key: &StateKey) -> Option<StateStatus> {
+    context.cache.get(key).cloned().or_else(|| {
+        let hit = context.shared?.lookup(context.expected_link_count, key);
+        if hit.is_some() {
+            increment(&mut context.stats.instrumentation.shared_cache_hits);
+        }
+        hit
+    })
 }
 
 fn operator_link_count(topology: &PartialTopology) -> u32 {
@@ -1644,7 +2030,7 @@ fn rollback_branch(
 fn evaluate_complete_state(
     state: &TopologyState,
     context: &mut SearchContext<'_>,
-    state_key: StateKey,
+    state_token: StateCacheToken,
 ) -> DfsResult {
     let complete_started = Instant::now();
     increment(&mut context.stats.complete_topologies);
@@ -1669,12 +2055,12 @@ fn evaluate_complete_state(
         Ok(solved) => solved,
         Err(error) if is_candidate_rejection(&error) => {
             increment(&mut context.stats.rejected_complete_topologies);
-            context.insert_state_status(state_key, StateStatus::ProvenDead);
+            context.update_cache_status(state_token, StateStatus::ProvenDead);
             hotspot_profile::record_evaluate_complete(complete_started.elapsed());
             return DfsResult::Exhausted(None);
         }
         Err(error) => {
-            context.remove_state_status(&state_key);
+            context.remove_cache_status(&state_token);
             hotspot_profile::record_evaluate_complete(complete_started.elapsed());
             return DfsResult::Failed(ProfileSearchError::InvalidCompleteTopology(Box::new(error)));
         }
@@ -1695,7 +2081,7 @@ fn evaluate_complete_state(
             != expected as usize
     }) {
         increment(&mut context.stats.rejected_complete_topologies);
-        context.insert_state_status(state_key, StateStatus::ProvenDead);
+        context.update_cache_status(state_token, StateStatus::ProvenDead);
         hotspot_profile::record_evaluate_complete(complete_started.elapsed());
         return DfsResult::Exhausted(None);
     }
@@ -1704,7 +2090,7 @@ fn evaluate_complete_state(
     let Some(canonical) =
         canonicalize_witness_cancellable(&context.problem, &solved, context.cancel)
     else {
-        context.remove_state_status(&state_key);
+        context.remove_cache_status(&state_token);
         hotspot_profile::record_evaluate_complete(complete_started.elapsed());
         return DfsResult::Incomplete;
     };
@@ -1724,7 +2110,7 @@ fn evaluate_complete_state(
     let validation = match validation {
         Ok(validation) => validation,
         Err(error) => {
-            context.remove_state_status(&state_key);
+            context.remove_cache_status(&state_token);
             hotspot_profile::record_evaluate_complete(complete_started.elapsed());
             return DfsResult::Failed(ProfileSearchError::ValidationFirewall(Box::new(error)));
         }
@@ -1736,7 +2122,7 @@ fn evaluate_complete_state(
         .expected_link_count
         .is_some_and(|expected| validation.link_count != expected)
     {
-        context.insert_state_status(state_key, StateStatus::ProvenDead);
+        context.update_cache_status(state_token, StateStatus::ProvenDead);
         hotspot_profile::record_evaluate_complete(complete_started.elapsed());
         return DfsResult::Exhausted(None);
     }
@@ -1744,7 +2130,7 @@ fn evaluate_complete_state(
         || validation.physical_link_count != context.expected_physical_link_count
         || validation.discard_link_count != context.expected_discard_link_count
     {
-        context.remove_state_status(&state_key);
+        context.remove_cache_status(&state_token);
         hotspot_profile::record_evaluate_complete(complete_started.elapsed());
         return DfsResult::Failed(ProfileSearchError::ValidationCountMismatch {
             expected_nodes: context.expected_node_count,
@@ -1764,7 +2150,7 @@ fn evaluate_complete_state(
         graph: canonical.graph,
         validation,
     });
-    context.insert_state_status(state_key, StateStatus::SatWitness(key.clone()));
+    context.update_cache_status(state_token, StateStatus::SatWitness(key.clone()));
     hotspot_profile::record_evaluate_complete(complete_started.elapsed());
     DfsResult::Exhausted(Some(key))
 }
@@ -2587,6 +2973,31 @@ mod tests {
     }
 
     #[test]
+    fn deferred_and_exact_state_caches_return_the_same_fixed_profile_witnesses() {
+        let cases = [
+            (problem(&["2"], &["1", "1"], "2"), profile(1, 0, 0, 0)),
+            (problem(&["1", "2"], &["3"], "3"), profile(0, 0, 1, 0)),
+            (problem(&["1"], &["1"], "2"), profile(1, 0, 1, 0)),
+        ];
+        for (caller_problem, profile) in cases {
+            let normalized = normalized(&caller_problem);
+            let deferred = exhaustive_witness(search_profile_with_features(
+                &normalized,
+                profile,
+                &AtomicBool::new(false),
+                SearchFeatures::PRODUCTION,
+            ));
+            let exact = exhaustive_witness(search_profile_with_features(
+                &normalized,
+                profile,
+                &AtomicBool::new(false),
+                SearchFeatures::EXACT_STATE_CACHE,
+            ));
+            assert_eq!(deferred, exact, "fixed profile {profile:?}");
+        }
+    }
+
+    #[test]
     fn arithmetic_depth_bounds_prune_only_reference_unsat_profiles() {
         let cases = [
             (problem(&["5"], &["1"], "5"), profile(1, 0, 0, 0)),
@@ -2845,6 +3256,11 @@ mod tests {
             canonicalize_state(&left_partial),
             canonicalize_state(&right_partial)
         );
+        let cancel = AtomicBool::new(false);
+        assert_eq!(
+            state_fingerprint(&left_partial, &cancel),
+            state_fingerprint(&right_partial, &cancel)
+        );
 
         let mut left = TopologyState::from_partial_topology(&left_partial).unwrap();
         let mut right = TopologyState::from_partial_topology(&right_partial).unwrap();
@@ -2861,7 +3277,6 @@ mod tests {
         let right_outcome = partial_search_outcome(&normalized, profile, &right_partial);
         assert_eq!(left_outcome, right_outcome);
 
-        let cancel = AtomicBool::new(false);
         let mut context = SearchContext::new(&normalized, profile, &cancel);
         let accounting = profile_link_accounting(
             profile,
@@ -3099,7 +3514,11 @@ mod tests {
                 context.expected_link_count = expected;
                 context.expected_physical_link_count = 5;
                 context.expected_discard_link_count = 0;
-                let result = evaluate_complete_state(&state, &mut context, key.clone());
+                let result = evaluate_complete_state(
+                    &state,
+                    &mut context,
+                    StateCacheToken::Exact(key.clone()),
+                );
                 if expected == Some(2) {
                     assert!(matches!(result, DfsResult::Exhausted(None)));
                     assert!(context.best_witness.is_none());

@@ -744,6 +744,23 @@ impl TopologyState {
         Some(selected)
     }
 
+    /// Selects one exhaustive DFS representative without graph canonicalization.
+    ///
+    /// Raw labels affect traversal order only. Every decision for the selected
+    /// representative remains present, and exact state-cache promotion handles
+    /// equivalence when a deferred fingerprint repeats.
+    #[allow(clippy::option_option)]
+    pub(crate) fn selected_raw_dfs_open_port_cancellable(
+        &self,
+        cancel: &AtomicBool,
+    ) -> Option<Option<OpenPortRef>> {
+        self.open_orbit_finalists(Some(cancel))?
+            .into_iter()
+            .map(|candidate| candidate.representative)
+            .min()
+            .map_or(Some(None), |representative| Some(Some(representative)))
+    }
+
     /// Lists legal decisions in canonical marked-child order.
     ///
     /// Raw endpoint references appear only after the invariant child key and

@@ -1,7 +1,7 @@
 # Custom solver optimization and parallelism
 
 Start here for the optimization history and for continuing this work.
-Updated 2026-08-30.
+Updated 2026-08-31.
 
 ## Read in this order
 
@@ -97,6 +97,13 @@ Updated 2026-08-30.
   reuses the state labeling for recursive DFS open-port selection. All six completed
   A/B pairs preserve exact outputs and improve 18.2-49.4%, so the change is permanent.
   The capped hard-10 diagnostic advances more work with 12.8% higher sampled memory.
+- [Experiment 29](custom-solver/experiments/29-deferred-state-canonicalization.md)
+  tests deferred state labeling inside recursive DFS. Cheap fingerprints only decide
+  when to compute exact canonical keys; they never authorize pruning or reuse. All 26
+  records verify, and six completed medians improve 18.3-38.1%. The change is
+  permanent. [Experiment 30](custom-solver/experiments/30-no-state-cache-ablation.md)
+  will directly test whether local memoization still pays for itself. Scheduling stays
+  paused.
 
 The goal is shorter time to a proven optimum, complete minimum-link enumeration,
 and complete minimum-node enumeration. Benchmark modes are `optimal` for one layout,

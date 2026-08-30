@@ -32,8 +32,12 @@ pub struct SearchInstrumentation {
     pub partition_planning_ns: u64,
     /// Structural edge decisions attempted.
     pub raw_structural_decisions: u64,
-    /// Canonical states retained for search.
+    /// Distinct exact or deferred states retained for search.
     pub canonical_states_retained: u64,
+    /// First visits held under a cheap invariant before canonical promotion.
+    pub deferred_state_visits: u64,
+    /// Invariant buckets promoted to exact canonical keys after a repeat.
+    pub deferred_state_promotions: u64,
     /// Isomorphic or equivalent states rejected.
     pub canonical_duplicates_eliminated: u64,
     /// Contradictions found by exact propagation.
@@ -94,8 +98,18 @@ impl SearchInstrumentation {
             ),
             Diagnostic::counter(
                 "custom.canonical_states_retained",
-                "Canonical states retained",
+                "States retained",
                 self.canonical_states_retained,
+            ),
+            Diagnostic::counter(
+                "custom.deferred_state_visits",
+                "Deferred state visits",
+                self.deferred_state_visits,
+            ),
+            Diagnostic::counter(
+                "custom.deferred_state_promotions",
+                "Deferred bucket promotions",
+                self.deferred_state_promotions,
             ),
             Diagnostic::counter(
                 "custom.canonical_duplicates_eliminated",

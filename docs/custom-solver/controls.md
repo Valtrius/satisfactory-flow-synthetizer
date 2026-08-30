@@ -37,6 +37,11 @@ in-flight cache owner. Exact-L scope and a group-owned witness registry preserve
 borrowed SAT results. Donation uses a bounded group deque and executes queued work
 while joining, including with one worker. All children must finish before parent caching.
 
+The current experiment-29 working tree defers local state canonicalization until a
+cheap invariant bucket repeats. A fingerprint never proves equality. Repeated buckets,
+shared-cache paths, and donation paths use authoritative canonical state keys. The
+frozen A/B passed and the implementation is permanent.
+
 Remaining groups have a bounded number of slots. Their worker budgets sum to the
 requested search workers; reporter/coordinator threads are additional. Allocations
 do not move between groups after a group finishes. A common coarse pool is only a

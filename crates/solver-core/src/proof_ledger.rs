@@ -521,6 +521,12 @@ fn merge_stats(total: &mut ProfileSearchStats, child: &ProfileSearchStats) {
     target.canonical_states_retained = target
         .canonical_states_retained
         .saturating_add(source.canonical_states_retained);
+    target.deferred_state_visits = target
+        .deferred_state_visits
+        .saturating_add(source.deferred_state_visits);
+    target.deferred_state_promotions = target
+        .deferred_state_promotions
+        .saturating_add(source.deferred_state_promotions);
     target.canonical_duplicates_eliminated = target
         .canonical_duplicates_eliminated
         .saturating_add(source.canonical_duplicates_eliminated);

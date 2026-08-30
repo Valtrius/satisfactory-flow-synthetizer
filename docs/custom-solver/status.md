@@ -1,6 +1,6 @@
 # Current decisions and handoff
 
-Updated 2026-08-30. Start at [the entry point](../custom-parallelism.md).
+Updated 2026-08-31. Start at [the entry point](../custom-parallelism.md).
 Historical hypotheses and results remain in the [experiment index](experiments/README.md).
 
 ## Objective
@@ -17,6 +17,11 @@ Experiment 28 is permanent. Recursive DFS reuses the existing state labeling for
 its final open-port MRV tie-break. All six completed A/B pairs preserve exact outputs
 and improve 18.2-49.4%. Root/frontier identity and p1 scheduling are unchanged.
 
+[Experiment 29](experiments/29-deferred-state-canonicalization.md) is permanent. It
+defers exact state labeling for the first visit to a cheap invariant bucket, then
+promotes repeated buckets to authoritative canonical keys. All six completed medians
+improve 18.3-38.1% with exact outputs intact.
+
 ## Permanent changes and commit state
 
 | Change                                                | Evidence                                                            | Commit                                                           |
@@ -31,6 +36,10 @@ and improve 18.2-49.4%. Root/frontier identity and p1 scheduling are unchanged.
 | Derive exact symmetric witness ports                  | 559,872x fewer leaves; root 2.38-2.57x faster                       | `f5df873`, [22](experiments/22-results.md)                       |
 | Bypass marked-child keys inside recursive DFS         | 28 verified jobs; completed medians improve 17.5-22.9%              | `1b62e5e`, [26](experiments/26-internal-dfs-promotion-repeat.md) |
 | Reuse state coordinates for DFS open-port selection   | 14 verified jobs; completed pairs improve 18.2-49.4%                | [28](experiments/28-state-open-port-coordinate-reuse.md)         |
+| Defer state keys until an invariant repeats           | 26 verified jobs; completed medians improve 18.3-38.1%              | [29](experiments/29-deferred-state-canonicalization.md)          |
+
+Experiment 29 is the reference for the planned no-cache ablation. Keep that candidate
+separate so the permanent deferred-cache implementation remains reproducible.
 
 Each optimization commit includes its related docs. Experiment 13 tooling/results
 are committed in `473aba7`. [Calculation promotion](experiments/14-calculation-promotion.md)
@@ -125,7 +134,19 @@ optimal, minimum-link, and full enumeration. The capped hard-10 diagnostic proce
 45.1% more states while sampled peak working set rises 12.8%; it does not establish
 completion speed. State-coordinate reuse is permanent. Scheduler work remains paused.
 
+[Experiment 29](experiments/29-deferred-state-canonicalization.md) verifies all 26
+records. Twenty-four complete optimally and preserve every exact result field; the two
+hard-10 runs remain explicitly capped. Six completed medians improve 18.3-38.1%.
+Promote the candidate, then run the fail-fast [no-cache ablation](experiments/30-no-state-cache-ablation.md).
+Measured duplicate fractions of 11.3-20.4% justify testing both possibilities but do
+not prove the cache's net value. Scheduling remains paused.
+
 ## Validation records
+
+Experiment 29 post-run: 26/26 records verify with no analyzer failures. All 24 completed
+results match their frozen references; two hard-10 records reach the common cap and
+remain incomplete. Full workspace tests, both strict Clippy configurations, analyzer
+tests, formatting, and frozen-plan validation passed before launch.
 
 Experiment 28 post-run and promotion: 14/14 records verify with no analyzer failures.
 All six completed pairs match their frozen references. The hard-10 pair reaches the

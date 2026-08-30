@@ -1644,6 +1644,12 @@ pub(crate) fn merge_instrumentation(
     total.canonical_states_retained = total
         .canonical_states_retained
         .saturating_add(profile.canonical_states_retained);
+    total.deferred_state_visits = total
+        .deferred_state_visits
+        .saturating_add(profile.deferred_state_visits);
+    total.deferred_state_promotions = total
+        .deferred_state_promotions
+        .saturating_add(profile.deferred_state_promotions);
     total.canonical_duplicates_eliminated = total
         .canonical_duplicates_eliminated
         .saturating_add(profile.canonical_duplicates_eliminated);

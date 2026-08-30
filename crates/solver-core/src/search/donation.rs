@@ -53,6 +53,7 @@ impl Seed {
             expected_discard_link_count: self.expected_discard_link_count,
             cancel,
             cache: HashMap::new(),
+            deferred_cache: HashMap::new(),
             scc_cache: HashMap::new(),
             shared: None,
             donations: None,
