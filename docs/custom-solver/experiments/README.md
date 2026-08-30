@@ -32,6 +32,7 @@ Record dates follow the analysis chronology, not necessarily every run's start t
 | [24](24-canonical-purpose-profile.md)         | 2026-08-29    | Which exact state/open-port/marked-child/SCC identity consumes canonicalization time?     | 4 verified; internal marked-child bypass is the next isolated test                  |
 | [25](25-internal-dfs-marked-bypass.md)        | 2026-08-30    | Can dispatched DFS defer marked-child equivalence to propagated canonical state keys?     | 12 verified; four completed pairs improve 16.6-21.1%; repeat before promotion       |
 | [26](26-internal-dfs-promotion-repeat.md)     | 2026-08-30    | Do repeated completed solves confirm the bypass; what owns hard-run memory?               | 16 verified; combined medians improve 17.5-22.9%; permanent; RAM is local caches    |
+| [27](27-minimum-link-enumeration-mode.md)     | 2026-08-30    | Can users enumerate only the proven minimum-N/minimum-L layouts?                          | Implemented across all solvers, UI and benchmark runner; differential test passed   |
 
 ## How the diagnosis changed
 
@@ -105,6 +106,10 @@ Record dates follow the analysis chronology, not necessarily every run's start t
     outputs, so the internal bypass becomes permanent. Existing telemetry attributes
     hard-run RAM mainly to the sum of worker-local state and SCC caches. Measure those
     two categories separately before optimizing memory itself.
+22. [Minimum-link enumeration](27-minimum-link-enumeration-mode.md) adds a third
+    exact solve scope across Custom, Z3 and Reference. It exhausts only the first
+    satisfiable L group at minimum N and is available to the benchmark runner as
+    `minimum_links`.
 
 ## Evidence conventions
 

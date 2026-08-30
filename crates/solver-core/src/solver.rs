@@ -21,7 +21,7 @@ use std::sync::Arc;
 use solver_api::{
     BestKnownSolution, ConsumerPortRef, IncompleteReason, IncompleteResult, InputTerminalIndex,
     OptimalSolution, OutputTerminalIndex, PhysicalGraph, Problem, ProducerPortRef, ProofSummary,
-    SolvePhase, SolveResult, SolverEvent, SolverProgress,
+    SolveMode, SolvePhase, SolveResult, SolverEvent, SolverProgress,
 };
 use solver_validation::{ValidationError, validate_solution};
 use thiserror::Error;
@@ -214,7 +214,32 @@ pub fn solve_with_observer(
         options,
         cancel,
         observer,
-        false,
+        SolveMode::Optimal,
+        #[cfg(test)]
+        None,
+    )
+}
+
+/// Enumerates every distinct validated topology at the minimum node and link counts.
+///
+/// The solver exhausts the first satisfiable equal-link group and returns without searching
+/// larger link counts at the winning node count.
+///
+/// # Errors
+///
+/// Returns the same errors as [`solve_with_observer`].
+pub fn enumerate_minimum_links_with_observer(
+    problem: &Problem,
+    options: &SolveOptions,
+    cancel: &AtomicBool,
+    observer: &dyn SolveObserver,
+) -> Result<SolveResult, SolverError> {
+    solve_internal(
+        problem,
+        options,
+        cancel,
+        observer,
+        SolveMode::AllAtMinimumNodesAndMinimumLinks,
         #[cfg(test)]
         None,
     )
@@ -240,7 +265,7 @@ pub fn enumerate_with_observer(
         options,
         cancel,
         observer,
-        true,
+        SolveMode::AllAtMinimumNodes,
         #[cfg(test)]
         None,
     )
@@ -252,9 +277,11 @@ fn solve_internal(
     options: &SolveOptions,
     cancel: &AtomicBool,
     observer: &dyn SolveObserver,
-    enumerate_all_at_n: bool,
+    mode: SolveMode,
     #[cfg(test)] panic_next_root_worker: Option<&AtomicBool>,
 ) -> Result<SolveResult, SolverError> {
+    let enumerate_layouts = mode != SolveMode::Optimal;
+    let enumerate_all_link_counts = mode == SolveMode::AllAtMinimumNodes;
     if options.worker_count == 0 {
         return Err(SolverError::InvalidWorkerCount);
     }
@@ -368,7 +395,7 @@ fn solve_internal(
                 return Ok(incomplete(IncompleteReason::Cancelled, best_known, proof));
             }
 
-            if enumerate_all_at_n
+            if enumerate_all_link_counts
                 && options.parallelism.parallel_remaining_groups
                 && winning_node == Some(node_count)
                 && !parallel_started
@@ -493,7 +520,7 @@ fn solve_internal(
                         )?;
                         retain_best(&mut best_known, candidate.clone());
                         emit_event(observer, SolverEvent::Incumbent(candidate.clone()));
-                        if enumerate_all_at_n
+                        if enumerate_layouts
                             && enumerated
                                 .insert(candidate.canonical_graph_key.clone(), candidate.clone())
                                 .is_none()
@@ -503,7 +530,7 @@ fn solve_internal(
                         if cancel.load(Ordering::Relaxed) {
                             return Ok(incomplete(IncompleteReason::Cancelled, best_known, proof));
                         }
-                        if !enumerate_all_at_n {
+                        if !enumerate_layouts {
                             return Ok(SolveResult::Optimal(optimal_solution(candidate, proof)));
                         }
                     }
@@ -536,7 +563,7 @@ fn solve_internal(
                     requested_workers: options.worker_count,
                     parallelism: options.parallelism,
                     cancel,
-                    collect_all_witnesses: enumerate_all_at_n,
+                    collect_all_witnesses: enumerate_layouts,
                     #[cfg(test)]
                     panic_next_root_worker,
                 }
@@ -602,7 +629,7 @@ fn solve_internal(
                             completed_profiles = completed_profiles
                                 .checked_add(1)
                                 .ok_or(SolverError::ProofAccountingOverflow)?;
-                            let witnesses = if enumerate_all_at_n {
+                            let witnesses = if enumerate_layouts {
                                 collected_witnesses
                             } else {
                                 best_witness.into_iter().collect()
@@ -633,7 +660,7 @@ fn solve_internal(
                                 if retain_best(&mut best_known, candidate.clone()) {
                                     emit_event(observer, SolverEvent::Incumbent(candidate.clone()));
                                 }
-                                if enumerate_all_at_n
+                                if enumerate_layouts
                                     && enumerated
                                         .insert(
                                             candidate.canonical_graph_key.clone(),
@@ -652,7 +679,7 @@ fn solve_internal(
                             witnesses: _,
                             stats: _,
                         } => {
-                            let witnesses = if enumerate_all_at_n {
+                            let witnesses = if enumerate_layouts {
                                 collected_witnesses
                             } else {
                                 best_witness.into_iter().collect()
@@ -682,7 +709,7 @@ fn solve_internal(
                                 if retain_best(&mut best_known, candidate.clone()) {
                                     emit_event(observer, SolverEvent::Incumbent(candidate.clone()));
                                 }
-                                if enumerate_all_at_n
+                                if enumerate_layouts
                                     && enumerated
                                         .insert(
                                             candidate.canonical_graph_key.clone(),
@@ -764,7 +791,7 @@ fn solve_internal(
                         ),
                     });
                 }
-                if !enumerate_all_at_n {
+                if !enumerate_all_link_counts {
                     return Ok(SolveResult::Optimal(optimal_solution(best, proof)));
                 }
                 winning_node = Some(node_count);
@@ -2598,7 +2625,7 @@ mod tests {
             },
             &AtomicBool::new(false),
             &|_| {},
-            false,
+            SolveMode::Optimal,
             Some(&panic_next_root_worker),
         )
         .unwrap_err();

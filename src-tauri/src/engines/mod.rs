@@ -17,11 +17,7 @@ use tauri::AppHandle;
 
 pub fn run_job(app: &AppHandle, job: &Job, request: &SolveRequest, prepared: &PreparedProblem) {
     let options = RunOptions {
-        mode: if request.enumerate_all_at_n {
-            SolveMode::AllAtMinimumNodes
-        } else {
-            SolveMode::Optimal
-        },
+        mode: request.solve_mode,
         max_nodes: None,
         worker_count: std::thread::available_parallelism().map_or(1, std::num::NonZero::get),
     };
@@ -38,7 +34,7 @@ pub fn run_job(app: &AppHandle, job: &Job, request: &SolveRequest, prepared: &Pr
                     return;
                 }
                 SolverEvent::Incumbent(best) => {
-                    if request.enumerate_all_at_n {
+                    if request.solve_mode != SolveMode::Optimal {
                         return;
                     }
                     Solution::from_best(request.engine, prepared, &best).map(|solution| {
@@ -118,6 +114,7 @@ fn apply_terminal(
     let complete = matches!(
         outcome.enumeration,
         EnumerationStatus::AllAtMinimumNodes { complete: true, .. }
+            | EnumerationStatus::AllAtMinimumNodesAndMinimumLinks { complete: true, .. }
     );
     // Result indices also identify saved graph edits. Keep the live append order
     // when the mathematical API returns its deterministically ordered collection.
@@ -180,7 +177,7 @@ fn apply_terminal(
                     JobStatus::Incomplete
                 }
             };
-            if (!request.enumerate_all_at_n || snapshot.result.is_none())
+            if (request.solve_mode == SolveMode::Optimal || snapshot.result.is_none())
                 && let (Some(display), SolveResult::Incomplete(exact)) =
                     (incomplete.best_known, &outcome.result)
                 && let Some(best) = &exact.best_known
@@ -210,7 +207,7 @@ mod tests {
 
     fn request() -> SolveRequest {
         serde_json::from_value(serde_json::json!({
-            "engine": "custom", "enumerateAllAtN": true,
+            "engine": "custom", "solveMode": "all_at_minimum_nodes",
             "inputs": [{"id": "a", "name": "A", "rate": "2"}, {"id": "b", "name": "B", "rate": "3"}],
             "outputs": [{"id": "c", "name": "C", "rate": "1"}, {"id": "d", "name": "D", "rate": "4"}],
             "beltRate": "5"
@@ -291,7 +288,7 @@ mod tests {
     #[test]
     fn cancelled_opt_keeps_a_best_known_result_but_no_enumeration_or_link_proof() {
         let mut request = request();
-        request.enumerate_all_at_n = false;
+        request.solve_mode = SolveMode::Optimal;
         let prepared = request.problem.prepare().unwrap();
         let outcome = runtime::solve(
             request.engine,

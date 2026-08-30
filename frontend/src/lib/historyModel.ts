@@ -7,10 +7,12 @@ import type {
   SolverProgress,
   OptimalityProof,
   JobSnapshot,
+  SolveMode,
 } from '../types';
+import { enumeratesLayouts } from '../types';
 import { DEFAULT_SORT_COLUMNS, type SortColumn } from './solutionSort';
 
-export const HISTORY_DOCUMENT_VERSION = 1;
+export const HISTORY_DOCUMENT_VERSION = 2;
 
 export type HistoryBand = 'queued' | 'running' | 'history';
 
@@ -21,7 +23,7 @@ export interface FormSnapshot {
   inputs: EndpointRow[];
   outputs: EndpointRow[];
   beltRate: string;
-  enumerateAllAtN: boolean;
+  solveMode: SolveMode;
   engine: SolverEngine;
 }
 
@@ -103,14 +105,14 @@ export function snapshotForm(
   inputs: EndpointRow[],
   outputs: EndpointRow[],
   beltRate: string,
-  enumerateAllAtN: boolean,
+  solveMode: SolveMode,
   engine: SolverEngine = 'custom',
 ): FormSnapshot {
   return {
     inputs: inputs.map((row) => ({ ...row })),
     outputs: outputs.map((row) => ({ ...row })),
     beltRate,
-    enumerateAllAtN,
+    solveMode,
     engine,
   };
 }
@@ -124,7 +126,7 @@ export function cloneForm(form: FormSnapshot): FormSnapshot {
     inputs: form.inputs.map((row) => ({ ...row })),
     outputs: form.outputs.map((row) => ({ ...row })),
     beltRate: form.beltRate,
-    enumerateAllAtN: form.enumerateAllAtN,
+    solveMode: form.solveMode,
     engine: form.engine ?? 'custom',
   };
 }
@@ -250,15 +252,20 @@ export type HistoryMetrics = {
 
 /** Compact icon-grid metrics for history cards. */
 export function entryHistoryMetrics(entry: HistoryEntry): HistoryMetrics {
-  const allLayouts = Boolean(entry.request.enumerateAllAtN);
+  const mode = entry.request.solveMode;
   const engine = entry.request.engine === 'z3' ? 'Z3' : 'Custom';
   const nodeCount = entryNodeCount(entry);
   const layoutCount = entryLayoutCount(entry);
 
   return {
     search: {
-      value: allLayouts ? 'All' : 'Opt',
-      tip: allLayouts ? 'Search: Find all layouts at N' : 'Search: Find optimal layout',
+      value: mode === 'optimal' ? 'Opt' : mode === 'all_at_minimum_nodes_and_minimum_links' ? 'Min L' : 'All L',
+      tip:
+        mode === 'optimal'
+          ? 'Search: Find one optimal layout'
+          : mode === 'all_at_minimum_nodes_and_minimum_links'
+            ? 'Search: Find all layouts at minimum N and minimum L'
+            : 'Search: Find all layouts at minimum N across all L',
     },
     engine: {
       value: engine,
@@ -307,7 +314,12 @@ export function entryOutcomeLine(entry: HistoryEntry): string {
   const nodeCount = entryNodeCount(entry);
 
   if (entry.status === 'queued') {
-    return entry.request.enumerateAllAtN ? 'All layouts' : 'Optimal';
+    const mode = entry.request.solveMode;
+    return mode === 'optimal'
+      ? 'Optimal'
+      : mode === 'all_at_minimum_nodes_and_minimum_links'
+        ? 'All at min L'
+        : 'All L';
   }
   if (entry.status === 'running' || entry.status === 'cancelling') {
     return entry.status === 'cancelling' ? 'Stopping…' : '';
@@ -333,8 +345,9 @@ export function entryOutcomeLine(entry: HistoryEntry): string {
   }
   // completed
   const engineLabel = entry.request.engine === 'z3' ? 'Z3' : 'Custom';
-  if (entry.enumerationComplete && (entry.request.enumerateAllAtN || layoutCount > 1)) {
-    return `All layouts${nodeCount != null ? ` · N=${nodeCount}` : ''} · ${layoutCount} · ${engineLabel}`;
+  if (entry.enumerationComplete && (enumeratesLayouts(entry.request.solveMode) || layoutCount > 1)) {
+    const scope = entry.request.solveMode === 'all_at_minimum_nodes_and_minimum_links' ? 'All at min L' : 'All layouts';
+    return `${scope}${nodeCount != null ? ` · N=${nodeCount}` : ''} · ${layoutCount} · ${engineLabel}`;
   }
   if (layoutCount <= 1) {
     const status = entry.result?.status;
@@ -410,7 +423,30 @@ export function parseHistoryDocument(raw: unknown): HistoryDocument {
   };
 }
 
+function migratedSolveMode(raw: unknown): SolveMode {
+  if (!raw || typeof raw !== 'object') return 'optimal';
+  const value = raw as Record<string, unknown>;
+  if (
+    value.solveMode === 'optimal' ||
+    value.solveMode === 'all_at_minimum_nodes_and_minimum_links' ||
+    value.solveMode === 'all_at_minimum_nodes'
+  ) {
+    return value.solveMode;
+  }
+  return value.enumerateAllAtN === true ? 'all_at_minimum_nodes' : 'optimal';
+}
+
+function withoutLegacyModeField(raw: unknown): Record<string, unknown> {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+  const { enumerateAllAtN: _removed, ...clean } = raw as Record<string, unknown>;
+  return clean;
+}
+
 function normalizeEntry(entry: HistoryEntry): HistoryEntry {
+  const requestMode = migratedSolveMode(entry.request);
+  const formMode = entry.form ? migratedSolveMode(entry.form) : requestMode;
+  const request = withoutLegacyModeField(entry.request);
+  const form = withoutLegacyModeField(entry.form);
   const engine = entry.request?.engine ?? entry.form?.engine ?? 'custom';
   return {
     id: entry.id,
@@ -419,16 +455,17 @@ function normalizeEntry(entry: HistoryEntry): HistoryEntry {
     updatedAtMs: entry.updatedAtMs ?? Date.now(),
     status: entry.status ?? 'completed',
     request: {
-      ...entry.request,
+      ...request,
       engine,
-    },
+      solveMode: requestMode,
+    } as SolveRequest,
     form: entry.form
-      ? cloneForm({ ...entry.form, engine: entry.form.engine ?? engine })
+      ? cloneForm({ ...(form as unknown as FormSnapshot), solveMode: formMode, engine: entry.form.engine ?? engine })
       : {
           inputs: [],
           outputs: [],
           beltRate: entry.request?.beltRate ?? '1200',
-          enumerateAllAtN: Boolean(entry.request?.enumerateAllAtN),
+          solveMode: requestMode,
           engine,
         },
     jobId: null,

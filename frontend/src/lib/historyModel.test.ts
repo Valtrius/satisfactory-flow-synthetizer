@@ -24,7 +24,7 @@ const form: FormSnapshot = {
     { id: 'out-3', name: '', rate: '40', multiplier: '1' },
   ],
   beltRate: '1200',
-  enumerateAllAtN: true,
+  solveMode: 'all_at_minimum_nodes',
   engine: 'custom',
 };
 
@@ -39,7 +39,7 @@ const request: SolveRequest = {
     { id: 'out-3', name: '', rate: '40' },
   ],
   beltRate: '1200',
-  enumerateAllAtN: true,
+  solveMode: 'all_at_minimum_nodes',
   engine: 'custom',
 };
 
@@ -116,7 +116,7 @@ describe('entryOutcomeLine', () => {
     const single = completed({
       id: 'b',
       enumerationComplete: true,
-      request: { ...request, enumerateAllAtN: false },
+      request: { ...request, solveMode: 'optimal' },
       result: {
         engine: 'custom',
         status: 'proven_optimal',
@@ -207,7 +207,7 @@ describe('entryHistoryMetrics', () => {
       ],
     });
     expect(entryHistoryMetrics(entry)).toEqual({
-      search: { value: 'All', tip: 'Search: Find all layouts at N' },
+      search: { value: 'All L', tip: 'Search: Find all layouts at minimum N across all L' },
       engine: { value: 'Custom', tip: 'Engine: Custom' },
       nodes: { value: 'N=5', tip: 'Node count N = 5' },
       layouts: { value: '2', tip: '2 layouts found' },
@@ -217,11 +217,11 @@ describe('entryHistoryMetrics', () => {
 
   it('uses placeholders for queued jobs', () => {
     const entry = createQueuedEntry(
-      { ...form, enumerateAllAtN: false, engine: 'z3' },
-      { ...request, enumerateAllAtN: false, engine: 'z3' },
+      { ...form, solveMode: 'optimal', engine: 'z3' },
+      { ...request, solveMode: 'optimal', engine: 'z3' },
     );
     expect(entryHistoryMetrics(entry)).toEqual({
-      search: { value: 'Opt', tip: 'Search: Find optimal layout' },
+      search: { value: 'Opt', tip: 'Search: Find one optimal layout' },
       engine: { value: 'Z3', tip: 'Engine: Z3' },
       nodes: { value: 'N=—', tip: 'Node count unknown until solved' },
       layouts: { value: '0', tip: 'No layouts yet' },

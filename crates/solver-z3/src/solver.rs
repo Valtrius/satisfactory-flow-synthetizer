@@ -11,9 +11,9 @@
 //! every distinct layout at that size is collected (with streaming
 //! [`SolverEvent::SolutionFound`] events) instead of returning a single optimum.
 //!
-//! Classic (Opt) mode proves minimal `N`, then iteratively improves operator belt
-//! count `L` under `L_op < incumbent` until that bound is UNSAT, streaming each
-//! better incumbent as `best_known` before the final proven-optimal witness.
+//! Optimal and minimum-link enumeration modes prove minimal `N`, then iteratively
+//! improve operator belt count `L` under `L_op < incumbent` until that bound is
+//! UNSAT. Minimum-link enumeration then exhausts the proven `L` cap.
 //!
 //! # Portfolio parallelism
 //!
@@ -118,7 +118,7 @@ pub enum SolverEvent {
 /// Returns an error for invalid rates, insufficient input, or an unexpected solver failure.
 pub(crate) fn search<F>(
     problem: &Problem,
-    enumerate: bool,
+    mode: solver_api::SolveMode,
     max_nodes: Option<u32>,
     cancel: &AtomicBool,
     on_progress: F,
@@ -155,7 +155,7 @@ where
                 node_count,
                 lower_bound,
                 rejected_before: rejected_total,
-                enumerate,
+                enumerate: mode == solver_api::SolveMode::AllAtMinimumNodes,
                 max_operator_belts: None,
                 incumbent_belt_count: None,
             },
@@ -170,6 +170,7 @@ where
                     lower_bound,
                     rejected_total,
                     &candidate,
+                    mode,
                 );
             }
             SizeSearch::Enumerated(solutions) => {
@@ -710,6 +711,7 @@ fn finish_opt_at_size<F>(
     lower_bound: usize,
     rejected_before: usize,
     first: &crate::model::VerifiedCandidate,
+    mode: solver_api::SolveMode,
 ) -> Result<SolveTermination, SolveError>
 where
     F: FnMut(SolverEvent) + Send,
@@ -727,7 +729,17 @@ where
             });
         }
         let Some(cap) = (incumbent.link_count as usize).checked_sub(1) else {
-            return Ok(SolveTermination::Completed(Box::new(incumbent)));
+            return finish_proven_optimum(
+                problem,
+                cancel,
+                on_progress,
+                throttle,
+                node_count,
+                lower_bound,
+                rejected_before,
+                incumbent,
+                mode,
+            );
         };
 
         match search_size(
@@ -756,7 +768,17 @@ where
                 callback(SolverEvent::Incumbent(Box::new(incumbent.clone())));
             }
             SizeSearch::Unsatisfiable(_) => {
-                return Ok(SolveTermination::Completed(Box::new(incumbent)));
+                return finish_proven_optimum(
+                    problem,
+                    cancel,
+                    on_progress,
+                    throttle,
+                    node_count,
+                    lower_bound,
+                    rejected_before,
+                    incumbent,
+                    mode,
+                );
             }
             SizeSearch::Cancelled => {
                 return Ok(SolveTermination::Cancelled {
@@ -786,6 +808,53 @@ where
                 });
             }
         }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn finish_proven_optimum<F>(
+    problem: &Problem,
+    cancel: &AtomicBool,
+    on_progress: &Mutex<F>,
+    throttle: &EmitThrottle,
+    node_count: usize,
+    lower_bound: usize,
+    rejected_before: usize,
+    incumbent: crate::model::Solution,
+    mode: solver_api::SolveMode,
+) -> Result<SolveTermination, SolveError>
+where
+    F: FnMut(SolverEvent) + Send,
+{
+    if mode != solver_api::SolveMode::AllAtMinimumNodesAndMinimumLinks {
+        return Ok(SolveTermination::Completed(Box::new(incumbent)));
+    }
+
+    match search_size(
+        problem,
+        cancel,
+        on_progress,
+        throttle,
+        SizeSearchOptions {
+            node_count,
+            lower_bound,
+            rejected_before,
+            enumerate: true,
+            max_operator_belts: Some(incumbent.link_count as usize),
+            incumbent_belt_count: Some(incumbent.link_count as usize),
+        },
+    )? {
+        SizeSearch::Enumerated(solutions) => Ok(SolveTermination::Enumerated(solutions)),
+        SizeSearch::CancelledEnumerated(solutions) => Ok(SolveTermination::Cancelled { solutions }),
+        SizeSearch::FailedEnumerated { solutions, error } => {
+            Ok(SolveTermination::Incomplete { solutions, error })
+        }
+        SizeSearch::Cancelled => Ok(SolveTermination::Cancelled {
+            solutions: vec![incumbent],
+        }),
+        SizeSearch::Found(_) | SizeSearch::Unsatisfiable(_) => Err(SolveError::Solver(
+            "minimum-link enumeration returned an invalid terminal state".to_owned(),
+        )),
     }
 }
 
@@ -2042,13 +2111,7 @@ mod tests {
         observer: F,
     ) -> Result<SolveTermination, SolveError> {
         let problem = prepare_problem(request)?;
-        search(
-            &problem,
-            mode == SolveMode::AllAtMinimumNodes,
-            None,
-            cancel,
-            observer,
-        )
+        search(&problem, mode, None, cancel, observer)
     }
 
     fn endpoint(id: &str, rate: &str) -> EndpointRequest {

@@ -3,6 +3,7 @@ import {
   emptyDocument,
   parseHistoryDocument,
   persistableEntries,
+  HISTORY_DOCUMENT_VERSION,
   type HistoryDocument,
   type HistoryEntry,
 } from './historyModel';
@@ -17,7 +18,7 @@ export async function saveHistoryDocument(entries: HistoryEntry[], selectedEntry
   if (!isTauri()) return;
   const persisted = persistableEntries(entries);
   const document: HistoryDocument = {
-    version: 1,
+    version: HISTORY_DOCUMENT_VERSION,
     entries: persisted,
     selectedEntryId:
       selectedEntryId && persisted.some((entry) => entry.id === selectedEntryId)

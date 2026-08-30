@@ -16,6 +16,7 @@ const request: SolveRequest = {
   inputs: [],
   outputs: [{ id: 'out', name: '', rate: '1' }],
   beltRate: '1200',
+  solveMode: 'all_at_minimum_nodes',
   engine: 'z3',
 };
 const rate = { exact: '1', decimal: '1' };
@@ -50,7 +51,7 @@ async function setup() {
       ...request,
       inputs: [],
       outputs: request.outputs.map((o) => ({ ...o, multiplier: '1' })),
-      enumerateAllAtN: true,
+      solveMode: 'all_at_minimum_nodes',
       engine: 'z3',
     },
     request,

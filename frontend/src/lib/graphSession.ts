@@ -21,7 +21,7 @@ import {
 } from './graph';
 import type { CachedGraphLayout, HistoryEntry } from './historyModel';
 import { DEFAULT_SORT_COLUMNS } from './solutionSort';
-import type { EndpointRow, Solution } from '../types';
+import { enumeratesLayouts, type EndpointRow, type Solution } from '../types';
 
 export type GraphSessionHost = {
   nodes: Writable<Node[]>;
@@ -464,7 +464,7 @@ export function createGraphSession(host: GraphSessionHost): GraphSession {
       entry.sortColumns.length > 0 ? entry.sortColumns.map((column) => ({ ...column })) : [...DEFAULT_SORT_COLUMNS],
     );
     host.setSelectedSourceIndex(entry.selectedSourceIndex);
-    const enumerate = Boolean(entry.request.enumerateAllAtN);
+    const enumerate = enumeratesLayouts(entry.request.solveMode);
     if (enumerate) {
       host.setSolutions(entry.results);
       const chosen = entry.results[entry.selectedSourceIndex] ?? entry.results[0] ?? null;
@@ -505,7 +505,7 @@ export function createGraphSession(host: GraphSessionHost): GraphSession {
   }
 
   function syncLiveResults(entry: HistoryEntry): void {
-    if (entry.request.enumerateAllAtN) {
+    if (enumeratesLayouts(entry.request.solveMode)) {
       const prior = host.getSolutions();
       const had = prior.length > 0;
       host.setSolutions(entry.results);

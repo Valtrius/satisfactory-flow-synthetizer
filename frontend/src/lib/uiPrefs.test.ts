@@ -1,11 +1,19 @@
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import {
   DEFAULT_FORM_DRAFT_PREFS,
   DEFAULT_HISTORY_TOOLBAR_PREFS,
   parseFormDraftPrefs,
   parseHistoryToolbarPrefs,
   parseUiPrefs,
+  readUiPrefs,
+  resetUiPrefsCache,
+  UI_PREFS_STORAGE_KEY,
 } from './uiPrefs';
+
+beforeEach(() => {
+  localStorage.clear();
+  resetUiPrefsCache();
+});
 
 describe('parseHistoryToolbarPrefs', () => {
   it('keeps valid sort and filter chips', () => {
@@ -15,14 +23,14 @@ describe('parseHistoryToolbarPrefs', () => {
         sort: 'newest',
         statusFilters: ['completed', 'bogus', 'failed', 'completed'],
         engineFilters: ['z3'],
-        searchFilters: ['all'],
+        searchFilters: ['all_at_minimum_nodes_and_minimum_links'],
       }),
     ).toEqual({
       query: '60',
       sort: 'newest',
       statusFilters: ['completed', 'failed'],
       engineFilters: ['z3'],
-      searchFilters: ['all'],
+      searchFilters: ['all_at_minimum_nodes_and_minimum_links'],
     });
   });
 
@@ -39,7 +47,7 @@ describe('parseFormDraftPrefs', () => {
         inputs: [{ id: 'input-1', name: '', rate: '120', multiplier: '2' }],
         outputs: [{ id: 'output-1', name: '', rate: '40', multiplier: '1' }],
         beltRate: '780',
-        enumerateAllAtN: false,
+        solveMode: 'optimal',
         engine: 'z3',
         nextEndpointId: 9,
       }),
@@ -47,7 +55,7 @@ describe('parseFormDraftPrefs', () => {
       inputs: [{ id: 'input-1', name: '', rate: '120', multiplier: '2' }],
       outputs: [{ id: 'output-1', name: '', rate: '40', multiplier: '1' }],
       beltRate: '780',
-      enumerateAllAtN: false,
+      solveMode: 'optimal',
       engine: 'z3',
       nextEndpointId: 9,
     });
@@ -59,18 +67,44 @@ describe('parseFormDraftPrefs', () => {
     expect(parsed.engine).toBe('custom');
     expect(parsed.outputs).toEqual(DEFAULT_FORM_DRAFT_PREFS.outputs);
   });
+
+  it('restores minimum-link enumeration', () => {
+    const parsed = parseFormDraftPrefs({
+      solveMode: 'all_at_minimum_nodes_and_minimum_links',
+    });
+    expect(parsed.solveMode).toBe('all_at_minimum_nodes_and_minimum_links');
+  });
 });
 
 describe('parseUiPrefs', () => {
   it('parses a full document', () => {
     const parsed = parseUiPrefs({
-      version: 1,
+      version: 2,
       history: { query: 'x', sort: 'oldest' },
-      form: { beltRate: '600', engine: 'z3', enumerateAllAtN: false },
+      form: { beltRate: '600', engine: 'z3', solveMode: 'optimal' },
     });
     expect(parsed.history.query).toBe('x');
     expect(parsed.history.sort).toBe('oldest');
     expect(parsed.form.beltRate).toBe('600');
     expect(parsed.form.engine).toBe('z3');
+  });
+
+  it('migrates version 1 preferences and removes the old storage entry', () => {
+    localStorage.setItem(
+      'sfs.ui-prefs.v1',
+      JSON.stringify({
+        version: 1,
+        history: { searchFilters: ['opt', 'all'] },
+        form: { enumerateAllAtN: false, beltRate: '600' },
+      }),
+    );
+
+    const parsed = readUiPrefs();
+
+    expect(parsed.version).toBe(2);
+    expect(parsed.form.solveMode).toBe('optimal');
+    expect(parsed.history.searchFilters).toEqual(['optimal', 'all_at_minimum_nodes']);
+    expect(JSON.parse(localStorage.getItem(UI_PREFS_STORAGE_KEY) ?? '{}')).not.toHaveProperty('form.enumerateAllAtN');
+    expect(localStorage.getItem('sfs.ui-prefs.v1')).toBeNull();
   });
 });

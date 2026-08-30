@@ -3,27 +3,26 @@
   import Button from './ui/Button.svelte';
   import Input from './ui/Input.svelte';
   import SegmentedControl from './ui/SegmentedControl.svelte';
-  import Switch from './ui/Switch.svelte';
-  import type { SolverEngine } from '../types';
+  import type { SolveMode, SolverEngine } from '../types';
 
   type Props = {
     beltRate: string;
-    enumerateAllAtN: boolean;
+    solveMode: SolveMode;
     engine: SolverEngine;
     hasRunning: boolean;
     class?: string;
-    onEnumerateChange: (value: boolean) => void;
+    onSolveModeChange: (value: SolveMode) => void;
     onEngineChange: (value: SolverEngine) => void;
     onSolve: () => void;
   };
 
   let {
     beltRate = $bindable(),
-    enumerateAllAtN,
+    solveMode,
     engine,
     hasRunning,
     class: className = '',
-    onEnumerateChange,
+    onSolveModeChange,
     onEngineChange,
     onSolve,
   }: Props = $props();
@@ -31,6 +30,11 @@
   const engineOptions: { value: SolverEngine; label: string }[] = [
     { value: 'custom', label: 'Custom' },
     { value: 'z3', label: 'Z3' },
+  ];
+  const solveModeOptions: { value: SolveMode; label: string }[] = [
+    { value: 'optimal', label: 'One' },
+    { value: 'all_at_minimum_nodes_and_minimum_links', label: 'All min L' },
+    { value: 'all_at_minimum_nodes', label: 'All L' },
   ];
 </script>
 
@@ -67,28 +71,32 @@
     </span>
   </div>
 
-  <div class="border-line mt-5 flex items-start justify-between gap-3 border-t pt-4">
-    <div class="min-w-0">
-      <span class="block text-sm font-bold">Find all layouts at N</span>
-      <span class="text-muted mt-0.5 block text-xs">
-        After the minimal node count is proven, keep searching until every distinct layout at that size is found.
-      </span>
-    </div>
-    <Switch
-      checked={enumerateAllAtN}
-      label="Find all layouts at N"
-      onclick={() => onEnumerateChange(!enumerateAllAtN)}
+  <div class="border-line mt-5 border-t pt-4">
+    <span class="text-muted mb-2 block text-xs font-bold tracking-wide">Layouts</span>
+    <SegmentedControl
+      size="default"
+      options={solveModeOptions}
+      value={solveMode}
+      onchange={onSolveModeChange}
+      aria-label="Layouts to find"
     />
+    <span class="text-muted mt-1.5 block text-xs">
+      {solveMode === 'optimal'
+        ? 'Return one layout at minimum N and minimum L.'
+        : solveMode === 'all_at_minimum_nodes_and_minimum_links'
+          ? 'Return every layout at minimum N and minimum L.'
+          : 'Return every layout at minimum N across every feasible L.'}
+    </span>
   </div>
   <div class="mt-auto flex items-center gap-2.5 pt-5.5">
     <Button variant="primary" class="flex-1" type="button" onclick={onSolve}>
       {hasRunning
-        ? enumerateAllAtN
-          ? 'Queue all layouts'
-          : 'Queue optimal layout'
-        : enumerateAllAtN
-          ? 'Find all layouts'
-          : 'Find optimal layout'}
+        ? solveMode === 'optimal'
+          ? 'Queue optimal layout'
+          : 'Queue all layouts'
+        : solveMode === 'optimal'
+          ? 'Find optimal layout'
+          : 'Find all layouts'}
     </Button>
   </div>
 </section>

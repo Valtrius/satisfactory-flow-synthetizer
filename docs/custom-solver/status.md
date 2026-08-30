@@ -9,6 +9,10 @@ Reduce time to a proven optimum and complete minimum-node enumeration on difficu
 inputs. Record first validated witness separately. CPU and memory explain costs;
 lower overhead alone does not justify slower completion.
 
+The product now has three exact scopes: one optimum, all layouts at minimum N and
+minimum L, and all layouts across every L at minimum N. The benchmark names are
+`optimal`, `minimum_links`, and `all`.
+
 ## Permanent changes and commit state
 
 | Change                                                | Evidence                                                            | Commit                                                           |

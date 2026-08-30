@@ -38,6 +38,7 @@
   import { flip } from 'svelte/animate';
   import { untrack } from 'svelte';
   import { createHistoryEntrance, createHistoryOrder, historyMotionDuration } from './historyMotion';
+  import { enumeratesLayouts } from '../types';
   import { insertIndexFromClient, setListDragging, visualReorderSlots } from './pointerReorder';
 
   type StatusFilter = HistoryStatusFilter;
@@ -139,8 +140,9 @@
   ];
 
   const searchOptions: { value: SearchFilter; label: string }[] = [
-    { value: 'opt', label: 'Optimal' },
-    { value: 'all', label: 'All layouts' },
+    { value: 'optimal', label: 'Optimal' },
+    { value: 'all_at_minimum_nodes_and_minimum_links', label: 'All min L' },
+    { value: 'all_at_minimum_nodes', label: 'All L' },
   ];
 
   const sortOptions: { value: HistorySort; label: string; tip: string }[] = [
@@ -253,7 +255,7 @@
   }
 
   function entrySearch(entry: HistoryEntry): SearchFilter {
-    return entry.request.enumerateAllAtN ? 'all' : 'opt';
+    return entry.request.solveMode;
   }
 
   function matchesStatusFilters(entry: HistoryEntry): boolean {
@@ -931,7 +933,7 @@
 {#snippet row(entry: HistoryEntry, band: 'queued' | 'running' | 'history', draggable: boolean, floating = false)}
   {@const selected = entry.id === selectedEntryId}
   {@const metrics = entryHistoryMetrics(entry)}
-  {@const allLayouts = Boolean(entry.request.enumerateAllAtN)}
+  {@const allLayouts = enumeratesLayouts(entry.request.solveMode)}
   {@const engineZ3 = entry.request.engine === 'z3'}
   <div
     role="option"

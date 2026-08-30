@@ -10,6 +10,7 @@ use crate::{BestKnownSolution, SolveResult, SolverEvent};
 pub enum SolveMode {
     #[default]
     Optimal,
+    AllAtMinimumNodesAndMinimumLinks,
     AllAtMinimumNodes,
 }
 
@@ -48,6 +49,11 @@ pub struct OptimalityProof {
 )]
 pub enum EnumerationStatus {
     NotRequested,
+    AllAtMinimumNodesAndMinimumLinks {
+        node_count: Option<u32>,
+        link_count: Option<u32>,
+        complete: bool,
+    },
     AllAtMinimumNodes {
         node_count: Option<u32>,
         complete: bool,
@@ -97,6 +103,13 @@ impl SolveOutcome {
             proof,
             enumeration: match mode {
                 SolveMode::Optimal => EnumerationStatus::NotRequested,
+                SolveMode::AllAtMinimumNodesAndMinimumLinks => {
+                    EnumerationStatus::AllAtMinimumNodesAndMinimumLinks {
+                        node_count: proof.minimum_node_count,
+                        link_count: proof.minimum_link_count,
+                        complete,
+                    }
+                }
                 SolveMode::AllAtMinimumNodes => EnumerationStatus::AllAtMinimumNodes {
                     node_count: proof.minimum_node_count,
                     complete,

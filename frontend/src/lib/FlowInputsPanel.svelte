@@ -1,7 +1,7 @@
 <script lang="ts">
   import Download from '@lucide/svelte/icons/download';
   import UploadCloud from '@lucide/svelte/icons/upload-cloud';
-  import type { EndpointRow, SolverEngine } from '../types';
+  import type { EndpointRow, SolveMode, SolverEngine } from '../types';
   import ConstraintPanel from './ConstraintPanel.svelte';
   import EndpointListPanel from './EndpointListPanel.svelte';
   import Panel from './ui/Panel.svelte';
@@ -12,7 +12,7 @@
     inputSlots: number;
     outputSlots: number;
     beltRate: string;
-    enumerateAllAtN: boolean;
+    solveMode: SolveMode;
     engine: SolverEngine;
     hasRunning: boolean;
     onAddInput: () => void;
@@ -23,7 +23,7 @@
     onRemoveOutput: (index: number) => void;
     onUpdateOutput: (index: number, field: 'rate' | 'multiplier', value: string) => void;
     onCommitOutputMultiplier: (index: number) => void;
-    onEnumerateChange: (value: boolean) => void;
+    onSolveModeChange: (value: SolveMode) => void;
     onEngineChange: (value: SolverEngine) => void;
     onSolve: () => void;
   };
@@ -34,7 +34,7 @@
     inputSlots,
     outputSlots,
     beltRate = $bindable(),
-    enumerateAllAtN,
+    solveMode,
     engine,
     hasRunning,
     onAddInput,
@@ -45,7 +45,7 @@
     onRemoveOutput,
     onUpdateOutput,
     onCommitOutputMultiplier,
-    onEnumerateChange,
+    onSolveModeChange,
     onEngineChange,
     onSolve,
   }: Props = $props();
@@ -83,13 +83,5 @@
     onCommitMultiplier={onCommitOutputMultiplier}
   />
 
-  <ConstraintPanel
-    bind:beltRate
-    {enumerateAllAtN}
-    {engine}
-    {hasRunning}
-    {onEnumerateChange}
-    {onEngineChange}
-    {onSolve}
-  />
+  <ConstraintPanel bind:beltRate {solveMode} {engine} {hasRunning} {onSolveModeChange} {onEngineChange} {onSolve} />
 </Panel>

@@ -11,6 +11,7 @@ use serde_json::{Value, json};
 use tauri::{AppHandle, Manager, State};
 
 const DB_FILE: &str = "history.sqlite";
+const HISTORY_DOCUMENT_VERSION: u64 = 2;
 
 pub struct HistoryStore {
     conn: Mutex<Connection>,
@@ -21,7 +22,7 @@ impl HistoryStore {
         fs::create_dir_all(app_local_data)
             .map_err(|error| format!("create app data dir: {error}"))?;
         let db_path = app_local_data.join(DB_FILE);
-        let conn = Connection::open(&db_path)
+        let mut conn = Connection::open(&db_path)
             .map_err(|error| format!("open history database: {error}"))?;
         conn.execute_batch(
             "
@@ -59,6 +60,7 @@ impl HistoryStore {
             ",
         )
         .map_err(|error| format!("init history schema: {error}"))?;
+        migrate_history(&mut conn)?;
         Ok(Self {
             conn: Mutex::new(conn),
         })
@@ -131,7 +133,7 @@ impl HistoryStore {
             .and_then(Value::as_array)
             .cloned()
             .unwrap_or_default();
-        let version = document.get("version").and_then(Value::as_u64).unwrap_or(1);
+        let version = HISTORY_DOCUMENT_VERSION;
         let selected = document.get("selectedEntryId").and_then(|value| {
             if value.is_null() {
                 None
@@ -165,8 +167,9 @@ impl HistoryStore {
                 .get("selectedSourceIndex")
                 .and_then(Value::as_i64)
                 .unwrap_or(0);
-            let request_json = compact_json(required_value(entry, "request")?)?;
-            let form_json = compact_json(required_value(entry, "form")?)?;
+            let request_json =
+                compact_json(&migrate_mode_json(required_value(entry, "request")?)?)?;
+            let form_json = compact_json(&migrate_mode_json(required_value(entry, "form")?)?)?;
             let selected_result_json = entry
                 .get("result")
                 .filter(|value| !value.is_null())
@@ -228,6 +231,84 @@ impl HistoryStore {
             .map_err(|error| format!("commit history save: {error}"))?;
         Ok(())
     }
+}
+
+fn migrate_history(conn: &mut Connection) -> Result<(), String> {
+    let version = meta_get(conn, "version")?
+        .and_then(|value| value.parse::<u64>().ok())
+        .unwrap_or(1);
+    if version >= HISTORY_DOCUMENT_VERSION {
+        return Ok(());
+    }
+
+    let rows = {
+        let mut statement = conn
+            .prepare("SELECT id, request_json, form_json FROM entries")
+            .map_err(|error| format!("prepare history mode migration: {error}"))?;
+        statement
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                ))
+            })
+            .map_err(|error| format!("query history mode migration: {error}"))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| format!("read history mode migration: {error}"))?
+    };
+
+    let transaction = conn
+        .transaction()
+        .map_err(|error| format!("begin history mode migration: {error}"))?;
+    for (id, request_json, form_json) in rows {
+        let request = migrate_mode_json(&parse_json(&request_json, "request")?)?;
+        let form = migrate_mode_json(&parse_json(&form_json, "form")?)?;
+        transaction
+            .execute(
+                "UPDATE entries SET request_json = ?1, form_json = ?2 WHERE id = ?3",
+                params![compact_json(&request)?, compact_json(&form)?, id],
+            )
+            .map_err(|error| format!("write history mode migration: {error}"))?;
+    }
+    meta_set(
+        &transaction,
+        "version",
+        &HISTORY_DOCUMENT_VERSION.to_string(),
+    )?;
+    transaction
+        .commit()
+        .map_err(|error| format!("commit history mode migration: {error}"))?;
+    Ok(())
+}
+
+fn migrate_mode_json(value: &Value) -> Result<Value, String> {
+    let mut object = value
+        .as_object()
+        .cloned()
+        .ok_or_else(|| "history request/form must be an object".to_owned())?;
+    let mode = object
+        .get("solveMode")
+        .and_then(Value::as_str)
+        .filter(|mode| {
+            matches!(
+                *mode,
+                "optimal" | "all_at_minimum_nodes_and_minimum_links" | "all_at_minimum_nodes"
+            )
+        })
+        .map_or_else(
+            || {
+                if object.get("enumerateAllAtN").and_then(Value::as_bool) == Some(true) {
+                    "all_at_minimum_nodes".to_owned()
+                } else {
+                    "optimal".to_owned()
+                }
+            },
+            str::to_owned,
+        );
+    object.remove("enumerateAllAtN");
+    object.insert("solveMode".to_owned(), Value::String(mode));
+    Ok(Value::Object(object))
 }
 
 fn save_solver_state(tx: &Connection, id: &str, entry: &Value) -> Result<(), String> {
@@ -412,6 +493,7 @@ mod tests {
         let loaded = store.load_document().unwrap();
 
         assert_eq!(loaded["selectedEntryId"], "entry-1");
+        assert_eq!(loaded["version"], HISTORY_DOCUMENT_VERSION);
         assert_eq!(loaded["entries"][0]["status"], "cancelled");
         for field in ["progress", "proof", "sequence"] {
             assert_eq!(loaded["entries"][0][field], document["entries"][0][field]);
@@ -421,5 +503,55 @@ mod tests {
         assert_eq!(store.load_document().unwrap(), loaded);
         assert_eq!(loaded["entries"][0]["request"]["engine"], "z3");
         assert_eq!(loaded["entries"][0]["form"]["engine"], "z3");
+        assert_eq!(loaded["entries"][0]["request"]["solveMode"], "optimal");
+        assert_eq!(loaded["entries"][0]["form"]["solveMode"], "optimal");
+        assert!(
+            loaded["entries"][0]["request"]
+                .get("enumerateAllAtN")
+                .is_none()
+        );
+        assert!(
+            loaded["entries"][0]["form"]
+                .get("enumerateAllAtN")
+                .is_none()
+        );
+
+        {
+            let conn = store.conn.lock().unwrap();
+            conn.execute(
+                "UPDATE entries SET request_json = ?1, form_json = ?2 WHERE id = 'entry-1'",
+                params![
+                    r#"{"inputs":[],"outputs":[],"beltRate":"1200","enumerateAllAtN":true,"engine":"custom"}"#,
+                    r#"{"inputs":[],"outputs":[],"beltRate":"1200","enumerateAllAtN":true,"engine":"custom"}"#,
+                ],
+            )
+            .unwrap();
+            meta_set(&conn, "version", "1").unwrap();
+        }
+        drop(store);
+
+        let migrated = HistoryStore::open(directory.path())
+            .unwrap()
+            .load_document()
+            .unwrap();
+        assert_eq!(migrated["version"], HISTORY_DOCUMENT_VERSION);
+        assert_eq!(
+            migrated["entries"][0]["request"]["solveMode"],
+            "all_at_minimum_nodes"
+        );
+        assert_eq!(
+            migrated["entries"][0]["form"]["solveMode"],
+            "all_at_minimum_nodes"
+        );
+        assert!(
+            migrated["entries"][0]["request"]
+                .get("enumerateAllAtN")
+                .is_none()
+        );
+        assert!(
+            migrated["entries"][0]["form"]
+                .get("enumerateAllAtN")
+                .is_none()
+        );
     }
 }

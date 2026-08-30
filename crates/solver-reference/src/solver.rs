@@ -79,7 +79,7 @@ pub fn solve_reference(
     options: &ReferenceOptions,
     cancel: &AtomicBool,
 ) -> Result<SolveResult, ReferenceError> {
-    solve_reference_internal(problem, *options, cancel, false, &mut Vec::new())
+    solve_reference_internal(problem, *options, cancel, false, false, &mut Vec::new())
 }
 
 /// Shared Problem/Solution entry point. Reference intentionally has no progress API.
@@ -99,6 +99,7 @@ pub fn solve_problem(
         problem,
         native,
         cancel,
+        options.mode != solver_api::SolveMode::Optimal,
         options.mode == solver_api::SolveMode::AllAtMinimumNodes,
         &mut solutions,
     )
@@ -121,6 +122,7 @@ fn solve_reference_internal(
     options: ReferenceOptions,
     cancel: &AtomicBool,
     enumerate: bool,
+    enumerate_all_link_counts: bool,
     solutions: &mut Vec<BestKnownSolution>,
 ) -> Result<SolveResult, ReferenceError> {
     validate_problem(problem)?;
@@ -255,7 +257,7 @@ fn solve_reference_internal(
                     proof,
                     validation: best.validation,
                 };
-                if !enumerate {
+                if !enumerate_all_link_counts {
                     return Ok(SolveResult::Optimal(solution));
                 }
                 proof = solution.proof.clone();

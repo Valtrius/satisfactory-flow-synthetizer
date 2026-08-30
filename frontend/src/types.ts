@@ -1,4 +1,5 @@
 export type SolverEngine = 'custom' | 'z3';
+export type SolveMode = 'optimal' | 'all_at_minimum_nodes_and_minimum_links' | 'all_at_minimum_nodes';
 
 export interface EndpointInput {
   id: string;
@@ -15,9 +16,13 @@ export interface SolveRequest {
   inputs: EndpointInput[];
   outputs: EndpointInput[];
   beltRate: string;
-  enumerateAllAtN?: boolean;
+  solveMode: SolveMode;
   /** Defaults to `custom` when omitted. */
   engine?: SolverEngine;
+}
+
+export function enumeratesLayouts(mode: SolveMode): boolean {
+  return mode !== 'optimal';
 }
 
 export interface DisplayRate {

@@ -92,7 +92,10 @@ Updated 2026-08-30.
   the internal DFS bypass is permanent. Existing telemetry attributes hard-run RAM
   mainly to concurrent worker-local exact caches. Scheduling remains paused.
 
-The goal is shorter time to a proven optimum and complete minimum-node enumeration.
+The goal is shorter time to a proven optimum, complete minimum-link enumeration,
+and complete minimum-node enumeration. Benchmark modes are `optimal` for one layout,
+`minimum_links` for every layout at minimum N and minimum L, and `all` for every L
+at minimum N.
 First-witness latency is a separate measure. More occupied workers, a partial
 layout count, or reaching a time cap does not prove faster completion.
 

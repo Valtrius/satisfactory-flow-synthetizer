@@ -9,7 +9,7 @@ pub struct SolveRequest {
     #[serde(flatten)]
     pub problem: solver_api::ProblemRequest,
     #[serde(default)]
-    pub enumerate_all_at_n: bool,
+    pub solve_mode: solver_api::SolveMode,
     #[serde(default)]
     pub engine: SolverEngine,
 }
@@ -26,7 +26,7 @@ mod tests {
         }))
         .unwrap();
         assert_eq!(request.engine, SolverEngine::Custom);
-        assert!(!request.enumerate_all_at_n);
+        assert_eq!(request.solve_mode, solver_api::SolveMode::Optimal);
         assert_eq!(
             request.problem.prepare().unwrap().problem.inputs[0].to_string(),
             "1/3"
@@ -55,5 +55,18 @@ mod tests {
                     .contains("split the inputs explicitly")
             );
         }
+    }
+
+    #[test]
+    fn deserializes_the_minimum_link_enumeration_mode() {
+        let request: SolveRequest = serde_json::from_value(serde_json::json!({
+            "inputs": [], "outputs": [{"id": "o", "name": "Output", "rate": "1"}],
+            "beltRate": "1", "solveMode": "all_at_minimum_nodes_and_minimum_links"
+        }))
+        .unwrap();
+        assert_eq!(
+            request.solve_mode,
+            solver_api::SolveMode::AllAtMinimumNodesAndMinimumLinks
+        );
     }
 }

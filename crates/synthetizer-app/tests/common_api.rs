@@ -97,6 +97,42 @@ fn complete_enumeration_matches_the_independent_reference_layout_set() {
 }
 
 #[test]
+fn minimum_link_enumeration_matches_the_independent_reference_layout_set() {
+    for problem in [
+        problem(&["3"], &["1", "2"], "3"),
+        problem(&["2", "3"], &["1", "4"], "5"),
+        problem(&["2", "1"], &["1", "1"], "3"),
+    ] {
+        let outcomes = all_solvers(&problem, SolveMode::AllAtMinimumNodesAndMinimumLinks, 2);
+        let sets = outcomes
+            .iter()
+            .map(|outcome| {
+                assert!(matches!(
+                    outcome.enumeration,
+                    EnumerationStatus::AllAtMinimumNodesAndMinimumLinks { complete: true, .. }
+                ));
+                let minimum_links = outcome.proof.minimum_link_count.unwrap();
+                assert!(!outcome.solutions.is_empty());
+                outcome
+                    .solutions
+                    .iter()
+                    .map(|solution| {
+                        assert_eq!(solution.link_count, minimum_links);
+                        assert_eq!(
+                            validate_solution(&problem, &solution.graph).unwrap(),
+                            solution.validation
+                        );
+                        layout_key(&problem, &solution.graph)
+                    })
+                    .collect::<BTreeSet<_>>()
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(sets[0], sets[2], "Custom versus Reference: {problem:?}");
+        assert_eq!(sets[1], sets[2], "Z3 versus Reference: {problem:?}");
+    }
+}
+
+#[test]
 fn bounded_search_is_incomplete_but_finite_contradictions_are_unsat() {
     for outcome in all_solvers(&problem(&["3"], &["1", "2"], "3"), SolveMode::Optimal, 0) {
         assert!(

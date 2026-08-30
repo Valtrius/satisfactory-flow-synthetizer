@@ -161,6 +161,9 @@ fn active_cancellation_drains_every_experimental_scheduler() {
                 });
                 let solve = match mode {
                     SolveMode::AllAtMinimumNodes => enumerate_with_observer,
+                    SolveMode::AllAtMinimumNodesAndMinimumLinks => {
+                        solver_core::enumerate_minimum_links_with_observer
+                    }
                     SolveMode::Optimal => solve_with_observer,
                 };
                 let result = solve(

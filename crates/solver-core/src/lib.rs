@@ -19,8 +19,8 @@ pub use problem::{
     InvalidProblem, NormalizedProblem, Preparation, RateMultiset, TerminalMapping, prepare_problem,
 };
 pub use solver::{
-    ParallelismOptions, SolveObserver, SolveOptions, SolverError, enumerate_with_observer, solve,
-    solve_with_observer,
+    ParallelismOptions, SolveObserver, SolveOptions, SolverError,
+    enumerate_minimum_links_with_observer, enumerate_with_observer, solve, solve_with_observer,
 };
 
 fn production_parallelism() -> ParallelismOptions {
@@ -48,6 +48,9 @@ pub fn solve_problem(
     };
     let result = match options.mode {
         solver_api::SolveMode::Optimal => solve_with_observer(problem, &native, cancel, &collector),
+        solver_api::SolveMode::AllAtMinimumNodesAndMinimumLinks => {
+            enumerate_minimum_links_with_observer(problem, &native, cancel, &collector)
+        }
         solver_api::SolveMode::AllAtMinimumNodes => {
             enumerate_with_observer(problem, &native, cancel, &collector)
         }

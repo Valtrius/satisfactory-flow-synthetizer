@@ -1,6 +1,6 @@
 param(
     [string[]]$Stages = @('baseline', 'p1', 'p12', 'p123', 'p1234', 'shared', 'groups', 'p14', 'p124'),
-    [ValidateSet('all', 'optimal')][string[]]$Modes = @('all', 'optimal'),
+    [ValidateSet('all', 'minimum_links', 'optimal')][string[]]$Modes = @('all', 'optimal'),
     [ValidateRange(1, 4096)][int[]]$Workers = @(1, 4, 16, 32),
     [ValidateRange(1, 100)][int]$Repeats = 3,
     [ValidateRange(1, 86400)][int]$TimeoutSeconds = 600,
@@ -45,7 +45,7 @@ if ($JobManifest) {
     $jobs = @((Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json).jobs)
     if (-not $jobs.Count) { throw 'Empty job manifest' }
     foreach ($job in $jobs) {
-        if ($job.Case -notmatch '^[a-zA-Z0-9_-]+$' -or $job.Stage -notin $Stages -or $job.Mode -notin @('all','optimal') -or $job.Cohort -notin @('reference','stress')) { throw 'Invalid job identity or mode' }
+        if ($job.Case -notmatch '^[a-zA-Z0-9_-]+$' -or $job.Stage -notin $Stages -or $job.Mode -notin @('all','minimum_links','optimal') -or $job.Cohort -notin @('reference','stress')) { throw 'Invalid job identity or mode' }
         if ($job.Workers -lt 1 -or $job.Workers -gt 4096 -or $job.Repeat -lt 1 -or $job.MaxNodes -lt 0 -or $job.TimeoutSeconds -lt 1 -or $job.TimeoutSeconds -gt 86400) { throw 'Invalid job budget' }
         if ($null -ne $job.Hotspots -and $job.Hotspots -notin @('on','off')) { throw 'Invalid job hotspot recording setting' }
         $casePath = [IO.Path]::GetFullPath($job.CaseFile, $manifestRoot)

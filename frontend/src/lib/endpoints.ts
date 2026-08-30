@@ -1,4 +1,4 @@
-import type { EndpointInput, EndpointRow, SolveRequest, SolverEngine } from '../types';
+import type { EndpointInput, EndpointRow, SolveMode, SolveRequest, SolverEngine } from '../types';
 
 export const MAX_ENDPOINTS = 24;
 
@@ -45,14 +45,14 @@ export function buildSolveRequest(
   inputs: EndpointRow[],
   outputs: EndpointRow[],
   beltRate: string,
-  enumerateAllAtN: boolean,
+  solveMode: SolveMode,
   engine: SolverEngine = 'custom',
 ): SolveRequest {
   return {
     inputs: expandEndpoints(inputs),
     outputs: expandEndpoints(outputs),
     beltRate,
-    enumerateAllAtN,
+    solveMode,
     engine,
   };
 }

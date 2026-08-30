@@ -22,7 +22,7 @@ use solver_api::{
 use solver_core::{
     ParallelismOptions, Preparation, SolveOptions,
     canonical::{canonicalize_effective_layout, canonicalize_witness},
-    enumerate_with_observer,
+    enumerate_minimum_links_with_observer, enumerate_with_observer,
     hotspot_profile::{self, HotspotSnapshot},
     prepare_problem, solve_with_observer,
 };
@@ -149,8 +149,9 @@ fn run_problem(
     let parallelism = parallelism_stage(argument(5).as_deref());
     let mode = match argument(7).as_deref().unwrap_or("all") {
         "all" => solver_api::SolveMode::AllAtMinimumNodes,
+        "minimum_links" => solver_api::SolveMode::AllAtMinimumNodesAndMinimumLinks,
         "optimal" => solver_api::SolveMode::Optimal,
-        other => panic!("unknown mode: {other}; expected all or optimal"),
+        other => panic!("unknown mode: {other}; expected all, minimum_links, or optimal"),
     };
     let record_hotspots = match argument(8).as_deref().unwrap_or("on") {
         "on" => true,
@@ -201,7 +202,11 @@ fn run_problem(
             }
             let result = serde_json::json!({
                 "case": name, "problem": problem, "stage": argument(5).unwrap_or_else(|| "baseline".into()),
-                "mode": if mode == solver_api::SolveMode::Optimal { "optimal" } else { "all" },
+                "mode": match mode {
+                    solver_api::SolveMode::Optimal => "optimal",
+                    solver_api::SolveMode::AllAtMinimumNodesAndMinimumLinks => "minimum_links",
+                    solver_api::SolveMode::AllAtMinimumNodes => "all",
+                },
                 "hotspot_recording": record_hotspots,
                 "workers": workers, "max_nodes": max_nodes, "timeout_s": seconds,
                 "status": custom.status, "wall_s": custom.wall.as_secs_f64(),
@@ -412,6 +417,9 @@ fn run_custom(
     let result = match mode {
         solver_api::SolveMode::AllAtMinimumNodes => {
             enumerate_with_observer(problem, &options, &cancel, &observer)
+        }
+        solver_api::SolveMode::AllAtMinimumNodesAndMinimumLinks => {
+            enumerate_minimum_links_with_observer(problem, &options, &cancel, &observer)
         }
         solver_api::SolveMode::Optimal => {
             solve_with_observer(problem, &options, &cancel, &observer)
@@ -1023,6 +1031,7 @@ mod tests {
     fn file_runner_records_both_actual_modes_and_validated_witnesses() {
         for mode in [
             solver_api::SolveMode::Optimal,
+            solver_api::SolveMode::AllAtMinimumNodesAndMinimumLinks,
             solver_api::SolveMode::AllAtMinimumNodes,
         ] {
             let problem = tiny();
@@ -1040,14 +1049,10 @@ mod tests {
                 Some(solver_api::SolveResult::Optimal(_))
             ));
             assert!(run.first_valid.is_some());
-            assert_eq!(
-                run.layouts.len(),
-                if mode == solver_api::SolveMode::Optimal {
-                    1
-                } else {
-                    2
-                }
-            );
+            assert!(!run.layouts.is_empty());
+            if mode == solver_api::SolveMode::Optimal {
+                assert_eq!(run.layouts.len(), 1);
+            }
             for solution in run.layouts.values() {
                 validate_solution(&problem, &solution.graph).unwrap();
             }

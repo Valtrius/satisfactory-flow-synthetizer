@@ -1,12 +1,13 @@
-import type { EndpointRow, SolverEngine } from '../types';
+import type { EndpointRow, SolveMode, SolverEngine } from '../types';
 
-export const UI_PREFS_STORAGE_KEY = 'sfs.ui-prefs.v1';
-export const UI_PREFS_VERSION = 1 as const;
+export const UI_PREFS_STORAGE_KEY = 'sfs.ui-prefs.v2';
+export const UI_PREFS_VERSION = 2 as const;
+const LEGACY_UI_PREFS_STORAGE_KEY = 'sfs.ui-prefs.v1';
 
 export type HistoryStatusFilter = 'completed' | 'failed' | 'cancelled' | 'incomplete' | 'unsat';
 
 export type HistoryEngineFilter = 'custom' | 'z3';
-export type HistorySearchFilter = 'opt' | 'all';
+export type HistorySearchFilter = SolveMode;
 
 export type HistorySortPref = 'manual' | 'newest' | 'oldest' | 'name-asc' | 'name-desc' | 'layouts-desc' | 'nodes-asc';
 
@@ -22,7 +23,7 @@ export type FormDraftPrefs = {
   inputs: EndpointRow[];
   outputs: EndpointRow[];
   beltRate: string;
-  enumerateAllAtN: boolean;
+  solveMode: SolveMode;
   engine: SolverEngine;
   nextEndpointId: number;
 };
@@ -36,7 +37,11 @@ export type UiPrefs = {
 const STATUS_FILTERS = new Set<HistoryStatusFilter>(['completed', 'failed', 'cancelled', 'incomplete', 'unsat']);
 
 const ENGINE_FILTERS = new Set<HistoryEngineFilter>(['custom', 'z3']);
-const SEARCH_FILTERS = new Set<HistorySearchFilter>(['opt', 'all']);
+const SEARCH_FILTERS = new Set<HistorySearchFilter>([
+  'optimal',
+  'all_at_minimum_nodes_and_minimum_links',
+  'all_at_minimum_nodes',
+]);
 const SORT_PREFS = new Set<HistorySortPref>([
   'manual',
   'newest',
@@ -62,7 +67,7 @@ export const DEFAULT_FORM_DRAFT_PREFS: FormDraftPrefs = {
     { id: 'output-2', name: '', rate: '60', multiplier: '1' },
   ],
   beltRate: '1200',
-  enumerateAllAtN: true,
+  solveMode: 'all_at_minimum_nodes',
   engine: 'custom',
   nextEndpointId: 3,
 };
@@ -120,6 +125,10 @@ function filterKnown<T extends string>(raw: unknown, allowed: Set<T>): T[] {
   return next;
 }
 
+function parseSolveMode(raw: unknown, fallback = DEFAULT_FORM_DRAFT_PREFS.solveMode): SolveMode {
+  return typeof raw === 'string' && SEARCH_FILTERS.has(raw as SolveMode) ? (raw as SolveMode) : fallback;
+}
+
 export function parseHistoryToolbarPrefs(raw: unknown): HistoryToolbarPrefs {
   if (!isRecord(raw)) return { ...DEFAULT_HISTORY_TOOLBAR_PREFS };
   const sort =
@@ -153,11 +162,34 @@ export function parseFormDraftPrefs(raw: unknown): FormDraftPrefs {
     inputs,
     outputs,
     beltRate: typeof raw.beltRate === 'string' ? raw.beltRate : DEFAULT_FORM_DRAFT_PREFS.beltRate,
-    enumerateAllAtN:
-      typeof raw.enumerateAllAtN === 'boolean' ? raw.enumerateAllAtN : DEFAULT_FORM_DRAFT_PREFS.enumerateAllAtN,
+    solveMode: parseSolveMode(raw.solveMode),
     engine,
     nextEndpointId,
   };
+}
+
+function migrateLegacySearchFilters(raw: unknown): SolveMode[] {
+  if (!Array.isArray(raw)) return [];
+  const migrated = raw.flatMap((value): SolveMode[] => {
+    if (value === 'opt') return ['optimal'];
+    if (value === 'all') return ['all_at_minimum_nodes'];
+    return SEARCH_FILTERS.has(value as SolveMode) ? [value as SolveMode] : [];
+  });
+  return [...new Set(migrated)];
+}
+
+function migrateLegacyUiPrefs(raw: unknown): UiPrefs {
+  if (!isRecord(raw)) return defaultUiPrefs();
+  const history = isRecord(raw.history) ? raw.history : {};
+  const form = isRecord(raw.form) ? raw.form : {};
+  const solveMode = parseSolveMode(
+    form.solveMode,
+    form.enumerateAllAtN === false ? 'optimal' : DEFAULT_FORM_DRAFT_PREFS.solveMode,
+  );
+  return parseUiPrefs({
+    history: { ...history, searchFilters: migrateLegacySearchFilters(history.searchFilters) },
+    form: { ...form, solveMode },
+  });
 }
 
 export function parseUiPrefs(raw: unknown): UiPrefs {
@@ -203,7 +235,16 @@ export function readUiPrefs(): UiPrefs {
   }
   try {
     const raw = localStorage.getItem(UI_PREFS_STORAGE_KEY);
-    cachedPrefs = raw ? parseUiPrefs(JSON.parse(raw) as unknown) : defaultUiPrefs();
+    if (raw) {
+      cachedPrefs = parseUiPrefs(JSON.parse(raw) as unknown);
+    } else {
+      const legacy = localStorage.getItem(LEGACY_UI_PREFS_STORAGE_KEY);
+      cachedPrefs = legacy ? migrateLegacyUiPrefs(JSON.parse(legacy) as unknown) : defaultUiPrefs();
+      if (legacy) {
+        localStorage.setItem(UI_PREFS_STORAGE_KEY, JSON.stringify(cachedPrefs));
+        localStorage.removeItem(LEGACY_UI_PREFS_STORAGE_KEY);
+      }
+    }
   } catch {
     cachedPrefs = defaultUiPrefs();
   }
@@ -228,6 +269,7 @@ export function writeUiPrefs(prefs: UiPrefs): void {
   if (!storageAvailable()) return;
   try {
     localStorage.setItem(UI_PREFS_STORAGE_KEY, JSON.stringify(cachedPrefs));
+    localStorage.removeItem(LEGACY_UI_PREFS_STORAGE_KEY);
   } catch {
     /* quota / private mode */
   }

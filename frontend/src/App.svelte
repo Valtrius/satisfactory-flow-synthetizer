@@ -37,14 +37,14 @@
   import { formatElapsed, searchHeadline, searchStageView, searchSubline, sizeSearchBody } from './lib/searchStage';
   import { DEFAULT_SORT_COLUMNS, compareSolutions, type SortColumn } from './lib/solutionSort';
   import { readUiPrefs, updateUiPrefs } from './lib/uiPrefs';
-  import type { EndpointRow, Solution, SolverEngine } from './types';
+  import { enumeratesLayouts, type EndpointRow, type Solution, type SolverEngine } from './types';
 
   const savedForm = readUiPrefs().form;
   let nextEndpointId = $state(savedForm.nextEndpointId);
   let inputs = $state<EndpointRow[]>(savedForm.inputs.map((row) => ({ ...row })));
   let outputs = $state<EndpointRow[]>(savedForm.outputs.map((row) => ({ ...row })));
   let beltRate = $state(savedForm.beltRate);
-  let enumerateAllAtN = $state(savedForm.enumerateAllAtN);
+  let solveMode = $state(savedForm.solveMode);
   let engine = $state<SolverEngine>(savedForm.engine);
 
   let historyEntries = $state<HistoryEntry[]>([]);
@@ -146,7 +146,7 @@
   const selectedEntry = $derived(historyEntries.find((entry) => entry.id === selectedEntryId) ?? null);
   const hasRunning = $derived(bands.running != null);
   const viewJob = $derived(selectedEntry ? entryToJobSnapshot(selectedEntry) : null);
-  const searchEnumerate = $derived(Boolean(selectedEntry?.request.enumerateAllAtN));
+  const searchEnumerate = $derived(Boolean(selectedEntry && enumeratesLayouts(selectedEntry.request.solveMode)));
   const busy = $derived(selectedEntry?.status === 'running' || selectedEntry?.status === 'cancelling');
   const showSearchStage = $derived(
     Boolean(viewJob) && selectedEntry != null && selectedEntry.status !== 'queued' && (searchEnumerate || !solution),
@@ -214,7 +214,7 @@
         inputs,
         outputs,
         beltRate,
-        enumerateAllAtN,
+        solveMode,
         engine,
         nextEndpointId,
       },
@@ -251,12 +251,12 @@
   async function solve(): Promise<void> {
     graph.setFullscreen(false);
     errorMessage = '';
-    const request = buildSolveRequest(inputs, outputs, beltRate, enumerateAllAtN, engine);
+    const request = buildSolveRequest(inputs, outputs, beltRate, solveMode, engine);
     if (request.outputs.length < 1) {
       errorMessage = 'Add at least one output before solving.';
       return;
     }
-    const entry = createQueuedEntry(snapshotForm(inputs, outputs, beltRate, enumerateAllAtN, engine), request);
+    const entry = createQueuedEntry(snapshotForm(inputs, outputs, beltRate, solveMode, engine), request);
     graph.flushChrome();
     // Newest queued jobs stack on top; the runner drains from the bottom.
     const parts = partitionEntries(historyEntries);
@@ -326,7 +326,7 @@
     inputs = entry.form.inputs.map((row) => ({ ...row }));
     outputs = entry.form.outputs.map((row) => ({ ...row }));
     beltRate = entry.form.beltRate;
-    enumerateAllAtN = entry.form.enumerateAllAtN;
+    solveMode = entry.form.solveMode;
     engine = entry.form.engine ?? entry.request.engine ?? 'custom';
     const maxId = [...inputs, ...outputs]
       .map((row) => Number(String(row.id).replace(/\D+/g, '')) || 0)
@@ -467,11 +467,7 @@
 
       <div
         class={`flex min-w-0 flex-col gap-4 ${
-          showResultsTable
-            ? 'xl:h-[calc(100dvh-2rem)]'
-            : solution
-              ? 'xl:h-[calc(100dvh-2rem)]'
-              : ''
+          showResultsTable ? 'xl:h-[calc(100dvh-2rem)]' : solution ? 'xl:h-[calc(100dvh-2rem)]' : ''
         }`}
       >
         <FlowInputsPanel
@@ -480,7 +476,7 @@
           {inputSlots}
           {outputSlots}
           bind:beltRate
-          {enumerateAllAtN}
+          {solveMode}
           {engine}
           {hasRunning}
           onAddInput={() => addEndpoint('inputs')}
@@ -491,8 +487,8 @@
           onRemoveOutput={(index) => removeEndpoint('outputs', index)}
           onUpdateOutput={(index, field, value) => updateEndpoint('outputs', index, field, value)}
           onCommitOutputMultiplier={(index) => commitMultiplier('outputs', index)}
-          onEnumerateChange={(value) => {
-            enumerateAllAtN = value;
+          onSolveModeChange={(value) => {
+            solveMode = value;
           }}
           onEngineChange={(value) => {
             engine = value;

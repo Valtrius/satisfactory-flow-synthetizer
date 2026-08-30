@@ -219,7 +219,7 @@ for row in rows:
             failures.append(f"Optimal witness/optimum disagrees with full enumeration: {row['result_file']}")
     elif result.get("preferred_key") is not None:
         failures.append(f"Incomplete run claims an optimal preferred witness: {row['result_file']}")
-    if row["completion"] == "timed_out" and row["mode"] == "all" and baseline:
+    if row["completion"] == "timed_out" and row["mode"] != "optimal" and baseline:
         if not set(result["layout_keys"]).issubset(baseline["layout_keys"]):
             failures.append(f"Partial enumeration contains a non-reference layout: {row['result_file']}")
     outcome = result.get("outcome")

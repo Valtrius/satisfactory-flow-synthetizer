@@ -30,7 +30,8 @@ merge them. The user originally reported roughly 2.5/30 s for 24 optimal/all and
 found; hard 10 optimal stopped after 25m at N=11/L=18. These are user observations,
 not controlled solver measurements or complete result-set references.
 
-`optimal` calls the real single-result API; `all` calls full enumeration. A node
+`optimal` calls the real single-result API. `minimum_links` enumerates every layout
+at minimum N and minimum L. `all` enumerates every feasible L at minimum N. A node
 cap limits the largest N, not the starting N. The N<=10 cyclic10 attempt was below
 its lower bound and did no search. Before SAT, duplicate all-mode runs can repeat
 the same proof work without exercising remaining-group concurrency.

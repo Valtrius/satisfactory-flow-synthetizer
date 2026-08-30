@@ -5,10 +5,12 @@ See [controls](controls.md) for the current implementation boundaries.
 
 ## Objective and result states
 
-- Find optimal uses `solve_with_observer`, not enumeration stopped at its first
-  event. Record both first validated witness and terminal optimal result time.
-- Find all uses `enumerate_with_observer` and must exhaust the required groups
-  at the minimum node count. A SAT group does not establish full enumeration.
+- Find one uses `solve_with_observer` and returns one layout after proving minimum
+  N and minimum L. Record both first validated witness and terminal result time.
+- Find all at minimum L uses `enumerate_minimum_links_with_observer`. It exhausts
+  the first satisfiable equal-L group at minimum N, then stops before larger L.
+- Find all L uses `enumerate_with_observer` and exhausts every required group at
+  minimum N. A SAT group does not establish full-N enumeration.
 - A validated incumbent is an upper bound and may remain `bestKnown` in an
   incomplete result. It is not a proof of optimality or a full enumeration event.
 - Finite node-bound exhaustion is not global UNSAT. A timeout, helper miss,
@@ -16,7 +18,8 @@ See [controls](controls.md) for the current implementation boundaries.
 - Compare canonical layout-key sets, preferred witnesses, objective and full saved
   solutions. Equal layout counts alone cannot establish equivalence.
 - Compare results within each mode. Optimal mode's witness must belong to a
-  completed enumeration with the same optimum, but need not equal its preferred witness.
+  completed enumeration with the same scope and optimum, but need not equal its
+  preferred witness.
 
 ## Information available to the solver
 

@@ -41,7 +41,7 @@ pub fn solve_problem(
     let mut proof = ProofSummary::default();
     let terminal = crate::solver::search(
         &native,
-        options.mode == SolveMode::AllAtMinimumNodes,
+        options.mode,
         options.max_nodes,
         cancel,
         |event| match event {
@@ -198,10 +198,14 @@ fn common_progress(native: NativeProgress, mode: SolveMode, started: Instant) ->
     if let Some(n) = result.node_count {
         result.node_lower_bound = Some(n);
     }
-    if result.link_constraint.is_some() {
-        result.phase = SolvePhase::OptimizingLinks;
-    } else if mode == SolveMode::AllAtMinimumNodes && result.node_count.is_some() {
+    let enumerating_minimum_links = mode == SolveMode::AllAtMinimumNodesAndMinimumLinks
+        && matches!(result.link_constraint, Some(LinkConstraint::AtMost(limit)) if Some(limit) == result.best_link_count);
+    if enumerating_minimum_links
+        || (mode == SolveMode::AllAtMinimumNodes && result.node_count.is_some())
+    {
         result.phase = SolvePhase::Enumerating;
+    } else if result.link_constraint.is_some() {
+        result.phase = SolvePhase::OptimizingLinks;
     }
     result
 }

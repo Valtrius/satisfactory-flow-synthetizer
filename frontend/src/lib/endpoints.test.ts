@@ -59,10 +59,26 @@ describe('endpoints', () => {
   });
 
   it('serializes the selected engine into the solve request', () => {
-    const custom = buildSolveRequest([], [{ id: 'o', name: '', rate: '60', multiplier: '1' }], '1200', true);
+    const custom = buildSolveRequest(
+      [],
+      [{ id: 'o', name: '', rate: '60', multiplier: '1' }],
+      '1200',
+      'all_at_minimum_nodes',
+    );
     expect(custom.engine).toBe('custom');
-    const z3 = buildSolveRequest([], [{ id: 'o', name: '', rate: '60', multiplier: '1' }], '1200', false, 'z3');
+    expect(custom.solveMode).toBe('all_at_minimum_nodes');
+    const z3 = buildSolveRequest([], [{ id: 'o', name: '', rate: '60', multiplier: '1' }], '1200', 'optimal', 'z3');
     expect(z3.engine).toBe('z3');
-    expect(z3.enumerateAllAtN).toBe(false);
+    expect(z3.solveMode).toBe('optimal');
+  });
+
+  it('serializes minimum-link enumeration as a distinct mode', () => {
+    const request = buildSolveRequest(
+      [],
+      [{ id: 'o', name: '', rate: '60', multiplier: '1' }],
+      '1200',
+      'all_at_minimum_nodes_and_minimum_links',
+    );
+    expect(request.solveMode).toBe('all_at_minimum_nodes_and_minimum_links');
   });
 });
