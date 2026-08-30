@@ -88,7 +88,9 @@ Updated 2026-08-30.
   root partition identities remain canonical. [Experiment 25](custom-solver/experiments/25-internal-dfs-marked-bypass.md)
   verifies 12 screening records. Four completed pairs preserve exact outputs and
   improve 16.6-21.1%. Two more samples per variant are required before promotion;
-  scheduling remains paused.
+  [experiment 26](custom-solver/experiments/26-internal-dfs-promotion-repeat.md)
+  runs that repeat. Existing telemetry attributes hard-run RAM mainly to concurrent
+  worker-local exact caches. Scheduling remains paused.
 
 The goal is shorter time to a proven optimum and complete minimum-node enumeration.
 First-witness latency is a separate measure. More occupied workers, a partial

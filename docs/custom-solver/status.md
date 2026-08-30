@@ -101,7 +101,10 @@ screening records. Its four completed pairs preserve full exact outputs and impr
 wall time 16.6-21.1%. Hard-10 processes 20.4% more states within the cap but raises
 sampled peak working set 26.2%. The candidate remains benchmark-only until two more
 samples per variant confirm the completed-work medians. Production behavior remains
-keyed, and scheduler experiments remain paused.
+keyed, and scheduler experiments remain paused. [Experiment 26](experiments/26-internal-dfs-promotion-repeat.md)
+runs that 16-job repeat. Current telemetry attributes hard-run RAM mainly to 32
+concurrent worker-local state and SCC caches; separate aggregate byte counters are
+the first step if memory optimization resumes.
 
 ## Validation records
 

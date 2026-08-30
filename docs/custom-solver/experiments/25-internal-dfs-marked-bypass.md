@@ -1,6 +1,6 @@
 # 25 - Internal DFS marked-child bypass
 
-Date: 2026-08-30. State: screening verified; repeated A/B recommended.
+Date: 2026-08-30. State: screening verified; [promotion repeat](26-internal-dfs-promotion-repeat.md) launched.
 Related: [canonical purpose results](24-canonical-purpose-profile.md).
 
 Run: ignored `target/parallelism-ladder/unkeyed-dfs-20260829/`.
@@ -111,4 +111,5 @@ Run two more interleaved samples per variant on the four completed workloads. Th
 combined three samples must keep exact outputs equal and favor the bypass median on
 each workload. If they do, remove the Cargo feature gate and make the internal DFS
 bypass permanent. Keep root planning and adaptive-frontier decisions keyed. Do not
-resume scheduler experiments during this promotion check.
+resume scheduler experiments during this promotion check. Experiment 26 runs this
+check and records the current hard-run memory attribution.

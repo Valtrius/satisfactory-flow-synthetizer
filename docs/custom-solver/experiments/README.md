@@ -31,6 +31,7 @@ Record dates follow the analysis chronology, not necessarily every run's start t
 | [23](23-whole-translation-and-dfs-profile.md) | 2026-08-29    | Does the port gain translate whole; which exact DFS identity dominates next?              | 27 verified; 238 improves 43-52%; legal/state identity dominate next                |
 | [24](24-canonical-purpose-profile.md)         | 2026-08-29    | Which exact state/open-port/marked-child/SCC identity consumes canonicalization time?     | 4 verified; internal marked-child bypass is the next isolated test                  |
 | [25](25-internal-dfs-marked-bypass.md)        | 2026-08-30    | Can dispatched DFS defer marked-child equivalence to propagated canonical state keys?     | 12 verified; four completed pairs improve 16.6-21.1%; repeat before promotion       |
+| [26](26-internal-dfs-promotion-repeat.md)     | 2026-08-30    | Do repeated completed solves confirm the bypass; what owns hard-run memory?               | 16-job repeat launched; RAM is primarily concurrent worker-local exact caches       |
 
 ## How the diagnosis changed
 
@@ -99,6 +100,10 @@ Record dates follow the analysis chronology, not necessarily every run's start t
     keyed root/frontier identities while testing raw decisions inside dispatched
     roots. Its four completed screening pairs improve 16.6-21.1% with identical
     exact outputs. Run two more samples per variant before production promotion.
+21. [The promotion repeat](26-internal-dfs-promotion-repeat.md) adds those samples.
+    Existing telemetry attributes hard-run RAM mainly to the sum of worker-local
+    state and SCC caches. Measure those two categories separately before optimizing
+    memory itself.
 
 ## Evidence conventions
 
