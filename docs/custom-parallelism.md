@@ -102,8 +102,9 @@ Updated 2026-08-31.
   when to compute exact canonical keys; they never authorize pruning or reuse. All 26
   records verify, and six completed medians improve 18.3-38.1%. The change is
   permanent. [Experiment 30](custom-solver/experiments/30-no-state-cache-ablation.md)
-  will directly test whether local memoization still pays for itself. Scheduling stays
-  paused.
+  directly tests whether local memoization still pays for itself. No cache is 12.3%
+  slower on 115 minimum L and 3.00x slower on 238 optimal, so complete removal is
+  rejected. Scheduling stays paused.
 
 The goal is shorter time to a proven optimum, complete minimum-link enumeration,
 and complete minimum-node enumeration. Benchmark modes are `optimal` for one layout,

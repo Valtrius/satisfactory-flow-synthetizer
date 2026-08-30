@@ -35,7 +35,7 @@ Record dates follow the analysis chronology, not necessarily every run's start t
 | [27](27-minimum-link-enumeration-mode.md)     | 2026-08-30    | Can users enumerate only the proven minimum-N/minimum-L layouts?                          | Implemented across all solvers, UI and benchmark runner; differential test passed   |
 | [28](28-state-open-port-coordinate-reuse.md)  | 2026-08-30    | Can DFS reuse state labeling for its final open-port tie-break?                           | 14 verified; all completed pairs improve 18.2-49.4%; permanent                      |
 | [29](29-deferred-state-canonicalization.md)   | 2026-08-31    | Can DFS avoid exact state keys until a cheap invariant bucket repeats?                    | 26 verified; completed medians improve 18.3-38.1%; permanent                        |
-| [30](30-no-state-cache-ablation.md)           | 2026-08-31    | Does recursive DFS state caching improve completion at all?                               | Planned fail-fast no-cache ablation                                                 |
+| [30](30-no-state-cache-ablation.md)           | 2026-08-31    | Does recursive DFS state caching improve completion at all?                               | Rejected; 12.3% slower on 115 and 3.00x slower on 238                               |
 
 ## How the diagnosis changed
 
@@ -122,9 +122,10 @@ Record dates follow the analysis chronology, not necessarily every run's start t
     the first state under a cheap invariant and promotes a repeated bucket to exact
     canonical keys. All 26 records verify; six completed medians improve 18.3-38.1%,
     so promotion is recommended.
-25. [The no-state-cache ablation](30-no-state-cache-ablation.md) will test whether
-    memoization saves more subtree work than its remaining bookkeeping costs. Start
-    with three short fail-fast comparisons before expanding the suite.
+25. [The no-state-cache ablation](30-no-state-cache-ablation.md) confirms that local
+    memoization pays for itself. No cache is 12.3% slower on 115 minimum L and 3.00x
+    slower on 238 optimal, where structural decisions rise 4.33x. The fail-fast gate
+    rejects the candidate before the 36 control or larger suite.
 
 ## Evidence conventions
 

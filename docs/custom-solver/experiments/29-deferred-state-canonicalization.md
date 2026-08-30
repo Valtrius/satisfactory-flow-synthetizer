@@ -144,6 +144,6 @@ Make deferred state canonicalization permanent. The repeated screen satisfies th
 predeclared gate on all six completed workloads, preserves exact results, and improves
 both completion and first-witness latency. Keep scheduling paused.
 
-This result does not prove that a state cache is faster than no cache. Duplicate counts
-measure avoided entry visits, not the size of the subtrees behind them. Experiment 30
-will test complete removal directly.
+This result alone did not prove that a state cache is faster than no cache. The
+follow-up [experiment 30](30-no-state-cache-ablation.md) supplies that direct ablation:
+no cache is 12.3% slower on 115 minimum L and 3.00 times slower on 238 optimal.

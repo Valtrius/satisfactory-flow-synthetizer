@@ -38,8 +38,8 @@ improve 18.3-38.1% with exact outputs intact.
 | Reuse state coordinates for DFS open-port selection   | 14 verified jobs; completed pairs improve 18.2-49.4%                | [28](experiments/28-state-open-port-coordinate-reuse.md)         |
 | Defer state keys until an invariant repeats           | 26 verified jobs; completed medians improve 18.3-38.1%              | [29](experiments/29-deferred-state-canonicalization.md)          |
 
-Experiment 29 is the reference for the planned no-cache ablation. Keep that candidate
-separate so the permanent deferred-cache implementation remains reproducible.
+Experiment 29 remains unchanged after the no-cache ablation. Experiment 30 was rejected
+and its source changes were restored before this result-only documentation update.
 
 Each optimization commit includes its related docs. Experiment 13 tooling/results
 are committed in `473aba7`. [Calculation promotion](experiments/14-calculation-promotion.md)
@@ -137,9 +137,9 @@ completion speed. State-coordinate reuse is permanent. Scheduler work remains pa
 [Experiment 29](experiments/29-deferred-state-canonicalization.md) verifies all 26
 records. Twenty-four complete optimally and preserve every exact result field; the two
 hard-10 runs remain explicitly capped. Six completed medians improve 18.3-38.1%.
-Promote the candidate, then run the fail-fast [no-cache ablation](experiments/30-no-state-cache-ablation.md).
-Measured duplicate fractions of 11.3-20.4% justify testing both possibilities but do
-not prove the cache's net value. Scheduling remains paused.
+The fail-fast [no-cache ablation](experiments/30-no-state-cache-ablation.md) now measures
+the cache's net value directly. No cache is 12.3% slower on 115 minimum L and 3.00x
+slower on 238 optimal. Keep the permanent deferred cache. Scheduling remains paused.
 
 ## Validation records
 
@@ -147,6 +147,12 @@ Experiment 29 post-run: 26/26 records verify with no analyzer failures. All 24 c
 results match their frozen references; two hard-10 records reach the common cap and
 remain incomplete. Full workspace tests, both strict Clippy configurations, analyzer
 tests, formatting, and frozen-plan validation passed before launch.
+
+Experiment 30 fail-fast: exact, deferred, and disabled cache modes pass solver-core and
+Reference differentials. Full workspace tests, both strict Clippy configurations, and
+33 analyzer tests pass. Two fresh completed A/B pairs preserve all exact outputs. The
+candidate regresses 115 minimum L by 12.3% and 238 optimal by 3.00x, so the larger
+screen was not launched and the source candidate was restored.
 
 Experiment 28 post-run and promotion: 14/14 records verify with no analyzer failures.
 All six completed pairs match their frozen references. The hard-10 pair reaches the

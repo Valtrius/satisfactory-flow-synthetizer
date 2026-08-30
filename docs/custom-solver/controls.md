@@ -41,6 +41,9 @@ The current experiment-29 working tree defers local state canonicalization until
 cheap invariant bucket repeats. A fingerprint never proves equality. Repeated buckets,
 shared-cache paths, and donation paths use authoritative canonical state keys. The
 frozen A/B passed and the implementation is permanent.
+[Experiment 30](experiments/30-no-state-cache-ablation.md) removed this local cache in
+a validated fail-fast trial. Structural work rose enough to make 238 optimal 3.00x
+slower, so the uncached policy is absent from production source.
 
 Remaining groups have a bounded number of slots. Their worker budgets sum to the
 requested search workers; reporter/coordinator threads are additional. Allocations
