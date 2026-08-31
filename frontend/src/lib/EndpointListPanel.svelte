@@ -47,7 +47,7 @@
   }: Props = $props();
 </script>
 
-<section class={`flex flex-col px-4 pt-3 pb-4.5 md:pb-6 ${className}`}>
+<section class={`flex flex-col px-4 py-3 ${className}`}>
   <div class="flex items-center justify-between gap-4">
     <h2 class="m-0 flex items-center gap-2 text-lg font-bold tracking-tight">
       {#if TitleIcon}
