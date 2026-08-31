@@ -129,6 +129,10 @@ Updated 2026-08-31.
   [six verified records](custom-solver/experiments/35-sparse-preparation-profile-results.md)
   put 89.99-91.42% of preparation in substitution and normalization. Test a
   fully-known integer evaluation path before changing mixed-row arithmetic.
+  [Experiment 36](custom-solver/experiments/36-fully-known-row-substitution.md)
+  implements that isolated candidate. [All 14 records verify](custom-solver/experiments/36-fully-known-row-substitution-results.md):
+  completed medians improve 9.73-16.41% with identical exact work, so the change is
+  permanent.
   Scheduling stays paused.
 
 The goal is shorter time to a proven optimum, complete minimum-link enumeration,

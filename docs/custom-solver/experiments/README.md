@@ -153,6 +153,11 @@ Record dates follow the analysis chronology, not necessarily every run's start t
     [six verified results](35-sparse-preparation-profile-results.md) put 89.99-91.42%
     of preparation in substitution and normalization. Test exact integer evaluation
     of fully known rows before rewriting mixed-row arithmetic.
+31. [Fully known row substitution](36-fully-known-row-substitution.md) evaluates
+    equations whose coefficients are all known with one integer denominator LCM.
+    [All 14 records verify](36-fully-known-row-substitution-results.md). Completed
+    medians improve 9.73-16.41% with identical exact work, and hard 10 processes
+    6.56% more states within the cap. The change is permanent.
 
 ## Evidence conventions
 

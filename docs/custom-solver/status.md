@@ -197,6 +197,17 @@ of total sparse time. Test exact integer evaluation for fully known rows next, t
 isolate a no-known-variable clone path before changing mixed-row substitution.
 Canonicalization remains the larger hard-run bucket; scheduling stays paused.
 
+[Experiment 36](experiments/36-fully-known-row-substitution.md) implements the first
+isolated production candidate. Fully known rows use one exact integer denominator LCM
+and return their canonical tautology or contradiction directly; mixed rows retain the
+existing rational path. Exhaustive substitution, solver-core, Reference, parallelism,
+workspace, Clippy, analyzer, formatting, release-build, and completed smoke checks
+pass. [All 14 A/B records verify](experiments/36-fully-known-row-substitution-results.md).
+Completed medians improve 9.73% on 115 all and 16.41% on 238 optimal with identical
+structural work. Hard 10 advances 6.56% more states within the cap. The change is
+permanent. Test the no-known-variable clone path next; mixed-row integer substitution
+remains separate. Scheduling stays paused.
+
 Experiment 33 validation: 181 default and 186 benchmark-feature solver-core library
 tests pass, with two ignored in each configuration. The exhaustive Reference and four
 parallelism integrations, full workspace, both strict Clippy configurations, and 33

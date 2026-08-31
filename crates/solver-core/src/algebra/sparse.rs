@@ -101,6 +101,10 @@ impl SparseRow {
     /// equivalence-preserving, as documented by [`SparseRow::new`].
     #[must_use]
     pub fn substitute(&self, known: &BTreeMap<FlowVarId, BigRational>) -> Self {
+        if let Some(row) = self.substitute_fully_known(known) {
+            return row;
+        }
+
         let mut coefficients = BTreeMap::new();
         let mut rhs = BigRational::from_integer(self.rhs.clone());
         for (variable, coefficient) in &self.coefficients {
@@ -116,6 +120,35 @@ impl SparseRow {
             *coefficient *= &denominator;
         }
         Self::from_parts(coefficients, rhs.numer().clone())
+    }
+
+    /// Evaluates a fully known row without repeated rational normalization.
+    ///
+    /// Returns `None` as soon as one unknown coefficient is found. Otherwise it
+    /// clears every known denominator once and returns the canonical tautology or
+    /// contradiction that ordinary substitution would produce.
+    fn substitute_fully_known(&self, known: &BTreeMap<FlowVarId, BigRational>) -> Option<Self> {
+        let mut denominator = BigInt::one();
+        for variable in self.coefficients.keys() {
+            denominator = denominator.lcm(known.get(variable)?.denom());
+        }
+
+        let mut residual = &self.rhs * &denominator;
+        for (variable, coefficient) in &self.coefficients {
+            let value = known
+                .get(variable)
+                .expect("fully known row was checked above");
+            residual -= coefficient * value.numer() * (&denominator / value.denom());
+        }
+
+        Some(Self {
+            coefficients: BTreeMap::new(),
+            rhs: if residual.is_zero() {
+                BigInt::zero()
+            } else {
+                BigInt::one()
+            },
+        })
     }
 }
 
@@ -767,6 +800,27 @@ mod tests {
         )
     }
 
+    fn substitute_reference(
+        row: &SparseRow,
+        known: &BTreeMap<FlowVarId, BigRational>,
+    ) -> SparseRow {
+        let mut coefficients = BTreeMap::new();
+        let mut rhs = BigRational::from_integer(row.rhs.clone());
+        for (variable, coefficient) in &row.coefficients {
+            if let Some(value) = known.get(variable) {
+                rhs -= BigRational::from_integer(coefficient.clone()) * value;
+            } else {
+                coefficients.insert(*variable, coefficient.clone());
+            }
+        }
+
+        let denominator = rhs.denom().clone();
+        for coefficient in coefficients.values_mut() {
+            *coefficient *= &denominator;
+        }
+        SparseRow::from_parts(coefficients, rhs.numer().clone())
+    }
+
     #[test]
     fn row_normalization_is_primitive_and_deterministic() {
         let normalized = SparseRow::new(
@@ -816,6 +870,46 @@ mod tests {
             let original_lhs = integer(2) * &x + integer(3) * &known[&var(1)];
             let reduced_lhs = integer(4) * x;
             assert_eq!(original_lhs == integer(7), reduced_lhs == integer(11));
+        }
+    }
+
+    #[test]
+    fn fully_known_integer_substitution_matches_rational_reference_exhaustively() {
+        for first in -2..=2 {
+            for second in -2..=2 {
+                for rhs in -2..=2 {
+                    let original = row([(0, first), (1, second)], rhs);
+                    for first_numerator in -2..=2 {
+                        for first_denominator in 1..=3 {
+                            for second_numerator in -2..=2 {
+                                for second_denominator in 1..=3 {
+                                    let known = BTreeMap::from([
+                                        (
+                                            var(0),
+                                            BigRational::new(
+                                                first_numerator.into(),
+                                                first_denominator.into(),
+                                            ),
+                                        ),
+                                        (
+                                            var(1),
+                                            BigRational::new(
+                                                second_numerator.into(),
+                                                second_denominator.into(),
+                                            ),
+                                        ),
+                                    ]);
+                                    assert_eq!(
+                                        original.substitute(&known),
+                                        substitute_reference(&original, &known),
+                                        "row={original:?} known={known:?}"
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 

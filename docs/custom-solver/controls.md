@@ -87,6 +87,9 @@ flat row/variable/term size buckets. Ordinary solves keep the timer-free sparse 
 Experiment 35 further splits the hotspot-only preparation path into variable
 collection, substitution and normalization, tautology filtering, sorting, and
 working-row conversion. The timer-free production path remains unchanged.
+Experiment 36 permanently evaluates fully known sparse rows with one exact integer
+denominator LCM and returns canonical tautology or contradiction rows directly.
+Mixed-row substitution retains the established rational implementation.
 Experiment 32 tested quotienting sparse rows through exact weighted representatives.
 The candidate was exact but slower on 36/238 and is absent from production source.
 Experiment 33 tested identical normalized-row deduplication and found no duplicates in
