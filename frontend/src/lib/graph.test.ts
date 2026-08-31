@@ -3,9 +3,11 @@ import { MarkerType } from '@xyflow/svelte';
 import {
   choosePortSides,
   endpointNodeDimensions,
+  GRAPH_SNAP_GRID,
   layoutSolution,
   rotateDevicePorts,
   rotateFlowGraph,
+  snapPositionToGrid,
   swapDeviceSides,
 } from './graph';
 import type { Solution } from '../types';
@@ -82,6 +84,13 @@ describe('endpointNodeDimensions', () => {
   });
 });
 
+describe('snapPositionToGrid', () => {
+  it('rounds coordinates to the shared graph grid', () => {
+    expect(snapPositionToGrid({ x: 10, y: 35 })).toEqual({ x: 0, y: 24 });
+    expect(snapPositionToGrid({ x: 13, y: 37 })).toEqual({ x: 24, y: 48 });
+  });
+});
+
 describe('layoutSolution', () => {
   it('swaps only the requested physical port sides', () => {
     const inputs = ['left'] as const;
@@ -132,6 +141,9 @@ describe('layoutSolution', () => {
     expect(graph.nodes).toHaveLength(solution.nodes.length);
     expect(graph.edges).toHaveLength(solution.edges.length);
     expect(graph.nodes.every((node) => Number.isFinite(node.position.x))).toBe(true);
+    expect(
+      graph.nodes.every((node) => node.position.x % GRAPH_SNAP_GRID === 0 && node.position.y % GRAPH_SNAP_GRID === 0),
+    ).toBe(true);
     expect(graph.nodes[0].data.label).toBe('120');
     expect(graph.nodes[1].data.label).toBe('S1');
     expect(graph.nodes[1].type).toBe('factory');
@@ -259,67 +271,6 @@ describe('layoutSolution', () => {
     for (const edge of parallelSolution.edges.filter((edge) => edge.id.startsWith('edge-parallel'))) {
       expect(alignedPairs.has(`${sourceSides[edge.sourcePort]}:${targetSides[edge.targetPort]}`)).toBe(true);
     }
-  });
-
-  it('aligns the longest direct splitter chain with horizontal item flow', async () => {
-    const chainSolution: Solution = {
-      ...solution,
-      nodes: [
-        { id: 'input-0', kind: 'input', label: 'Input' },
-        { id: 'splitter-0', kind: 'splitter2', label: 'Splitter 1' },
-        { id: 'splitter-1', kind: 'splitter2', label: 'Splitter 2' },
-        { id: 'splitter-2', kind: 'splitter2', label: 'Splitter 3' },
-        { id: 'splitter-3', kind: 'splitter2', label: 'Splitter 4' },
-        { id: 'output-0', kind: 'output', label: 'Output 1' },
-        { id: 'output-1', kind: 'output', label: 'Output 2' },
-      ],
-      edges: [
-        {
-          ...solution.edges[0],
-          id: 'edge-in',
-          source: 'input-0',
-          target: 'splitter-0',
-        },
-        {
-          ...solution.edges[0],
-          id: 'edge-short',
-          source: 'splitter-0',
-          target: 'splitter-1',
-        },
-        {
-          ...solution.edges[0],
-          id: 'edge-chain-0',
-          source: 'splitter-0',
-          target: 'splitter-2',
-          sourcePort: 1,
-        },
-        {
-          ...solution.edges[0],
-          id: 'edge-chain-1',
-          source: 'splitter-2',
-          target: 'splitter-3',
-        },
-        {
-          ...solution.edges[0],
-          id: 'edge-short-out',
-          source: 'splitter-1',
-          target: 'output-0',
-        },
-        {
-          ...solution.edges[0],
-          id: 'edge-chain-out',
-          source: 'splitter-3',
-          target: 'output-1',
-        },
-      ],
-    };
-
-    const graph = await layoutSolution(chainSolution);
-    const centers = ['splitter-0', 'splitter-2', 'splitter-3'].map((nodeId) => {
-      const node = graph.nodes.find((candidate) => candidate.id === nodeId)!;
-      return node.position.y + 38;
-    });
-    expect(new Set(centers).size).toBe(1);
   });
 
   it('rotates every occupied port 90 degrees', () => {

@@ -9,6 +9,19 @@ const endpointFont = '700 16px Inter, ui-sans-serif, system-ui, sans-serif';
 const endpointFallbackCharWidth = 9.6;
 const deviceSize = 76;
 
+/** Shared snap pitch for initial layout and interactive drag. */
+export const GRAPH_SNAP_GRID = 24;
+
+export function snapPositionToGrid(
+  position: { x: number; y: number },
+  grid: number = GRAPH_SNAP_GRID,
+): { x: number; y: number } {
+  return {
+    x: Math.round(position.x / grid) * grid,
+    y: Math.round(position.y / grid) * grid,
+  };
+}
+
 export type PortSide = 'left' | 'right' | 'top' | 'bottom';
 
 export const PORT_SIDES: readonly PortSide[] = ['top', 'right', 'bottom', 'left'];
@@ -311,69 +324,6 @@ function layerConstraint(kind: string): Record<string, string> {
   return {};
 }
 
-function alignSplitterChains(solution: Solution, bounds: Map<string, NodeBounds>): void {
-  const splitterIds = new Set(solution.nodes.filter((node) => isSplitter(node.kind)).map((node) => node.id));
-  const successors = new Map<string, string[]>();
-  for (const edge of solution.edges) {
-    if (!edge.feedback && splitterIds.has(edge.source) && splitterIds.has(edge.target)) {
-      successors.set(edge.source, [...(successors.get(edge.source) ?? []), edge.target]);
-    }
-  }
-
-  const available = new Set(splitterIds);
-  const pathFrom = (nodeId: string, visiting: Set<string>): string[] => {
-    if (visiting.has(nodeId)) return [nodeId];
-    const nextVisiting = new Set(visiting).add(nodeId);
-    let best: string[] = [];
-    for (const target of successors.get(nodeId) ?? []) {
-      if (!available.has(target) || nextVisiting.has(target)) continue;
-      const candidate = pathFrom(target, nextVisiting);
-      if (candidate.length > best.length) best = candidate;
-    }
-    return [nodeId, ...best];
-  };
-
-  while (available.size > 0) {
-    let chain: string[] = [];
-    for (const nodeId of available) {
-      const candidate = pathFrom(nodeId, new Set());
-      if (candidate.length > chain.length) chain = candidate;
-    }
-    for (const nodeId of chain) available.delete(nodeId);
-    if (chain.length < 2) continue;
-
-    const chainSet = new Set(chain);
-    const centers = chain.map((nodeId) => {
-      const node = bounds.get(nodeId)!;
-      return node.y + node.height / 2;
-    });
-    const candidateCenters = [...new Set(centers)].sort((left, right) => {
-      const leftMovement = centers.reduce((total, center) => total + Math.abs(center - left), 0);
-      const rightMovement = centers.reduce((total, center) => total + Math.abs(center - right), 0);
-      return leftMovement - rightMovement;
-    });
-    const alignedCenter = candidateCenters.find((center) =>
-      chain.every((nodeId) => {
-        const node = bounds.get(nodeId)!;
-        const candidate = { ...node, y: center - node.height / 2 };
-        return [...bounds].every(([otherId, other]) => {
-          if (chainSet.has(otherId)) return true;
-          const horizontalOverlap =
-            candidate.x < other.x + other.width + 16 && candidate.x + candidate.width + 16 > other.x;
-          const verticalOverlap =
-            candidate.y < other.y + other.height + 16 && candidate.y + candidate.height + 16 > other.y;
-          return !horizontalOverlap || !verticalOverlap;
-        });
-      }),
-    );
-    if (alignedCenter === undefined) continue;
-    for (const nodeId of chain) {
-      const node = bounds.get(nodeId)!;
-      node.y = alignedCenter - node.height / 2;
-    }
-  }
-}
-
 function permutations<T>(values: T[], length: number): T[][] {
   if (length === 0) return [[]];
   return values.flatMap((value, index) =>
@@ -599,7 +549,6 @@ export async function layoutSolution(solution: Solution): Promise<FlowGraph> {
     ]),
   );
   const kinds = new Map(solution.nodes.map((node) => [node.id, node.kind]));
-  alignSplitterChains(solution, preliminaryBounds);
   const inputPositions = new Map<string, PortSide[]>();
   const outputPositions = new Map<string, PortSide[]>();
   const center = (nodeId: string) => {
@@ -668,7 +617,7 @@ export async function layoutSolution(solution: Solution): Promise<FlowGraph> {
     return {
       id: node.id,
       type: isDevice(node.kind) ? 'factory' : node.kind === 'input' ? 'input' : 'output',
-      position: bounds.get(node.id) ?? { x: 0, y: 0 },
+      position: snapPositionToGrid(bounds.get(node.id) ?? { x: 0, y: 0 }),
       sourcePosition: Position.Right,
       targetPosition: Position.Left,
       width: dimensions.width,
@@ -680,8 +629,6 @@ export async function layoutSolution(solution: Solution): Promise<FlowGraph> {
       },
       style: `width: ${dimensions.width}px; height: ${dimensions.height}px;`,
       class: nodeClass(node.kind),
-      draggable: true,
-      selectable: true,
     };
   });
   const edges = solution.edges.map((edge): Edge => {

@@ -539,7 +539,6 @@
             solutions={displayRows.map((row) => row.solution)}
             selectedIndex={Math.max(0, selectedDisplayIndex)}
             {sortColumns}
-            selectedSolution={solution}
             nodes={flowNodes}
             edges={flowEdges}
             fitRevision={graphFitRevision}
@@ -579,7 +578,6 @@
                 edges={flowEdges}
                 fitRevision={graphFitRevision}
                 fullscreen={graphFullscreen}
-                subtitle="Drag nodes, pan, or zoom. Dashed amber belts mark feedback."
                 class={`min-h-0 flex-1 ${graphFullscreen ? 'fixed inset-0 z-100 h-dvh w-full bg-[#08141c]' : ''}`}
                 canvasClass={`flow-wrap w-full bg-[#08141c] ${
                   graphFullscreen ? 'min-h-0 flex-1' : 'h-[68vh] min-h-107.5 xl:h-auto xl:min-h-0 xl:flex-1'

@@ -173,14 +173,17 @@ export function createGraphSession(host: GraphSessionHost): GraphSession {
   }
 
   function stampNodeCallbacks(list: Node[]): Node[] {
-    return list.map((node) => ({
-      ...node,
-      data: {
-        ...node.data,
-        onSwapSides: swapSides,
-        onRotatePorts: rotatePorts,
-      },
-    }));
+    return list.map((node) => {
+      const { draggable: _draggable, selectable: _selectable, ...rest } = node;
+      return {
+        ...rest,
+        data: {
+          ...rest.data,
+          onSwapSides: swapSides,
+          onRotatePorts: rotatePorts,
+        },
+      };
+    });
   }
 
   function layoutsForSelected(): Record<string, CachedGraphLayout> {

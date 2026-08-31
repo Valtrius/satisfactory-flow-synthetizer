@@ -26,7 +26,6 @@
     solutions: Solution[];
     selectedIndex: number;
     sortColumns: SortColumn[];
-    selectedSolution: Solution;
     nodes: Writable<Node[]>;
     edges: Writable<Edge[]>;
     fitRevision: number;
@@ -62,7 +61,6 @@
     solutions,
     selectedIndex,
     sortColumns,
-    selectedSolution,
     nodes,
     edges,
     fitRevision,
@@ -81,14 +79,6 @@
     onNodeDragStart,
     onNodeDragStop,
   }: Props = $props();
-
-  const graphSubtitle = $derived.by(() => {
-    const linkCount = selectedSolution.stats.linkCount ?? selectedSolution.stats.beltCount ?? '—';
-    const peak = selectedSolution.stats.internalMaxThroughput?.exact;
-    return peak != null
-      ? `Selected: ${linkCount} belts · peak ${peak} · ${selectedSolution.stats.feedbackLoops} feedback${selectedSolution.stats.feedbackLoops === 1 ? '' : 's'}`
-      : `Selected: ${linkCount} links · ${selectedSolution.stats.feedbackLoops} feedback${selectedSolution.stats.feedbackLoops === 1 ? '' : 's'}`;
-  });
 </script>
 
 <section class="flex min-h-112 flex-1 flex-col overflow-hidden" aria-label="Search results">
@@ -123,7 +113,6 @@
         {edges}
         {fitRevision}
         {fullscreen}
-        subtitle={graphSubtitle}
         class={`h-full min-h-0 ${fullscreen ? 'fixed inset-0 z-100 !h-dvh !min-h-0 bg-[#08141c]' : ''}`}
         {onRotate}
         {canUndo}
