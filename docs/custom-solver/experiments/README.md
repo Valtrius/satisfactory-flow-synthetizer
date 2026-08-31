@@ -36,6 +36,7 @@ Record dates follow the analysis chronology, not necessarily every run's start t
 | [28](28-state-open-port-coordinate-reuse.md)  | 2026-08-30    | Can DFS reuse state labeling for its final open-port tie-break?                           | 14 verified; all completed pairs improve 18.2-49.4%; permanent                      |
 | [29](29-deferred-state-canonicalization.md)   | 2026-08-31    | Can DFS avoid exact state keys until a cheap invariant bucket repeats?                    | 26 verified; completed medians improve 18.3-38.1%; permanent                        |
 | [30](30-no-state-cache-ablation.md)           | 2026-08-31    | Does recursive DFS state caching improve completion at all?                               | Rejected; 12.3% slower on 115 and 3.00x slower on 238                               |
+| [31](31-propagation-bounds.md)                | 2026-08-31    | Can propagation remove a second copy of every physical-flow bound check?                  | 38 verified; all completed medians improve 5.36-9.40%; promote                      |
 
 ## How the diagnosis changed
 
@@ -126,6 +127,10 @@ Record dates follow the analysis chronology, not necessarily every run's start t
     memoization pays for itself. No cache is 12.3% slower on 115 minimum L and 3.00x
     slower on 238 optimal, where structural decisions rise 4.33x. The fail-fast gate
     rejects the candidate before the 36 control or larger suite.
+26. [Propagation-bound profiling](31-propagation-bounds.md) attributes substantial
+    hard-run time to a second evaluation of the same positivity and capacity
+    predicates. All 38 jobs verify; six completed medians improve 5.36-9.40%, while
+    the capped hard run processes 3.62% more decisions. Promotion is recommended.
 
 ## Evidence conventions
 

@@ -1093,8 +1093,7 @@ impl<'a> SearchContext<'a> {
             }
             PropagationConflict::NonPositiveKnown { .. }
             | PropagationConflict::CapacityExceeded { .. }
-            | PropagationConflict::NegativeRatio { .. }
-            | PropagationConflict::ExactBoundViolation { .. } => {
+            | PropagationConflict::NegativeRatio { .. } => {
                 increment(&mut self.stats.instrumentation.capacity_prunes);
             }
         }

@@ -78,6 +78,9 @@ Diagnostics are disabled for ordinary timing runs. The current diagnostic exampl
 writes independent heartbeat counters every five seconds without a trace mutex or
 JSON allocation. Full post-cancellation sidecars use a separate thread and 15-second
 cadence. Both writers are joined; their work is not hidden after process completion.
+Feature-gated hotspot output also splits propagation into port scanning, suffix
+registration, fixed-point passes, sparse analysis, and direct physical-bound checks.
+These nested timers overlap the top-level propagation timer.
 Live progress reports the optional serial helper as `constructing_incumbent`; its
 activity trace kind remains `acyclic_construct`.
 

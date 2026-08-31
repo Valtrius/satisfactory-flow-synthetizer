@@ -105,6 +105,11 @@ Updated 2026-08-31.
   directly tests whether local memoization still pays for itself. No cache is 12.3%
   slower on 115 minimum L and 3.00x slower on 238 optimal, so complete removal is
   rejected. Scheduling stays paused.
+- [Experiment 31](custom-solver/experiments/31-propagation-bounds.md) splits the
+  remaining propagation cost and removes a duplicate positivity/capacity pass. All
+  38 jobs verify; six completed medians improve 5.36-9.40%, so promotion is
+  recommended. The working tree is not yet committed. Sparse-equation changes remain
+  separate.
 
 The goal is shorter time to a proven optimum, complete minimum-link enumeration,
 and complete minimum-node enumeration. Benchmark modes are `optimal` for one layout,

@@ -41,6 +41,11 @@ improve 18.3-38.1% with exact outputs intact.
 Experiment 29 remains unchanged after the no-cache ablation. Experiment 30 was rejected
 and its source changes were restored before this result-only documentation update.
 
+[Experiment 31](experiments/31-propagation-bounds.md) is the current uncommitted
+promotion candidate. Its 38-job frozen A/B verifies exactly, and all six completed
+medians improve 5.36-9.40%. Commit the duplicate-bound removal with its feature-gated
+propagation telemetry and documentation; do not combine the next equation change.
+
 Each optimization commit includes its related docs. Experiment 13 tooling/results
 are committed in `473aba7`. [Calculation promotion](experiments/14-calculation-promotion.md)
 has separate commits: exact-L `5ae5631`, witness `1fbe95d`, and direct RREF bounds
@@ -141,6 +146,12 @@ The fail-fast [no-cache ablation](experiments/30-no-state-cache-ablation.md) now
 the cache's net value directly. No cache is 12.3% slower on 115 minimum L and 3.00x
 slower on 238 optimal. Keep the permanent deferred cache. Scheduling remains paused.
 
+[Experiment 31](experiments/31-propagation-bounds.md) splits propagation telemetry and
+removes a second evaluation of each registered port's positivity and capacity bounds.
+The direct equivalent checks remain. All 38 jobs verify; six completed medians and
+first-witness medians improve 5.36-9.40%. The capped hard pair advances 3.62% more
+decisions. Promotion is recommended, but the working tree is not yet committed.
+
 ## Validation records
 
 Experiment 29 post-run: 26/26 records verify with no analyzer failures. All 24 completed
@@ -153,6 +164,12 @@ Reference differentials. Full workspace tests, both strict Clippy configurations
 33 analyzer tests pass. Two fresh completed A/B pairs preserve all exact outputs. The
 candidate regresses 115 minimum L by 12.3% and 238 optimal by 3.00x, so the larger
 screen was not launched and the source candidate was restored.
+
+Experiment 31: 179 default and 184 benchmark-feature solver-core library
+tests pass, with two ignored in each configuration. The exhaustive Reference and four
+parallelism integration tests, full workspace tests, both strict Clippy configurations,
+and 33 analyzer tests pass. The frozen analyzer verifies 38/38 benchmark records with
+36 optimal completions, two capped diagnostics, no kills, and zero failures.
 
 Experiment 28 post-run and promotion: 14/14 records verify with no analyzer failures.
 All six completed pairs match their frozen references. The hard-10 pair reaches the

@@ -11,7 +11,7 @@
 //! flow, or a negative exact ratio between two variables that must both be
 //! positive. Unresolved equations and inequalities always remain feasible.
 
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, time::Instant};
 
 use num::{BigInt, BigRational, Integer, One};
 use solver_api::{ConsumerPortRef, NodeType, PhysicalNode, ProducerPortRef, Rational};
@@ -19,11 +19,11 @@ use thiserror::Error;
 
 use crate::{
     algebra::{
-        inequality::{ExactInequality, InequalityEvaluation, physical_flow_constraints},
         sparse::{Consistency, RowCheckpoint, SparseAlgebraError, SparseRow, SparseSystem},
         weighted::{ConstraintOutcome, WeightedCheckpoint, WeightedError, WeightedUnionFind},
     },
     canonical::PartialTopology,
+    hotspot_profile::{self, PropagationPhase},
     topology::{Direction, FlowVarId, Link, Port, PortClass, PortOwner, TopologyState},
 };
 
@@ -58,11 +58,6 @@ pub enum PropagationConflict {
         representative: FlowVarId,
         /// Exact factor in `variable = factor * representative`.
         factor: Rational,
-    },
-    /// A fully known exact bound row evaluated to false.
-    ExactBoundViolation {
-        /// Stable insertion index of the violated bound row.
-        constraint_index: usize,
     },
 }
 
@@ -126,7 +121,6 @@ pub enum PropagationError {
 pub struct PropagationCheckpoint {
     weighted: WeightedCheckpoint,
     sparse: RowCheckpoint,
-    bound_len: usize,
     port_len: usize,
     node_len: usize,
     link_len: usize,
@@ -166,7 +160,6 @@ pub struct PropagationState {
     capacity: Rational,
     weighted: WeightedUnionFind,
     sparse: SparseSystem,
-    bounds: Vec<ExactInequality>,
     registered_ports: BTreeMap<FlowVarId, PortSignature>,
     registered_nodes: Vec<PhysicalNode>,
     registered_links: Vec<Link>,
@@ -195,7 +188,6 @@ impl PropagationState {
             capacity: capacity.clone(),
             weighted: WeightedUnionFind::new(),
             sparse: SparseSystem::new(),
-            bounds: Vec::new(),
             registered_ports: BTreeMap::new(),
             registered_nodes: Vec::new(),
             registered_links: Vec::new(),
@@ -220,7 +212,6 @@ impl PropagationState {
         PropagationCheckpoint {
             weighted: self.weighted.checkpoint(),
             sparse: self.sparse.checkpoint(),
-            bound_len: self.bounds.len(),
             port_len: self.registered_ports.len(),
             node_len: self.registered_nodes.len(),
             link_len: self.registered_links.len(),
@@ -228,21 +219,19 @@ impl PropagationState {
         }
     }
 
-    /// Restores all facts, rows, bounds, registered prefixes, and proof status.
+    /// Restores all facts, rows, registered prefixes, and proof status.
     ///
     /// # Panics
     ///
     /// Panics for a checkpoint beyond the current state, including a stale
     /// checkpoint reused after rolling back past it.
     pub fn rollback(&mut self, checkpoint: PropagationCheckpoint) {
-        assert!(checkpoint.bound_len <= self.bounds.len());
         assert!(checkpoint.port_len <= self.registered_ports.len());
         assert!(checkpoint.node_len <= self.registered_nodes.len());
         assert!(checkpoint.link_len <= self.registered_links.len());
 
         self.weighted.rollback(checkpoint.weighted);
         self.sparse.rollback(checkpoint.sparse);
-        self.bounds.truncate(checkpoint.bound_len);
         while self.registered_ports.len() > checkpoint.port_len {
             self.registered_ports
                 .pop_last()
@@ -268,6 +257,7 @@ impl PropagationState {
         &mut self,
         topology: &TopologyState,
     ) -> Result<PropagationOutcome, PropagationError> {
+        hotspot_profile::record_propagation_sync_call();
         if self.outcome.is_pruned() {
             return Ok(self.outcome.clone());
         }
@@ -357,9 +347,12 @@ impl PropagationState {
         &mut self,
         topology: &TopologyState,
     ) -> Result<PropagationOutcome, PropagationError> {
+        let port_scan_started = hotspot_profile::recorder_enabled().then(Instant::now);
         let current_ports = collect_port_signatures(topology)?;
         self.validate_registered_prefix(topology, &current_ports)?;
+        record_propagation_elapsed(port_scan_started, PropagationPhase::PortScan);
 
+        let register_started = hotspot_profile::recorder_enabled().then(Instant::now);
         let mut direct_conflict = None;
         for (&variable, signature) in &current_ports {
             if self.registered_ports.contains_key(&variable) {
@@ -383,6 +376,7 @@ impl PropagationState {
             self.register_link(topology, link, &mut direct_conflict)?;
             self.registered_links.push(link.clone());
         }
+        record_propagation_elapsed(register_started, PropagationPhase::Register);
 
         if let Some(conflict) = direct_conflict {
             return Ok(PropagationOutcome::Pruned(conflict));
@@ -506,8 +500,6 @@ impl PropagationState {
         if !self.weighted.add_variable(variable) {
             return Err(PropagationError::DuplicateFlowVariable { variable });
         }
-        self.bounds
-            .extend(physical_flow_constraints(variable, &self.capacity));
         if let Some(value) = &signature.known_flow {
             self.insert_sparse_row(constant_row(variable, value));
             record_constraint_outcome(self.weighted.assign(variable, value)?, conflict);
@@ -604,11 +596,23 @@ impl PropagationState {
     }
 
     fn propagate_fixed_point(&mut self) -> Result<Option<PropagationConflict>, PropagationError> {
+        let started = hotspot_profile::recorder_enabled().then(Instant::now);
+        let result = self.propagate_fixed_point_inner();
+        record_propagation_elapsed(started, PropagationPhase::FixedPoint);
+        result
+    }
+
+    fn propagate_fixed_point_inner(
+        &mut self,
+    ) -> Result<Option<PropagationConflict>, PropagationError> {
         loop {
+            hotspot_profile::record_propagation_fixed_point_pass();
             let known = self.known_big_rationals()?;
+            let analyze_started = hotspot_profile::recorder_enabled().then(Instant::now);
             let analysis = self
                 .sparse
                 .analyze_over(self.registered_ports.keys().copied(), &known)?;
+            record_propagation_elapsed(analyze_started, PropagationPhase::SparseAnalyze);
             if analysis.consistency == Consistency::Inconsistent {
                 return Ok(Some(PropagationConflict::SparseInconsistency));
             }
@@ -644,7 +648,15 @@ impl PropagationState {
     }
 
     fn check_exact_bounds(&mut self) -> Result<Option<PropagationConflict>, PropagationError> {
-        let mut known = BTreeMap::new();
+        let started = hotspot_profile::recorder_enabled().then(Instant::now);
+        let result = self.check_exact_bounds_inner();
+        record_propagation_elapsed(started, PropagationPhase::Bounds);
+        result
+    }
+
+    fn check_exact_bounds_inner(
+        &mut self,
+    ) -> Result<Option<PropagationConflict>, PropagationError> {
         for &variable in self.registered_ports.keys() {
             let (representative, factor) = self.weighted.representative(variable)?;
             if factor.is_negative() {
@@ -668,15 +680,6 @@ impl PropagationState {
                         capacity: self.capacity.clone(),
                     }));
                 }
-                known.insert(variable, value);
-            }
-        }
-
-        for (constraint_index, constraint) in self.bounds.iter().enumerate() {
-            if constraint.evaluate_known(&known) == InequalityEvaluation::Violated {
-                return Ok(Some(PropagationConflict::ExactBoundViolation {
-                    constraint_index,
-                }));
             }
         }
         Ok(None)
@@ -690,6 +693,12 @@ impl PropagationState {
             }
         }
         Ok(known)
+    }
+}
+
+fn record_propagation_elapsed(started: Option<Instant>, phase: PropagationPhase) {
+    if let Some(started) = started {
+        hotspot_profile::record_propagation_phase(started.elapsed(), phase);
     }
 }
 
@@ -1007,7 +1016,7 @@ mod tests {
     }
 
     #[test]
-    fn checkpoint_restores_rows_union_find_bounds_prefixes_and_outcome() {
+    fn checkpoint_restores_rows_union_find_prefixes_and_outcome() {
         let specification = problem(&["6"], &["3", "3"], "6");
         let root = topology(partial(specification.clone(), vec![], vec![]));
         let mut propagation = PropagationState::new(&root, &specification.max_link_rate).unwrap();

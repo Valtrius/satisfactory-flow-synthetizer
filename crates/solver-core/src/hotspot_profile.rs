@@ -19,6 +19,13 @@ static STATE_CANONICALIZE_NS: AtomicU64 = AtomicU64::new(0);
 static LEGAL_DECISIONS_NS: AtomicU64 = AtomicU64::new(0);
 static APPLY_DECISION_NS: AtomicU64 = AtomicU64::new(0);
 static PROPAGATION_SYNC_NS: AtomicU64 = AtomicU64::new(0);
+static PROPAGATION_SYNC_CALLS: AtomicU64 = AtomicU64::new(0);
+static PROPAGATION_PORT_SCAN_NS: AtomicU64 = AtomicU64::new(0);
+static PROPAGATION_REGISTER_NS: AtomicU64 = AtomicU64::new(0);
+static PROPAGATION_FIXED_POINT_NS: AtomicU64 = AtomicU64::new(0);
+static PROPAGATION_FIXED_POINT_PASSES: AtomicU64 = AtomicU64::new(0);
+static PROPAGATION_SPARSE_ANALYZE_NS: AtomicU64 = AtomicU64::new(0);
+static PROPAGATION_BOUNDS_NS: AtomicU64 = AtomicU64::new(0);
 static SCC_CANONICALIZE_NS: AtomicU64 = AtomicU64::new(0);
 static SCC_ALGEBRA_NS: AtomicU64 = AtomicU64::new(0);
 static REACHABILITY_NS: AtomicU64 = AtomicU64::new(0);
@@ -55,6 +62,13 @@ pub struct HotspotSnapshot {
     pub legal_decisions_ns: u64,
     pub apply_decision_ns: u64,
     pub propagation_sync_ns: u64,
+    pub propagation_sync_calls: u64,
+    pub propagation_port_scan_ns: u64,
+    pub propagation_register_ns: u64,
+    pub propagation_fixed_point_ns: u64,
+    pub propagation_fixed_point_passes: u64,
+    pub propagation_sparse_analyze_ns: u64,
+    pub propagation_bounds_ns: u64,
     pub scc_canonicalize_ns: u64,
     pub scc_algebra_ns: u64,
     pub reachability_ns: u64,
@@ -127,6 +141,13 @@ fn load_snapshot() -> HotspotSnapshot {
         legal_decisions_ns: LEGAL_DECISIONS_NS.load(Ordering::Relaxed),
         apply_decision_ns: APPLY_DECISION_NS.load(Ordering::Relaxed),
         propagation_sync_ns: PROPAGATION_SYNC_NS.load(Ordering::Relaxed),
+        propagation_sync_calls: PROPAGATION_SYNC_CALLS.load(Ordering::Relaxed),
+        propagation_port_scan_ns: PROPAGATION_PORT_SCAN_NS.load(Ordering::Relaxed),
+        propagation_register_ns: PROPAGATION_REGISTER_NS.load(Ordering::Relaxed),
+        propagation_fixed_point_ns: PROPAGATION_FIXED_POINT_NS.load(Ordering::Relaxed),
+        propagation_fixed_point_passes: PROPAGATION_FIXED_POINT_PASSES.load(Ordering::Relaxed),
+        propagation_sparse_analyze_ns: PROPAGATION_SPARSE_ANALYZE_NS.load(Ordering::Relaxed),
+        propagation_bounds_ns: PROPAGATION_BOUNDS_NS.load(Ordering::Relaxed),
         scc_canonicalize_ns: SCC_CANONICALIZE_NS.load(Ordering::Relaxed),
         scc_algebra_ns: SCC_ALGEBRA_NS.load(Ordering::Relaxed),
         reachability_ns: REACHABILITY_NS.load(Ordering::Relaxed),
@@ -164,6 +185,13 @@ fn clear_buckets() {
         &LEGAL_DECISIONS_NS,
         &APPLY_DECISION_NS,
         &PROPAGATION_SYNC_NS,
+        &PROPAGATION_SYNC_CALLS,
+        &PROPAGATION_PORT_SCAN_NS,
+        &PROPAGATION_REGISTER_NS,
+        &PROPAGATION_FIXED_POINT_NS,
+        &PROPAGATION_FIXED_POINT_PASSES,
+        &PROPAGATION_SPARSE_ANALYZE_NS,
+        &PROPAGATION_BOUNDS_NS,
         &SCC_CANONICALIZE_NS,
         &SCC_ALGEBRA_NS,
         &REACHABILITY_NS,
@@ -227,6 +255,39 @@ pub(crate) fn record_apply_decision(elapsed: Duration) {
 
 pub(crate) fn record_propagation_sync(elapsed: Duration) {
     add_bucket(&PROPAGATION_SYNC_NS, elapsed);
+}
+
+#[must_use]
+pub(crate) fn recorder_enabled() -> bool {
+    ENABLED.load(Ordering::Relaxed)
+}
+
+pub(crate) fn record_propagation_sync_call() {
+    add_count(&PROPAGATION_SYNC_CALLS, 1);
+}
+
+#[derive(Clone, Copy)]
+pub(crate) enum PropagationPhase {
+    PortScan,
+    Register,
+    FixedPoint,
+    SparseAnalyze,
+    Bounds,
+}
+
+pub(crate) fn record_propagation_phase(elapsed: Duration, phase: PropagationPhase) {
+    let bucket = match phase {
+        PropagationPhase::PortScan => &PROPAGATION_PORT_SCAN_NS,
+        PropagationPhase::Register => &PROPAGATION_REGISTER_NS,
+        PropagationPhase::FixedPoint => &PROPAGATION_FIXED_POINT_NS,
+        PropagationPhase::SparseAnalyze => &PROPAGATION_SPARSE_ANALYZE_NS,
+        PropagationPhase::Bounds => &PROPAGATION_BOUNDS_NS,
+    };
+    add_bucket(bucket, elapsed);
+}
+
+pub(crate) fn record_propagation_fixed_point_pass() {
+    add_count(&PROPAGATION_FIXED_POINT_PASSES, 1);
 }
 
 pub(crate) fn record_scc_canonicalize(elapsed: Duration) {
