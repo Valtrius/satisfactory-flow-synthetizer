@@ -81,6 +81,8 @@ cadence. Both writers are joined; their work is not hidden after process complet
 Feature-gated hotspot output also splits propagation into port scanning, suffix
 registration, fixed-point passes, sparse analysis, and direct physical-bound checks.
 These nested timers overlap the top-level propagation timer.
+Experiment 32 tested quotienting sparse rows through exact weighted representatives.
+The candidate was exact but slower on 36/238 and is absent from production source.
 Live progress reports the optional serial helper as `constructing_incumbent`; its
 activity trace kind remains `acyclic_construct`.
 

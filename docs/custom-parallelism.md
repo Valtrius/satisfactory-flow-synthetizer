@@ -108,8 +108,12 @@ Updated 2026-08-31.
 - [Experiment 31](custom-solver/experiments/31-propagation-bounds.md) splits the
   remaining propagation cost and removes a duplicate positivity/capacity pass. All
   38 jobs verify; six completed medians improve 5.36-9.40%, so promotion is
-  recommended. The working tree is not yet committed. Sparse-equation changes remain
-  separate.
+  recommended and permanent in `9f63f01`.
+- [Experiment 32](custom-solver/experiments/32-weighted-sparse-quotient.md) rewrites
+  sparse equations through already-proved weighted representatives before exact
+  elimination. All 38 records verify, but 36/238 regress and hard sparse time per pass
+  rises 6.79%. The unconditional candidate is rejected and absent from source.
+  Scheduling stays paused.
 
 The goal is shorter time to a proven optimum, complete minimum-link enumeration,
 and complete minimum-node enumeration. Benchmark modes are `optimal` for one layout,

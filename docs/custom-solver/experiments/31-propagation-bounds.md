@@ -1,6 +1,6 @@
 # 31. Remove duplicate physical-flow bounds from propagation
 
-Date: 2026-08-31. State: successful; promotion recommended, uncommitted.
+Date: 2026-08-31. State: permanent in `9f63f01`.
 
 ## Hypothesis
 
@@ -150,3 +150,6 @@ every repeated completion and first-witness median, and advances more hard work 
 the fixed cap. Keep the propagation subphase telemetry because it is feature-gated and
 identifies the next cost. Keep weighted-representative equation elimination as a new,
 separately validated experiment. Scheduling remains paused.
+
+The isolated implementation, telemetry, benchmark protocol, and this result record
+were committed together as `9f63f01`.

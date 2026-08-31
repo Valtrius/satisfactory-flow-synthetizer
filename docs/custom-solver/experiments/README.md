@@ -37,6 +37,7 @@ Record dates follow the analysis chronology, not necessarily every run's start t
 | [29](29-deferred-state-canonicalization.md)   | 2026-08-31    | Can DFS avoid exact state keys until a cheap invariant bucket repeats?                    | 26 verified; completed medians improve 18.3-38.1%; permanent                        |
 | [30](30-no-state-cache-ablation.md)           | 2026-08-31    | Does recursive DFS state caching improve completion at all?                               | Rejected; 12.3% slower on 115 and 3.00x slower on 238                               |
 | [31](31-propagation-bounds.md)                | 2026-08-31    | Can propagation remove a second copy of every physical-flow bound check?                  | 38 verified; all completed medians improve 5.36-9.40%; promote                      |
+| [32](32-weighted-sparse-quotient.md)          | 2026-08-31    | Can exact weighted representatives reduce sparse elimination work?                        | Rejected; 115 improves, but 36/238 regress and sparse passes cost 6.79% more        |
 
 ## How the diagnosis changed
 
@@ -131,6 +132,10 @@ Record dates follow the analysis chronology, not necessarily every run's start t
     hard-run time to a second evaluation of the same positivity and capacity
     predicates. All 38 jobs verify; six completed medians improve 5.36-9.40%, while
     the capped hard run processes 3.62% more decisions. Promotion is recommended.
+27. [The weighted sparse quotient](32-weighted-sparse-quotient.md) substitutes only
+    exact facts already established by propagation before Bareiss elimination. All 38
+    records verify, but the mixed whole-solve result and 6.79% higher sparse cost per
+    hard pass reject the unconditional candidate. The source is restored.
 
 ## Evidence conventions
 

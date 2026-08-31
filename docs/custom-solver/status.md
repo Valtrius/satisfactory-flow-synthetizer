@@ -37,14 +37,18 @@ improve 18.3-38.1% with exact outputs intact.
 | Bypass marked-child keys inside recursive DFS         | 28 verified jobs; completed medians improve 17.5-22.9%              | `1b62e5e`, [26](experiments/26-internal-dfs-promotion-repeat.md) |
 | Reuse state coordinates for DFS open-port selection   | 14 verified jobs; completed pairs improve 18.2-49.4%                | [28](experiments/28-state-open-port-coordinate-reuse.md)         |
 | Defer state keys until an invariant repeats           | 26 verified jobs; completed medians improve 18.3-38.1%              | [29](experiments/29-deferred-state-canonicalization.md)          |
+| Remove duplicate physical-flow bounds                 | 38 verified jobs; completed medians improve 5.36-9.40%              | `9f63f01`, [31](experiments/31-propagation-bounds.md)            |
 
 Experiment 29 remains unchanged after the no-cache ablation. Experiment 30 was rejected
 and its source changes were restored before this result-only documentation update.
 
-[Experiment 31](experiments/31-propagation-bounds.md) is the current uncommitted
-promotion candidate. Its 38-job frozen A/B verifies exactly, and all six completed
-medians improve 5.36-9.40%. Commit the duplicate-bound removal with its feature-gated
-propagation telemetry and documentation; do not combine the next equation change.
+[Experiment 31](experiments/31-propagation-bounds.md) is permanent in `9f63f01`. Its
+38-job frozen A/B verifies exactly, and all six completed medians improve 5.36-9.40%.
+
+[Experiment 32](experiments/32-weighted-sparse-quotient.md) is rejected and absent
+from the working solver source. Its exact outputs verify, but 36 and 238 regress and
+hard sparse time per pass rises 6.79%. The next smaller calculation is row
+deduplication without representative projection.
 
 Each optimization commit includes its related docs. Experiment 13 tooling/results
 are committed in `473aba7`. [Calculation promotion](experiments/14-calculation-promotion.md)
@@ -150,7 +154,13 @@ slower on 238 optimal. Keep the permanent deferred cache. Scheduling remains pau
 removes a second evaluation of each registered port's positivity and capacity bounds.
 The direct equivalent checks remain. All 38 jobs verify; six completed medians and
 first-witness medians improve 5.36-9.40%. The capped hard pair advances 3.62% more
-decisions. Promotion is recommended, but the working tree is not yet committed.
+decisions. The change is permanent in `9f63f01`.
+
+[Experiment 32](experiments/32-weighted-sparse-quotient.md) verifies 38/38 records but
+fails its performance gate. The 115 medians improve 5.21-9.63%; 36 regresses 4.54%,
+238 minimum L regresses 7.47%, and 238 optimal regresses 8.83%. Hard sparse time per
+pass rises 6.79%. Keep experiment 31 and do not enable the quotient conditionally from
+benchmark identity.
 
 ## Validation records
 
@@ -170,6 +180,12 @@ tests pass, with two ignored in each configuration. The exhaustive Reference and
 parallelism integration tests, full workspace tests, both strict Clippy configurations,
 and 33 analyzer tests pass. The frozen analyzer verifies 38/38 benchmark records with
 36 optimal completions, two capped diagnostics, no kills, and zero failures.
+
+Experiment 32: 182 default and 187 benchmark-feature solver-core library tests pass,
+with two ignored in each configuration. The exhaustive Reference and four parallelism
+integrations, full workspace, both strict Clippy configurations, and 33 analyzer tests
+pass. The frozen analyzer verifies 38/38 records: 36 optimal, two capped, no failures
+or kills. Performance is mixed and the candidate source was restored.
 
 Experiment 28 post-run and promotion: 14/14 records verify with no analyzer failures.
 All six completed pairs match their frozen references. The hard-10 pair reaches the
