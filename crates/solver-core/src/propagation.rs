@@ -23,7 +23,7 @@ use crate::{
         weighted::{ConstraintOutcome, WeightedCheckpoint, WeightedError, WeightedUnionFind},
     },
     canonical::PartialTopology,
-    hotspot_profile::{self, PropagationPhase},
+    hotspot_profile::{self, PropagationPhase, SparsePassCause},
     topology::{Direction, FlowVarId, Link, Port, PortClass, PortOwner, TopologyState},
 };
 
@@ -605,45 +605,58 @@ impl PropagationState {
     fn propagate_fixed_point_inner(
         &mut self,
     ) -> Result<Option<PropagationConflict>, PropagationError> {
+        let mut pass_cause = SparsePassCause::Initial;
         loop {
             hotspot_profile::record_propagation_fixed_point_pass();
             let known = self.known_big_rationals()?;
-            let analyze_started = hotspot_profile::recorder_enabled().then(Instant::now);
-            let analysis = self
-                .sparse
-                .analyze_over(self.registered_ports.keys().copied(), &known)?;
+            let profiling_enabled = hotspot_profile::recorder_enabled();
+            let analyze_started = profiling_enabled.then(Instant::now);
+            let analysis = if profiling_enabled {
+                let (analysis, profile) = self
+                    .sparse
+                    .analyze_over_profiled(self.registered_ports.keys().copied(), &known)?;
+                hotspot_profile::record_sparse_profile(&profile, pass_cause);
+                analysis
+            } else {
+                self.sparse
+                    .analyze_over(self.registered_ports.keys().copied(), &known)?
+            };
             record_propagation_elapsed(analyze_started, PropagationPhase::SparseAnalyze);
             if analysis.consistency == Consistency::Inconsistent {
                 return Ok(Some(PropagationConflict::SparseInconsistency));
             }
 
-            let mut changed = false;
+            let mut value_changed = false;
             for deduction in analysis.known_values {
                 let value = Rational::from(deduction.value);
                 match self.weighted.assign(deduction.variable, &value)? {
-                    ConstraintOutcome::Changed => changed = true,
+                    ConstraintOutcome::Changed => value_changed = true,
                     ConstraintOutcome::AlreadySatisfied => {}
                     ConstraintOutcome::Contradiction => {
                         return Ok(Some(PropagationConflict::ExactConstraintContradiction));
                     }
                 }
             }
+            let mut ratio_changed = false;
             for deduction in analysis.homogeneous_ratios {
                 let factor = Rational::from(deduction.factor);
                 match self
                     .weighted
                     .relate(deduction.lhs, &factor, deduction.rhs)?
                 {
-                    ConstraintOutcome::Changed => changed = true,
+                    ConstraintOutcome::Changed => ratio_changed = true,
                     ConstraintOutcome::AlreadySatisfied => {}
                     ConstraintOutcome::Contradiction => {
                         return Ok(Some(PropagationConflict::ExactConstraintContradiction));
                     }
                 }
             }
-            if !changed {
-                return Ok(None);
-            }
+            pass_cause = match (value_changed, ratio_changed) {
+                (true, true) => SparsePassCause::ValueAndRatioDeductions,
+                (true, false) => SparsePassCause::ValueDeductions,
+                (false, true) => SparsePassCause::RatioDeductions,
+                (false, false) => return Ok(None),
+            };
         }
     }
 

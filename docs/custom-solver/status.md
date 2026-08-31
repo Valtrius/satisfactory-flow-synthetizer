@@ -54,6 +54,15 @@ deduplication without representative projection.
 from source. All 26 records verify, but the hard candidate removes zero duplicates
 across 164,042,086 input-row instances. Stop pursuing duplicate equations.
 
+[Experiment 34](experiments/34-sparse-phase-profile.md) adds diagnostic-only sparse
+phase, reanalysis-cause, and matrix-shape counters behind the existing hotspot
+recorder. Ordinary solves retain the timer-free analysis path. Full correctness,
+Clippy, formatting, analyzer, release-build, smoke, and manifest checks pass. The
+six-job screen verifies exactly. [Results](experiments/34-sparse-phase-profile-results.md)
+put 55.2-84.0% of sparse time in preparation and only 10.0-31.5% in forward
+elimination. Split preparation before attempting an incremental basis. Scheduling
+remains paused.
+
 Each optimization commit includes its related docs. Experiment 13 tooling/results
 are committed in `473aba7`. [Calculation promotion](experiments/14-calculation-promotion.md)
 has separate commits: exact-L `5ae5631`, witness `1fbe95d`, and direct RREF bounds
@@ -171,11 +180,22 @@ changes are mixed, and the hard prevalence counter is zero. The candidate and it
 telemetry are restored. Profile sparse work by matrix size and reanalysis cause before
 attempting a rollback-aware incremental basis.
 
+Experiment 34 implements that diagnostic. Interpret its instrumented time breakdown,
+not before/after wall speed, because the new clock reads and atomic counters add work.
+All six records verify. The completed 115/238 pairs preserve exact results; hard 10 is
+capped. Active matrices are usually <=15 rows and variables, while substitution removes
+79.7-91.9% of stored rows. Retain the diagnostic and profile preparation internals next.
+
 Experiment 33 validation: 181 default and 186 benchmark-feature solver-core library
 tests pass, with two ignored in each configuration. The exhaustive Reference and four
 parallelism integrations, full workspace, both strict Clippy configurations, and 33
 analyzer tests pass. The frozen screen has 24 optimal runs, two capped diagnostics,
 zero failures, and no kills.
+
+Experiment 34 prelaunch: 180 default and 185 benchmark-feature solver-core library
+tests pass, with two ignored in each configuration. The exhaustive Reference and four
+parallelism integrations, full workspace, both strict Clippy configurations, 33
+analyzer tests, release build, format, hotspot smoke, and six-job plan check pass.
 
 ## Validation records
 

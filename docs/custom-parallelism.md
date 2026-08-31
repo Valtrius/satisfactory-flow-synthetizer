@@ -118,6 +118,13 @@ Updated 2026-08-31.
   adjacent deduplication after the sparse system's existing row sort. All 26 records
   verify, but the hard candidate removes zero rows across 164 million input-row
   instances. The candidate is rejected and absent from source.
+- [Experiment 34](custom-solver/experiments/34-sparse-phase-profile.md) adds a
+  diagnostic-only split of sparse preparation, elimination, back reduction, and
+  deduction work. It buckets total time by matrix shape and records why analyses are
+  repeated. [All six records verify](custom-solver/experiments/34-sparse-phase-profile-results.md).
+  Preparation consumes 55.2-84.0% of sparse time and active matrices are usually
+  small, so preparation replaces an incremental Bareiss basis as the next target.
+  Scheduling stays paused.
 
 The goal is shorter time to a proven optimum, complete minimum-link enumeration,
 and complete minimum-node enumeration. Benchmark modes are `optimal` for one layout,

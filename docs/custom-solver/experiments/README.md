@@ -141,6 +141,12 @@ Record dates follow the analysis chronology, not necessarily every run's start t
     cheapest operation after the existing sort. All 26 records verify, but the hard
     candidate removes zero rows across 164 million input-row instances. Restore source
     and stop pursuing duplicate equations.
+29. [Sparse phase and matrix-shape profiling](34-sparse-phase-profile.md) measures
+    preparation, Bareiss forward elimination, back reduction, and deduction extraction.
+    It also buckets analysis time by matrix shape and distinguishes initial analysis
+    from value and ratio reanalysis. [Results](34-sparse-phase-profile-results.md)
+    put 55.2-84.0% of sparse time in preparation and reject a rollback-aware Bareiss
+    basis as the next change.
 
 ## Evidence conventions
 

@@ -81,6 +81,9 @@ cadence. Both writers are joined; their work is not hidden after process complet
 Feature-gated hotspot output also splits propagation into port scanning, suffix
 registration, fixed-point passes, sparse analysis, and direct physical-bound checks.
 These nested timers overlap the top-level propagation timer.
+Experiment 34 further splits sparse analysis when hotspot recording is active. It
+records preparation, forward elimination, back reduction, deductions, pass cause, and
+flat row/variable/term size buckets. Ordinary solves keep the timer-free sparse path.
 Experiment 32 tested quotienting sparse rows through exact weighted representatives.
 The candidate was exact but slower on 36/238 and is absent from production source.
 Experiment 33 tested identical normalized-row deduplication and found no duplicates in

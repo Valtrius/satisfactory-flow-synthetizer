@@ -5,7 +5,10 @@
 //! exact known rationals, clears their denominators, and then uses independent
 //! fraction-free elimination. Floating point never enters this module.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    time::{Duration, Instant},
+};
 
 use num::{BigInt, BigRational, Integer, One, Signed, Zero};
 use thiserror::Error;
@@ -171,6 +174,23 @@ pub struct SparseAnalysis {
     pub homogeneous_ratios: Vec<RatioDeduction>,
 }
 
+/// Diagnostic timings and matrix shape for one sparse analysis.
+///
+/// Production callers use [`SparseSystem::analyze_over`], which does not read
+/// the clock. The hotspot recorder selects this profile only for benchmark runs.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct SparseProfile {
+    pub input_rows: usize,
+    pub active_rows: usize,
+    pub variable_count: usize,
+    pub nonzero_terms: usize,
+    pub preparation: Duration,
+    pub forward: Duration,
+    pub back_reduction: Duration,
+    pub deductions: Duration,
+    pub total: Duration,
+}
+
 impl SparseAnalysis {
     /// Returns whether all requested variables have one exact solution.
     #[must_use]
@@ -273,6 +293,37 @@ impl SparseSystem {
         variables: impl IntoIterator<Item = FlowVarId>,
         known: &BTreeMap<FlowVarId, BigRational>,
     ) -> Result<SparseAnalysis, SparseAlgebraError> {
+        let (rows, variables) = self.prepare_analysis(variables, known);
+        analyze_integer_rows(rows, &variables)
+    }
+
+    pub(crate) fn analyze_over_profiled(
+        &self,
+        variables: impl IntoIterator<Item = FlowVarId>,
+        known: &BTreeMap<FlowVarId, BigRational>,
+    ) -> Result<(SparseAnalysis, SparseProfile), SparseAlgebraError> {
+        let total_started = Instant::now();
+        let preparation_started = Instant::now();
+        let input_rows = self.rows.len();
+        let (rows, variables) = self.prepare_analysis(variables, known);
+        let mut profile = SparseProfile {
+            input_rows,
+            active_rows: rows.len(),
+            variable_count: variables.len(),
+            nonzero_terms: rows.iter().map(|row| row.coefficients.len()).sum(),
+            preparation: preparation_started.elapsed(),
+            ..SparseProfile::default()
+        };
+        let analysis = analyze_integer_rows_profiled(rows, &variables, &mut profile)?;
+        profile.total = total_started.elapsed();
+        Ok((analysis, profile))
+    }
+
+    fn prepare_analysis(
+        &self,
+        variables: impl IntoIterator<Item = FlowVarId>,
+        known: &BTreeMap<FlowVarId, BigRational>,
+    ) -> (Vec<SparseRow>, Vec<FlowVarId>) {
         let mut variable_set = variables.into_iter().collect::<BTreeSet<_>>();
         for row in &self.rows {
             variable_set.extend(row.coefficients.keys().copied());
@@ -289,8 +340,7 @@ impl SparseSystem {
             .filter(|row| !row.is_tautology())
             .collect::<Vec<_>>();
         rows.sort();
-
-        analyze_integer_rows(rows, &variables)
+        (rows, variables)
     }
 }
 
@@ -315,6 +365,31 @@ fn analyze_integer_rows(
 ) -> Result<SparseAnalysis, SparseAlgebraError> {
     let mut rows = rows.into_iter().map(WorkingRow::from).collect::<Vec<_>>();
     let pivot_variables = bareiss_forward(&mut rows, variables)?;
+    Ok(finish_analysis(rows, variables, pivot_variables))
+}
+
+fn analyze_integer_rows_profiled(
+    rows: Vec<SparseRow>,
+    variables: &[FlowVarId],
+    profile: &mut SparseProfile,
+) -> Result<SparseAnalysis, SparseAlgebraError> {
+    let mut rows = rows.into_iter().map(WorkingRow::from).collect::<Vec<_>>();
+    let started = Instant::now();
+    let pivot_variables = bareiss_forward(&mut rows, variables)?;
+    profile.forward = started.elapsed();
+    Ok(finish_analysis_profiled(
+        rows,
+        variables,
+        pivot_variables,
+        profile,
+    ))
+}
+
+fn finish_analysis(
+    mut rows: Vec<WorkingRow>,
+    variables: &[FlowVarId],
+    pivot_variables: Vec<FlowVarId>,
+) -> SparseAnalysis {
     let coefficient_rank = pivot_variables.len();
     let inconsistent = rows
         .iter()
@@ -333,7 +408,7 @@ fn analyze_integer_rows(
         .collect::<Vec<_>>();
 
     if inconsistent {
-        return Ok(SparseAnalysis {
+        return SparseAnalysis {
             consistency,
             coefficient_rank,
             augmented_rank,
@@ -342,12 +417,12 @@ fn analyze_integer_rows(
             free_variables,
             known_values: Vec::new(),
             homogeneous_ratios: Vec::new(),
-        });
+        };
     }
 
     fraction_free_back_reduce(&mut rows, &pivot_variables);
     let (known_values, homogeneous_ratios) = deductions(&rows, &pivot_variables);
-    Ok(SparseAnalysis {
+    SparseAnalysis {
         consistency,
         coefficient_rank,
         augmented_rank,
@@ -356,7 +431,61 @@ fn analyze_integer_rows(
         free_variables,
         known_values,
         homogeneous_ratios,
-    })
+    }
+}
+
+fn finish_analysis_profiled(
+    mut rows: Vec<WorkingRow>,
+    variables: &[FlowVarId],
+    pivot_variables: Vec<FlowVarId>,
+    profile: &mut SparseProfile,
+) -> SparseAnalysis {
+    let coefficient_rank = pivot_variables.len();
+    let inconsistent = rows
+        .iter()
+        .any(|row| row.coefficients.is_empty() && !row.rhs.is_zero());
+    let consistency = if inconsistent {
+        Consistency::Inconsistent
+    } else {
+        Consistency::Consistent
+    };
+    let augmented_rank = coefficient_rank + usize::from(inconsistent);
+    let pivot_set = pivot_variables.iter().copied().collect::<BTreeSet<_>>();
+    let free_variables = variables
+        .iter()
+        .filter(|variable| !pivot_set.contains(variable))
+        .copied()
+        .collect::<Vec<_>>();
+
+    if inconsistent {
+        return SparseAnalysis {
+            consistency,
+            coefficient_rank,
+            augmented_rank,
+            variable_count: variables.len(),
+            pivot_variables,
+            free_variables,
+            known_values: Vec::new(),
+            homogeneous_ratios: Vec::new(),
+        };
+    }
+
+    let started = Instant::now();
+    fraction_free_back_reduce(&mut rows, &pivot_variables);
+    profile.back_reduction = started.elapsed();
+    let started = Instant::now();
+    let (known_values, homogeneous_ratios) = deductions(&rows, &pivot_variables);
+    profile.deductions = started.elapsed();
+    SparseAnalysis {
+        consistency,
+        coefficient_rank,
+        augmented_rank,
+        variable_count: variables.len(),
+        pivot_variables,
+        free_variables,
+        known_values,
+        homogeneous_ratios,
+    }
 }
 
 fn bareiss_forward(
@@ -679,6 +808,36 @@ mod tests {
                 },
             ]
         );
+    }
+
+    #[test]
+    fn profiled_analysis_preserves_results_and_records_matrix_shape() {
+        let mut system = SparseSystem::new();
+        system.insert(row([(0, 1), (1, 1)], 3));
+        system.insert(row([(0, 1), (1, -1)], 1));
+        let variables = [var(0), var(1)];
+        let plain = system.analyze_over(variables, &BTreeMap::new()).unwrap();
+        let (profiled, profile) = system
+            .analyze_over_profiled(variables, &BTreeMap::new())
+            .unwrap();
+
+        assert_eq!(profiled, plain);
+        assert_eq!(profile.input_rows, 2);
+        assert_eq!(profile.active_rows, 2);
+        assert_eq!(profile.variable_count, 2);
+        assert_eq!(profile.nonzero_terms, 4);
+
+        let mut ratio_system = SparseSystem::new();
+        ratio_system.insert(row([(0, 1), (1, -2)], 0));
+        let mut inconsistent_system = ratio_system.clone();
+        inconsistent_system.insert(row([(0, 1), (1, -2)], 1));
+        for system in [SparseSystem::new(), ratio_system, inconsistent_system] {
+            let plain = system.analyze_over(variables, &BTreeMap::new()).unwrap();
+            let (profiled, _) = system
+                .analyze_over_profiled(variables, &BTreeMap::new())
+                .unwrap();
+            assert_eq!(profiled, plain);
+        }
     }
 
     #[test]

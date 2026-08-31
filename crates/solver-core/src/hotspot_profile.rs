@@ -25,6 +25,22 @@ static PROPAGATION_REGISTER_NS: AtomicU64 = AtomicU64::new(0);
 static PROPAGATION_FIXED_POINT_NS: AtomicU64 = AtomicU64::new(0);
 static PROPAGATION_FIXED_POINT_PASSES: AtomicU64 = AtomicU64::new(0);
 static PROPAGATION_SPARSE_ANALYZE_NS: AtomicU64 = AtomicU64::new(0);
+static PROPAGATION_SPARSE_PROFILED_CALLS: AtomicU64 = AtomicU64::new(0);
+static PROPAGATION_SPARSE_PREPARATION_NS: AtomicU64 = AtomicU64::new(0);
+static PROPAGATION_SPARSE_FORWARD_NS: AtomicU64 = AtomicU64::new(0);
+static PROPAGATION_SPARSE_BACK_REDUCTION_NS: AtomicU64 = AtomicU64::new(0);
+static PROPAGATION_SPARSE_DEDUCTIONS_NS: AtomicU64 = AtomicU64::new(0);
+static PROPAGATION_SPARSE_INPUT_ROWS: AtomicU64 = AtomicU64::new(0);
+static PROPAGATION_SPARSE_ACTIVE_ROWS: AtomicU64 = AtomicU64::new(0);
+static PROPAGATION_SPARSE_VARIABLES: AtomicU64 = AtomicU64::new(0);
+static PROPAGATION_SPARSE_NONZERO_TERMS: AtomicU64 = AtomicU64::new(0);
+static PROPAGATION_SPARSE_CAUSE_CALLS: [AtomicU64; 4] = [const { AtomicU64::new(0) }; 4];
+static PROPAGATION_SPARSE_ROW_BUCKET_CALLS: [AtomicU64; 4] = [const { AtomicU64::new(0) }; 4];
+static PROPAGATION_SPARSE_ROW_BUCKET_NS: [AtomicU64; 4] = [const { AtomicU64::new(0) }; 4];
+static PROPAGATION_SPARSE_VARIABLE_BUCKET_CALLS: [AtomicU64; 4] = [const { AtomicU64::new(0) }; 4];
+static PROPAGATION_SPARSE_VARIABLE_BUCKET_NS: [AtomicU64; 4] = [const { AtomicU64::new(0) }; 4];
+static PROPAGATION_SPARSE_TERM_BUCKET_CALLS: [AtomicU64; 4] = [const { AtomicU64::new(0) }; 4];
+static PROPAGATION_SPARSE_TERM_BUCKET_NS: [AtomicU64; 4] = [const { AtomicU64::new(0) }; 4];
 static PROPAGATION_BOUNDS_NS: AtomicU64 = AtomicU64::new(0);
 static SCC_CANONICALIZE_NS: AtomicU64 = AtomicU64::new(0);
 static SCC_ALGEBRA_NS: AtomicU64 = AtomicU64::new(0);
@@ -68,6 +84,22 @@ pub struct HotspotSnapshot {
     pub propagation_fixed_point_ns: u64,
     pub propagation_fixed_point_passes: u64,
     pub propagation_sparse_analyze_ns: u64,
+    pub propagation_sparse_profiled_calls: u64,
+    pub propagation_sparse_preparation_ns: u64,
+    pub propagation_sparse_forward_ns: u64,
+    pub propagation_sparse_back_reduction_ns: u64,
+    pub propagation_sparse_deductions_ns: u64,
+    pub propagation_sparse_input_rows: u64,
+    pub propagation_sparse_active_rows: u64,
+    pub propagation_sparse_variables: u64,
+    pub propagation_sparse_nonzero_terms: u64,
+    pub propagation_sparse_cause_calls: [u64; 4],
+    pub propagation_sparse_row_bucket_calls: [u64; 4],
+    pub propagation_sparse_row_bucket_ns: [u64; 4],
+    pub propagation_sparse_variable_bucket_calls: [u64; 4],
+    pub propagation_sparse_variable_bucket_ns: [u64; 4],
+    pub propagation_sparse_term_bucket_calls: [u64; 4],
+    pub propagation_sparse_term_bucket_ns: [u64; 4],
     pub propagation_bounds_ns: u64,
     pub scc_canonicalize_ns: u64,
     pub scc_algebra_ns: u64,
@@ -147,6 +179,27 @@ fn load_snapshot() -> HotspotSnapshot {
         propagation_fixed_point_ns: PROPAGATION_FIXED_POINT_NS.load(Ordering::Relaxed),
         propagation_fixed_point_passes: PROPAGATION_FIXED_POINT_PASSES.load(Ordering::Relaxed),
         propagation_sparse_analyze_ns: PROPAGATION_SPARSE_ANALYZE_NS.load(Ordering::Relaxed),
+        propagation_sparse_profiled_calls: PROPAGATION_SPARSE_PROFILED_CALLS
+            .load(Ordering::Relaxed),
+        propagation_sparse_preparation_ns: PROPAGATION_SPARSE_PREPARATION_NS
+            .load(Ordering::Relaxed),
+        propagation_sparse_forward_ns: PROPAGATION_SPARSE_FORWARD_NS.load(Ordering::Relaxed),
+        propagation_sparse_back_reduction_ns: PROPAGATION_SPARSE_BACK_REDUCTION_NS
+            .load(Ordering::Relaxed),
+        propagation_sparse_deductions_ns: PROPAGATION_SPARSE_DEDUCTIONS_NS.load(Ordering::Relaxed),
+        propagation_sparse_input_rows: PROPAGATION_SPARSE_INPUT_ROWS.load(Ordering::Relaxed),
+        propagation_sparse_active_rows: PROPAGATION_SPARSE_ACTIVE_ROWS.load(Ordering::Relaxed),
+        propagation_sparse_variables: PROPAGATION_SPARSE_VARIABLES.load(Ordering::Relaxed),
+        propagation_sparse_nonzero_terms: PROPAGATION_SPARSE_NONZERO_TERMS.load(Ordering::Relaxed),
+        propagation_sparse_cause_calls: load_array(&PROPAGATION_SPARSE_CAUSE_CALLS),
+        propagation_sparse_row_bucket_calls: load_array(&PROPAGATION_SPARSE_ROW_BUCKET_CALLS),
+        propagation_sparse_row_bucket_ns: load_array(&PROPAGATION_SPARSE_ROW_BUCKET_NS),
+        propagation_sparse_variable_bucket_calls: load_array(
+            &PROPAGATION_SPARSE_VARIABLE_BUCKET_CALLS,
+        ),
+        propagation_sparse_variable_bucket_ns: load_array(&PROPAGATION_SPARSE_VARIABLE_BUCKET_NS),
+        propagation_sparse_term_bucket_calls: load_array(&PROPAGATION_SPARSE_TERM_BUCKET_CALLS),
+        propagation_sparse_term_bucket_ns: load_array(&PROPAGATION_SPARSE_TERM_BUCKET_NS),
         propagation_bounds_ns: PROPAGATION_BOUNDS_NS.load(Ordering::Relaxed),
         scc_canonicalize_ns: SCC_CANONICALIZE_NS.load(Ordering::Relaxed),
         scc_algebra_ns: SCC_ALGEBRA_NS.load(Ordering::Relaxed),
@@ -191,6 +244,15 @@ fn clear_buckets() {
         &PROPAGATION_FIXED_POINT_NS,
         &PROPAGATION_FIXED_POINT_PASSES,
         &PROPAGATION_SPARSE_ANALYZE_NS,
+        &PROPAGATION_SPARSE_PROFILED_CALLS,
+        &PROPAGATION_SPARSE_PREPARATION_NS,
+        &PROPAGATION_SPARSE_FORWARD_NS,
+        &PROPAGATION_SPARSE_BACK_REDUCTION_NS,
+        &PROPAGATION_SPARSE_DEDUCTIONS_NS,
+        &PROPAGATION_SPARSE_INPUT_ROWS,
+        &PROPAGATION_SPARSE_ACTIVE_ROWS,
+        &PROPAGATION_SPARSE_VARIABLES,
+        &PROPAGATION_SPARSE_NONZERO_TERMS,
         &PROPAGATION_BOUNDS_NS,
         &SCC_CANONICALIZE_NS,
         &SCC_ALGEBRA_NS,
@@ -217,6 +279,23 @@ fn clear_buckets() {
     ] {
         bucket.store(0, Ordering::Relaxed);
     }
+    for buckets in [
+        &PROPAGATION_SPARSE_CAUSE_CALLS,
+        &PROPAGATION_SPARSE_ROW_BUCKET_CALLS,
+        &PROPAGATION_SPARSE_ROW_BUCKET_NS,
+        &PROPAGATION_SPARSE_VARIABLE_BUCKET_CALLS,
+        &PROPAGATION_SPARSE_VARIABLE_BUCKET_NS,
+        &PROPAGATION_SPARSE_TERM_BUCKET_CALLS,
+        &PROPAGATION_SPARSE_TERM_BUCKET_NS,
+    ] {
+        for bucket in buckets {
+            bucket.store(0, Ordering::Relaxed);
+        }
+    }
+}
+
+fn load_array(buckets: &[AtomicU64; 4]) -> [u64; 4] {
+    std::array::from_fn(|index| buckets[index].load(Ordering::Relaxed))
 }
 
 fn add_bucket(target: &AtomicU64, elapsed: Duration) {
@@ -288,6 +367,83 @@ pub(crate) fn record_propagation_phase(elapsed: Duration, phase: PropagationPhas
 
 pub(crate) fn record_propagation_fixed_point_pass() {
     add_count(&PROPAGATION_FIXED_POINT_PASSES, 1);
+}
+
+#[derive(Clone, Copy)]
+pub(crate) enum SparsePassCause {
+    Initial,
+    ValueDeductions,
+    RatioDeductions,
+    ValueAndRatioDeductions,
+}
+
+pub(crate) fn record_sparse_profile(
+    profile: &crate::algebra::sparse::SparseProfile,
+    cause: SparsePassCause,
+) {
+    if !ENABLED.load(Ordering::Relaxed) {
+        return;
+    }
+    let total_ns = duration_ns(profile.total);
+    PROPAGATION_SPARSE_PROFILED_CALLS.fetch_add(1, Ordering::Relaxed);
+    PROPAGATION_SPARSE_PREPARATION_NS
+        .fetch_add(duration_ns(profile.preparation), Ordering::Relaxed);
+    PROPAGATION_SPARSE_FORWARD_NS.fetch_add(duration_ns(profile.forward), Ordering::Relaxed);
+    PROPAGATION_SPARSE_BACK_REDUCTION_NS
+        .fetch_add(duration_ns(profile.back_reduction), Ordering::Relaxed);
+    PROPAGATION_SPARSE_DEDUCTIONS_NS.fetch_add(duration_ns(profile.deductions), Ordering::Relaxed);
+    PROPAGATION_SPARSE_INPUT_ROWS.fetch_add(count(profile.input_rows), Ordering::Relaxed);
+    PROPAGATION_SPARSE_ACTIVE_ROWS.fetch_add(count(profile.active_rows), Ordering::Relaxed);
+    PROPAGATION_SPARSE_VARIABLES.fetch_add(count(profile.variable_count), Ordering::Relaxed);
+    PROPAGATION_SPARSE_NONZERO_TERMS.fetch_add(count(profile.nonzero_terms), Ordering::Relaxed);
+
+    let cause_index = match cause {
+        SparsePassCause::Initial => 0,
+        SparsePassCause::ValueDeductions => 1,
+        SparsePassCause::RatioDeductions => 2,
+        SparsePassCause::ValueAndRatioDeductions => 3,
+    };
+    PROPAGATION_SPARSE_CAUSE_CALLS[cause_index].fetch_add(1, Ordering::Relaxed);
+    record_shape_bucket(
+        profile.active_rows,
+        [16, 32, 48],
+        total_ns,
+        &PROPAGATION_SPARSE_ROW_BUCKET_CALLS,
+        &PROPAGATION_SPARSE_ROW_BUCKET_NS,
+    );
+    record_shape_bucket(
+        profile.variable_count,
+        [16, 32, 48],
+        total_ns,
+        &PROPAGATION_SPARSE_VARIABLE_BUCKET_CALLS,
+        &PROPAGATION_SPARSE_VARIABLE_BUCKET_NS,
+    );
+    record_shape_bucket(
+        profile.nonzero_terms,
+        [64, 128, 192],
+        total_ns,
+        &PROPAGATION_SPARSE_TERM_BUCKET_CALLS,
+        &PROPAGATION_SPARSE_TERM_BUCKET_NS,
+    );
+}
+
+fn count(value: usize) -> u64 {
+    u64::try_from(value).unwrap_or(u64::MAX)
+}
+
+fn record_shape_bucket(
+    value: usize,
+    boundaries: [usize; 3],
+    elapsed_ns: u64,
+    calls: &[AtomicU64; 4],
+    time: &[AtomicU64; 4],
+) {
+    let index = boundaries
+        .iter()
+        .position(|boundary| value < *boundary)
+        .unwrap_or(3);
+    calls[index].fetch_add(1, Ordering::Relaxed);
+    time[index].fetch_add(elapsed_ns, Ordering::Relaxed);
 }
 
 pub(crate) fn record_scc_canonicalize(elapsed: Duration) {
