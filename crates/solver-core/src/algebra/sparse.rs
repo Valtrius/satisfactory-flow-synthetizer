@@ -22,6 +22,12 @@ pub struct SparseRow {
     rhs: BigInt,
 }
 
+enum KnownCoverage {
+    None,
+    All(BigInt),
+    Mixed,
+}
+
 impl SparseRow {
     /// Builds and normalizes an integer equation.
     ///
@@ -101,8 +107,12 @@ impl SparseRow {
     /// equivalence-preserving, as documented by [`SparseRow::new`].
     #[must_use]
     pub fn substitute(&self, known: &BTreeMap<FlowVarId, BigRational>) -> Self {
-        if let Some(row) = self.substitute_fully_known(known) {
-            return row;
+        match self.known_coverage(known) {
+            KnownCoverage::None => return self.clone(),
+            KnownCoverage::All(denominator) => {
+                return self.substitute_fully_known(known, &denominator);
+            }
+            KnownCoverage::Mixed => {}
         }
 
         let mut coefficients = BTreeMap::new();
@@ -124,31 +134,55 @@ impl SparseRow {
 
     /// Evaluates a fully known row without repeated rational normalization.
     ///
-    /// Returns `None` as soon as one unknown coefficient is found. Otherwise it
-    /// clears every known denominator once and returns the canonical tautology or
-    /// contradiction that ordinary substitution would produce.
-    fn substitute_fully_known(&self, known: &BTreeMap<FlowVarId, BigRational>) -> Option<Self> {
-        let mut denominator = BigInt::one();
-        for variable in self.coefficients.keys() {
-            denominator = denominator.lcm(known.get(variable)?.denom());
-        }
-
-        let mut residual = &self.rhs * &denominator;
+    /// The coverage scan clears every known denominator once. This method then
+    /// returns the canonical tautology or contradiction that ordinary
+    /// substitution would produce.
+    fn substitute_fully_known(
+        &self,
+        known: &BTreeMap<FlowVarId, BigRational>,
+        denominator: &BigInt,
+    ) -> Self {
+        let mut residual = &self.rhs * denominator;
         for (variable, coefficient) in &self.coefficients {
             let value = known
                 .get(variable)
                 .expect("fully known row was checked above");
-            residual -= coefficient * value.numer() * (&denominator / value.denom());
+            residual -= coefficient * value.numer() * (denominator / value.denom());
         }
 
-        Some(Self {
+        Self {
             coefficients: BTreeMap::new(),
             rhs: if residual.is_zero() {
                 BigInt::zero()
             } else {
                 BigInt::one()
             },
-        })
+        }
+    }
+
+    /// Classifies known-variable coverage with no extra scan for fully known rows.
+    fn known_coverage(&self, known: &BTreeMap<FlowVarId, BigRational>) -> KnownCoverage {
+        if self.coefficients.is_empty() {
+            return KnownCoverage::None;
+        }
+
+        let mut denominator = BigInt::one();
+        let mut saw_known = false;
+        let mut variables = self.coefficients.keys();
+        while let Some(variable) = variables.next() {
+            if let Some(value) = known.get(variable) {
+                saw_known = true;
+                denominator = denominator.lcm(value.denom());
+                continue;
+            }
+
+            if saw_known || variables.any(|remaining| known.contains_key(remaining)) {
+                return KnownCoverage::Mixed;
+            }
+            return KnownCoverage::None;
+        }
+
+        KnownCoverage::All(denominator)
     }
 }
 
@@ -870,6 +904,27 @@ mod tests {
             let original_lhs = integer(2) * &x + integer(3) * &known[&var(1)];
             let reduced_lhs = integer(4) * x;
             assert_eq!(original_lhs == integer(7), reduced_lhs == integer(11));
+        }
+    }
+
+    #[test]
+    fn substitution_coverage_paths_match_the_rational_reference() {
+        let original = row([(0, 2), (1, 3)], 7);
+        let half = BigRational::new(1.into(), 2.into());
+        let cases = [
+            BTreeMap::new(),
+            BTreeMap::from([(var(9), half.clone())]),
+            BTreeMap::from([(var(0), half.clone())]),
+            BTreeMap::from([(var(1), half.clone())]),
+            BTreeMap::from([(var(0), half.clone()), (var(1), integer(2))]),
+        ];
+
+        for known in cases {
+            assert_eq!(
+                original.substitute(&known),
+                substitute_reference(&original, &known),
+                "known={known:?}"
+            );
         }
     }
 

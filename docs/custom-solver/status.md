@@ -38,6 +38,7 @@ improve 18.3-38.1% with exact outputs intact.
 | Reuse state coordinates for DFS open-port selection   | 14 verified jobs; completed pairs improve 18.2-49.4%                | [28](experiments/28-state-open-port-coordinate-reuse.md)         |
 | Defer state keys until an invariant repeats           | 26 verified jobs; completed medians improve 18.3-38.1%              | [29](experiments/29-deferred-state-canonicalization.md)          |
 | Remove duplicate physical-flow bounds                 | 38 verified jobs; completed medians improve 5.36-9.40%              | `9f63f01`, [31](experiments/31-propagation-bounds.md)            |
+| Evaluate fully known rows with integer arithmetic     | 14 verified jobs; completed medians improve 9.73-16.41%             | `532aaa1`, [36](experiments/36-fully-known-row-substitution.md)  |
 
 Experiment 29 remains unchanged after the no-cache ablation. Experiment 30 was rejected
 and its source changes were restored before this result-only documentation update.
@@ -207,6 +208,17 @@ Completed medians improve 9.73% on 115 all and 16.41% on 238 optimal with identi
 structural work. Hard 10 advances 6.56% more states within the cap. The change is
 permanent. Test the no-known-variable clone path next; mixed-row integer substitution
 remains separate. Scheduling stays paused.
+
+[Experiment 37](experiments/37-no-known-row-substitution.md) implements that isolated
+clone path. A coverage scan returns immutable primitive rows directly when none of
+their coefficients is known; fully-known integer evaluation and mixed rational
+substitution remain unchanged. Solver-core, exhaustive Reference, parallelism,
+workspace, Clippy, analyzer, formatting, release-build, and completed smoke checks
+pass. [All 14 records verify](experiments/37-no-known-row-substitution-results.md).
+Completed medians improve 5.37% on 115 all and 3.42% on 238 optimal with identical
+structural work. One capped hard sample processes 2.40% fewer states, so it does not
+support a hard-run gain. The exact clone path is permanent. Test mixed-row integer
+substitution separately; scheduling stays paused.
 
 Experiment 33 validation: 181 default and 186 benchmark-feature solver-core library
 tests pass, with two ignored in each configuration. The exhaustive Reference and four

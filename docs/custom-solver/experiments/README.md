@@ -158,6 +158,11 @@ Record dates follow the analysis chronology, not necessarily every run's start t
     [All 14 records verify](36-fully-known-row-substitution-results.md). Completed
     medians improve 9.73-16.41% with identical exact work, and hard 10 processes
     6.56% more states within the cap. The change is permanent.
+32. [No-known row substitution](37-no-known-row-substitution.md) returns an already
+    primitive row directly when none of its coefficients has a known value. Fully
+    known and mixed behavior remain unchanged. [All 14 records verify](37-no-known-row-substitution-results.md).
+    Completed medians improve 3.42-5.37%; the single capped hard sample processes
+    2.40% less work. The exact clone path is permanent.
 
 ## Evidence conventions
 
