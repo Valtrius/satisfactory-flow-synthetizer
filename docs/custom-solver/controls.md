@@ -83,6 +83,8 @@ registration, fixed-point passes, sparse analysis, and direct physical-bound che
 These nested timers overlap the top-level propagation timer.
 Experiment 32 tested quotienting sparse rows through exact weighted representatives.
 The candidate was exact but slower on 36/238 and is absent from production source.
+Experiment 33 tested identical normalized-row deduplication and found no duplicates in
+the hard sample. The candidate and its counters are absent from production source.
 Live progress reports the optional serial helper as `constructing_incumbent`; its
 activity trace kind remains `acyclic_construct`.
 

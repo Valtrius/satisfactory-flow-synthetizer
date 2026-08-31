@@ -50,6 +50,10 @@ from the working solver source. Its exact outputs verify, but 36 and 238 regress
 hard sparse time per pass rises 6.79%. The next smaller calculation is row
 deduplication without representative projection.
 
+[Experiment 33](experiments/33-sparse-row-deduplication.md) is rejected and absent
+from source. All 26 records verify, but the hard candidate removes zero duplicates
+across 164,042,086 input-row instances. Stop pursuing duplicate equations.
+
 Each optimization commit includes its related docs. Experiment 13 tooling/results
 are committed in `473aba7`. [Calculation promotion](experiments/14-calculation-promotion.md)
 has separate commits: exact-L `5ae5631`, witness `1fbe95d`, and direct RREF bounds
@@ -161,6 +165,17 @@ fails its performance gate. The 115 medians improve 5.21-9.63%; 36 regresses 4.5
 238 minimum L regresses 7.47%, and 238 optimal regresses 8.83%. Hard sparse time per
 pass rises 6.79%. Keep experiment 31 and do not enable the quotient conditionally from
 benchmark identity.
+
+Experiment 33 verifies 26/26 records and exact structural counters. Its small timing
+changes are mixed, and the hard prevalence counter is zero. The candidate and its
+telemetry are restored. Profile sparse work by matrix size and reanalysis cause before
+attempting a rollback-aware incremental basis.
+
+Experiment 33 validation: 181 default and 186 benchmark-feature solver-core library
+tests pass, with two ignored in each configuration. The exhaustive Reference and four
+parallelism integrations, full workspace, both strict Clippy configurations, and 33
+analyzer tests pass. The frozen screen has 24 optimal runs, two capped diagnostics,
+zero failures, and no kills.
 
 ## Validation records
 

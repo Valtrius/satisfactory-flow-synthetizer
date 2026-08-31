@@ -38,6 +38,7 @@ Record dates follow the analysis chronology, not necessarily every run's start t
 | [30](30-no-state-cache-ablation.md)           | 2026-08-31    | Does recursive DFS state caching improve completion at all?                               | Rejected; 12.3% slower on 115 and 3.00x slower on 238                               |
 | [31](31-propagation-bounds.md)                | 2026-08-31    | Can propagation remove a second copy of every physical-flow bound check?                  | 38 verified; all completed medians improve 5.36-9.40%; promote                      |
 | [32](32-weighted-sparse-quotient.md)          | 2026-08-31    | Can exact weighted representatives reduce sparse elimination work?                        | Rejected; 115 improves, but 36/238 regress and sparse passes cost 6.79% more        |
+| [33](33-sparse-row-deduplication.md)          | 2026-08-31    | Do identical normalized equations add avoidable sparse elimination work?                  | Rejected; zero duplicates across 164M hard input-row instances                      |
 
 ## How the diagnosis changed
 
@@ -136,6 +137,10 @@ Record dates follow the analysis chronology, not necessarily every run's start t
     exact facts already established by propagation before Bareiss elimination. All 38
     records verify, but the mixed whole-solve result and 6.79% higher sparse cost per
     hard pass reject the unconditional candidate. The source is restored.
+28. [Sparse row deduplication](33-sparse-row-deduplication.md) isolates the quotient's
+    cheapest operation after the existing sort. All 26 records verify, but the hard
+    candidate removes zero rows across 164 million input-row instances. Restore source
+    and stop pursuing duplicate equations.
 
 ## Evidence conventions
 

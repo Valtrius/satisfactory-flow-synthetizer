@@ -114,6 +114,10 @@ Updated 2026-08-31.
   elimination. All 38 records verify, but 36/238 regress and hard sparse time per pass
   rises 6.79%. The unconditional candidate is rejected and absent from source.
   Scheduling stays paused.
+- [Experiment 33](custom-solver/experiments/33-sparse-row-deduplication.md) isolates
+  adjacent deduplication after the sparse system's existing row sort. All 26 records
+  verify, but the hard candidate removes zero rows across 164 million input-row
+  instances. The candidate is rejected and absent from source.
 
 The goal is shorter time to a proven optimum, complete minimum-link enumeration,
 and complete minimum-node enumeration. Benchmark modes are `optimal` for one layout,
