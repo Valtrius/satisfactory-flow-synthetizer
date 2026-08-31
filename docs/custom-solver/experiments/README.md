@@ -147,6 +147,12 @@ Record dates follow the analysis chronology, not necessarily every run's start t
     from value and ratio reanalysis. [Results](34-sparse-phase-profile-results.md)
     put 55.2-84.0% of sparse time in preparation and reject a rollback-aware Bareiss
     basis as the next change.
+30. [Sparse preparation profiling](35-sparse-preparation-profile.md) splits the
+    dominant preparation phase into variable collection, substitution and
+    normalization, tautology filtering, sorting, and working-row conversion. The
+    [six verified results](35-sparse-preparation-profile-results.md) put 89.99-91.42%
+    of preparation in substitution and normalization. Test exact integer evaluation
+    of fully known rows before rewriting mixed-row arithmetic.
 
 ## Evidence conventions
 

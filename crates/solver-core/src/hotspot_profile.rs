@@ -27,6 +27,11 @@ static PROPAGATION_FIXED_POINT_PASSES: AtomicU64 = AtomicU64::new(0);
 static PROPAGATION_SPARSE_ANALYZE_NS: AtomicU64 = AtomicU64::new(0);
 static PROPAGATION_SPARSE_PROFILED_CALLS: AtomicU64 = AtomicU64::new(0);
 static PROPAGATION_SPARSE_PREPARATION_NS: AtomicU64 = AtomicU64::new(0);
+static PROPAGATION_SPARSE_VARIABLE_COLLECTION_NS: AtomicU64 = AtomicU64::new(0);
+static PROPAGATION_SPARSE_SUBSTITUTION_NORMALIZATION_NS: AtomicU64 = AtomicU64::new(0);
+static PROPAGATION_SPARSE_TAUTOLOGY_FILTER_NS: AtomicU64 = AtomicU64::new(0);
+static PROPAGATION_SPARSE_SORTING_NS: AtomicU64 = AtomicU64::new(0);
+static PROPAGATION_SPARSE_WORKING_ROW_CONVERSION_NS: AtomicU64 = AtomicU64::new(0);
 static PROPAGATION_SPARSE_FORWARD_NS: AtomicU64 = AtomicU64::new(0);
 static PROPAGATION_SPARSE_BACK_REDUCTION_NS: AtomicU64 = AtomicU64::new(0);
 static PROPAGATION_SPARSE_DEDUCTIONS_NS: AtomicU64 = AtomicU64::new(0);
@@ -86,6 +91,11 @@ pub struct HotspotSnapshot {
     pub propagation_sparse_analyze_ns: u64,
     pub propagation_sparse_profiled_calls: u64,
     pub propagation_sparse_preparation_ns: u64,
+    pub propagation_sparse_variable_collection_ns: u64,
+    pub propagation_sparse_substitution_normalization_ns: u64,
+    pub propagation_sparse_tautology_filter_ns: u64,
+    pub propagation_sparse_sorting_ns: u64,
+    pub propagation_sparse_working_row_conversion_ns: u64,
     pub propagation_sparse_forward_ns: u64,
     pub propagation_sparse_back_reduction_ns: u64,
     pub propagation_sparse_deductions_ns: u64,
@@ -183,6 +193,15 @@ fn load_snapshot() -> HotspotSnapshot {
             .load(Ordering::Relaxed),
         propagation_sparse_preparation_ns: PROPAGATION_SPARSE_PREPARATION_NS
             .load(Ordering::Relaxed),
+        propagation_sparse_variable_collection_ns: PROPAGATION_SPARSE_VARIABLE_COLLECTION_NS
+            .load(Ordering::Relaxed),
+        propagation_sparse_substitution_normalization_ns:
+            PROPAGATION_SPARSE_SUBSTITUTION_NORMALIZATION_NS.load(Ordering::Relaxed),
+        propagation_sparse_tautology_filter_ns: PROPAGATION_SPARSE_TAUTOLOGY_FILTER_NS
+            .load(Ordering::Relaxed),
+        propagation_sparse_sorting_ns: PROPAGATION_SPARSE_SORTING_NS.load(Ordering::Relaxed),
+        propagation_sparse_working_row_conversion_ns: PROPAGATION_SPARSE_WORKING_ROW_CONVERSION_NS
+            .load(Ordering::Relaxed),
         propagation_sparse_forward_ns: PROPAGATION_SPARSE_FORWARD_NS.load(Ordering::Relaxed),
         propagation_sparse_back_reduction_ns: PROPAGATION_SPARSE_BACK_REDUCTION_NS
             .load(Ordering::Relaxed),
@@ -246,6 +265,11 @@ fn clear_buckets() {
         &PROPAGATION_SPARSE_ANALYZE_NS,
         &PROPAGATION_SPARSE_PROFILED_CALLS,
         &PROPAGATION_SPARSE_PREPARATION_NS,
+        &PROPAGATION_SPARSE_VARIABLE_COLLECTION_NS,
+        &PROPAGATION_SPARSE_SUBSTITUTION_NORMALIZATION_NS,
+        &PROPAGATION_SPARSE_TAUTOLOGY_FILTER_NS,
+        &PROPAGATION_SPARSE_SORTING_NS,
+        &PROPAGATION_SPARSE_WORKING_ROW_CONVERSION_NS,
         &PROPAGATION_SPARSE_FORWARD_NS,
         &PROPAGATION_SPARSE_BACK_REDUCTION_NS,
         &PROPAGATION_SPARSE_DEDUCTIONS_NS,
@@ -388,6 +412,19 @@ pub(crate) fn record_sparse_profile(
     PROPAGATION_SPARSE_PROFILED_CALLS.fetch_add(1, Ordering::Relaxed);
     PROPAGATION_SPARSE_PREPARATION_NS
         .fetch_add(duration_ns(profile.preparation), Ordering::Relaxed);
+    PROPAGATION_SPARSE_VARIABLE_COLLECTION_NS
+        .fetch_add(duration_ns(profile.variable_collection), Ordering::Relaxed);
+    PROPAGATION_SPARSE_SUBSTITUTION_NORMALIZATION_NS.fetch_add(
+        duration_ns(profile.substitution_normalization),
+        Ordering::Relaxed,
+    );
+    PROPAGATION_SPARSE_TAUTOLOGY_FILTER_NS
+        .fetch_add(duration_ns(profile.tautology_filter), Ordering::Relaxed);
+    PROPAGATION_SPARSE_SORTING_NS.fetch_add(duration_ns(profile.sorting), Ordering::Relaxed);
+    PROPAGATION_SPARSE_WORKING_ROW_CONVERSION_NS.fetch_add(
+        duration_ns(profile.working_row_conversion),
+        Ordering::Relaxed,
+    );
     PROPAGATION_SPARSE_FORWARD_NS.fetch_add(duration_ns(profile.forward), Ordering::Relaxed);
     PROPAGATION_SPARSE_BACK_REDUCTION_NS
         .fetch_add(duration_ns(profile.back_reduction), Ordering::Relaxed);

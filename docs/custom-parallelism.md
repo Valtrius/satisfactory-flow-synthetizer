@@ -124,6 +124,11 @@ Updated 2026-08-31.
   repeated. [All six records verify](custom-solver/experiments/34-sparse-phase-profile-results.md).
   Preparation consumes 55.2-84.0% of sparse time and active matrices are usually
   small, so preparation replaces an incremental Bareiss basis as the next target.
+  [Experiment 35](custom-solver/experiments/35-sparse-preparation-profile.md) now
+  splits that preparation work into five diagnostic components. Its
+  [six verified records](custom-solver/experiments/35-sparse-preparation-profile-results.md)
+  put 89.99-91.42% of preparation in substitution and normalization. Test a
+  fully-known integer evaluation path before changing mixed-row arithmetic.
   Scheduling stays paused.
 
 The goal is shorter time to a proven optimum, complete minimum-link enumeration,

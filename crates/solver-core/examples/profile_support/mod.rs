@@ -916,6 +916,26 @@ pub fn hotspot_json(h: &HotspotSnapshot) -> serde_json::Value {
             h.propagation_sparse_preparation_ns,
         ),
         (
+            "propagation_sparse_variable_collection_ns",
+            h.propagation_sparse_variable_collection_ns,
+        ),
+        (
+            "propagation_sparse_substitution_normalization_ns",
+            h.propagation_sparse_substitution_normalization_ns,
+        ),
+        (
+            "propagation_sparse_tautology_filter_ns",
+            h.propagation_sparse_tautology_filter_ns,
+        ),
+        (
+            "propagation_sparse_sorting_ns",
+            h.propagation_sparse_sorting_ns,
+        ),
+        (
+            "propagation_sparse_working_row_conversion_ns",
+            h.propagation_sparse_working_row_conversion_ns,
+        ),
+        (
             "propagation_sparse_forward_ns",
             h.propagation_sparse_forward_ns,
         ),

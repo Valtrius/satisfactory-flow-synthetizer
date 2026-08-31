@@ -84,6 +84,9 @@ These nested timers overlap the top-level propagation timer.
 Experiment 34 further splits sparse analysis when hotspot recording is active. It
 records preparation, forward elimination, back reduction, deductions, pass cause, and
 flat row/variable/term size buckets. Ordinary solves keep the timer-free sparse path.
+Experiment 35 further splits the hotspot-only preparation path into variable
+collection, substitution and normalization, tautology filtering, sorting, and
+working-row conversion. The timer-free production path remains unchanged.
 Experiment 32 tested quotienting sparse rows through exact weighted representatives.
 The candidate was exact but slower on 36/238 and is absent from production source.
 Experiment 33 tested identical normalized-row deduplication and found no duplicates in

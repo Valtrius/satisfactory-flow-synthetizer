@@ -185,6 +185,11 @@ pub(crate) struct SparseProfile {
     pub variable_count: usize,
     pub nonzero_terms: usize,
     pub preparation: Duration,
+    pub variable_collection: Duration,
+    pub substitution_normalization: Duration,
+    pub tautology_filter: Duration,
+    pub sorting: Duration,
+    pub working_row_conversion: Duration,
     pub forward: Duration,
     pub back_reduction: Duration,
     pub deductions: Duration,
@@ -305,13 +310,40 @@ impl SparseSystem {
         let total_started = Instant::now();
         let preparation_started = Instant::now();
         let input_rows = self.rows.len();
-        let (rows, variables) = self.prepare_analysis(variables, known);
+        let variable_started = Instant::now();
+        let mut variable_set = variables.into_iter().collect::<BTreeSet<_>>();
+        for row in &self.rows {
+            variable_set.extend(row.coefficients.keys().copied());
+        }
+        for variable in known.keys() {
+            variable_set.remove(variable);
+        }
+        let variables = variable_set.into_iter().collect::<Vec<_>>();
+        let variable_collection = variable_started.elapsed();
+
+        let substitution_started = Instant::now();
+        let mut rows = self
+            .rows
+            .iter()
+            .map(|row| row.substitute(known))
+            .collect::<Vec<_>>();
+        let substitution_normalization = substitution_started.elapsed();
+        let filter_started = Instant::now();
+        rows.retain(|row| !row.is_tautology());
+        let tautology_filter = filter_started.elapsed();
+        let sorting_started = Instant::now();
+        rows.sort();
+        let sorting = sorting_started.elapsed();
         let mut profile = SparseProfile {
             input_rows,
             active_rows: rows.len(),
             variable_count: variables.len(),
             nonzero_terms: rows.iter().map(|row| row.coefficients.len()).sum(),
             preparation: preparation_started.elapsed(),
+            variable_collection,
+            substitution_normalization,
+            tautology_filter,
+            sorting,
             ..SparseProfile::default()
         };
         let analysis = analyze_integer_rows_profiled(rows, &variables, &mut profile)?;
@@ -373,7 +405,9 @@ fn analyze_integer_rows_profiled(
     variables: &[FlowVarId],
     profile: &mut SparseProfile,
 ) -> Result<SparseAnalysis, SparseAlgebraError> {
+    let started = Instant::now();
     let mut rows = rows.into_iter().map(WorkingRow::from).collect::<Vec<_>>();
+    profile.working_row_conversion = started.elapsed();
     let started = Instant::now();
     let pivot_variables = bareiss_forward(&mut rows, variables)?;
     profile.forward = started.elapsed();

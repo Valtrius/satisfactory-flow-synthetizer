@@ -186,6 +186,17 @@ All six records verify. The completed 115/238 pairs preserve exact results; hard
 capped. Active matrices are usually <=15 rows and variables, while substitution removes
 79.7-91.9% of stored rows. Retain the diagnostic and profile preparation internals next.
 
+[Experiment 35](experiments/35-sparse-preparation-profile.md) implements that next
+diagnostic split. It separates variable collection, substitution and normalization,
+tautology filtering, sorting, and working-row conversion only when hotspot recording
+is active. Ordinary solve behavior remains unchanged. Solver-core equivalence,
+Reference, parallelism, Clippy, analyzer, formatting, release-build, and completed
+smoke checks pass. [All six records verify](experiments/35-sparse-preparation-profile-results.md):
+substitution and normalization consume 89.99-91.42% of preparation and 49.12-76.30%
+of total sparse time. Test exact integer evaluation for fully known rows next, then
+isolate a no-known-variable clone path before changing mixed-row substitution.
+Canonicalization remains the larger hard-run bucket; scheduling stays paused.
+
 Experiment 33 validation: 181 default and 186 benchmark-feature solver-core library
 tests pass, with two ignored in each configuration. The exhaustive Reference and four
 parallelism integrations, full workspace, both strict Clippy configurations, and 33
