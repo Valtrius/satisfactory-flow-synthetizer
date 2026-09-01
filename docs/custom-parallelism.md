@@ -142,6 +142,10 @@ Updated 2026-09-01.
   [Experiment 39](custom-solver/experiments/39-canonicalization-reprofile.md) reuses
   the retained purpose and subphase timers on fixed completed and capped hard work to
   select the next calculation target from the current production distribution.
+  [All four records verify](custom-solver/experiments/39-canonicalization-reprofile-results.md):
+  state keys own 99.96-100.00% of graph-purpose time, and equality plus inequality
+  encoding consume 58.9-67.2% of state/SCC canonicalization. Split those calculations
+  next; labeling is no longer the first target.
   Scheduling stays paused.
 
 The goal is shorter time to a proven optimum, complete minimum-link enumeration,

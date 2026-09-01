@@ -1,9 +1,10 @@
 # 39. Canonicalization reprofile after kernel promotions
 
-Date: 2026-09-01. State: ready to launch.
+Date: 2026-09-01. State: completed and verified.
 Related: [original purpose profile](24-canonical-purpose-profile.md),
 [deferred state keys](29-deferred-state-canonicalization.md), and
 [mixed-row promotion](38-mixed-row-integer-substitution-results.md).
+Results: [verified reprofile](39-canonicalization-reprofile-results.md).
 
 ## Question
 
@@ -67,3 +68,11 @@ subphase. If labeling remains dominant, split the labeler's refinement and searc
 work. If graph or semantic construction dominates, test reuse within one immutable
 state. If canonicalization is no longer the largest actionable bucket, stop and move
 to the measured leader. Scheduling stays paused.
+
+## Result
+
+All four records verify. State keys now account for 99.96-100.00% of graph-purpose
+time. Equality and inequality encoding consume 58.9-67.2% of combined state and SCC
+canonicalization, while labeling consumes only 13.8-16.4% of recorded subphase time.
+See the [full results](39-canonicalization-reprofile-results.md). Split equality and
+inequality internals before attempting another calculation change.

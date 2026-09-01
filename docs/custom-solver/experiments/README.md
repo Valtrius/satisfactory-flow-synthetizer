@@ -170,8 +170,10 @@ Record dates follow the analysis chronology, not necessarily every run's start t
     wall medians move -0.60% and +3.16%. The integer path is permanent.
 34. [Canonicalization reprofile](39-canonicalization-reprofile.md) reuses the retained
     purpose and subphase counters on the original two completed and two capped hard
-    workloads. It establishes the post-promotion cost distribution before another
-    calculation or DFS change.
+    workloads. [All four records verify](39-canonicalization-reprofile-results.md).
+    State keys now own 99.96-100.00% of graph-purpose time. Equality and inequality
+    encoding consume 58.9-67.2% of combined state/SCC canonicalization. Split those
+    calculations next; labeling and legal-decision keys are no longer the first target.
 
 ## Evidence conventions
 

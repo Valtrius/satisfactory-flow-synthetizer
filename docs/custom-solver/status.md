@@ -233,8 +233,13 @@ return to canonicalization profiling. Scheduling stays paused.
 
 [Experiment 39](experiments/39-canonicalization-reprofile.md) reuses the retained
 purpose and subphase counters without changing solver source. Its four-job screen has
-two expected completed controls and two 60-second hard caps. It is ready to launch
-from production commit `1fd478e`; scheduling remains p1 and unchanged.
+two completed controls and two 60-second hard caps. [All four records verify](experiments/39-canonicalization-reprofile-results.md).
+State keys account for 99.96-100.00% of graph-purpose time. Equality and inequality
+encoding consume 58.9-67.2% of combined state/SCC canonicalization and inequality is
+the largest canonical subphase in every case. Split equality construction/RREF and
+inequality construction/normalization/sorting before changing calculations. Graph
+labeling and legal-decision keys are no longer the first target. Scheduling stays
+paused.
 
 Experiment 33 validation: 181 default and 186 benchmark-feature solver-core library
 tests pass, with two ignored in each configuration. The exhaustive Reference and four
