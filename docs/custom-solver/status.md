@@ -1,6 +1,6 @@
 # Current decisions and handoff
 
-Updated 2026-08-31. Start at [the entry point](../custom-parallelism.md).
+Updated 2026-09-01. Start at [the entry point](../custom-parallelism.md).
 Historical hypotheses and results remain in the [experiment index](experiments/README.md).
 
 ## Objective
@@ -39,6 +39,8 @@ improve 18.3-38.1% with exact outputs intact.
 | Defer state keys until an invariant repeats           | 26 verified jobs; completed medians improve 18.3-38.1%              | [29](experiments/29-deferred-state-canonicalization.md)          |
 | Remove duplicate physical-flow bounds                 | 38 verified jobs; completed medians improve 5.36-9.40%              | `9f63f01`, [31](experiments/31-propagation-bounds.md)            |
 | Evaluate fully known rows with integer arithmetic     | 14 verified jobs; completed medians improve 9.73-16.41%             | `532aaa1`, [36](experiments/36-fully-known-row-substitution.md)  |
+| Reuse sparse rows with no known coefficients          | 14 verified jobs; completed medians improve 3.42-5.37%              | `109667c`, [37](experiments/37-no-known-row-substitution.md)     |
+| Substitute mixed rows with integer arithmetic         | 14 verified jobs; completed algebra improves 2.43-3.05%             | [38](experiments/38-mixed-row-integer-substitution.md)           |
 
 Experiment 29 remains unchanged after the no-cache ablation. Experiment 30 was rejected
 and its source changes were restored before this result-only documentation update.
@@ -219,6 +221,15 @@ Completed medians improve 5.37% on 115 all and 3.42% on 238 optimal with identic
 structural work. One capped hard sample processes 2.40% fewer states, so it does not
 support a hard-run gain. The exact clone path is permanent. Test mixed-row integer
 substitution separately; scheduling stays paused.
+
+[Experiment 38](experiments/38-mixed-row-integer-substitution.md) implements the final
+substitution case. Mixed rows use one denominator LCM and integer residual before the
+established primitive normalization. Fully-known and no-known paths remain unchanged.
+The exhaustive rational oracle and full validation pass. [All 14 A/B records verify](experiments/38-mixed-row-integer-substitution-results.md).
+Completed algebra medians improve 2.43-3.05% with identical exact work. The 238 wall
+median improves 3.16%; 115 regresses 0.60% inside overlapping ranges while its CPU
+median improves 1.15%. The integer path is permanent. Sparse substitution is closed;
+return to canonicalization profiling. Scheduling stays paused.
 
 Experiment 33 validation: 181 default and 186 benchmark-feature solver-core library
 tests pass, with two ignored in each configuration. The exhaustive Reference and four

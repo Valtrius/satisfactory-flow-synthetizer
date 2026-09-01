@@ -163,6 +163,11 @@ Record dates follow the analysis chronology, not necessarily every run's start t
     known and mixed behavior remain unchanged. [All 14 records verify](37-no-known-row-substitution-results.md).
     Completed medians improve 3.42-5.37%; the single capped hard sample processes
     2.40% less work. The exact clone path is permanent.
+33. [Mixed-row integer substitution](38-mixed-row-integer-substitution.md) replaces
+    repeated rational normalization in the remaining substitution case with one
+    denominator LCM and integer residual. [All 14 records verify](38-mixed-row-integer-substitution-results.md).
+    Completed algebra medians improve 2.43-3.05% with identical exact work. Whole-solve
+    wall medians move -0.60% and +3.16%. The integer path is permanent.
 
 ## Evidence conventions
 

@@ -25,7 +25,7 @@ pub struct SparseRow {
 enum KnownCoverage {
     None,
     All(BigInt),
-    Mixed,
+    Mixed(BigInt),
 }
 
 impl SparseRow {
@@ -108,28 +108,10 @@ impl SparseRow {
     #[must_use]
     pub fn substitute(&self, known: &BTreeMap<FlowVarId, BigRational>) -> Self {
         match self.known_coverage(known) {
-            KnownCoverage::None => return self.clone(),
-            KnownCoverage::All(denominator) => {
-                return self.substitute_fully_known(known, &denominator);
-            }
-            KnownCoverage::Mixed => {}
+            KnownCoverage::None => self.clone(),
+            KnownCoverage::All(denominator) => self.substitute_fully_known(known, &denominator),
+            KnownCoverage::Mixed(denominator) => self.substitute_mixed_known(known, &denominator),
         }
-
-        let mut coefficients = BTreeMap::new();
-        let mut rhs = BigRational::from_integer(self.rhs.clone());
-        for (variable, coefficient) in &self.coefficients {
-            if let Some(value) = known.get(variable) {
-                rhs -= BigRational::from_integer(coefficient.clone()) * value;
-            } else {
-                coefficients.insert(*variable, coefficient.clone());
-            }
-        }
-
-        let denominator = rhs.denom().clone();
-        for coefficient in coefficients.values_mut() {
-            *coefficient *= &denominator;
-        }
-        Self::from_parts(coefficients, rhs.numer().clone())
     }
 
     /// Evaluates a fully known row without repeated rational normalization.
@@ -160,6 +142,24 @@ impl SparseRow {
         }
     }
 
+    /// Substitutes a mixed row with one exact integer common denominator.
+    fn substitute_mixed_known(
+        &self,
+        known: &BTreeMap<FlowVarId, BigRational>,
+        denominator: &BigInt,
+    ) -> Self {
+        let mut coefficients = BTreeMap::new();
+        let mut residual = &self.rhs * denominator;
+        for (variable, coefficient) in &self.coefficients {
+            if let Some(value) = known.get(variable) {
+                residual -= coefficient * value.numer() * (denominator / value.denom());
+            } else {
+                coefficients.insert(*variable, coefficient * denominator);
+            }
+        }
+        Self::from_parts(coefficients, residual)
+    }
+
     /// Classifies known-variable coverage with no extra scan for fully known rows.
     fn known_coverage(&self, known: &BTreeMap<FlowVarId, BigRational>) -> KnownCoverage {
         if self.coefficients.is_empty() {
@@ -167,22 +167,21 @@ impl SparseRow {
         }
 
         let mut denominator = BigInt::one();
-        let mut saw_known = false;
-        let mut variables = self.coefficients.keys();
-        while let Some(variable) = variables.next() {
+        let mut known_count = 0;
+        for variable in self.coefficients.keys() {
             if let Some(value) = known.get(variable) {
-                saw_known = true;
+                known_count += 1;
                 denominator = denominator.lcm(value.denom());
-                continue;
             }
-
-            if saw_known || variables.any(|remaining| known.contains_key(remaining)) {
-                return KnownCoverage::Mixed;
-            }
-            return KnownCoverage::None;
         }
 
-        KnownCoverage::All(denominator)
+        if known_count == 0 {
+            KnownCoverage::None
+        } else if known_count == self.coefficients.len() {
+            KnownCoverage::All(denominator)
+        } else {
+            KnownCoverage::Mixed(denominator)
+        }
     }
 }
 
@@ -954,6 +953,34 @@ mod tests {
                                             ),
                                         ),
                                     ]);
+                                    assert_eq!(
+                                        original.substitute(&known),
+                                        substitute_reference(&original, &known),
+                                        "row={original:?} known={known:?}"
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn mixed_integer_substitution_matches_rational_reference_exhaustively() {
+        for first in -2..=2 {
+            for second in -2..=2 {
+                for third in -2..=2 {
+                    for rhs in -2..=2 {
+                        let original = row([(0, first), (1, second), (2, third)], rhs);
+                        for known_variable in 0..3 {
+                            for numerator in -2..=2 {
+                                for denominator in 1..=3 {
+                                    let known = BTreeMap::from([(
+                                        var(known_variable),
+                                        BigRational::new(numerator.into(), denominator.into()),
+                                    )]);
                                     assert_eq!(
                                         original.substitute(&known),
                                         substitute_reference(&original, &known),

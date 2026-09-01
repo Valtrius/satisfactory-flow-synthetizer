@@ -1,7 +1,7 @@
 # Custom solver optimization and parallelism
 
 Start here for the optimization history and for continuing this work.
-Updated 2026-08-31.
+Updated 2026-09-01.
 
 ## Read in this order
 
@@ -134,7 +134,11 @@ Updated 2026-08-31.
   completed medians improve 9.73-16.41% with identical exact work, so the change is
   permanent in `532aaa1`. [Experiment 37](custom-solver/experiments/37-no-known-row-substitution.md)
   isolates the no-known-variable clone path. [All 14 records verify](custom-solver/experiments/37-no-known-row-substitution-results.md):
-  completed medians improve 3.42-5.37%, so the exact identity path is permanent.
+  completed medians improve 3.42-5.37%, so the exact identity path is permanent in
+  `109667c`. [Experiment 38](custom-solver/experiments/38-mixed-row-integer-substitution.md)
+  implements the remaining mixed-row integer path. [All 14 records verify](custom-solver/experiments/38-mixed-row-integer-substitution-results.md):
+  completed algebra medians improve 2.43-3.05% with identical exact work. Wall medians
+  move -0.60% on 115 and +3.16% on 238. The integer path is permanent.
   Scheduling stays paused.
 
 The goal is shorter time to a proven optimum, complete minimum-link enumeration,
