@@ -1,7 +1,8 @@
 # 40. Equality and inequality subphase profile
 
-Date: 2026-09-01. State: validated; benchmark launch pending.
-Related: [canonicalization reprofile](39-canonicalization-reprofile-results.md).
+Date: 2026-09-01. State: completed and verified.
+Related: [canonicalization reprofile](39-canonicalization-reprofile-results.md),
+[results](40-equality-inequality-subphase-profile-results.md).
 
 ## Question
 
@@ -42,8 +43,9 @@ workloads:
 - hard 36 all and hard 10 optimal with 60-second caps;
 - production p1, 32 workers, and hotspot recording throughout.
 
-Production reference source: `1fd478e`. Candidate release binary SHA-256:
-`9A1852C6A945DE535442336E99EB89085E070EC7D0DC81EF01CC679C585C3E35`. Planned run:
+Production reference source: `1fd478e`. Candidate source: `90df7e2`. Candidate release
+binary SHA-256:
+`9A1852C6A945DE535442336E99EB89085E070EC7D0DC81EF01CC679C585C3E35`. Run:
 `target/parallelism-ladder/equality-inequality-profile-20260901`.
 
 The completed controls must preserve exact layout sets. Capped results can establish
@@ -66,6 +68,10 @@ cost shares only. Timing cannot be compared with hotspot-off completion runs.
 
 The smoke is a plumbing and reconciliation check only. Its incomplete status is not
 performance evidence.
+
+The detached four-job screen finished and reanalysis reproduced the runner's verified
+summary byte for byte. See the linked results for measured shares and the next
+candidate.
 
 ## Decision rule
 

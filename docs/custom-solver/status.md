@@ -244,9 +244,11 @@ paused.
 [Experiment 40](experiments/40-equality-inequality-subphase-profile.md) implements the
 next diagnostic split. Equality records port indexing, row construction, and rational
 RREF. Inequality records pivot indexing, row construction, primitive normalization,
-and sort/deduplication. The timer-free production path is unchanged. Full validation,
-the exhaustive production/profiled/dense oracle, and a capped 115 reconciliation
-smoke pass; the four-job screen is ready to launch.
+and sort/deduplication. The timer-free production path is unchanged. [All four records
+verify](experiments/40-equality-inequality-subphase-profile-results.md). Equality RREF
+owns 69.6-73.3% of equality time; inequality sort/dedup owns 52.1-54.3% of inequality
+time. Keep primitive inequality rows as integers through sorting, deduplication, and
+encoding as the next isolated candidate. Scheduling stays paused.
 
 Experiment 33 validation: 181 default and 186 benchmark-feature solver-core library
 tests pass, with two ignored in each configuration. The exhaustive Reference and four

@@ -176,9 +176,9 @@ Record dates follow the analysis chronology, not necessarily every run's start t
     calculations next; labeling and legal-decision keys are no longer the first target.
 35. [Equality and inequality subphase profile](40-equality-inequality-subphase-profile.md)
     splits canonical port indexing, equation construction, rational RREF, bound-row
-    construction, primitive normalization, and sort/deduplication only when hotspot
-    recording is active. Full validation and a capped 115 reconciliation smoke pass;
-    its four-job fixed-work screen is ready to launch.
+    construction, primitive normalization, and sort/deduplication. [All four records
+    verify](40-equality-inequality-subphase-profile-results.md). Inequality sort/dedup
+    owns 52.1-54.3% of bound encoding; test integral rows through encoding next.
 
 ## Evidence conventions
 

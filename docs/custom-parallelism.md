@@ -147,8 +147,11 @@ Updated 2026-09-01.
   encoding consume 58.9-67.2% of state/SCC canonicalization. Split those calculations
   next; labeling is no longer the first target.
   [Experiment 40](custom-solver/experiments/40-equality-inequality-subphase-profile.md)
-  implements that hotspot-only split. Full validation and a capped reconciliation
-  smoke pass; its fixed four-job screen is ready to launch. Scheduling stays paused.
+  implements that hotspot-only split. [All four records
+  verify](custom-solver/experiments/40-equality-inequality-subphase-profile-results.md).
+  Inequality sort/dedup owns 52.1-54.3% of bound encoding, while equality RREF owns
+  69.6-73.3% of equality work. Test primitive integer inequality rows through encoding
+  next. Scheduling remains paused.
 
 The goal is shorter time to a proven optimum, complete minimum-link enumeration,
 and complete minimum-node enumeration. Benchmark modes are `optimal` for one layout,
