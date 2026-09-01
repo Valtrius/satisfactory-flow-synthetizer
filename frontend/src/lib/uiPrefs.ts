@@ -67,7 +67,7 @@ export const DEFAULT_FORM_DRAFT_PREFS: FormDraftPrefs = {
     { id: 'output-2', name: '', rate: '60', multiplier: '1' },
   ],
   beltRate: '1200',
-  solveMode: 'all_at_minimum_nodes',
+  solveMode: 'all_at_minimum_nodes_and_minimum_links',
   engine: 'custom',
   nextEndpointId: 3,
 };
