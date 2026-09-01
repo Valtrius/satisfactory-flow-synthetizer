@@ -2081,6 +2081,8 @@ enum SemanticInequalityRelation {
     LessThanOrEqual,
 }
 
+type PrimitiveInequality = (SemanticInequalityRelation, Vec<BigInt>);
+
 fn encode_semantic_system(
     source: &PartialTopology,
     topology: &CanonicalPartialTopology,
@@ -2147,7 +2149,7 @@ fn encode_semantic_system(
             SemanticInequalityRelation::LessThan => 0,
             SemanticInequalityRelation::LessThanOrEqual => 1,
         });
-        write_sparse_row(bytes, &row);
+        write_sparse_integer_row(bytes, &row);
     }
 }
 
@@ -2166,6 +2168,27 @@ fn write_sparse_row(bytes: &mut Vec<u8>, row: &[Rational]) {
     for (index, value) in row.iter().enumerate().filter(|(_, value)| !value.is_zero()) {
         write_varint(bytes, index);
         write_compact_rational(bytes, value);
+    }
+}
+
+fn write_sparse_integer_row(bytes: &mut Vec<u8>, row: &[BigInt]) {
+    write_varint(bytes, row.iter().filter(|value| !value.is_zero()).count());
+    for (index, value) in row.iter().enumerate().filter(|(_, value)| !value.is_zero()) {
+        write_varint(bytes, index);
+        write_compact_integer(bytes, value);
+    }
+}
+
+fn write_compact_integer(bytes: &mut Vec<u8>, value: &BigInt) {
+    if value.is_one() {
+        bytes.push(1);
+    } else if value.is_negative() && value.magnitude().is_one() {
+        bytes.push(2);
+    } else {
+        bytes.push(3);
+        let numerator = value.to_signed_bytes_le();
+        write_varint(bytes, numerator.len());
+        bytes.extend_from_slice(&numerator);
     }
 }
 
@@ -2297,7 +2320,7 @@ fn primitive_inequality_basis(
     capacity: &Rational,
     variable_count: usize,
     equalities: &[Vec<Rational>],
-) -> Vec<(SemanticInequalityRelation, Vec<Rational>)> {
+) -> Vec<PrimitiveInequality> {
     // RREF pivot columns are unit columns. Reducing +/- one variable therefore
     // uses at most its own pivot row; all other pivot coefficients stay zero.
     let mut pivots = vec![None; variable_count];
@@ -2309,7 +2332,7 @@ fn primitive_inequality_basis(
     }
     let mut rows = Vec::with_capacity(variable_count.saturating_mul(2));
     for (variable, pivot) in pivots.into_iter().enumerate() {
-        let (mut positive, mut bounded) = if let Some(equality) = pivot {
+        let (positive, bounded) = if let Some(equality) = pivot {
             let mut positive = equality.clone();
             positive[variable] = Rational::zero();
             let mut bounded = positive.iter().map(|v| -v).collect::<Vec<_>>();
@@ -2323,10 +2346,14 @@ fn primitive_inequality_basis(
             bounded[variable_count] = capacity.clone();
             (positive, bounded)
         };
-        normalize_positive_scale(&mut positive);
-        normalize_positive_scale(&mut bounded);
-        rows.push((SemanticInequalityRelation::LessThan, positive));
-        rows.push((SemanticInequalityRelation::LessThanOrEqual, bounded));
+        rows.push((
+            SemanticInequalityRelation::LessThan,
+            primitive_integer_coefficients(&positive),
+        ));
+        rows.push((
+            SemanticInequalityRelation::LessThanOrEqual,
+            primitive_integer_coefficients(&bounded),
+        ));
     }
     rows.sort();
     rows.dedup();
@@ -2337,7 +2364,7 @@ fn primitive_inequality_basis_profiled(
     capacity: &Rational,
     variable_count: usize,
     equalities: &[Vec<Rational>],
-) -> Vec<(SemanticInequalityRelation, Vec<Rational>)> {
+) -> Vec<PrimitiveInequality> {
     let pivot_timer = CanonicalTimer::start_if(CanonicalPhase::InequalityPivotIndex, true);
     let mut pivots = vec![None; variable_count];
     for equality in equalities {
@@ -2371,16 +2398,17 @@ fn primitive_inequality_basis_profiled(
     drop(row_build_timer);
 
     let normalize_timer = CanonicalTimer::start_if(CanonicalPhase::InequalityNormalize, true);
-    for (_, row) in &mut rows {
-        normalize_positive_scale(row);
+    let mut normalized = Vec::with_capacity(rows.len());
+    for (relation, row) in rows {
+        normalized.push((relation, primitive_integer_coefficients(&row)));
     }
     drop(normalize_timer);
 
     let sort_timer = CanonicalTimer::start_if(CanonicalPhase::InequalitySortDedup, true);
-    rows.sort();
-    rows.dedup();
+    normalized.sort();
+    normalized.dedup();
     drop(sort_timer);
-    rows
+    normalized
 }
 
 fn assignment_row(variable_count: usize, variable: usize, value: Rational) -> Vec<Rational> {
@@ -2522,6 +2550,7 @@ fn reduce_modulo_equalities(
     }
 }
 
+#[cfg(test)]
 fn normalize_positive_scale(row: &mut [Rational]) {
     let denominator_lcm = row
         .iter()
@@ -2559,6 +2588,38 @@ fn normalize_positive_scale(row: &mut [Rational]) {
             integer / &gcd
         });
     }
+}
+
+fn primitive_integer_coefficients(row: &[Rational]) -> Vec<BigInt> {
+    let denominator_lcm = row
+        .iter()
+        .filter(|value| !value.is_zero() && !value.denominator().is_one())
+        .fold(BigInt::one(), |accumulator, value| {
+            accumulator.lcm(value.denominator())
+        });
+    let mut integers = row
+        .iter()
+        .map(|value| {
+            if value.is_zero() {
+                BigInt::zero()
+            } else {
+                value.numerator() * (&denominator_lcm / value.denominator())
+            }
+        })
+        .collect::<Vec<_>>();
+    let gcd = integers.iter().fold(BigInt::zero(), |accumulator, value| {
+        if accumulator.is_one() {
+            accumulator
+        } else {
+            accumulator.gcd(&value.abs())
+        }
+    });
+    if !gcd.is_zero() && !gcd.is_one() {
+        for value in &mut integers {
+            *value /= &gcd;
+        }
+    }
+    integers
 }
 
 fn canonical_producer_ports(input_count: usize, nodes: &[PhysicalNode]) -> Vec<ProducerPortRef> {
@@ -2978,6 +3039,82 @@ mod tests {
         );
     }
 
+    fn inequalities_as_rationals(
+        rows: &[PrimitiveInequality],
+    ) -> Vec<(SemanticInequalityRelation, Vec<Rational>)> {
+        rows.iter()
+            .map(|(relation, row)| (*relation, row.iter().cloned().map(Rational::from).collect()))
+            .collect()
+    }
+
+    fn encode_integer_inequalities(rows: &[PrimitiveInequality]) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        write_varint(&mut bytes, rows.len());
+        for (relation, row) in rows {
+            bytes.push(match relation {
+                SemanticInequalityRelation::LessThan => 0,
+                SemanticInequalityRelation::LessThanOrEqual => 1,
+            });
+            write_sparse_integer_row(&mut bytes, row);
+        }
+        bytes
+    }
+
+    fn encode_rational_inequalities(
+        rows: &[(SemanticInequalityRelation, Vec<Rational>)],
+    ) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        write_varint(&mut bytes, rows.len());
+        for (relation, row) in rows {
+            bytes.push(match relation {
+                SemanticInequalityRelation::LessThan => 0,
+                SemanticInequalityRelation::LessThanOrEqual => 1,
+            });
+            write_sparse_row(&mut bytes, row);
+        }
+        bytes
+    }
+
+    fn rational_inequality_basis(
+        capacity: &Rational,
+        variable_count: usize,
+        equalities: &[Vec<Rational>],
+    ) -> Vec<(SemanticInequalityRelation, Vec<Rational>)> {
+        let mut pivots = vec![None; variable_count];
+        for equality in equalities {
+            if let Some(pivot) = equality[..variable_count]
+                .iter()
+                .position(|value| !value.is_zero())
+            {
+                pivots[pivot] = Some(equality);
+            }
+        }
+        let mut rows = Vec::with_capacity(variable_count.saturating_mul(2));
+        for (variable, pivot) in pivots.into_iter().enumerate() {
+            let (mut positive, mut bounded) = if let Some(equality) = pivot {
+                let mut positive = equality.clone();
+                positive[variable] = Rational::zero();
+                let mut bounded = positive.iter().map(|value| -value).collect::<Vec<_>>();
+                bounded[variable_count] = capacity - &positive[variable_count];
+                (positive, bounded)
+            } else {
+                let mut positive = vec![Rational::zero(); variable_count + 1];
+                positive[variable] = Rational::from(-1);
+                let mut bounded = vec![Rational::zero(); variable_count + 1];
+                bounded[variable] = Rational::one();
+                bounded[variable_count] = capacity.clone();
+                (positive, bounded)
+            };
+            normalize_positive_scale(&mut positive);
+            normalize_positive_scale(&mut bounded);
+            rows.push((SemanticInequalityRelation::LessThan, positive));
+            rows.push((SemanticInequalityRelation::LessThanOrEqual, bounded));
+        }
+        rows.sort();
+        rows.dedup();
+        rows
+    }
+
     #[test]
     fn compact_semantics_round_trip_sparse_indices_and_arbitrary_exact_numbers() {
         for width in [0, 1, 128, 300] {
@@ -3037,15 +3174,25 @@ mod tests {
                 for capacity in ["1/7", "5", "100000000000000000000000000000000000003"] {
                     let capacity = rational(capacity);
                     let inequalities = primitive_inequality_basis(&capacity, variables, &actual);
+                    let rational_inequalities =
+                        rational_inequality_basis(&capacity, variables, &actual);
+                    let expected_inequalities =
+                        dense_reference_primitive_inequality_basis(&capacity, variables, &expected);
+                    assert_eq!(rational_inequalities, expected_inequalities);
                     assert_eq!(
-                        inequalities,
-                        dense_reference_primitive_inequality_basis(&capacity, variables, &expected)
+                        inequalities_as_rationals(&inequalities),
+                        expected_inequalities
                     );
                     assert_eq!(
                         primitive_inequality_basis_profiled(&capacity, variables, &actual),
                         inequalities
                     );
-                    for (_, row) in inequalities {
+                    assert_eq!(
+                        encode_integer_inequalities(&inequalities),
+                        encode_rational_inequalities(&rational_inequalities),
+                        "primitive integer rows must retain the established key bytes"
+                    );
+                    for (_, row) in inequalities_as_rationals(&inequalities) {
                         assert_sparse_row_round_trip(&row);
                     }
                 }
@@ -3093,12 +3240,107 @@ mod tests {
                     expected.sort();
                     expected.dedup();
                     assert_eq!(
-                        primitive_inequality_basis(&capacity, variables, &basis),
+                        inequalities_as_rationals(&primitive_inequality_basis(
+                            &capacity, variables, &basis,
+                        )),
                         expected
                     );
                 }
             }
         }
+    }
+
+    fn benchmark_equality_basis(variable_count: usize) -> Vec<Vec<Rational>> {
+        (0..variable_count)
+            .step_by(3)
+            .map(|pivot| {
+                let mut row = vec![Rational::zero(); variable_count + 1];
+                row[pivot] = Rational::one();
+                for (column, value) in row
+                    .iter_mut()
+                    .enumerate()
+                    .take(variable_count)
+                    .skip(pivot + 1)
+                {
+                    if column % 3 != 0 && (pivot + column) % 4 != 0 {
+                        let numerator = i64::try_from((pivot + column) % 7 + 1).unwrap();
+                        let denominator = i64::try_from(column % 5 + 2).unwrap();
+                        *value = Rational::new(numerator, denominator).unwrap();
+                    }
+                }
+                row[variable_count] = Rational::new(
+                    i64::try_from(pivot + 11).unwrap(),
+                    i64::try_from(pivot % 5 + 2).unwrap(),
+                )
+                .unwrap();
+                row
+            })
+            .collect()
+    }
+
+    #[test]
+    #[ignore = "manual primitive inequality representation benchmark"]
+    fn benchmark_primitive_integer_inequality_rows() {
+        let inputs = [18, 33, 42]
+            .into_iter()
+            .map(|variable_count| {
+                (
+                    Rational::from(1200),
+                    variable_count,
+                    benchmark_equality_basis(variable_count),
+                )
+            })
+            .collect::<Vec<_>>();
+        for (capacity, variable_count, equalities) in &inputs {
+            let rational = rational_inequality_basis(capacity, *variable_count, equalities);
+            let integer = primitive_inequality_basis(capacity, *variable_count, equalities);
+            assert_eq!(
+                encode_rational_inequalities(&rational),
+                encode_integer_inequalities(&integer)
+            );
+        }
+
+        let iterations = 400;
+        let measure_rational = || {
+            let started = Instant::now();
+            for _ in 0..iterations {
+                for (capacity, variable_count, equalities) in &inputs {
+                    let rows = rational_inequality_basis(capacity, *variable_count, equalities);
+                    std::hint::black_box(encode_rational_inequalities(&rows));
+                }
+            }
+            started.elapsed().as_secs_f64()
+        };
+        let measure_integer = || {
+            let started = Instant::now();
+            for _ in 0..iterations {
+                for (capacity, variable_count, equalities) in &inputs {
+                    let rows = primitive_inequality_basis(capacity, *variable_count, equalities);
+                    std::hint::black_box(encode_integer_inequalities(&rows));
+                }
+            }
+            started.elapsed().as_secs_f64()
+        };
+
+        let mut rational_rounds = Vec::new();
+        let mut integer_rounds = Vec::new();
+        for round in 0..7 {
+            if round % 2 == 0 {
+                rational_rounds.push(measure_rational());
+                integer_rounds.push(measure_integer());
+            } else {
+                integer_rounds.push(measure_integer());
+                rational_rounds.push(measure_rational());
+            }
+        }
+        rational_rounds.sort_by(f64::total_cmp);
+        integer_rounds.sort_by(f64::total_cmp);
+        let rational_median = rational_rounds[rational_rounds.len() / 2];
+        let integer_median = integer_rounds[integer_rounds.len() / 2];
+        let improvement = (rational_median - integer_median) / rational_median * 100.0;
+        println!(
+            "primitive inequality end-to-end: iterations={iterations} rational_median_s={rational_median:.6} integer_median_s={integer_median:.6} improvement_pct={improvement:.2} rational_rounds={rational_rounds:?} integer_rounds={integer_rounds:?}"
+        );
     }
 
     #[test]
@@ -3942,7 +4184,7 @@ mod tests {
         let capacity = rational("5");
         let at_capacity = rational_rref(vec![assignment_row(1, 0, capacity.clone())], 1);
         assert_eq!(
-            primitive_inequality_basis(&capacity, 1, &at_capacity),
+            inequalities_as_rationals(&primitive_inequality_basis(&capacity, 1, &at_capacity)),
             vec![
                 (
                     SemanticInequalityRelation::LessThan,
@@ -3956,16 +4198,21 @@ mod tests {
         );
 
         let at_zero = rational_rref(vec![assignment_row(1, 0, Rational::zero())], 1);
-        let zero_bounds = primitive_inequality_basis(&capacity, 1, &at_zero);
+        let zero_bounds =
+            inequalities_as_rationals(&primitive_inequality_basis(&capacity, 1, &at_zero));
         assert!(zero_bounds.contains(&(
             SemanticInequalityRelation::LessThan,
             vec![rational("0"), rational("0")],
         )));
         let above = rational_rref(vec![assignment_row(1, 0, rational("6"))], 1);
-        assert!(primitive_inequality_basis(&capacity, 1, &above).contains(&(
-            SemanticInequalityRelation::LessThanOrEqual,
-            vec![rational("0"), rational("-1")],
-        )));
+        assert!(
+            inequalities_as_rationals(&primitive_inequality_basis(&capacity, 1, &above)).contains(
+                &(
+                    SemanticInequalityRelation::LessThanOrEqual,
+                    vec![rational("0"), rational("-1")],
+                ),
+            )
+        );
 
         let huge = rational("123456789012345678901234567890/98765432109876543210987654321");
         let huge_basis = rational_rref(vec![assignment_row(1, 0, huge.clone())], 1);

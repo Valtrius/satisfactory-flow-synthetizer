@@ -152,6 +152,10 @@ Updated 2026-09-01.
   Inequality sort/dedup owns 52.1-54.3% of bound encoding, while equality RREF owns
   69.6-73.3% of equality work. Test primitive integer inequality rows through encoding
   next. Scheduling remains paused.
+  [Experiment 41](custom-solver/experiments/41-primitive-integer-inequality-rows.md)
+  implements the integer representation through sparse encoding. Exact bytes match,
+  and two isolated release medians improve 9.49% and 10.02%. Full validation passes;
+  the whole-solver A/B is ready to launch.
 
 The goal is shorter time to a proven optimum, complete minimum-link enumeration,
 and complete minimum-node enumeration. Benchmark modes are `optimal` for one layout,

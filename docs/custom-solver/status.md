@@ -250,6 +250,12 @@ owns 69.6-73.3% of equality time; inequality sort/dedup owns 52.1-54.3% of inequ
 time. Keep primitive inequality rows as integers through sorting, deduplication, and
 encoding as the next isolated candidate. Scheduling stays paused.
 
+[Experiment 41](experiments/41-primitive-integer-inequality-rows.md) implements that
+candidate. The generated exact oracle preserves the previous rational rows and encoded
+bytes. Two seven-round isolated release measurements improve by 9.49% and 10.02% with
+disjoint before/after ranges. Full validation passes; the whole optimal/all-layout A/B
+is ready to launch. Scheduling stays paused.
+
 Experiment 33 validation: 181 default and 186 benchmark-feature solver-core library
 tests pass, with two ignored in each configuration. The exhaustive Reference and four
 parallelism integrations, full workspace, both strict Clippy configurations, and 33
