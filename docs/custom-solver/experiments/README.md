@@ -183,6 +183,10 @@ Record dates follow the analysis chronology, not necessarily every run's start t
     retains normalized bound coefficients as integers through sorting, deduplication,
     and sparse encoding. [All 16 records verify](41-primitive-integer-inequality-rows-results.md),
     but completed whole medians are mixed. Keep the candidate and repeat controls.
+37. [Complete propagation variables](42-complete-propagation-variable-set.md) skips
+    repeated sparse-row variable discovery when propagation supplies its authoritative
+    sorted registered-port set. A 36-job four-variant screen separates this candidate
+    from integer inequality rows and adds a longer 258 minimum-link control.
 
 ## Evidence conventions
 

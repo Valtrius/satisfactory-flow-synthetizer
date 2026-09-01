@@ -612,14 +612,15 @@ impl PropagationState {
             let profiling_enabled = hotspot_profile::recorder_enabled();
             let analyze_started = profiling_enabled.then(Instant::now);
             let analysis = if profiling_enabled {
-                let (analysis, profile) = self
-                    .sparse
-                    .analyze_over_profiled(self.registered_ports.keys().copied(), &known)?;
+                let (analysis, profile) = self.sparse.analyze_over_complete_profiled(
+                    self.registered_ports.keys().copied(),
+                    &known,
+                )?;
                 hotspot_profile::record_sparse_profile(&profile, pass_cause);
                 analysis
             } else {
                 self.sparse
-                    .analyze_over(self.registered_ports.keys().copied(), &known)?
+                    .analyze_over_complete(self.registered_ports.keys().copied(), &known)?
             };
             record_propagation_elapsed(analyze_started, PropagationPhase::SparseAnalyze);
             if analysis.consistency == Consistency::Inconsistent {

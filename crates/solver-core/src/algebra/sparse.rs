@@ -368,6 +368,22 @@ impl SparseSystem {
         analyze_integer_rows(rows, &variables)
     }
 
+    /// Analyzes the rows over a complete sorted variable set.
+    ///
+    /// Unlike [`Self::analyze_over`], this path does not rescan every stored row
+    /// to discover variables. The caller must supply every variable present in
+    /// the rows, in strictly increasing order. Extra variables remain visible as
+    /// zero columns. Debug builds verify the completeness contract.
+    pub(crate) fn analyze_over_complete(
+        &self,
+        variables: impl IntoIterator<Item = FlowVarId>,
+        known: &BTreeMap<FlowVarId, BigRational>,
+    ) -> Result<SparseAnalysis, SparseAlgebraError> {
+        let (rows, variables) = self.prepare_analysis_complete(variables, known);
+        analyze_integer_rows(rows, &variables)
+    }
+
+    #[cfg(test)]
     pub(crate) fn analyze_over_profiled(
         &self,
         variables: impl IntoIterator<Item = FlowVarId>,
@@ -385,6 +401,48 @@ impl SparseSystem {
             variable_set.remove(variable);
         }
         let variables = variable_set.into_iter().collect::<Vec<_>>();
+        let variable_collection = variable_started.elapsed();
+
+        let substitution_started = Instant::now();
+        let mut rows = self
+            .rows
+            .iter()
+            .map(|row| row.substitute(known))
+            .collect::<Vec<_>>();
+        let substitution_normalization = substitution_started.elapsed();
+        let filter_started = Instant::now();
+        rows.retain(|row| !row.is_tautology());
+        let tautology_filter = filter_started.elapsed();
+        let sorting_started = Instant::now();
+        rows.sort();
+        let sorting = sorting_started.elapsed();
+        let mut profile = SparseProfile {
+            input_rows,
+            active_rows: rows.len(),
+            variable_count: variables.len(),
+            nonzero_terms: rows.iter().map(|row| row.coefficients.len()).sum(),
+            preparation: preparation_started.elapsed(),
+            variable_collection,
+            substitution_normalization,
+            tautology_filter,
+            sorting,
+            ..SparseProfile::default()
+        };
+        let analysis = analyze_integer_rows_profiled(rows, &variables, &mut profile)?;
+        profile.total = total_started.elapsed();
+        Ok((analysis, profile))
+    }
+
+    pub(crate) fn analyze_over_complete_profiled(
+        &self,
+        variables: impl IntoIterator<Item = FlowVarId>,
+        known: &BTreeMap<FlowVarId, BigRational>,
+    ) -> Result<(SparseAnalysis, SparseProfile), SparseAlgebraError> {
+        let total_started = Instant::now();
+        let preparation_started = Instant::now();
+        let input_rows = self.rows.len();
+        let variable_started = Instant::now();
+        let variables = self.complete_unknown_variables(variables, known);
         let variable_collection = variable_started.elapsed();
 
         let substitution_started = Instant::now();
@@ -439,6 +497,46 @@ impl SparseSystem {
             .collect::<Vec<_>>();
         rows.sort();
         (rows, variables)
+    }
+
+    fn prepare_analysis_complete(
+        &self,
+        variables: impl IntoIterator<Item = FlowVarId>,
+        known: &BTreeMap<FlowVarId, BigRational>,
+    ) -> (Vec<SparseRow>, Vec<FlowVarId>) {
+        let variables = self.complete_unknown_variables(variables, known);
+        let mut rows = self
+            .rows
+            .iter()
+            .map(|row| row.substitute(known))
+            .filter(|row| !row.is_tautology())
+            .collect::<Vec<_>>();
+        rows.sort();
+        (rows, variables)
+    }
+
+    fn complete_unknown_variables(
+        &self,
+        variables: impl IntoIterator<Item = FlowVarId>,
+        known: &BTreeMap<FlowVarId, BigRational>,
+    ) -> Vec<FlowVarId> {
+        let variables = variables.into_iter().collect::<Vec<_>>();
+        debug_assert!(variables.windows(2).all(|pair| pair[0] < pair[1]));
+        debug_assert!(
+            self.rows
+                .iter()
+                .flat_map(|row| row.coefficients.keys())
+                .all(|variable| variables.binary_search(variable).is_ok())
+        );
+        debug_assert!(
+            known
+                .keys()
+                .all(|variable| variables.binary_search(variable).is_ok())
+        );
+        variables
+            .into_iter()
+            .filter(|variable| !known.contains_key(variable))
+            .collect()
     }
 }
 
@@ -1030,12 +1128,24 @@ mod tests {
         let (profiled, profile) = system
             .analyze_over_profiled(variables, &BTreeMap::new())
             .unwrap();
+        let complete = system
+            .analyze_over_complete(variables, &BTreeMap::new())
+            .unwrap();
+        let (complete_profiled, complete_profile) = system
+            .analyze_over_complete_profiled(variables, &BTreeMap::new())
+            .unwrap();
 
         assert_eq!(profiled, plain);
+        assert_eq!(complete, plain);
+        assert_eq!(complete_profiled, plain);
         assert_eq!(profile.input_rows, 2);
         assert_eq!(profile.active_rows, 2);
         assert_eq!(profile.variable_count, 2);
         assert_eq!(profile.nonzero_terms, 4);
+        assert_eq!(complete_profile.input_rows, profile.input_rows);
+        assert_eq!(complete_profile.active_rows, profile.active_rows);
+        assert_eq!(complete_profile.variable_count, profile.variable_count);
+        assert_eq!(complete_profile.nonzero_terms, profile.nonzero_terms);
 
         let mut ratio_system = SparseSystem::new();
         ratio_system.insert(row([(0, 1), (1, -2)], 0));
@@ -1046,8 +1156,29 @@ mod tests {
             let (profiled, _) = system
                 .analyze_over_profiled(variables, &BTreeMap::new())
                 .unwrap();
+            let complete = system
+                .analyze_over_complete(variables, &BTreeMap::new())
+                .unwrap();
+            let (complete_profiled, _) = system
+                .analyze_over_complete_profiled(variables, &BTreeMap::new())
+                .unwrap();
             assert_eq!(profiled, plain);
+            assert_eq!(complete, plain);
+            assert_eq!(complete_profiled, plain);
         }
+    }
+
+    #[test]
+    fn complete_variable_analysis_preserves_known_and_free_columns() {
+        let mut system = SparseSystem::new();
+        system.insert(row([(0, 1), (1, 1)], 3));
+        let variables = [var(0), var(1), var(2)];
+        let known = BTreeMap::from([(var(0), integer(1))]);
+
+        assert_eq!(
+            system.analyze_over_complete(variables, &known).unwrap(),
+            system.analyze_over(variables, &known).unwrap()
+        );
     }
 
     #[test]
@@ -1184,6 +1315,13 @@ mod tests {
                                 system.insert(row([(0, c), (1, d)], second_rhs));
                                 let sparse =
                                     system.analyze_over(variables, &BTreeMap::new()).unwrap();
+                                assert_eq!(
+                                    system
+                                        .analyze_over_complete(variables, &BTreeMap::new())
+                                        .unwrap(),
+                                    sparse,
+                                    "complete variables: {matrix:?} = {rhs:?}"
+                                );
                                 assert_eq!(
                                     sparse.consistency, direct.consistency,
                                     "{matrix:?} = {rhs:?}"

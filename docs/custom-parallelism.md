@@ -159,6 +159,11 @@ Updated 2026-09-01.
   verify](custom-solver/experiments/41-primitive-integer-inequality-rows-results.md),
   but completed medians are mixed. Repeat only 115 all and 238 optimal before deciding
   permanence.
+  [Experiment 42](custom-solver/experiments/42-complete-propagation-variable-set.md)
+  adds an independent propagation candidate. It skips repeated row-variable discovery
+  when the caller supplies the complete sorted registered-port set. The planned
+  four-variant screen measures integer rows, complete variables, and their combination,
+  with a longer 258 minimum-link control. Scheduling remains paused.
 
 The goal is shorter time to a proven optimum, complete minimum-link enumeration,
 and complete minimum-node enumeration. Benchmark modes are `optimal` for one layout,

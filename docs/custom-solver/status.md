@@ -259,6 +259,17 @@ slightly while 238 regresses slightly in overlapping ranges. The committed candi
 is not permanent. Repeat the two completed controls to reach seven samples per variant;
 do not rerun capped work. Scheduling stays paused.
 
+[Experiment 42](experiments/42-complete-propagation-variable-set.md) implements an
+independent propagation candidate. It trusts the authoritative sorted registered-port
+set instead of rebuilding a `BTreeSet` and rescanning every sparse row. Debug builds
+verify the completeness contract; the defensive public algebra path remains. Current
+profiles put 6.24-15.32% of sparse time in variable collection. A 36-job factorial
+screen will repeat experiment 41, isolate this path, test the combined candidate, and
+add one `258 = 195+63` minimum-link sample per variant. Solver-core, exhaustive
+Reference, parallelism, workspace, strict Clippy, analyzer, formatting, release,
+plan, and named-variant smoke checks pass. The factorial screen is not yet launched.
+Scheduling stays paused.
+
 Experiment 33 validation: 181 default and 186 benchmark-feature solver-core library
 tests pass, with two ignored in each configuration. The exhaustive Reference and four
 parallelism integrations, full workspace, both strict Clippy configurations, and 33
