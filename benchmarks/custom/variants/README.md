@@ -1,7 +1,8 @@
 # Isolated source variants
 
 These patches are benchmark inputs, not production options. The historical
-legacy-encoding/deadline patches target the source recorded in [experiment 09](../../../docs/custom-solver/experiments/09-serializer-and-find-all.md).
+legacy-encoding/deadline patches target the source recorded in
+`mem:solver/experiments/09-serializer-and-find-all`.
 Use a detached checkout and its own Cargo target directory. Never share build
 artifacts between source variants or apply these patches during a timing run.
 
@@ -42,8 +43,8 @@ The corresponding frozen names are reference, exact_l, witness and basis under
 sources, release examples and hashes. Use `git apply --check --ignore-space-change`
 when checking a patch against an untracked frozen CRLF copy.
 
-[Implementation and validation](../../../docs/custom-solver/experiments/13-calculation-changes.md)
-and [comparison protocol](../../../docs/custom-solver/experiments/13-calculation-screen.md)
-record the source split. [Verified results](../../../docs/custom-solver/experiments/13-calculation-results.md)
-supported the completed [separate promotions](../../../docs/custom-solver/experiments/14-calculation-promotion.md).
+See `mem:solver/experiments/13-calculation-changes`,
+`mem:solver/experiments/13-calculation-screen`,
+`mem:solver/experiments/13-calculation-results`, and
+`mem:solver/experiments/14-calculation-promotion`.
 Never apply the old deadline/legacy patches as part of this comparison.
