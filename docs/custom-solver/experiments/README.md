@@ -168,6 +168,10 @@ Record dates follow the analysis chronology, not necessarily every run's start t
     denominator LCM and integer residual. [All 14 records verify](38-mixed-row-integer-substitution-results.md).
     Completed algebra medians improve 2.43-3.05% with identical exact work. Whole-solve
     wall medians move -0.60% and +3.16%. The integer path is permanent.
+34. [Canonicalization reprofile](39-canonicalization-reprofile.md) reuses the retained
+    purpose and subphase counters on the original two completed and two capped hard
+    workloads. It establishes the post-promotion cost distribution before another
+    calculation or DFS change.
 
 ## Evidence conventions
 

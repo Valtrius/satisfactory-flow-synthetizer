@@ -231,6 +231,11 @@ median improves 3.16%; 115 regresses 0.60% inside overlapping ranges while its C
 median improves 1.15%. The integer path is permanent. Sparse substitution is closed;
 return to canonicalization profiling. Scheduling stays paused.
 
+[Experiment 39](experiments/39-canonicalization-reprofile.md) reuses the retained
+purpose and subphase counters without changing solver source. Its four-job screen has
+two expected completed controls and two 60-second hard caps. It is ready to launch
+from production commit `1fd478e`; scheduling remains p1 and unchanged.
+
 Experiment 33 validation: 181 default and 186 benchmark-feature solver-core library
 tests pass, with two ignored in each configuration. The exhaustive Reference and four
 parallelism integrations, full workspace, both strict Clippy configurations, and 33

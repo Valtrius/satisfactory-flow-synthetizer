@@ -139,6 +139,9 @@ Updated 2026-09-01.
   implements the remaining mixed-row integer path. [All 14 records verify](custom-solver/experiments/38-mixed-row-integer-substitution-results.md):
   completed algebra medians improve 2.43-3.05% with identical exact work. Wall medians
   move -0.60% on 115 and +3.16% on 238. The integer path is permanent.
+  [Experiment 39](custom-solver/experiments/39-canonicalization-reprofile.md) reuses
+  the retained purpose and subphase timers on fixed completed and capped hard work to
+  select the next calculation target from the current production distribution.
   Scheduling stays paused.
 
 The goal is shorter time to a proven optimum, complete minimum-link enumeration,
