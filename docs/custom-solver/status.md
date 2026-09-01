@@ -241,6 +241,13 @@ inequality construction/normalization/sorting before changing calculations. Grap
 labeling and legal-decision keys are no longer the first target. Scheduling stays
 paused.
 
+[Experiment 40](experiments/40-equality-inequality-subphase-profile.md) implements the
+next diagnostic split. Equality records port indexing, row construction, and rational
+RREF. Inequality records pivot indexing, row construction, primitive normalization,
+and sort/deduplication. The timer-free production path is unchanged. Full validation,
+the exhaustive production/profiled/dense oracle, and a capped 115 reconciliation
+smoke pass; the four-job screen is ready to launch.
+
 Experiment 33 validation: 181 default and 186 benchmark-feature solver-core library
 tests pass, with two ignored in each configuration. The exhaustive Reference and four
 parallelism integrations, full workspace, both strict Clippy configurations, and 33

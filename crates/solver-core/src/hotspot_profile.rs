@@ -67,7 +67,14 @@ static DENSE_GRAPH_NS: AtomicU64 = AtomicU64::new(0);
 static LABELING_NS: AtomicU64 = AtomicU64::new(0);
 static RELABEL_NS: AtomicU64 = AtomicU64::new(0);
 static EQUALITY_NS: AtomicU64 = AtomicU64::new(0);
+static EQUALITY_INDEX_NS: AtomicU64 = AtomicU64::new(0);
+static EQUALITY_ROW_BUILD_NS: AtomicU64 = AtomicU64::new(0);
+static EQUALITY_RREF_NS: AtomicU64 = AtomicU64::new(0);
 static INEQUALITY_NS: AtomicU64 = AtomicU64::new(0);
+static INEQUALITY_PIVOT_INDEX_NS: AtomicU64 = AtomicU64::new(0);
+static INEQUALITY_ROW_BUILD_NS: AtomicU64 = AtomicU64::new(0);
+static INEQUALITY_NORMALIZE_NS: AtomicU64 = AtomicU64::new(0);
+static INEQUALITY_SORT_DEDUP_NS: AtomicU64 = AtomicU64::new(0);
 static SEMANTIC_ENCODING_NS: AtomicU64 = AtomicU64::new(0);
 
 /// Named nanosecond accumulators for one profiling session.
@@ -131,7 +138,14 @@ pub struct HotspotSnapshot {
     pub labeling_ns: u64,
     pub relabel_ns: u64,
     pub equality_ns: u64,
+    pub equality_index_ns: u64,
+    pub equality_row_build_ns: u64,
+    pub equality_rref_ns: u64,
     pub inequality_ns: u64,
+    pub inequality_pivot_index_ns: u64,
+    pub inequality_row_build_ns: u64,
+    pub inequality_normalize_ns: u64,
+    pub inequality_sort_dedup_ns: u64,
     pub semantic_encoding_ns: u64,
 }
 
@@ -240,7 +254,14 @@ fn load_snapshot() -> HotspotSnapshot {
         labeling_ns: LABELING_NS.load(Ordering::Relaxed),
         relabel_ns: RELABEL_NS.load(Ordering::Relaxed),
         equality_ns: EQUALITY_NS.load(Ordering::Relaxed),
+        equality_index_ns: EQUALITY_INDEX_NS.load(Ordering::Relaxed),
+        equality_row_build_ns: EQUALITY_ROW_BUILD_NS.load(Ordering::Relaxed),
+        equality_rref_ns: EQUALITY_RREF_NS.load(Ordering::Relaxed),
         inequality_ns: INEQUALITY_NS.load(Ordering::Relaxed),
+        inequality_pivot_index_ns: INEQUALITY_PIVOT_INDEX_NS.load(Ordering::Relaxed),
+        inequality_row_build_ns: INEQUALITY_ROW_BUILD_NS.load(Ordering::Relaxed),
+        inequality_normalize_ns: INEQUALITY_NORMALIZE_NS.load(Ordering::Relaxed),
+        inequality_sort_dedup_ns: INEQUALITY_SORT_DEDUP_NS.load(Ordering::Relaxed),
         semantic_encoding_ns: SEMANTIC_ENCODING_NS.load(Ordering::Relaxed),
     }
 }
@@ -298,7 +319,14 @@ fn clear_buckets() {
         &LABELING_NS,
         &RELABEL_NS,
         &EQUALITY_NS,
+        &EQUALITY_INDEX_NS,
+        &EQUALITY_ROW_BUILD_NS,
+        &EQUALITY_RREF_NS,
         &INEQUALITY_NS,
+        &INEQUALITY_PIVOT_INDEX_NS,
+        &INEQUALITY_ROW_BUILD_NS,
+        &INEQUALITY_NORMALIZE_NS,
+        &INEQUALITY_SORT_DEDUP_NS,
         &SEMANTIC_ENCODING_NS,
     ] {
         bucket.store(0, Ordering::Relaxed);
@@ -539,7 +567,14 @@ pub(crate) enum CanonicalPhase {
     Labeling,
     Relabel,
     Equality,
+    EqualityIndex,
+    EqualityRowBuild,
+    EqualityRref,
     Inequality,
+    InequalityPivotIndex,
+    InequalityRowBuild,
+    InequalityNormalize,
+    InequalitySortDedup,
     SemanticEncoding,
 }
 
@@ -557,6 +592,18 @@ impl CanonicalTimer {
                 .then(std::time::Instant::now),
         }
     }
+
+    pub(crate) fn start_if(phase: CanonicalPhase, recording: bool) -> Self {
+        Self {
+            phase,
+            started: recording.then(std::time::Instant::now),
+        }
+    }
+
+    #[must_use]
+    pub(crate) const fn is_recording(&self) -> bool {
+        self.started.is_some()
+    }
 }
 
 impl Drop for CanonicalTimer {
@@ -570,7 +617,14 @@ impl Drop for CanonicalTimer {
             CanonicalPhase::Labeling => &LABELING_NS,
             CanonicalPhase::Relabel => &RELABEL_NS,
             CanonicalPhase::Equality => &EQUALITY_NS,
+            CanonicalPhase::EqualityIndex => &EQUALITY_INDEX_NS,
+            CanonicalPhase::EqualityRowBuild => &EQUALITY_ROW_BUILD_NS,
+            CanonicalPhase::EqualityRref => &EQUALITY_RREF_NS,
             CanonicalPhase::Inequality => &INEQUALITY_NS,
+            CanonicalPhase::InequalityPivotIndex => &INEQUALITY_PIVOT_INDEX_NS,
+            CanonicalPhase::InequalityRowBuild => &INEQUALITY_ROW_BUILD_NS,
+            CanonicalPhase::InequalityNormalize => &INEQUALITY_NORMALIZE_NS,
+            CanonicalPhase::InequalitySortDedup => &INEQUALITY_SORT_DEDUP_NS,
             CanonicalPhase::SemanticEncoding => &SEMANTIC_ENCODING_NS,
         };
         add_bucket(bucket, started.elapsed());

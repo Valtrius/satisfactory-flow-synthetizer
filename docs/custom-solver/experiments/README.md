@@ -174,6 +174,11 @@ Record dates follow the analysis chronology, not necessarily every run's start t
     State keys now own 99.96-100.00% of graph-purpose time. Equality and inequality
     encoding consume 58.9-67.2% of combined state/SCC canonicalization. Split those
     calculations next; labeling and legal-decision keys are no longer the first target.
+35. [Equality and inequality subphase profile](40-equality-inequality-subphase-profile.md)
+    splits canonical port indexing, equation construction, rational RREF, bound-row
+    construction, primitive normalization, and sort/deduplication only when hotspot
+    recording is active. Full validation and a capped 115 reconciliation smoke pass;
+    its four-job fixed-work screen is ready to launch.
 
 ## Evidence conventions
 

@@ -907,6 +907,13 @@ pub fn hotspot_json(h: &HotspotSnapshot) -> serde_json::Value {
     });
     let object = value.as_object_mut().expect("hotspot JSON is an object");
     for (name, counter) in [
+        ("equality_index_ns", h.equality_index_ns),
+        ("equality_row_build_ns", h.equality_row_build_ns),
+        ("equality_rref_ns", h.equality_rref_ns),
+        ("inequality_pivot_index_ns", h.inequality_pivot_index_ns),
+        ("inequality_row_build_ns", h.inequality_row_build_ns),
+        ("inequality_normalize_ns", h.inequality_normalize_ns),
+        ("inequality_sort_dedup_ns", h.inequality_sort_dedup_ns),
         (
             "propagation_sparse_profiled_calls",
             h.propagation_sparse_profiled_calls,

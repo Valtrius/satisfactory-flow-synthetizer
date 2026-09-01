@@ -146,7 +146,9 @@ Updated 2026-09-01.
   state keys own 99.96-100.00% of graph-purpose time, and equality plus inequality
   encoding consume 58.9-67.2% of state/SCC canonicalization. Split those calculations
   next; labeling is no longer the first target.
-  Scheduling stays paused.
+  [Experiment 40](custom-solver/experiments/40-equality-inequality-subphase-profile.md)
+  implements that hotspot-only split. Full validation and a capped reconciliation
+  smoke pass; its fixed four-job screen is ready to launch. Scheduling stays paused.
 
 The goal is shorter time to a proven optimum, complete minimum-link enumeration,
 and complete minimum-node enumeration. Benchmark modes are `optimal` for one layout,

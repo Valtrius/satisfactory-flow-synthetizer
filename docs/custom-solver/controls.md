@@ -89,10 +89,14 @@ collection, substitution and normalization, tautology filtering, sorting, and
 working-row conversion. The timer-free production path remains unchanged.
 Experiment 36 permanently evaluates fully known sparse rows with one exact integer
 denominator LCM and returns canonical tautology or contradiction rows directly.
-Mixed-row substitution retains the established rational implementation.
 Experiment 37 permanently returns the existing primitive row when no coefficient has
-a known value. Only mixed rows continue through rational substitution and primitive
-renormalization.
+a known value. Experiment 38 permanently substitutes mixed rows with one exact integer
+denominator LCM and one final primitive normalization.
+Experiment 39 shows that state keys now own nearly all graph-purpose work and that
+equality plus inequality encoding dominate current state/SCC canonicalization.
+Experiment 40 splits those broad hotspot timers into indexing, row construction,
+rational RREF, primitive normalization, and sort/deduplication. Hotspot-off solves keep
+the original timer-free paths.
 Experiment 32 tested quotienting sparse rows through exact weighted representatives.
 The candidate was exact but slower on 36/238 and is absent from production source.
 Experiment 33 tested identical normalized-row deduplication and found no duplicates in

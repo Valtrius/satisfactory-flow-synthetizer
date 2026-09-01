@@ -2087,6 +2087,8 @@ fn encode_semantic_system(
     bytes: &mut Vec<u8>,
 ) {
     let equality_timer = CanonicalTimer::start(CanonicalPhase::Equality);
+    let equality_index_timer =
+        CanonicalTimer::start_if(CanonicalPhase::EqualityIndex, equality_timer.is_recording());
     let producers = canonical_producer_ports(source.problem.inputs.len(), &topology.nodes);
     let consumers = canonical_consumer_ports(
         source.problem.outputs.len(),
@@ -2106,12 +2108,14 @@ fn encode_semantic_system(
         .map(|(index, port)| (port, producers.len() + index))
         .collect::<BTreeMap<_, _>>();
     let variable_count = producers.len() + consumers.len();
+    drop(equality_index_timer);
     let equalities = primitive_equality_basis(
         source,
         topology,
         variable_count,
         &producer_indices,
         &consumer_indices,
+        equality_timer.is_recording(),
     );
     drop(equality_timer);
     let encoding_timer = CanonicalTimer::start(CanonicalPhase::SemanticEncoding);
@@ -2126,8 +2130,15 @@ fn encode_semantic_system(
     drop(encoding_timer);
 
     let inequality_timer = CanonicalTimer::start(CanonicalPhase::Inequality);
-    let inequalities =
-        primitive_inequality_basis(&source.problem.max_link_rate, variable_count, &equalities);
+    let inequalities = if inequality_timer.is_recording() {
+        primitive_inequality_basis_profiled(
+            &source.problem.max_link_rate,
+            variable_count,
+            &equalities,
+        )
+    } else {
+        primitive_inequality_basis(&source.problem.max_link_rate, variable_count, &equalities)
+    };
     drop(inequality_timer);
     let _encoding_timer = CanonicalTimer::start(CanonicalPhase::SemanticEncoding);
     write_varint(bytes, inequalities.len());
@@ -2188,7 +2199,10 @@ fn primitive_equality_basis(
     variable_count: usize,
     producer_indices: &BTreeMap<ProducerPortRef, usize>,
     consumer_indices: &BTreeMap<ConsumerPortRef, usize>,
+    record_subphases: bool,
 ) -> Vec<Vec<Rational>> {
+    let row_build_timer =
+        CanonicalTimer::start_if(CanonicalPhase::EqualityRowBuild, record_subphases);
     let mut rows = Vec::new();
     let mut inputs = source.problem.inputs.clone();
     inputs.sort();
@@ -2272,7 +2286,11 @@ fn primitive_equality_basis(
             rows.push(assignment_row(variable_count, producer, flow.clone()));
         }
     }
-    rational_rref(rows, variable_count)
+    drop(row_build_timer);
+    let rref_timer = CanonicalTimer::start_if(CanonicalPhase::EqualityRref, record_subphases);
+    let basis = rational_rref(rows, variable_count);
+    drop(rref_timer);
+    basis
 }
 
 fn primitive_inequality_basis(
@@ -2312,6 +2330,56 @@ fn primitive_inequality_basis(
     }
     rows.sort();
     rows.dedup();
+    rows
+}
+
+fn primitive_inequality_basis_profiled(
+    capacity: &Rational,
+    variable_count: usize,
+    equalities: &[Vec<Rational>],
+) -> Vec<(SemanticInequalityRelation, Vec<Rational>)> {
+    let pivot_timer = CanonicalTimer::start_if(CanonicalPhase::InequalityPivotIndex, true);
+    let mut pivots = vec![None; variable_count];
+    for equality in equalities {
+        if let Some(pivot) = equality[..variable_count].iter().position(|v| !v.is_zero()) {
+            debug_assert_eq!(equality[pivot].numerator(), equality[pivot].denominator());
+            pivots[pivot] = Some(equality);
+        }
+    }
+    drop(pivot_timer);
+
+    let row_build_timer = CanonicalTimer::start_if(CanonicalPhase::InequalityRowBuild, true);
+    let mut rows = Vec::with_capacity(variable_count.saturating_mul(2));
+    for (variable, pivot) in pivots.into_iter().enumerate() {
+        let (positive, bounded) = if let Some(equality) = pivot {
+            let mut positive = equality.clone();
+            positive[variable] = Rational::zero();
+            let mut bounded = positive.iter().map(|v| -v).collect::<Vec<_>>();
+            bounded[variable_count] = capacity - &positive[variable_count];
+            (positive, bounded)
+        } else {
+            let mut positive = vec![Rational::zero(); variable_count + 1];
+            positive[variable] = Rational::from(-1);
+            let mut bounded = vec![Rational::zero(); variable_count + 1];
+            bounded[variable] = Rational::one();
+            bounded[variable_count] = capacity.clone();
+            (positive, bounded)
+        };
+        rows.push((SemanticInequalityRelation::LessThan, positive));
+        rows.push((SemanticInequalityRelation::LessThanOrEqual, bounded));
+    }
+    drop(row_build_timer);
+
+    let normalize_timer = CanonicalTimer::start_if(CanonicalPhase::InequalityNormalize, true);
+    for (_, row) in &mut rows {
+        normalize_positive_scale(row);
+    }
+    drop(normalize_timer);
+
+    let sort_timer = CanonicalTimer::start_if(CanonicalPhase::InequalitySortDedup, true);
+    rows.sort();
+    rows.dedup();
+    drop(sort_timer);
     rows
 }
 
@@ -2968,11 +3036,16 @@ mod tests {
                 }
                 for capacity in ["1/7", "5", "100000000000000000000000000000000000003"] {
                     let capacity = rational(capacity);
+                    let inequalities = primitive_inequality_basis(&capacity, variables, &actual);
                     assert_eq!(
-                        primitive_inequality_basis(&capacity, variables, &actual),
+                        inequalities,
                         dense_reference_primitive_inequality_basis(&capacity, variables, &expected)
                     );
-                    for (_, row) in primitive_inequality_basis(&capacity, variables, &actual) {
+                    assert_eq!(
+                        primitive_inequality_basis_profiled(&capacity, variables, &actual),
+                        inequalities
+                    );
+                    for (_, row) in inequalities {
                         assert_sparse_row_round_trip(&row);
                     }
                 }
