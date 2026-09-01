@@ -1,37 +1,47 @@
 # solver/active
 
-Experiment 42 focused follow-up. Validated; ready to launch.
-Record: `mem:solver/experiments/42-258-confirmation`.
-Prior results: `mem:solver/experiments/42-complete-propagation-variable-set-results`.
+Experiment 43. Validated; preparing launch on 2026-09-02.
+Record: `mem:solver/experiments/43-root258-affinity`.
+Prior results: `mem:solver/experiments/42-258-confirmation-results`.
 
-## Question and scope
+## Question and plan
 
-The user approved eight more 258 minimum_links timing jobs, two per frozen variant,
-and two separate reference/complete-variable diagnostic jobs. No solver or scheduler
-change; no rebuild. Both optimizations remain active committed candidates.
-Timing aliases/repeats match the original run, reaching n=3 per variant afterward.
-Diagnostics use `medium258_diagnostic` and must not enter ordinary timing medians.
+User authorized extra tests while AFK. Isolate calculation gains from possible
+CPU-placement sensitivity on 258's two longest roots. No solver/scheduler change.
+All four candidates use new frozen profile_obligation binaries built from the
+previous exact source variants; their hashes and original 76-key plans match.
+Keep p1/32 planning, target 128, N9L14, S2=5/S3=1/M2=0/M3=3, rate1200.
+Each selected root executes serially; exhaustion is local, never a whole proof.
 
-Manifest: `benchmarks/custom/registered-variable-258-confirmation.json`.
-p1/32, N<=12, max link rate 1200, 600s solver cap, 60s cleanup watchdog, seed 270826.
-Expected full result: N=9/L=14, two identical layouts. No speed claims before completion.
+Manifest: `benchmarks/custom/root258-affinity-screening.json`.
+28 jobs: root 23 four variants x CPUs 0/31 x two repeats; root 7 one repeat per
+variant/CPU; four separate before/variables root 23 diagnostics.
+Timing caps 300s, diagnostics 360s; sum 144min plus at most 28min cleanup allowances.
+All jobs must exhaust. Never compare hotspot-on/off or pool the two CPU masks.
 
 ## Validation and launch
 
-All four reused binary hashes and 280 source hashes match the completed run.
-Ten-job plan, 34 tooling tests and two two-second diagnostic startup/cancel smokes pass.
-Diagnostics capture root/finish/cache-drop spans and calculation counters with no
-dropped or open activity records in those smokes.
-Ready output: `target/parallelism-ladder/registered-variable-258-confirmation-20260901`.
-Map: `target/parallelism-ladder/registered-variable-factorial-variants-20260901-a/variants.json`.
-Freeze and launch with completion/failure dialog, then end turn. No builds/tests during timing.
+37 runner/analyzer tests pass, including native Windows affinity verification.
+Four release builds, frozen plan, four 2s real affinity/cancel smokes and four tiny
+completed exact-result controls pass. CPU mask application occurs after launch;
+smoke delays 8.4-28.5ms are recorded, so initial steps may be unpinned.
+No claim that CPUs 0/31 map to particular cache types.
+
+Frozen variant root: `target/parallelism-ladder/root258-variants-20260902`.
+Planned run: `target/parallelism-ladder/root258-affinity-20260902`.
+Launch with completion/failure dialog. Watch root `BENCHMARK-STATUS.txt` and
+`BENCHMARK-FINISHED.txt` / `BENCHMARK-FAILED.txt`; the root status names the current job.
+End turn after startup check. No builds/tests during timing.
+Do not infer results from a running benchmark.
 
 ## After results
 
-Verify schedule, identities, exact result sets/proof and structural work.
-Analyze new/old hotspot-off records together, retaining every sample.
-Inspect diagnostic root/search/finish/cache-drop durations and aggregate subphases.
-Do not infer individual root calculation costs from aggregate timers.
-Memory is not a promotion gate; scheduling remains paused.
+Verify schedule, frozen identities, root certificates, masks/application delays,
+full result objects, local proof fields, and structural work. Report within-CPU
+medians/ranges; root 7 has only one sample per variant/CPU.
+Analyze diagnostic phase changes independently of ordinary timings.
+Both candidates remain unpromoted. If controlled work regresses, prefer restoring
+the offending candidate; local work saved alone does not justify slower completion.
+Memory cost is not a gate. Scheduler extras stay paused.
 
-Manifest and preparation/results memories not yet committed; no push.
+Tooling/manifest/results memories pending commit; no promotion or push.

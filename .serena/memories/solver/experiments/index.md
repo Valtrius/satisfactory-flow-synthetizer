@@ -45,13 +45,16 @@ Record dates follow the analysis chronology, not necessarily every run's start t
 
 ## Active follow-up
 
-42 (`mem:solver/experiments/42-complete-propagation-variable-set-results`): all
-36 factorial records complete and verify. Variables improve 115/238 controls but
-one 258 sample regresses 22.46%; integer/combined results are mixed. Both remain
-candidates. Focused 258 repeats and diagnostics are now approved and validated,
-ready to launch. Follow-up: `mem:solver/experiments/42-258-confirmation`.
-Handoff: `mem:solver/active`. Candidate `520b352`, runner `4de03bc`,
-preparation `f0dca96`; analysis memory updates remain uncommitted.
+43 (`mem:solver/experiments/43-root258-affinity`): 28-job isolated-root factorial
+with verified CPU affinity, validated and preparing launch. Original p1/32 root
+plan is frozen; serial execution cannot prove whole-solve optimality.
+User authorized up to a few hours while AFK; scheduled caps plus cleanup <3h.
+Handoff: `mem:solver/active`. Tooling/manifest/results updates pending commit.
+
+42 follow-up analyzed (`mem:solver/experiments/42-258-confirmation-results`).
+All 46 records verify. Pooled 258 n=3 wall medians regress 22.46-27.38% despite
+local calculation savings; reference timings also vary widely. Roots 7/23 own
+the final ~108s search tail. Both optimizations remain candidates; scheduler paused.
 
 ## How the diagnosis changed
 
@@ -203,6 +206,13 @@ preparation `f0dca96`; analysis memory updates remain uncommitted.
     Results (`mem:solver/experiments/42-complete-propagation-variable-set-results`)
     verify all 36 completions but expose a 22.46% adverse variable-only 258 sample.
     Retain candidates pending focused repeats; no scheduler change.
+
+38. Focused 258 repeats (`mem:solver/experiments/42-258-confirmation-results`) verify
+    all ten new jobs. Search spans identify the two long roots, not cleanup.
+    An 82.30% local variable-collection reduction does not establish whole speedup.
+39. Isolated roots with CPU affinity (`mem:solver/experiments/43-root258-affinity`)
+    retain the original ordered root plan and compare four variants within each
+    fixed logical CPU. Twenty-eight jobs are validated; no timing result yet.
 
 ## Evidence conventions
 

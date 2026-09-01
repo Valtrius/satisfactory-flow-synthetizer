@@ -64,10 +64,29 @@ try {
         $result = Join-Path $runRoot "results/$($job.id).json"
         $watch = [Diagnostics.Stopwatch]::StartNew()
         $executable = if ($job.binary) { $job.binary } else { Join-Path $runRoot 'bin/profile_obligation.exe' }
+        $affinityMask = if ($job.processor_affinity) { [Convert]::ToInt64($job.processor_affinity, 16) } else { 0L }
+        if ($affinityMask -and (($affinityMask -band [Diagnostics.Process]::GetCurrentProcess().ProcessorAffinity.ToInt64()) -ne $affinityMask)) {
+            throw "Requested processor affinity is outside the runner's available mask: $($job.processor_affinity)"
+        }
         $jobArguments = @(('"'+$job.request_file+'"'),('"'+$result+'"'))
         if ($job.kind -eq 'witness_replay') { $jobArguments += [string][int]$job.request.cancel_after_ms }
         $process = Start-Process -FilePath $executable -ArgumentList $jobArguments -WorkingDirectory $repoRoot -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $runRoot "results/$($job.id).log") -RedirectStandardError (Join-Path $runRoot "results/$($job.id).stderr.log")
         $null = $process.Handle
+        $affinityObserved = ''
+        $affinityApplied = ''
+        if ($affinityMask) {
+            try {
+                # Apply to this benchmark child only; record the post-launch delay.
+                $process.ProcessorAffinity = [IntPtr]$affinityMask
+                $affinityObserved = $process.ProcessorAffinity.ToInt64().ToString('x')
+                $affinityApplied = $watch.Elapsed.TotalSeconds
+                if ($affinityObserved -ne $job.processor_affinity) { throw 'Processor affinity did not take effect' }
+            } catch {
+                if (-not $process.HasExited) { $process.Kill(); $process.WaitForExit() }
+                $process.Dispose()
+                throw
+            }
+        }
         $cpu = 0.0
         $peak = 0L
         $killed = $false
@@ -85,7 +104,7 @@ try {
         $process.WaitForExit()
         $watch.Stop()
         $cpu = [Math]::Max($cpu, $process.TotalProcessorTime.TotalSeconds)
-        $metrics.Add([pscustomobject]@{ id=$job.id; process_wall_s=$watch.Elapsed.TotalSeconds; process_cpu_s=$cpu; peak_working_set_bytes=$peak; watchdog_killed=$killed; exit_code=$process.ExitCode })
+        $metrics.Add([pscustomobject]@{ id=$job.id; process_wall_s=$watch.Elapsed.TotalSeconds; process_cpu_s=$cpu; peak_working_set_bytes=$peak; watchdog_killed=$killed; exit_code=$process.ExitCode; affinity_requested=$job.processor_affinity; affinity_observed=$affinityObserved; affinity_applied_s=$affinityApplied })
         if ($killed -or $process.ExitCode -ne 0 -or -not (Test-Path -LiteralPath $result)) {
             $failures.Add([pscustomobject]@{id=$job.id; watchdog_killed=$killed; exit_code=$process.ExitCode})
             ConvertTo-Json -InputObject @($failures.ToArray()) | Set-Content -LiteralPath (Join-Path $runRoot 'failed-jobs.json')

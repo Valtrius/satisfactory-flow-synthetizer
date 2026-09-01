@@ -110,7 +110,7 @@ class AnalyzerTests(unittest.TestCase):
             module.write(source / "hashes.json", {"bin/profile_obligation.exe": module.digest(source / "bin/profile_obligation.exe")})
             module.write(root / "case.json", {"problem": job["problem"]})
             module.write(root / "manifest.json", {"variants": {"reference": "source"}, "jobs": [
-                dict(job["request"], id="tiny", variant="reference", case_file="case.json", timeout_s=10, profile=None)]})
+                dict(job["request"], id="tiny", variant="reference", case_file="case.json", timeout_s=10, profile=None, processor_affinity="000A")]})
             run = root / "run"
             (run / "bin").mkdir(parents=True)
             (run / "bin/profile_obligation.exe").write_bytes(b"default")
@@ -119,6 +119,8 @@ class AnalyzerTests(unittest.TestCase):
                 module.prepare(root / "manifest.json", run)
             scheduled = module.read(run / "schedule.json")[0]
             self.assertEqual(scheduled["variant"], "reference")
+            self.assertEqual(scheduled["processor_affinity"], "a")
+            self.assertNotIn("processor_affinity", scheduled["request"])
             self.assertEqual(Path(scheduled["binary"]), run / "variants/reference/bin/profile_obligation.exe")
             module.check_variant(run / "variants/reference")
             (run / "variants/reference/bin/profile_obligation.exe").write_bytes(b"changed")
@@ -187,6 +189,82 @@ class AnalyzerTests(unittest.TestCase):
             binary.write_bytes(b"changed")
             with self.assertRaisesRegex(ValueError, "Binary hash mismatch"):
                 module.verify(root)
+
+    def test_fixed_affinity_requires_matching_observed_mask_and_application_time(self):
+        module, job, _ = self.fixed_fixture()
+        for invalid in (0, True, "", "0", "xyz", "0x1", "8000000000000000"):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                module.affinity_mask(invalid)
+        job["processor_affinity"] = "80000000"
+        metric = dict(affinity_requested="80000000", affinity_observed="80000000",
+                      affinity_applied_s="0.05", process_wall_s="2")
+        module.validate_affinity(job, metric)
+        for key, value in [("affinity_requested", "1"), ("affinity_observed", "1"),
+                           ("affinity_applied_s", "-1"), ("affinity_applied_s", "3")]:
+            with self.subTest(key=key, value=value), self.assertRaises(ValueError):
+                module.validate_affinity(job, dict(metric, **{key: value}))
+        with self.assertRaisesRegex(ValueError, "Unexpected"):
+            module.validate_affinity({}, metric)
+
+    def test_fixed_search_budget_keeps_default_and_bounds_explicit_long_runs(self):
+        module, _, _ = self.fixed_fixture()
+        jobs = [dict(request=dict(timeout_s=2401))]
+        with self.assertRaises(ValueError):
+            module.validate_search_budget({}, jobs)
+        module.validate_search_budget(dict(max_search_seconds=8640), jobs)
+        for limit in (0, True, "8640", 10801):
+            with self.subTest(limit=limit), self.assertRaises(ValueError):
+                module.validate_search_budget(dict(max_search_seconds=limit), jobs)
+        with self.assertRaises(ValueError):
+            module.validate_search_budget(dict(max_search_seconds=8640), [])
+
+    @unittest.skipUnless(os.name == "nt", "Windows process affinity")
+    def test_fixed_runner_applies_affinity_to_child_and_records_evidence(self):
+        module, job, result = self.fixed_fixture()
+        with tempfile.TemporaryDirectory(prefix="custom affinity ") as directory:
+            root = Path(directory)
+            (root / "results").mkdir()
+            source = root / "fixture.rs"
+            source.write_text(r'''
+#[link(name="kernel32")]
+unsafe extern "system" {
+    fn GetCurrentProcess() -> *mut std::ffi::c_void;
+    fn GetProcessAffinityMask(p: *mut std::ffi::c_void, mask: *mut usize, system: *mut usize) -> i32;
+}
+fn main() {
+    let args: Vec<String> = std::env::args().collect();
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    let (mut mask, mut system) = (0, 0);
+    assert_ne!(unsafe { GetProcessAffinityMask(GetCurrentProcess(), &mut mask, &mut system) }, 0);
+    let request = std::path::Path::new(&args[1]);
+    std::fs::write(request.with_extension("affinity"), format!("{mask:x}")).unwrap();
+    std::fs::copy(request.with_extension("result.json"), &args[2]).unwrap();
+}
+''')
+            binary = root / "fixture.exe"
+            subprocess.run(["rustc", str(source), "-o", str(binary)], check=True, capture_output=True, timeout=30)
+            request = root / "fixture.request.json"
+            job["request"]["timeout_s"] = 2
+            result["request"] = dict(job["request"])
+            module.write(request, job["request"])
+            module.write(request.with_suffix(".result.json"), result)
+            available = subprocess.check_output(["pwsh", "-NoProfile", "-Command",
+                "[Diagnostics.Process]::GetCurrentProcess().ProcessorAffinity.ToInt64()"], text=True)
+            mask = int(available.strip())
+            job.update(binary=str(binary), request_file=str(request), processor_affinity=format(mask & -mask, "x"))
+            module.write(root / "schedule.json", [job])
+            module.write(root / "binary.json", dict(path=str(binary), sha256=module.digest(binary)))
+            shutil.copy2(Path(__file__).with_name("hard-profile.py"), root / "hard-profile.py")
+            runner = Path(__file__).with_name("start-hard-profile.ps1").resolve()
+            # Suppress only this test's notification assembly; real launches retain dialogs.
+            quote = lambda p: "'" + str(p).replace("'", "''") + "'"
+            command = f"function Add-Type {{}}; & {quote(runner)} -Run -RepositoryRoot {quote(root)} -OutputDirectory {quote(root)}"
+            subprocess.run(["pwsh", "-NoProfile", "-Command", command], check=True, capture_output=True, text=True, timeout=20)
+            self.assertTrue((root / "BENCHMARK-FINISHED.txt").exists(), (root / "BENCHMARK-STATUS.txt").read_text())
+            self.assertEqual(request.with_suffix(".affinity").read_text(), job["processor_affinity"])
+            metrics = list(csv.DictReader((root / "process-metrics.csv").open(encoding="utf-8-sig")))
+            module.validate_affinity(job, metrics[0])
+            self.assertGreater(float(metrics[0]["affinity_applied_s"]), 0)
 
     @unittest.skipUnless(os.name == "nt", "Windows profiling executable")
     def test_fixed_work_executable_returns_valid_local_proof_and_cancellation(self):

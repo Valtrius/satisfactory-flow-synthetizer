@@ -1,6 +1,7 @@
 # 42. Focused 258 confirmation and diagnostics
 
-Date: 2026-09-01. State: validated; ready to launch.
+Date: 2026-09-01. State: analyzed; no promotion.
+Results: `mem:solver/experiments/42-258-confirmation-results`.
 Prior results: `mem:solver/experiments/42-complete-propagation-variable-set-results`.
 Source/build provenance: `mem:solver/experiments/42-complete-propagation-variable-set`.
 
@@ -70,7 +71,7 @@ binary exactness validation remains applicable.
 
 ## Launch and decision gate
 
-Planned output: `target/parallelism-ladder/registered-variable-258-confirmation-20260901`.
+Output: `target/parallelism-ladder/registered-variable-258-confirmation-20260901`.
 Completion/failure dialog plus authoritative BENCHMARK status files, then end turn.
 Allow roughly 35-45 minutes based on previous timings; this is not a guarantee.
 
@@ -84,5 +85,27 @@ Promote only if repeated completed work supports a useful gain without a consist
 completion regression. If 258 repeats confirm a slowdown, isolate its long root
 before choosing retention or restoration. Scheduler defaults remain unchanged.
 
-Commit state: manifest and this follow-up record are not yet committed. Earlier
-candidate commits remain cd46fae/520b352; no promotion or push.
+Manifest, prior results and preparation memories committed as `4933048`.
+Earlier candidate commits remain cd46fae/520b352; no promotion or push.
+Formatting and explicit ten-job/alias/repeat checks passed before commit.
+Source manifest SHA-256:
+`347b29ff01c50518d9f468957f64ea497dc1a93272dd0fb8abeb86277583ac6f`.
+
+## Actual launch
+
+Started 2026-09-01 23:18:58 Europe/Paris, runner PID 63360. The frozen launcher
+validated all ten jobs. Initial check: job 1/10, before hotspot-off repeat 2 running;
+runner stderr empty. This is only a launch check, not a benchmark outcome.
+
+Completion/failure dialog enabled. Authoritative run-root files:
+`BENCHMARK-STATUS.txt`, `BENCHMARK-FINISHED.txt` or `BENCHMARK-FAILED.txt`.
+`results/BENCHMARK-STATUS.txt` identifies the current job.
+No builds or tests run during the screen. End turn and wait for user completion.
+These launch-state memory changes follow commit 4933048 and remain uncommitted.
+
+## Outcome
+
+All ten jobs complete and verify. Three-sample whole medians do not support either
+candidate; diagnostics identify roots 7/23, not cleanup, as the long tail. Variable
+collection itself is 82.30% cheaper. The user authorized extended root/affinity
+isolation in experiment 43 while AFK. See the results memory for evidence.

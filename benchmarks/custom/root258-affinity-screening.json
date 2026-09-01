@@ -1,0 +1,657 @@
+{
+  "description": "Isolate roots 23 and 7 of the 258 N9/L14 profile using the frozen p1 target-128 plan. Benchmark-only affinity distinguishes CPU-placement sensitivity from calculation cost. Exhaustion is root-local, never a whole-solve proof.",
+  "seed": 902043,
+  "max_search_seconds": 8640,
+  "variants": {
+    "before": "../../target/parallelism-ladder/root258-variants-20260902/before",
+    "integer": "../../target/parallelism-ladder/root258-variants-20260902/integer",
+    "variables": "../../target/parallelism-ladder/root258-variants-20260902/variables",
+    "combined": "../../target/parallelism-ladder/root258-variants-20260902/combined"
+  },
+  "jobs": [
+    {
+      "id": "root258-r23-before-cpu0-r1",
+      "variant": "before",
+      "case_file": "cases/medium258.json",
+      "node_count": 9,
+      "link_count": 14,
+      "profile": {
+        "splitter2": 5,
+        "splitter3": 1,
+        "merger2": 0,
+        "merger3": 3
+      },
+      "mode": "all",
+      "stage": "p1",
+      "workers": 32,
+      "root": {
+        "ordinal": 23
+      },
+      "timeout_s": 300,
+      "hotspots": false,
+      "must_exhaust": true,
+      "processor_affinity": "1"
+    },
+    {
+      "id": "root258-r23-before-cpu0-r2",
+      "variant": "before",
+      "case_file": "cases/medium258.json",
+      "node_count": 9,
+      "link_count": 14,
+      "profile": {
+        "splitter2": 5,
+        "splitter3": 1,
+        "merger2": 0,
+        "merger3": 3
+      },
+      "mode": "all",
+      "stage": "p1",
+      "workers": 32,
+      "root": {
+        "ordinal": 23
+      },
+      "timeout_s": 300,
+      "hotspots": false,
+      "must_exhaust": true,
+      "processor_affinity": "1"
+    },
+    {
+      "id": "root258-r23-before-cpu31-r1",
+      "variant": "before",
+      "case_file": "cases/medium258.json",
+      "node_count": 9,
+      "link_count": 14,
+      "profile": {
+        "splitter2": 5,
+        "splitter3": 1,
+        "merger2": 0,
+        "merger3": 3
+      },
+      "mode": "all",
+      "stage": "p1",
+      "workers": 32,
+      "root": {
+        "ordinal": 23
+      },
+      "timeout_s": 300,
+      "hotspots": false,
+      "must_exhaust": true,
+      "processor_affinity": "80000000"
+    },
+    {
+      "id": "root258-r23-before-cpu31-r2",
+      "variant": "before",
+      "case_file": "cases/medium258.json",
+      "node_count": 9,
+      "link_count": 14,
+      "profile": {
+        "splitter2": 5,
+        "splitter3": 1,
+        "merger2": 0,
+        "merger3": 3
+      },
+      "mode": "all",
+      "stage": "p1",
+      "workers": 32,
+      "root": {
+        "ordinal": 23
+      },
+      "timeout_s": 300,
+      "hotspots": false,
+      "must_exhaust": true,
+      "processor_affinity": "80000000"
+    },
+    {
+      "id": "root258-r23-integer-cpu0-r1",
+      "variant": "integer",
+      "case_file": "cases/medium258.json",
+      "node_count": 9,
+      "link_count": 14,
+      "profile": {
+        "splitter2": 5,
+        "splitter3": 1,
+        "merger2": 0,
+        "merger3": 3
+      },
+      "mode": "all",
+      "stage": "p1",
+      "workers": 32,
+      "root": {
+        "ordinal": 23
+      },
+      "timeout_s": 300,
+      "hotspots": false,
+      "must_exhaust": true,
+      "processor_affinity": "1"
+    },
+    {
+      "id": "root258-r23-integer-cpu0-r2",
+      "variant": "integer",
+      "case_file": "cases/medium258.json",
+      "node_count": 9,
+      "link_count": 14,
+      "profile": {
+        "splitter2": 5,
+        "splitter3": 1,
+        "merger2": 0,
+        "merger3": 3
+      },
+      "mode": "all",
+      "stage": "p1",
+      "workers": 32,
+      "root": {
+        "ordinal": 23
+      },
+      "timeout_s": 300,
+      "hotspots": false,
+      "must_exhaust": true,
+      "processor_affinity": "1"
+    },
+    {
+      "id": "root258-r23-integer-cpu31-r1",
+      "variant": "integer",
+      "case_file": "cases/medium258.json",
+      "node_count": 9,
+      "link_count": 14,
+      "profile": {
+        "splitter2": 5,
+        "splitter3": 1,
+        "merger2": 0,
+        "merger3": 3
+      },
+      "mode": "all",
+      "stage": "p1",
+      "workers": 32,
+      "root": {
+        "ordinal": 23
+      },
+      "timeout_s": 300,
+      "hotspots": false,
+      "must_exhaust": true,
+      "processor_affinity": "80000000"
+    },
+    {
+      "id": "root258-r23-integer-cpu31-r2",
+      "variant": "integer",
+      "case_file": "cases/medium258.json",
+      "node_count": 9,
+      "link_count": 14,
+      "profile": {
+        "splitter2": 5,
+        "splitter3": 1,
+        "merger2": 0,
+        "merger3": 3
+      },
+      "mode": "all",
+      "stage": "p1",
+      "workers": 32,
+      "root": {
+        "ordinal": 23
+      },
+      "timeout_s": 300,
+      "hotspots": false,
+      "must_exhaust": true,
+      "processor_affinity": "80000000"
+    },
+    {
+      "id": "root258-r23-variables-cpu0-r1",
+      "variant": "variables",
+      "case_file": "cases/medium258.json",
+      "node_count": 9,
+      "link_count": 14,
+      "profile": {
+        "splitter2": 5,
+        "splitter3": 1,
+        "merger2": 0,
+        "merger3": 3
+      },
+      "mode": "all",
+      "stage": "p1",
+      "workers": 32,
+      "root": {
+        "ordinal": 23
+      },
+      "timeout_s": 300,
+      "hotspots": false,
+      "must_exhaust": true,
+      "processor_affinity": "1"
+    },
+    {
+      "id": "root258-r23-variables-cpu0-r2",
+      "variant": "variables",
+      "case_file": "cases/medium258.json",
+      "node_count": 9,
+      "link_count": 14,
+      "profile": {
+        "splitter2": 5,
+        "splitter3": 1,
+        "merger2": 0,
+        "merger3": 3
+      },
+      "mode": "all",
+      "stage": "p1",
+      "workers": 32,
+      "root": {
+        "ordinal": 23
+      },
+      "timeout_s": 300,
+      "hotspots": false,
+      "must_exhaust": true,
+      "processor_affinity": "1"
+    },
+    {
+      "id": "root258-r23-variables-cpu31-r1",
+      "variant": "variables",
+      "case_file": "cases/medium258.json",
+      "node_count": 9,
+      "link_count": 14,
+      "profile": {
+        "splitter2": 5,
+        "splitter3": 1,
+        "merger2": 0,
+        "merger3": 3
+      },
+      "mode": "all",
+      "stage": "p1",
+      "workers": 32,
+      "root": {
+        "ordinal": 23
+      },
+      "timeout_s": 300,
+      "hotspots": false,
+      "must_exhaust": true,
+      "processor_affinity": "80000000"
+    },
+    {
+      "id": "root258-r23-variables-cpu31-r2",
+      "variant": "variables",
+      "case_file": "cases/medium258.json",
+      "node_count": 9,
+      "link_count": 14,
+      "profile": {
+        "splitter2": 5,
+        "splitter3": 1,
+        "merger2": 0,
+        "merger3": 3
+      },
+      "mode": "all",
+      "stage": "p1",
+      "workers": 32,
+      "root": {
+        "ordinal": 23
+      },
+      "timeout_s": 300,
+      "hotspots": false,
+      "must_exhaust": true,
+      "processor_affinity": "80000000"
+    },
+    {
+      "id": "root258-r23-combined-cpu0-r1",
+      "variant": "combined",
+      "case_file": "cases/medium258.json",
+      "node_count": 9,
+      "link_count": 14,
+      "profile": {
+        "splitter2": 5,
+        "splitter3": 1,
+        "merger2": 0,
+        "merger3": 3
+      },
+      "mode": "all",
+      "stage": "p1",
+      "workers": 32,
+      "root": {
+        "ordinal": 23
+      },
+      "timeout_s": 300,
+      "hotspots": false,
+      "must_exhaust": true,
+      "processor_affinity": "1"
+    },
+    {
+      "id": "root258-r23-combined-cpu0-r2",
+      "variant": "combined",
+      "case_file": "cases/medium258.json",
+      "node_count": 9,
+      "link_count": 14,
+      "profile": {
+        "splitter2": 5,
+        "splitter3": 1,
+        "merger2": 0,
+        "merger3": 3
+      },
+      "mode": "all",
+      "stage": "p1",
+      "workers": 32,
+      "root": {
+        "ordinal": 23
+      },
+      "timeout_s": 300,
+      "hotspots": false,
+      "must_exhaust": true,
+      "processor_affinity": "1"
+    },
+    {
+      "id": "root258-r23-combined-cpu31-r1",
+      "variant": "combined",
+      "case_file": "cases/medium258.json",
+      "node_count": 9,
+      "link_count": 14,
+      "profile": {
+        "splitter2": 5,
+        "splitter3": 1,
+        "merger2": 0,
+        "merger3": 3
+      },
+      "mode": "all",
+      "stage": "p1",
+      "workers": 32,
+      "root": {
+        "ordinal": 23
+      },
+      "timeout_s": 300,
+      "hotspots": false,
+      "must_exhaust": true,
+      "processor_affinity": "80000000"
+    },
+    {
+      "id": "root258-r23-combined-cpu31-r2",
+      "variant": "combined",
+      "case_file": "cases/medium258.json",
+      "node_count": 9,
+      "link_count": 14,
+      "profile": {
+        "splitter2": 5,
+        "splitter3": 1,
+        "merger2": 0,
+        "merger3": 3
+      },
+      "mode": "all",
+      "stage": "p1",
+      "workers": 32,
+      "root": {
+        "ordinal": 23
+      },
+      "timeout_s": 300,
+      "hotspots": false,
+      "must_exhaust": true,
+      "processor_affinity": "80000000"
+    },
+    {
+      "id": "root258-r7-before-cpu0-r1",
+      "variant": "before",
+      "case_file": "cases/medium258.json",
+      "node_count": 9,
+      "link_count": 14,
+      "profile": {
+        "splitter2": 5,
+        "splitter3": 1,
+        "merger2": 0,
+        "merger3": 3
+      },
+      "mode": "all",
+      "stage": "p1",
+      "workers": 32,
+      "root": {
+        "ordinal": 7
+      },
+      "timeout_s": 300,
+      "hotspots": false,
+      "must_exhaust": true,
+      "processor_affinity": "1"
+    },
+    {
+      "id": "root258-r7-before-cpu31-r1",
+      "variant": "before",
+      "case_file": "cases/medium258.json",
+      "node_count": 9,
+      "link_count": 14,
+      "profile": {
+        "splitter2": 5,
+        "splitter3": 1,
+        "merger2": 0,
+        "merger3": 3
+      },
+      "mode": "all",
+      "stage": "p1",
+      "workers": 32,
+      "root": {
+        "ordinal": 7
+      },
+      "timeout_s": 300,
+      "hotspots": false,
+      "must_exhaust": true,
+      "processor_affinity": "80000000"
+    },
+    {
+      "id": "root258-r7-integer-cpu0-r1",
+      "variant": "integer",
+      "case_file": "cases/medium258.json",
+      "node_count": 9,
+      "link_count": 14,
+      "profile": {
+        "splitter2": 5,
+        "splitter3": 1,
+        "merger2": 0,
+        "merger3": 3
+      },
+      "mode": "all",
+      "stage": "p1",
+      "workers": 32,
+      "root": {
+        "ordinal": 7
+      },
+      "timeout_s": 300,
+      "hotspots": false,
+      "must_exhaust": true,
+      "processor_affinity": "1"
+    },
+    {
+      "id": "root258-r7-integer-cpu31-r1",
+      "variant": "integer",
+      "case_file": "cases/medium258.json",
+      "node_count": 9,
+      "link_count": 14,
+      "profile": {
+        "splitter2": 5,
+        "splitter3": 1,
+        "merger2": 0,
+        "merger3": 3
+      },
+      "mode": "all",
+      "stage": "p1",
+      "workers": 32,
+      "root": {
+        "ordinal": 7
+      },
+      "timeout_s": 300,
+      "hotspots": false,
+      "must_exhaust": true,
+      "processor_affinity": "80000000"
+    },
+    {
+      "id": "root258-r7-variables-cpu0-r1",
+      "variant": "variables",
+      "case_file": "cases/medium258.json",
+      "node_count": 9,
+      "link_count": 14,
+      "profile": {
+        "splitter2": 5,
+        "splitter3": 1,
+        "merger2": 0,
+        "merger3": 3
+      },
+      "mode": "all",
+      "stage": "p1",
+      "workers": 32,
+      "root": {
+        "ordinal": 7
+      },
+      "timeout_s": 300,
+      "hotspots": false,
+      "must_exhaust": true,
+      "processor_affinity": "1"
+    },
+    {
+      "id": "root258-r7-variables-cpu31-r1",
+      "variant": "variables",
+      "case_file": "cases/medium258.json",
+      "node_count": 9,
+      "link_count": 14,
+      "profile": {
+        "splitter2": 5,
+        "splitter3": 1,
+        "merger2": 0,
+        "merger3": 3
+      },
+      "mode": "all",
+      "stage": "p1",
+      "workers": 32,
+      "root": {
+        "ordinal": 7
+      },
+      "timeout_s": 300,
+      "hotspots": false,
+      "must_exhaust": true,
+      "processor_affinity": "80000000"
+    },
+    {
+      "id": "root258-r7-combined-cpu0-r1",
+      "variant": "combined",
+      "case_file": "cases/medium258.json",
+      "node_count": 9,
+      "link_count": 14,
+      "profile": {
+        "splitter2": 5,
+        "splitter3": 1,
+        "merger2": 0,
+        "merger3": 3
+      },
+      "mode": "all",
+      "stage": "p1",
+      "workers": 32,
+      "root": {
+        "ordinal": 7
+      },
+      "timeout_s": 300,
+      "hotspots": false,
+      "must_exhaust": true,
+      "processor_affinity": "1"
+    },
+    {
+      "id": "root258-r7-combined-cpu31-r1",
+      "variant": "combined",
+      "case_file": "cases/medium258.json",
+      "node_count": 9,
+      "link_count": 14,
+      "profile": {
+        "splitter2": 5,
+        "splitter3": 1,
+        "merger2": 0,
+        "merger3": 3
+      },
+      "mode": "all",
+      "stage": "p1",
+      "workers": 32,
+      "root": {
+        "ordinal": 7
+      },
+      "timeout_s": 300,
+      "hotspots": false,
+      "must_exhaust": true,
+      "processor_affinity": "80000000"
+    },
+    {
+      "id": "root258-r23-before-cpu0-diagnostic",
+      "variant": "before",
+      "case_file": "cases/medium258.json",
+      "node_count": 9,
+      "link_count": 14,
+      "profile": {
+        "splitter2": 5,
+        "splitter3": 1,
+        "merger2": 0,
+        "merger3": 3
+      },
+      "mode": "all",
+      "stage": "p1",
+      "workers": 32,
+      "root": {
+        "ordinal": 23
+      },
+      "timeout_s": 360,
+      "hotspots": true,
+      "must_exhaust": true,
+      "processor_affinity": "1"
+    },
+    {
+      "id": "root258-r23-before-cpu31-diagnostic",
+      "variant": "before",
+      "case_file": "cases/medium258.json",
+      "node_count": 9,
+      "link_count": 14,
+      "profile": {
+        "splitter2": 5,
+        "splitter3": 1,
+        "merger2": 0,
+        "merger3": 3
+      },
+      "mode": "all",
+      "stage": "p1",
+      "workers": 32,
+      "root": {
+        "ordinal": 23
+      },
+      "timeout_s": 360,
+      "hotspots": true,
+      "must_exhaust": true,
+      "processor_affinity": "80000000"
+    },
+    {
+      "id": "root258-r23-variables-cpu0-diagnostic",
+      "variant": "variables",
+      "case_file": "cases/medium258.json",
+      "node_count": 9,
+      "link_count": 14,
+      "profile": {
+        "splitter2": 5,
+        "splitter3": 1,
+        "merger2": 0,
+        "merger3": 3
+      },
+      "mode": "all",
+      "stage": "p1",
+      "workers": 32,
+      "root": {
+        "ordinal": 23
+      },
+      "timeout_s": 360,
+      "hotspots": true,
+      "must_exhaust": true,
+      "processor_affinity": "1"
+    },
+    {
+      "id": "root258-r23-variables-cpu31-diagnostic",
+      "variant": "variables",
+      "case_file": "cases/medium258.json",
+      "node_count": 9,
+      "link_count": 14,
+      "profile": {
+        "splitter2": 5,
+        "splitter3": 1,
+        "merger2": 0,
+        "merger3": 3
+      },
+      "mode": "all",
+      "stage": "p1",
+      "workers": 32,
+      "root": {
+        "ordinal": 23
+      },
+      "timeout_s": 360,
+      "hotspots": true,
+      "must_exhaust": true,
+      "processor_affinity": "80000000"
+    }
+  ]
+}

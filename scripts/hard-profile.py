@@ -6,6 +6,7 @@ import hashlib
 import json
 from pathlib import Path
 import random
+import re
 import shutil
 import subprocess
 
@@ -32,6 +33,38 @@ def check_variant(directory):
     return hashes
 
 
+def affinity_mask(value):
+    if value is None:
+        return None
+    if not isinstance(value, str) or not re.fullmatch(r"[0-9a-fA-F]{1,16}", value):
+        raise ValueError("Processor affinity must be a hexadecimal mask string")
+    mask = int(value, 16)
+    if not 0 < mask < 2**63:
+        raise ValueError("Processor affinity mask must be nonzero and fit signed IntPtr")
+    return format(mask, "x")
+
+
+def validate_search_budget(manifest, schedule):
+    maximum = manifest.get("max_search_seconds", 40 * 60)
+    if type(maximum) is not int or not 0 < maximum <= 3 * 60 * 60:
+        raise ValueError("Search budget must be an integer from 1 to 10800 seconds")
+    if not schedule or sum(j["request"]["timeout_s"] for j in schedule) > maximum:
+        raise ValueError("Empty plan or search caps exceed the declared budget")
+
+
+def validate_affinity(job, metric):
+    requested = affinity_mask(job.get("processor_affinity"))
+    if requested is None:
+        if metric.get("affinity_requested"):
+            raise ValueError("Unexpected processor affinity control")
+        return
+    if metric.get("affinity_requested") != requested or metric.get("affinity_observed") != requested:
+        raise ValueError("Missing or changed processor affinity evidence")
+    applied = float(metric["affinity_applied_s"])
+    if not 0 <= applied <= float(metric["process_wall_s"]):
+        raise ValueError("Invalid processor affinity application time")
+
+
 def prepare(manifest_path, root):
     root = Path(root).resolve()
     manifest_path = Path(manifest_path).resolve()
@@ -56,6 +89,7 @@ def prepare(manifest_path, root):
     root_certificates = {}
     for original in manifest["jobs"]:
         job = dict(original)
+        affinity = affinity_mask(job.pop("processor_affinity", None))
         variant = job.pop("variant", None)
         variant_root = Path(variants[variant]) if variant is not None else None
         selected_binary = variant_root / "bin/profile_obligation.exe" if variant_root else binary
@@ -75,7 +109,7 @@ def prepare(manifest_path, root):
                                 "source_scope": saved["scope"], "source_sha256": digest(source)})
             executable = variant_root / "bin/profile_witness.exe" if variant_root else root / "bin/profile_witness.exe"
             schedule.append(dict(id=job_id, kind=kind, variant=variant, binary=str(executable),
-                                 request=job, request_file=str(replay_input), input_sha256=digest(replay_input)))
+                                 processor_affinity=affinity, request=job, request_file=str(replay_input), input_sha256=digest(replay_input)))
             continue
         if kind != "fixed_obligation":
             raise ValueError("Unknown workload kind")
@@ -128,13 +162,12 @@ def prepare(manifest_path, root):
                 raise ValueError("Duplicate job identity")
             write(request_file, request)
             schedule.append(dict(id=identity, kind=kind, variant=variant, binary=str(selected_binary), request_file=str(request_file),
-                                 request=request, problem=expected["problem"],
+                                 processor_affinity=affinity, request=request, problem=expected["problem"],
                                  expected_profiles=[profile] if expand else expected["profiles"]))
         probe.unlink()
     if len({j["id"] for j in schedule}) != len(schedule):
         raise ValueError("Duplicate job identity")
-    if not schedule or sum(j["request"]["timeout_s"] for j in schedule) > 40 * 60:
-        raise ValueError("Empty plan or search caps exceed 40 minutes")
+    validate_search_budget(manifest, schedule)
     random.Random(manifest.get("seed", 280826)).shuffle(schedule)
     write(root / "schedule.json", schedule)
     write(root / "manifest.json", manifest)
@@ -219,10 +252,12 @@ def verify(root):
     if any(row["watchdog_killed"].lower() != "false" or int(row["exit_code"]) != 0 for row in metrics):
         failures.append("Failed or killed process")
     summaries = []
+    metrics_by_id = {row["id"]: row for row in metrics}
     replays = defaultdict(list)
     comparisons = defaultdict(list)
     for job in schedule:
         try:
+            validate_affinity(job, metrics_by_id[job["id"]])
             if job.get("variant") is not None:
                 example = "profile_witness.exe" if job.get("kind") == "witness_replay" else "profile_obligation.exe"
                 expected_binary = Path(variants[job["variant"]]) / "bin" / example
@@ -247,6 +282,7 @@ def verify(root):
             for rec in result["activity"]["records"]:
                 spans[rec["kind"]].append((rec["end_ns"] - rec["start_ns"]) / 1e9)
             summaries.append(dict(id=job["id"], variant=job.get("variant"), scope=result["scope"], request=job["request"], status=result["status"],
+                processor_affinity=job.get("processor_affinity"),
                 wall_s=result["wall_s"], profiles=profiles, hotspots=result["hotspots"],
                 trace_dropped=result["activity"]["dropped"],
                 phase_s={k:dict(count=len(v), sum=sum(v), maximum=max(v)) for k,v in spans.items()}))

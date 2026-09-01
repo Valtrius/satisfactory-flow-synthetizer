@@ -1,6 +1,6 @@
 # solver/core
 
-Updated 2026-09-01.
+Updated 2026-09-02.
 Full status: `mem:solver/status`.
 
 ## Objective
@@ -32,16 +32,21 @@ dedup (33), N≤9 p1 guard (18).
 
 - Scheduler extras (sharing, donation, parallel remaining groups) remain paused.
 - Sparse substitution closed after exp 38; canonicalization profiling resumed.
-- Exp 41 integer rows `cd46fae` and exp 42 complete variables `520b352` remain
-  active committed candidates, not permanent. All 36 factorial runs completed and
-  verified exactly. Variables improve repeated 115/238 wall 1.15%/4.10%; integer
-  effects are mixed. A single 258 variable-only run regresses wall 22.46% and CPU
-  9.51% despite identical structural work. Do not discard it or declare a distribution.
-- User approved the focused 258 follow-up. Its ten-job plan, reused binary/source
-  hashes, tooling tests and diagnostic smoke checks pass; ready to launch.
-  Follow-up: `mem:solver/experiments/42-258-confirmation`. Scheduler remains paused.
-- Results: `mem:solver/experiments/42-complete-propagation-variable-set-results`.
-  Pending work: `mem:solver/active`. Analysis memory updates are uncommitted.
+- Integer rows `cd46fae` and complete variables `520b352` remain active committed
+  candidates, not permanent. All 46 factorial/follow-up records verify exactly.
+- Pooled 258 n=3 medians regress for all candidates: wall +22.46 to +27.38%,
+  CPU +7.84 to +10.03%. The reference itself ranges 195.5-268.2s; do not dismiss
+  adverse samples or infer causality. Two roots own the final ~108s search tail;
+  cleanup on either longest root is under 0.6s. Variable collection falls 82.30%
+  in one diagnostic, without a whole-solve improvement.
+  Results: `mem:solver/experiments/42-258-confirmation-results`.
+- User authorized expanded AFK testing. Experiment 43's 28-job isolated-root
+  factorial fixes CPU affinity to logical CPU 0 or 31 while preserving the original
+  p1/32, target-128, 76-key root plan. Compare variants within each CPU.
+  Validated; preparing launch. No production solver or scheduler edits.
+  Record: `mem:solver/experiments/43-root258-affinity`.
+- Live handoff: `mem:solver/active`. Tooling/manifest/results updates pending commit.
+  No promotion or push.
 
 ## When to read more
 

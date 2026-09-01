@@ -1,6 +1,6 @@
 # Current decisions and handoff
 
-Updated 2026-09-01. Hot path: `mem:critical_info` → `mem:solver/core`.
+Updated 2026-09-02. Hot path: `mem:critical_info` → `mem:solver/core`.
 Historical records: `mem:solver/experiments/index`.
 
 ## Objective
@@ -260,32 +260,30 @@ is not permanent. The completed-control repeat is now analyzed in experiment 42:
 integer rows remain mixed, with 115 wall +1.47% and 238 -2.32%. Do not rerun capped
 work. Fresh matched data is primary; cross-build pooling is only exploratory.
 
-Experiment 42 (`mem:solver/experiments/42-complete-propagation-variable-set-results`)
-verifies all 36 factorial jobs in 25.973 process minutes. No caps, kills or failures.
-All exact outcomes/proofs, full solution objects and 15 structural counters match;
-280 source hashes and all four binaries verify. Summary rerun is byte-identical.
+Experiment 42's original 36 factorial records and ten focused follow-ups all verify.
+See `mem:solver/experiments/42-258-confirmation-results` for pooled timing,
+binary/source identities, exact solutions/proofs and structural counters.
+The three-sample 258 reference median is 198.178s (range 195.515-268.175s).
+Integer/variables/combined medians are 252.431/242.696/251.305s: 27.38/22.46/26.81%
+slower, with median CPU 7.84/9.51/10.03% higher. Keep every sample; the reference
+variation prevents an isolated causal claim. Neither candidate is permanent.
 
-Complete-variable discovery in isolation improves repeated 115/238 wall medians
-1.15%/4.10% and process CPU 1.37%/3.66%. Integer-only wall improves 115 by 1.47%
-but slows 238 by 2.32%; the combined wall is +1.23%/-0.18% versus reference.
-The new 258 minimum_links case proves N=9/L=14 with two identical layouts in every
-variant. Single times are reference 198.178s, integer 177.753s, variables 242.696s,
-combined 190.015s. The variable-only CPU also rises 9.51%, so its adverse sample is
-not discarded despite cheaper aggregate algebra/canonical timers.
+Two diagnostics establish roots 23 and 7 as the search tail: only these remain for
+the final ~108s. Their search spans are 255-266s, finish spans under 0.6s. Witness
+canonicalization totals ~0.01s. Complete variables cut aggregate variable collection
+27.384 to 4.846s (82.30%) with equal structural work, but this is not a whole gain.
 
-258 drops from about 30 busy cores to two as threads exit, before solver completion.
-This is consistent with remaining-root imbalance, but does not identify the costly
-function or prove a scheduler fix. Process exit adds only 0.082-0.098s.
-Memory remains outside the promotion gate. No scheduler change.
-
-Keep both `cd46fae` and `520b352` as active candidates, not permanent. Recommend
-two more 258 samples per variant plus separate reference/variable hotspot profiles.
-The user approved a focused ten-job follow-up, ready to launch after validation.
-Eight hotspot-off repeats and two separately labelled diagnostics reuse all four
-original binaries. Plan, all 34 tooling tests and two diagnostic smoke checks pass.
-Details: `mem:solver/experiments/42-258-confirmation`; live state: `mem:solver/active`.
-No solver edits, rebuild or promotion. Tooling `4de03bc`, preparation `f0dca96`;
-analysis/follow-up memory updates are not yet committed. No push.
+Experiment 43 (`mem:solver/experiments/43-root258-affinity`) is validated and preparing
+launch under the user's expanded AFK authorization. Twenty-eight sequential jobs
+compare four variants on the original selected roots, pinned separately to logical
+CPU 0/31, with independent diagnostics. Preserve p1/32 planning: target 128 and the
+same ordered 76-key identity. Serial replay is selected-root proof only.
+All 37 runner/analyzer tests, four frozen builds, the 28-job plan, four real
+affinity/cancellation smokes and four completed tiny exact controls pass.
+Search caps total 144min; cleanup allowances add 28min, plus minor overhead.
+CPU placement sensitivity remains a hypothesis; no CCD/cache mapping is claimed.
+No production or scheduler edits. Tooling/manifest/results memories pending commit;
+live state: `mem:solver/active`. No promotion or push.
 
 Experiment 33 validation: 181 default and 186 benchmark-feature solver-core library
 tests pass, with two ignored in each configuration. The exhaustive Reference and four

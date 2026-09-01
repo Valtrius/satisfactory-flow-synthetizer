@@ -130,6 +130,22 @@ The legacy named-case ladder remains available for full matrices and tiny cases.
 The launcher can also alternate preserved/current `profile_witness` binaries over
 a saved validated witness, verify equal keys/counts and test interrupted replay.
 
+## Fixed-work CPU affinity and longer screens
+
+Experiment 43 adds optional `processor_affinity` hexadecimal strings to fixed-work
+manifest job envelopes (not solver requests). The runner validates available CPUs,
+sets only the launched child's mask, checks it, and records requested/observed masks
+plus `affinity_applied_s`. Verification rejects missing/mismatched evidence.
+Affinity is set after launch; initial setup/search may precede application. Compare
+same-mask timings and report application delays. Do not infer CCD/cache topology
+from logical CPU numbers. No production scheduling policy changes.
+Summaries retain affinity labels; exact-result comparison still spans all placements.
+
+Fixed-work manifests keep a default 2400s total search-cap limit. An explicit
+`max_search_seconds` integer may raise it up to 10800s. Cleanup watchdog grace is
+additional: budget 60s per job when reporting a worst-case duration.
+Hotspot-on diagnostics never enter hotspot-off timing medians.
+
 ## Verification and interpretation
 
 Reference jobs must complete and preserve exact results. `--allow-incomplete`
