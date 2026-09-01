@@ -34,7 +34,10 @@ dedup (33), N≤9 p1 guard (18).
 - Sparse substitution closed after exp 38; canonicalization profiling resumed.
 - Exp 41 (primitive integer inequality rows): committed candidate, not permanent;
   mixed whole medians; repeat completed controls.
-- Exp 42: see `mem:solver/active`.
+- Exp 42: complete propagation variable set is committed as candidate `520b352`;
+  factorial tooling is `4de03bc`. Correctness/tooling validation, four
+  isolated builds and 12 three-mode exact smoke jobs passed. No benchmark result or promotion yet.
+  See `mem:solver/active` for launch state; all further handoff lives in Serena.
 
 ## When to read more
 

@@ -37,11 +37,11 @@ cap limits the largest N, not the starting N. The N<=10 cyclic10 attempt was bel
 its lower bound and did no search. Before SAT, duplicate all-mode runs can repeat
 the same proof work without exercising remaining-group concurrency.
 
-The [prefix protocol](experiments/15-prefix-workloads.md) adds `scope: selected_prefix`.
+The prefix protocol (`mem:solver/experiments/15-prefix-workloads`) adds `scope: selected_prefix`.
 Its certificate includes frontier keys, decisions and the selected path. Compare
 only identical certificates; nested prefixes must not be added as disjoint work.
 Search wall time excludes separately recorded preparation; process time includes it.
-The [adaptive-root protocol](experiments/21-adaptive-root-profiling.md) instead
+The adaptive-root protocol (`mem:solver/experiments/21-adaptive-root-profiling`) instead
 freezes the full ordered production partition-key plan and one ordinal, then reports
 `scope: selected_root`. Its exhaustion applies only to that root. Root recipes require
 one profile and p1; prefix and root selections are mutually exclusive.
@@ -71,21 +71,21 @@ patches merely to reproduce old timings.
 
 ## Running a screen
 
-The [38-job follow-up](experiments/16-post-calculation-screen.md) combines prefix
+The 38-job follow-up (`mem:solver/experiments/16-post-calculation-screen`) combines prefix
 discovery with whole p1/p14 timing and repeated hard optimal. It preserves one
-completion/failure signal after both phases. [Results](experiments/16-post-calculation-results.md)
+completion/failure signal after both phases. Results (`mem:solver/experiments/16-post-calculation-results`)
 pass after a reference-selection fix; all hard prefixes capped, so discovery must
 go deeper before another repeated prefix comparison.
 
-The verified [calculation comparison](experiments/13-calculation-screen.md) freezes
+The verified calculation comparison (`mem:solver/experiments/13-calculation-screen`) freezes
 four cumulative variants and runs fixed-work/replay then whole optimal/all phases
 sequentially. `start-hard-profile.ps1 -PlanOnly` validates without launching.
-[Results](experiments/13-calculation-results.md) cover 80 jobs. The complete 36
+Results (`mem:solver/experiments/13-calculation-results`) cover 80 jobs. The complete 36
 N=9/L=12 group is now another bounded reference, not a full enumeration reference.
 
-For exact N/L/profile diagnostics, use the separate [fixed-work protocol](experiments/12-hard-obligation-profiling.md).
+For exact N/L/profile diagnostics, use the separate fixed-work protocol (`mem:solver/experiments/12-hard-obligation-profiling`).
 Its `best` mode is profile-local; keep it separate from whole `optimal` solve results.
-The [verified hard results](experiments/12-hard-obligation-results.md) supply four
+The verified hard results (`mem:solver/experiments/12-hard-obligation-results`) supply four
 complete 36 profile controls and identify which 10 profile still requires a cap.
 
 Do not build/test concurrently with timing runs. Use a separate Cargo target
@@ -103,9 +103,14 @@ It displays completion/failure and writes authoritative `BENCHMARK-STATUS.txt`
 plus `BENCHMARK-FINISHED.txt` or `BENCHMARK-FAILED.txt`. Current job status is under
 `results/`. Keep the machine awake; end the agent turn after launch.
 
-File-manifest jobs accept `Variant: before|after`, default `after`. Before jobs
-require a compatible `profile_case.exe` in `ReferenceBinaryDirectory`. They do not
-implicitly duplicate every expensive job. Per-job `Hotspots` may be `on` or `off`.
+File-manifest jobs default to `Variant: after`. Legacy `before` jobs require a
+compatible `profile_case.exe` in `ReferenceBinaryDirectory`. For factorial comparisons,
+use `-VariantBinaryMap path/to/variants.json` with a JSON object mapping variant names
+to directories containing `profile_case.exe`; paths resolve relative to the map.
+Names accept letters, digits, `_` and `-`. Do not combine this option with
+`ReferenceBinaryDirectory`. Keep the exact reference named `before`. The launcher
+freezes all mapped binaries, sibling `solver-source` trees and `metadata.json` files.
+No option implicitly duplicates expensive jobs. Per-job `Hotspots` may be `on` or `off`.
 Every job writes `<job>.process-samples.csv` with cumulative process CPU, working set,
 and thread count at one-second intervals. This sampling reuses the runner's existing
 process polling and does not enable solver hotspot instrumentation. Use CPU deltas
@@ -117,7 +122,7 @@ alias failure and relaunch into a new directory; never rewrite its failure marke
 Named profiler positional arguments are:
 
 ```text
-timeout-seconds workers max-nodes engine stage output-json all|optimal on|off
+timeout-seconds workers max-nodes engine stage output-json all|minimum_links|optimal on|off
 ```
 
 `profile_case` additionally takes a case JSON path as argument nine.
@@ -173,3 +178,13 @@ experiment 08 for exact logs. After that run, isolated commit `92b111c` passed
 194 solver-core library/integration/example tests, two ignored, strict solver-core
 Clippy and 22 tooling tests in a separate target directory. See status (`mem:solver/status`)
 for logs and scope. Run tests only after timing jobs have finished.
+
+## Windows isolated-build path pitfall
+
+Experiment 42 hit bundled Z3 CMake/PDB failures with targets nested under the long
+benchmark/source path. Preserve failed directories, then use a fresh short target
+such as `C:/Users/jakez/.codex/tmp/sfv42-20260901-a/bvs` and VS2019's
+`VsDevCmd.bat -arch=amd64` with the default Visual Studio generator. Ninja is not a
+working substitute here: z3-src passes the MSBuild-only `-m` flag. Keep targets
+separate per variant. Record the main working directory's ignored Cargo configuration,
+compiler versions, source hashes and final binary hashes in the frozen metadata.

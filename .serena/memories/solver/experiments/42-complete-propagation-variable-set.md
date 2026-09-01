@@ -69,8 +69,9 @@ Evidence: `target/parallelism-ladder/registered-variable-combined-smoke.json`,
 `target/parallelism-ladder/factorial-plan-check-20260901-a`, and
 `target/parallelism-ladder/named-factorial-smoke-20260901`.
 
-Candidate implementation and this record: `520b352`. Benchmark infrastructure is
-separate and not yet committed in this state.
+Candidate implementation: `520b352`. Benchmark infrastructure: `4de03bc`.
+Both are committed locally; this turn has not pushed. The docs were migrated to Serena
+by `4a9b28d`/`81116c4`; no docs folder is maintained.
 
 ## Factorial screen
 
@@ -105,8 +106,67 @@ instrumentation.
 Make the complete-variable path permanent if all exact checks pass and repeated
 completed CPU or wall medians are neutral or faster without a consistent regression.
 The removed work is provably redundant, so a small repeatable gain is enough. Judge
-the integer-row candidate under experiment 41's existing combined seven-sample gate.
+the integer-row candidate on the four fresh matched samples first. The three earlier
+samples are secondary evidence: the rebuild produces different executable hashes and
+this runner adds process-sample recording. Pool to seven only if source, build settings,
+request and sampling comparability checks support it.
 If both pass, require the combined variant to preserve exact results and avoid a
 credible interaction regression. Scheduling remains paused.
 
 Do not infer a result until the detached runner and frozen analyzer finish.
+
+## Frozen-build preparation and failures
+
+Variant root: `target/parallelism-ladder/registered-variable-factorial-variants-20260901-a`.
+`before` archives `90df7e2`; `integer` archives `cd46fae`; `variables` archives
+`90df7e2` with committed `520b352` sparse.rs/propagation.rs overlaid; `combined`
+archives `520b352`. Each has a separate Cargo target and frozen source tree.
+
+The initial long-path bundled Z3 builds failed before producing solver binaries.
+Default VS and a VsDevCmd retry reported no usable C++ compiler. A Ninja retry
+identified the installed compiler but hit a PDB/path-length error (263-character
+CMake object directory). Short-path Ninja then rejected z3-src's MSBuild `-m` option.
+The successful recipe uses short targets under
+`C:/Users/jakez/.codex/tmp/sfv42-20260901-a/{bvs,ivs,vvs,cvs}`, VS2019's
+`VsDevCmd.bat -arch=amd64`, and the default Visual Studio generator. VS2019 is
+installed; do not describe it as missing. No source workaround or evidence deletion.
+
+Rust 1.96.0, x86_64-pc-windows-msvc; MSVC 19.29.30159. Builds run from the main
+repository so its ignored `.cargo/config.toml` supplies target-cpu=znver4 and
+C/C++ `/O2 /Ob2 /Oi /Ot /arch:AVX512`. All four variants use the same settings.
+The first named-variant smoke used one combined executable under four names; it
+validated the runner only. A final smoke must use all four actual frozen binaries.
+
+## Final prelaunch verification
+
+All four isolated release builds succeeded. SHA-256:
+
+| Variant   | profile_case.exe                                                 |
+| --------- | ---------------------------------------------------------------- |
+| before    | 8b2dd2768976469ba74617cf5e0d31e72324cf2b41e831f8473777dc837d2ea2 |
+| integer   | 208a62f389289e54cd50e501dbaf8e2bf12e5cf37d1858da3c3ff5f16dc682b8 |
+| variables | b19b601f29e8f9bed6b3427a89152c376466ab68408e0b201d87ad384f594acf |
+| combined  | a9d7959021059a75fa07626c465dd95bed1730713812d303877719fdcc3e638c |
+
+Per-variant metadata includes compiler/configuration, all 70 crate/workspace file
+hashes, source revision/overlay, and executable identity. Pairwise hashes prove only
+canonical.rs differs for integer rows, and only algebra/sparse.rs + propagation.rs
+differ for complete variables. Evidence: variant root's `verified-source-differences.json`,
+`binary-identities.json`, and each `metadata.json`.
+
+All 12 actual frozen-binary tiny jobs pass exact analyzer verification across
+optimal, minimum_links and all. Evidence:
+`target/parallelism-ladder/frozen-factorial-smoke-20260901` and
+`target/parallelism-ladder/frozen-factorial-smoke-summary-20260901.json`.
+The earlier same-binary smoke is not the evidence for this result.
+
+A separate two-second 258 startup/cancellation smoke reaches N=9/L=14, then returns
+Incomplete(Cancelled) with the deadline fired. It confirms the case parses exactly,
+starts substantive search under N<=12, and cancels; it proves neither optimum nor
+completion speed. Evidence: `target/parallelism-ladder/medium258-start-smoke-20260901.{json,log}`.
+
+Ready to launch, not yet running. Planned output:
+`target/parallelism-ladder/registered-variable-factorial-20260901`.
+36 jobs, seed 270826, per-job cancellation grace 60 seconds. Expect completed
+reference-class workloads; a cap is incomplete and cannot support a completion gain.
+At the user's observed 258 timing, allow roughly 30–35 minutes; this is only an estimate.

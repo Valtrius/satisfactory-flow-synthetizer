@@ -43,6 +43,12 @@ Record dates follow the analysis chronology, not necessarily every run's start t
 | 32 (`mem:solver/experiments/32-weighted-sparse-quotient`)          | 2026-08-31    | Can exact weighted representatives reduce sparse elimination work?                        | Rejected; 115 improves, but 36/238 regress and sparse passes cost 6.79% more        |
 | 33 (`mem:solver/experiments/33-sparse-row-deduplication`)          | 2026-08-31    | Do identical normalized equations add avoidable sparse elimination work?                  | Rejected; zero duplicates across 164M hard input-row instances                      |
 
+## Active follow-up
+
+42 (`mem:solver/experiments/42-complete-propagation-variable-set`): candidate `520b352`,
+runner `4de03bc`; validation, four isolated builds and 12 three-mode exact smoke
+jobs passed. 36-job factorial ready, not launched yet. Build failures are preserved. No promotion decision yet.
+
 ## How the diagnosis changed
 
 1. Early parallelism results favored larger frontiers and overlapping groups.
