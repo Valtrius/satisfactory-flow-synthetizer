@@ -1,6 +1,6 @@
 # 41. Primitive integer inequality row results
 
-Date: 2026-09-01. State: inconclusive; repeat recommended.
+Date: 2026-09-01. State: inconclusive; factorial repeat analyzed, focused 258 follow-up recommended.
 Related: experiment design (`mem:solver/experiments/41-primitive-integer-inequality-rows`).
 
 ## Verification
@@ -54,3 +54,14 @@ gives seven samples per variant without spending more time on capped work. Promo
 the combined CPU or canonicalization medians favor the candidate on both workloads
 without a credible wall regression; otherwise restore the rational representation.
 Scheduling stays paused.
+
+## Follow-up in experiment 42
+
+`mem:solver/experiments/42-complete-propagation-variable-set-results` verifies all
+36 fresh factorial jobs. Integer-only wall improves 115 by 1.47% and slows 238 by
+2.32%. Canonical medians improve 1.98% and 1.27%, but 238 process CPU is 0.82%
+higher. Its single 258 completion is 10.31% faster; one sample cannot establish
+that gain. The combined candidate loses the variable-only 238 wall advantage.
+Keep the committed integer candidate active, not permanent, until focused 258
+repeats and diagnostics resolve the conflicting whole-solve observations. Fresh
+matched results are primary; older/newer pooled timings lack verified build equivalence.

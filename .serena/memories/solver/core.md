@@ -32,12 +32,16 @@ dedup (33), N≤9 p1 guard (18).
 
 - Scheduler extras (sharing, donation, parallel remaining groups) remain paused.
 - Sparse substitution closed after exp 38; canonicalization profiling resumed.
-- Exp 41 (primitive integer inequality rows): committed candidate, not permanent;
-  mixed whole medians; repeat completed controls.
-- Exp 42: complete propagation variable set is committed as candidate `520b352`;
-  factorial tooling is `4de03bc`. Correctness/tooling validation, four
-  isolated builds and 12 three-mode exact smoke jobs passed. No benchmark result or promotion yet.
-  See `mem:solver/active` for launch state; all further handoff lives in Serena.
+- Exp 41 integer rows `cd46fae` and exp 42 complete variables `520b352` remain
+  active committed candidates, not permanent. All 36 factorial runs completed and
+  verified exactly. Variables improve repeated 115/238 wall 1.15%/4.10%; integer
+  effects are mixed. A single 258 variable-only run regresses wall 22.46% and CPU
+  9.51% despite identical structural work. Do not discard it or declare a distribution.
+- User approved the focused 258 follow-up. Its ten-job plan, reused binary/source
+  hashes, tooling tests and diagnostic smoke checks pass; ready to launch.
+  Follow-up: `mem:solver/experiments/42-258-confirmation`. Scheduler remains paused.
+- Results: `mem:solver/experiments/42-complete-propagation-variable-set-results`.
+  Pending work: `mem:solver/active`. Analysis memory updates are uncommitted.
 
 ## When to read more
 

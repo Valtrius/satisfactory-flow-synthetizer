@@ -256,25 +256,36 @@ bytes. Two seven-round isolated release measurements improve by 9.49% and 10.02%
 disjoint before/after ranges. All 16 whole records
 verify (`mem:solver/experiments/41-primitive-integer-inequality-rows-results`), but 115 improves
 slightly while 238 regresses slightly in overlapping ranges. The committed candidate
-is not permanent. Repeat the two completed controls to reach seven samples per variant;
-do not rerun capped work. Scheduling stays paused.
+is not permanent. The completed-control repeat is now analyzed in experiment 42:
+integer rows remain mixed, with 115 wall +1.47% and 238 -2.32%. Do not rerun capped
+work. Fresh matched data is primary; cross-build pooling is only exploratory.
 
-Experiment 42 (`mem:solver/experiments/42-complete-propagation-variable-set`) implements an
-independent propagation candidate. It trusts the authoritative sorted registered-port
-set instead of rebuilding a `BTreeSet` and rescanning every sparse row. Debug builds
-verify the completeness contract; the defensive public algebra path remains. Current
-profiles put 6.24-15.32% of sparse time in variable collection. A 36-job factorial
-screen will repeat experiment 41, isolate this path, test the combined candidate, and
-add one `258 = 195+63` minimum-link sample per variant. Solver-core, exhaustive
-Reference, parallelism, workspace, strict Clippy, analyzer, formatting, release,
-plan, and named-variant smoke checks pass. The factorial screen is not yet launched.
-The candidate is committed in `520b352`; benchmark infrastructure is `4de03bc`.
-All four separate source builds and 12 actual-binary smoke jobs (three modes) pass.
-The new 258 case starts at N=9 under the cap and cancels cleanly in a startup smoke.
-Build-path failures, working short-target VS2019 recipe and all identities are in
-experiment 42. Neither commit was pushed
-by this turn.
-Scheduling stays paused.
+Experiment 42 (`mem:solver/experiments/42-complete-propagation-variable-set-results`)
+verifies all 36 factorial jobs in 25.973 process minutes. No caps, kills or failures.
+All exact outcomes/proofs, full solution objects and 15 structural counters match;
+280 source hashes and all four binaries verify. Summary rerun is byte-identical.
+
+Complete-variable discovery in isolation improves repeated 115/238 wall medians
+1.15%/4.10% and process CPU 1.37%/3.66%. Integer-only wall improves 115 by 1.47%
+but slows 238 by 2.32%; the combined wall is +1.23%/-0.18% versus reference.
+The new 258 minimum_links case proves N=9/L=14 with two identical layouts in every
+variant. Single times are reference 198.178s, integer 177.753s, variables 242.696s,
+combined 190.015s. The variable-only CPU also rises 9.51%, so its adverse sample is
+not discarded despite cheaper aggregate algebra/canonical timers.
+
+258 drops from about 30 busy cores to two as threads exit, before solver completion.
+This is consistent with remaining-root imbalance, but does not identify the costly
+function or prove a scheduler fix. Process exit adds only 0.082-0.098s.
+Memory remains outside the promotion gate. No scheduler change.
+
+Keep both `cd46fae` and `520b352` as active candidates, not permanent. Recommend
+two more 258 samples per variant plus separate reference/variable hotspot profiles.
+The user approved a focused ten-job follow-up, ready to launch after validation.
+Eight hotspot-off repeats and two separately labelled diagnostics reuse all four
+original binaries. Plan, all 34 tooling tests and two diagnostic smoke checks pass.
+Details: `mem:solver/experiments/42-258-confirmation`; live state: `mem:solver/active`.
+No solver edits, rebuild or promotion. Tooling `4de03bc`, preparation `f0dca96`;
+analysis/follow-up memory updates are not yet committed. No push.
 
 Experiment 33 validation: 181 default and 186 benchmark-feature solver-core library
 tests pass, with two ignored in each configuration. The exhaustive Reference and four

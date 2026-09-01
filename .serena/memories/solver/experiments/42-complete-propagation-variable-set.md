@@ -1,6 +1,7 @@
 # 42. Complete propagation variable set
 
-Date: 2026-09-01. State: validated; factorial screen pending.
+Date: 2026-09-01. State: analyzed; candidates retained, not promoted.
+Results: `mem:solver/experiments/42-complete-propagation-variable-set-results`.
 Related: primitive integer rows (`mem:solver/experiments/41-primitive-integer-inequality-rows`).
 
 ## Question and measured basis
@@ -165,8 +166,33 @@ Incomplete(Cancelled) with the deadline fired. It confirms the case parses exact
 starts substantive search under N<=12, and cancels; it proves neither optimum nor
 completion speed. Evidence: `target/parallelism-ladder/medium258-start-smoke-20260901.{json,log}`.
 
-Ready to launch, not yet running. Planned output:
+Completed and analyzed. Historical launch output:
 `target/parallelism-ladder/registered-variable-factorial-20260901`.
 36 jobs, seed 270826, per-job cancellation grace 60 seconds. Expect completed
 reference-class workloads; a cap is incomplete and cannot support a completion gain.
 At the user's observed 258 timing, allow roughly 30–35 minutes; this is only an estimate.
+
+## Launch and handoff
+
+Started 2026-09-01 22:36:47 Europe/Paris (20:36:47 UTC), runner PID 48724.
+Launcher validated all 36 jobs and froze binaries, all four source trees/metadata,
+manifest, case inputs and scripts under `target/parallelism-ladder/registered-variable-factorial-20260901`.
+At the launch check, job 1/36 was running and runner stderr was empty. No result is
+inferred from that observation. Completion/failure dialog is enabled; authoritative
+files are `BENCHMARK-STATUS.txt`, `BENCHMARK-FINISHED.txt` or `BENCHMARK-FAILED.txt`;
+`results/BENCHMARK-STATUS.txt` records the current job.
+
+Serena preparation committed as `f0dca96`. Launch-state updates follow that commit
+and are not yet committed; no push this turn. No builds/tests are running alongside
+the screen. Scheduler remains unchanged.
+
+A final working-tree/raw-hash assertion initially found 41 mismatches: every one
+was CRLF versus the LF git archive. CRLF-normalized comparison of all 70 files has
+zero differences. Evidence: variant root's `working-source-comparison.json`.
+Frozen-to-frozen comparisons and binary checks retain exact byte hashes.
+
+Result: all 36 records complete and verify exactly. Repeated controls show small
+mixed gains; the new 258 variable-only sample is 22.46% slower despite identical
+structural work. Both changes remain candidates pending focused 258 repeats and
+separate diagnostics. Full analysis and next steps:
+`mem:solver/experiments/42-complete-propagation-variable-set-results`.

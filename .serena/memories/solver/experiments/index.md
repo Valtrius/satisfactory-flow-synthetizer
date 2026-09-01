@@ -45,9 +45,13 @@ Record dates follow the analysis chronology, not necessarily every run's start t
 
 ## Active follow-up
 
-42 (`mem:solver/experiments/42-complete-propagation-variable-set`): candidate `520b352`,
-runner `4de03bc`; validation, four isolated builds and 12 three-mode exact smoke
-jobs passed. 36-job factorial ready, not launched yet. Build failures are preserved. No promotion decision yet.
+42 (`mem:solver/experiments/42-complete-propagation-variable-set-results`): all
+36 factorial records complete and verify. Variables improve 115/238 controls but
+one 258 sample regresses 22.46%; integer/combined results are mixed. Both remain
+candidates. Focused 258 repeats and diagnostics are now approved and validated,
+ready to launch. Follow-up: `mem:solver/experiments/42-258-confirmation`.
+Handoff: `mem:solver/active`. Candidate `520b352`, runner `4de03bc`,
+preparation `f0dca96`; analysis memory updates remain uncommitted.
 
 ## How the diagnosis changed
 
@@ -196,6 +200,9 @@ jobs passed. 36-job factorial ready, not launched yet. Build failures are preser
     repeated sparse-row variable discovery when propagation supplies its authoritative
     sorted registered-port set. A 36-job four-variant screen separates this candidate
     from integer inequality rows and adds a longer 258 minimum-link control.
+    Results (`mem:solver/experiments/42-complete-propagation-variable-set-results`)
+    verify all 36 completions but expose a 22.46% adverse variable-only 258 sample.
+    Retain candidates pending focused repeats; no scheduler change.
 
 ## Evidence conventions
 

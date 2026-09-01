@@ -1,32 +1,37 @@
 # solver/active
 
-Experiment: 42 — complete propagation variable set
-Record: `mem:solver/experiments/42-complete-propagation-variable-set`
-Related: `mem:solver/experiments/41-primitive-integer-inequality-rows`
-Manifest: `benchmarks/custom/registered-variable-factorial.json`
-Candidate commit: `520b352`; benchmark infrastructure: `4de03bc`. No push this turn.
+Experiment 42 focused follow-up. Validated; ready to launch.
+Record: `mem:solver/experiments/42-258-confirmation`.
+Prior results: `mem:solver/experiments/42-complete-propagation-variable-set-results`.
 
-## Status
+## Question and scope
 
-Ready to launch; not yet running. All four isolated builds and 12 actual-binary
-smoke jobs across three modes pass. 258 startup/cancellation smoke passes (N=9/L=14).
-All identities, build-path failures and validation are recorded in experiment 42.
+The user approved eight more 258 minimum_links timing jobs, two per frozen variant,
+and two separate reference/complete-variable diagnostic jobs. No solver or scheduler
+change; no rebuild. Both optimizations remain active committed candidates.
+Timing aliases/repeats match the original run, reaching n=3 per variant afterward.
+Diagnostics use `medium258_diagnostic` and must not enter ordinary timing medians.
 
-## Question and screen
+Manifest: `benchmarks/custom/registered-variable-258-confirmation.json`.
+p1/32, N<=12, max link rate 1200, 600s solver cap, 60s cleanup watchdog, seed 270826.
+Expected full result: N=9/L=14, two identical layouts. No speed claims before completion.
 
-Can propagation skip rediscovering its complete sorted registered-port set? Compare
-`before` | `integer` | `variables` | `combined` in 36 randomized fresh processes,
-p1/32, hotspots off: four repeats each on 115 all (120s) and 238 optimal (60s), plus one
-`258 = 195+63` minimum_links (600s) per variant. N<=12; max link rate 1200;
-seed 270826; cancellation grace 60s. Fresh matched results are primary; older
-experiment 41 samples are secondary pending comparability checks.
+## Validation and launch
 
-Planned output: `target/parallelism-ladder/registered-variable-factorial-20260901`.
-Source/map: `target/parallelism-ladder/registered-variable-factorial-variants-20260901-a/variants.json`.
+All four reused binary hashes and 280 source hashes match the completed run.
+Ten-job plan, 34 tooling tests and two two-second diagnostic startup/cancel smokes pass.
+Diagnostics capture root/finish/cache-drop spans and calculation counters with no
+dropped or open activity records in those smokes.
+Ready output: `target/parallelism-ladder/registered-variable-258-confirmation-20260901`.
+Map: `target/parallelism-ladder/registered-variable-factorial-variants-20260901-a/variants.json`.
+Freeze and launch with completion/failure dialog, then end turn. No builds/tests during timing.
 
-## Next
+## After results
 
-Launch frozen suite with completion/failure dialog and end turn. After completion,
-verify schedule, hashes, exact results/proof and structural work before timing analysis.
-No builds/tests/source changes during timing. Scheduler extras stay paused.
-No performance or permanence claim yet.
+Verify schedule, identities, exact result sets/proof and structural work.
+Analyze new/old hotspot-off records together, retaining every sample.
+Inspect diagnostic root/search/finish/cache-drop durations and aggregate subphases.
+Do not infer individual root calculation costs from aggregate timers.
+Memory is not a promotion gate; scheduling remains paused.
+
+Manifest and preparation/results memories not yet committed; no push.
