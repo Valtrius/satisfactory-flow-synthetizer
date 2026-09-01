@@ -6,12 +6,12 @@ All new file cases are in `benchmarks/custom/cases/` and use max link rate 1200.
 Names describe the test corpus only, not information passed to solver policy.
 
 The completed isolated encoding screen is described in
-[experiment 09](experiments/09-serializer-and-find-all.md). Its before binary is a
+`mem:solver/experiments/09-serializer-and-find-all`. Its before binary is a
 fresh legacy-encoding build with the current constructor and boxed keys, not the
 old recovery binary. The `acyclic24_diagnostic` alias uses the same case file to
 keep instrumented samples out of timing groups. Source patches live in
 `benchmarks/custom/variants/`; never apply them during a running screen.
-Its [verified results](experiments/09-serializer-and-find-all-results.md) include
+Its verified results (`mem:solver/experiments/09-serializer-and-find-all-results`) include
 eight incomplete hard enumerations; faster first witnesses do not prove faster completion.
 
 | Label          | Exact problem      | Role and last reviewed scope                                |
@@ -45,6 +45,29 @@ The [adaptive-root protocol](experiments/21-adaptive-root-profiling.md) instead
 freezes the full ordered production partition-key plan and one ordinal, then reports
 `scope: selected_root`. Its exhaustion applies only to that root. Root recipes require
 one profile and p1; prefix and root selections are mutually exclusive.
+
+## Source variants / patches
+
+Patches under `benchmarks/custom/variants/` are benchmark inputs, not production
+options. Never apply them during a running screen. Use a detached checkout and its
+own Cargo target directory; do not share build artifacts across source variants.
+
+- `legacy-semantic-encoding.patch` — restores dense decimal rational row encoding
+  while keeping boxed keys and the current constructor. Exp 09 `before` binary;
+  see `mem:solver/experiments/09-serializer-and-find-all`. Not the old recovery binary.
+- `constructor-five-second-budget.patch` — restores the provisional five-second
+  constructor deadline from exps 07–08. Preserved for future use; **not** applied in exp 09.
+- `early-exact-l.patch`, `cached-witness-leaves.patch`, `direct-rref-bounds.patch` —
+  sequential isolated diffs for exp 13 against reference `1b558a6`. Already in the
+  current tree; do not re-apply. Details:
+  `mem:solver/experiments/13-calculation-changes`,
+  `mem:solver/experiments/13-calculation-screen`,
+  `mem:solver/experiments/13-calculation-results`,
+  `mem:solver/experiments/14-calculation-promotion`.
+
+Apply with `git apply --check` then `git apply` (use `--ignore-space-change` when
+checking against untracked frozen CRLF copies). Do not combine legacy/deadline
+patches merely to reproduce old timings.
 
 ## Running a screen
 

@@ -108,7 +108,8 @@ The optional constructor has no elapsed-time deadline in the permanent version.
 After find-all validates a witness at the current N, later link groups skip this
 optional existence helper and continue exact enumeration directly.
 The previous five-second policy is a separate, unapplied benchmark patch. See
-[experiment 09](experiments/09-serializer-and-find-all.md) for source variants.
+`mem:solver/benchmarking` (Source variants / patches) and
+`mem:solver/experiments/09-serializer-and-find-all` for source variants.
 
 The `bench-internals` feature is off by default. Its fixed-work entry bypasses the
 constructor and earlier groups; it does not change ordinary solver defaults.

@@ -392,4 +392,4 @@ variants passed 200 each, two ignored per run. Strict all-target Clippy, 22 tool
 tests, builds and formatting passed. Earlier benchmark commit `92b111c` passed
 194 package/example tests, two ignored, and strict Clippy. The 297-test workspace
 validation is a separate historical record. See [08](experiments/08-repeat-scheduling.md)
-and [09](experiments/09-serializer-and-find-all.md) for those logs and source splits.
+and `mem:solver/experiments/09-serializer-and-find-all` for those logs and source splits.
