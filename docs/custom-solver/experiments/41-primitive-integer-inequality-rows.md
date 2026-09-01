@@ -1,7 +1,8 @@
 # 41. Primitive integer inequality rows
 
-Date: 2026-09-01. State: validated; whole A/B launch pending.
-Related: [subphase results](40-equality-inequality-subphase-profile-results.md).
+Date: 2026-09-01. State: whole A/B inconclusive; repeat recommended.
+Related: [subphase results](40-equality-inequality-subphase-profile-results.md),
+[whole results](41-primitive-integer-inequality-rows-results.md).
 
 ## Question and hypothesis
 
@@ -57,7 +58,7 @@ Manifest: `benchmarks/custom/primitive-integer-inequality-screening.json`.
 Reference solver source: `90df7e2`; later commit `7a50a40` changes docs only. Frozen
 reference `profile_case.exe` SHA-256:
 `9A1852C6A945DE535442336E99EB89085E070EC7D0DC81EF01CC679C585C3E35`.
-Candidate `profile_case.exe` SHA-256:
+Candidate source: `cd46fae`. Candidate `profile_case.exe` SHA-256:
 `68C3BA8889DE7B16F9CEBDC92677F296D5CC99C2B8DFFE8036ECE9BB0B56194B`. Planned run:
 `target/parallelism-ladder/primitive-integer-inequality-20260901`.
 
@@ -80,3 +81,7 @@ candidate advances if completed canonicalization or CPU medians improve consiste
 without a credible whole-solve regression. Capped work can show progress per fixed
 time only. Restore the rational representation if the whole screen rejects it.
 Scheduling stays paused.
+
+The detached 16-job screen completed and all records verify. The completed whole-solve
+medians are mixed and do not satisfy the predeclared promotion rule. See the linked
+results; the candidate remains committed but is not yet permanent.

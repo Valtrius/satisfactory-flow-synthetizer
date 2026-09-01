@@ -155,7 +155,10 @@ Updated 2026-09-01.
   [Experiment 41](custom-solver/experiments/41-primitive-integer-inequality-rows.md)
   implements the integer representation through sparse encoding. Exact bytes match,
   and two isolated release medians improve 9.49% and 10.02%. Full validation passes;
-  the whole-solver A/B is ready to launch.
+  [all 16 whole records
+  verify](custom-solver/experiments/41-primitive-integer-inequality-rows-results.md),
+  but completed medians are mixed. Repeat only 115 all and 238 optimal before deciding
+  permanence.
 
 The goal is shorter time to a proven optimum, complete minimum-link enumeration,
 and complete minimum-node enumeration. Benchmark modes are `optimal` for one layout,

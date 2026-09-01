@@ -181,8 +181,8 @@ Record dates follow the analysis chronology, not necessarily every run's start t
     owns 52.1-54.3% of bound encoding; test integral rows through encoding next.
 36. [Primitive integer inequality rows](41-primitive-integer-inequality-rows.md)
     retains normalized bound coefficients as integers through sorting, deduplication,
-    and sparse encoding. Exact bytes match; the isolated release median improves
-    9.49-10.02%. Full validation passes; the frozen whole A/B is ready to launch.
+    and sparse encoding. [All 16 records verify](41-primitive-integer-inequality-rows-results.md),
+    but completed whole medians are mixed. Keep the candidate and repeat controls.
 
 ## Evidence conventions
 

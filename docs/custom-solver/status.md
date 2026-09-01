@@ -253,8 +253,11 @@ encoding as the next isolated candidate. Scheduling stays paused.
 [Experiment 41](experiments/41-primitive-integer-inequality-rows.md) implements that
 candidate. The generated exact oracle preserves the previous rational rows and encoded
 bytes. Two seven-round isolated release measurements improve by 9.49% and 10.02% with
-disjoint before/after ranges. Full validation passes; the whole optimal/all-layout A/B
-is ready to launch. Scheduling stays paused.
+disjoint before/after ranges. [All 16 whole records
+verify](experiments/41-primitive-integer-inequality-rows-results.md), but 115 improves
+slightly while 238 regresses slightly in overlapping ranges. The committed candidate
+is not permanent. Repeat the two completed controls to reach seven samples per variant;
+do not rerun capped work. Scheduling stays paused.
 
 Experiment 33 validation: 181 default and 186 benchmark-feature solver-core library
 tests pass, with two ignored in each configuration. The exhaustive Reference and four
