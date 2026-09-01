@@ -301,7 +301,7 @@ fn main() {
                 (root / variant).mkdir()
                 shutil.copy2(root / "profile_case.exe", root / variant / "profile_case.exe")
             (root / "case.json").write_text(json.dumps({"name": "fixture", "problem": {"inputs": ["1"], "outputs": ["1"], "maxLinkRate": "1200"}}))
-            jobs = [{"Case": "fixture", "CaseFile": "case.json", "Mode": "optimal", "Stage": "baseline", "Variant": variant, "Workers": 1, "Repeat": 1, "TimeoutSeconds": 1, "MaxNodes": 1, "Cohort": "stress", "Hotspots": "on"} for variant in ("before", "after")]
+            jobs = [{"Case": "fixture", "CaseFile": "case.json", "Mode": "optimal", "Stage": "baseline", "Variant": variant, "Workers": 1, "Repeat": 1, "TimeoutSeconds": 1, "MaxNodes": 1, "Cohort": "stress", "Hotspots": "off"} for variant in ("before", "after")]
             manifest = root / "manifest.json"
             manifest.write_text(json.dumps({"jobs": jobs}))
             output = root / "results"
@@ -319,7 +319,9 @@ fn main() {
             self.assertEqual(len(completed), 1)
             self.assertEqual(completed[0]["status"], "fixture_success")
             self.assertNotEqual(completed[0]["variant"], failed[0]["variant"])
-            self.assertEqual(completed[0]["hotspot_recording"], "True")
+            self.assertEqual(completed[0]["hotspot_recording"], "False")
+            sample_file = output / (Path(completed[0]["result_file"]).stem + ".process-samples.csv")
+            self.assertTrue(sample_file.is_file())
             result = json.loads(Path(completed[0]["result_file"]).read_text())
             self.assertEqual(result["binary_origin"], completed[0]["variant"])
             hashes = json.loads((output / "binaries.json").read_text(encoding="utf-8-sig"))
@@ -565,6 +567,68 @@ fn main() {
             self.assertTrue(all(j["Workers"] in (16, 32) and j["Hotspots"] == "off" for j in jobs))
             self.assertLessEqual(sum(j["TimeoutSeconds"] for j in jobs), 62 * 60)
             self.assertTrue(all(Path(j["CasePath"]).is_file() for j in jobs))
+
+    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell manifest validation")
+    def test_manifest_accepts_named_variant_binary_map(self):
+        repository = Path(__file__).resolve().parent.parent
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "case.json").write_text(
+                json.dumps({"problem": {"maxLinkRate": "1200"}})
+            )
+            variants = ["before", "integer", "variables", "combined"]
+            manifest = root / "manifest.json"
+            manifest.write_text(
+                json.dumps(
+                    {
+                        "jobs": [
+                            {
+                                "Case": "fixture",
+                                "CaseFile": "case.json",
+                                "Mode": "optimal",
+                                "Stage": "p1",
+                                "Variant": variant,
+                                "Workers": 32,
+                                "Repeat": 1,
+                                "TimeoutSeconds": 60,
+                                "MaxNodes": 12,
+                                "Cohort": "reference",
+                                "Hotspots": "off",
+                            }
+                            for variant in variants
+                        ]
+                    }
+                )
+            )
+            variant_map = root / "variants.json"
+            variant_map.write_text(
+                json.dumps({variant: str(root / variant) for variant in variants})
+            )
+            output = root / "plan"
+            process = subprocess.run(
+                [
+                    "pwsh",
+                    "-NoProfile",
+                    "-File",
+                    str(repository / "scripts/parallelism-ladder.ps1"),
+                    "-JobManifest",
+                    str(manifest),
+                    "-VariantBinaryMap",
+                    str(variant_map),
+                    "-PlanOnly",
+                    "-OutputDirectory",
+                    str(output),
+                ],
+                cwd=repository,
+                capture_output=True,
+                text=True,
+                timeout=15,
+            )
+            self.assertEqual(process.returncode, 0, process.stderr)
+            jobs = json.loads((output / "schedule.json").read_text(encoding="utf-8-sig"))
+            self.assertEqual({job["Variant"] for job in jobs}, set(variants))
+            for job in jobs:
+                self.assertEqual(Path(job["BinaryDirectory"]), root / job["Variant"])
 
     def test_activity_overlap_and_cancellation_tail(self):
         def mutate(_variant, _mode, result):

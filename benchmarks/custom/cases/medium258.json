@@ -1,0 +1,8 @@
+{
+  "name": "258 = 195+63",
+  "problem": {
+    "inputs": ["258"],
+    "outputs": ["195", "63"],
+    "maxLinkRate": "1200"
+  }
+}

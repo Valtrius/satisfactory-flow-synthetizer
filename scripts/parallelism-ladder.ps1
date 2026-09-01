@@ -10,6 +10,7 @@ param(
     [switch]$PlanOnly,
     [string]$BinaryDirectory = 'target/release/examples',
     [string]$ReferenceBinaryDirectory = '',
+    [string]$VariantBinaryMap = '',
     [string[]]$ReferenceStages = @('baseline', 'p1234'),
     [ValidateSet('on', 'off')][string]$Hotspots = 'off',
     [int]$Seed = 270826,
@@ -21,9 +22,25 @@ $repoRoot = if ($RepositoryRoot) { [IO.Path]::GetFullPath($RepositoryRoot) } els
 $outputRoot = [IO.Path]::GetFullPath($OutputDirectory, $repoRoot)
 if (Test-Path -LiteralPath $outputRoot) { throw "Output already exists: $outputRoot" }
 New-Item -ItemType Directory -Path $outputRoot | Out-Null
-$variants = @([pscustomobject]@{ Name='after'; Directory=$BinaryDirectory; Stages=$Stages })
-if ($ReferenceBinaryDirectory) {
-    $variants += [pscustomobject]@{ Name='before'; Directory=$ReferenceBinaryDirectory; Stages=$ReferenceStages }
+$variants = if ($VariantBinaryMap) {
+    $variantMapPath = [IO.Path]::GetFullPath($VariantBinaryMap, $repoRoot)
+    $variantMapRoot = Split-Path $variantMapPath -Parent
+    $variantMapData = Get-Content -LiteralPath $variantMapPath -Raw | ConvertFrom-Json -AsHashtable
+    if (-not $variantMapData.Count) { throw 'Empty variant binary map' }
+    @($variantMapData.GetEnumerator() | ForEach-Object {
+        if ($_.Key -notmatch '^[a-zA-Z0-9_-]+$' -or -not $_.Value) { throw 'Invalid binary variant map' }
+        [pscustomobject]@{
+            Name = $_.Key
+            Directory = [IO.Path]::GetFullPath([string]$_.Value, $variantMapRoot)
+            Stages = $Stages
+        }
+    })
+} else {
+    $legacyVariants = @([pscustomobject]@{ Name='after'; Directory=$BinaryDirectory; Stages=$Stages })
+    if ($ReferenceBinaryDirectory) {
+        $legacyVariants += [pscustomobject]@{ Name='before'; Directory=$ReferenceBinaryDirectory; Stages=$ReferenceStages }
+    }
+    $legacyVariants
 }
 $jobs = foreach ($variant in $variants) {
 foreach ($case in $Cases) {
@@ -52,9 +69,12 @@ if ($JobManifest) {
         $caseData = Get-Content -LiteralPath $casePath -Raw | ConvertFrom-Json
         if ($caseData.problem.maxLinkRate -ne '1200') { throw 'File benchmark cases must use maxLinkRate 1200' }
         if ($null -eq $job.Variant) { $job | Add-Member NoteProperty Variant 'after' }
-        if ($job.Variant -notin @('before', 'after')) { throw 'Invalid binary variant' }
-        if ($job.Variant -eq 'before' -and -not $ReferenceBinaryDirectory) { throw 'Before jobs require ReferenceBinaryDirectory with a compatible profile_case executable' }
-        $directory = if ($job.Variant -eq 'before') { $ReferenceBinaryDirectory } else { $BinaryDirectory }
+        $matchedVariant = @($variants | Where-Object { $_.Name -eq $job.Variant })
+        if ($matchedVariant.Count -ne 1) {
+            if ($job.Variant -eq 'before' -and -not $VariantBinaryMap) { throw 'Before jobs require ReferenceBinaryDirectory with a compatible profile_case executable' }
+            throw 'Invalid binary variant'
+        }
+        $directory = $matchedVariant[0].Directory
         $job | Add-Member NoteProperty BinaryDirectory $directory
         $job | Add-Member NoteProperty CasePath $casePath
     }
@@ -118,7 +138,7 @@ foreach ($job in $jobs) {
         $peakWorkingSet = [Math]::Max($peakWorkingSet, $process.PeakWorkingSet64)
         $lastWorkingSet = $process.WorkingSet64
         $lastThreadCount = $process.Threads.Count
-        if ($jobHotspots -eq 'on' -and $watch.Elapsed.TotalSeconds -ge $nextProcessSample) {
+        if ($watch.Elapsed.TotalSeconds -ge $nextProcessSample) {
             $processSamples.Add([pscustomobject]@{
                 elapsed_s = $watch.Elapsed.TotalSeconds
                 cpu_s = $process.TotalProcessorTime.TotalSeconds
@@ -151,15 +171,13 @@ foreach ($job in $jobs) {
         $process.Dispose()
         continue
     }
-    if ($jobHotspots -eq 'on') {
-        $processSamples.Add([pscustomobject]@{
-            elapsed_s = $watch.Elapsed.TotalSeconds
-            cpu_s = $process.TotalProcessorTime.TotalSeconds
-            working_set_bytes = $lastWorkingSet
-            thread_count = $lastThreadCount
-        })
-        $processSamples | Export-Csv -LiteralPath (Join-Path $outputRoot "$name.process-samples.csv") -NoTypeInformation
-    }
+    $processSamples.Add([pscustomobject]@{
+        elapsed_s = $watch.Elapsed.TotalSeconds
+        cpu_s = $process.TotalProcessorTime.TotalSeconds
+        working_set_bytes = $lastWorkingSet
+        thread_count = $lastThreadCount
+    })
+    $processSamples | Export-Csv -LiteralPath (Join-Path $outputRoot "$name.process-samples.csv") -NoTypeInformation
     if ($process.ExitCode -ne 0 -or -not (Test-Path -LiteralPath $json)) { throw "Benchmark failed: $name" }
     $data = Get-Content -LiteralPath $json -Raw | ConvertFrom-Json
     if ($data.mode -ne $job.Mode -or $data.stage -ne $job.Stage -or $data.workers -ne $job.Workers) { throw "Executable ignored benchmark settings: $name" }

@@ -268,6 +268,7 @@ screen will repeat experiment 41, isolate this path, test the combined candidate
 add one `258 = 195+63` minimum-link sample per variant. Solver-core, exhaustive
 Reference, parallelism, workspace, strict Clippy, analyzer, formatting, release,
 plan, and named-variant smoke checks pass. The factorial screen is not yet launched.
+The candidate is committed in `520b352`; benchmark infrastructure remains separate.
 Scheduling stays paused.
 
 Experiment 33 validation: 181 default and 186 benchmark-feature solver-core library

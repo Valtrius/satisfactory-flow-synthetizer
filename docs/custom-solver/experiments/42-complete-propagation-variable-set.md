@@ -69,6 +69,9 @@ Evidence: `target/parallelism-ladder/registered-variable-combined-smoke.json`,
 `target/parallelism-ladder/factorial-plan-check-20260901-a`, and
 `target/parallelism-ladder/named-factorial-smoke-20260901`.
 
+Candidate implementation and this record: `520b352`. Benchmark infrastructure is
+separate and not yet committed in this state.
+
 ## Factorial screen
 
 Manifest: `benchmarks/custom/registered-variable-factorial.json`.

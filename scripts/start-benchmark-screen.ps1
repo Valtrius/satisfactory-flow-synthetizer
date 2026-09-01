@@ -5,6 +5,7 @@ param(
     [string]$WitnessResult = '',
     [string]$ReferenceReplayBinary = '',
     [string]$ReferenceBinaryDirectory = '',
+    [string]$VariantBinaryMap = '',
     [string]$RepositoryRoot = '',
     [ValidateRange(1, 5)][int]$ReplayRepeats = 1,
     [ValidateRange(1, 600)][int]$CancellationGraceSeconds = 60,
@@ -19,7 +20,8 @@ $status = Join-Path $runRoot 'BENCHMARK-STATUS.txt'
 if (-not $Run) {
     if (Test-Path -LiteralPath $runRoot) { throw "Output already exists: $runRoot" }
     $binary = Join-Path $repoRoot 'target/release/examples/profile_case.exe'
-    if (-not (Test-Path -LiteralPath $binary -PathType Leaf)) { throw 'Build profile_case in release mode first.' }
+    if (-not $VariantBinaryMap -and -not (Test-Path -LiteralPath $binary -PathType Leaf)) { throw 'Build profile_case in release mode first.' }
+    if ($VariantBinaryMap -and $ReferenceBinaryDirectory) { throw 'Use either VariantBinaryMap or ReferenceBinaryDirectory, not both.' }
     if ($ReferenceBinaryDirectory) {
         $referenceCaseBinary = Join-Path ([IO.Path]::GetFullPath($ReferenceBinaryDirectory, $repoRoot)) 'profile_case.exe'
         if (-not (Test-Path -LiteralPath $referenceCaseBinary -PathType Leaf)) { throw 'Reference profile_case executable is missing.' }
@@ -38,7 +40,38 @@ if (-not $Run) {
     }
     New-Item -ItemType Directory -Path $runRoot | Out-Null
     $bin = New-Item -ItemType Directory -Path (Join-Path $runRoot 'bin')
-    Copy-Item -LiteralPath $binary -Destination $bin.FullName
+    $frozenVariantMap = ''
+    if ($VariantBinaryMap) {
+        $variantMapPath = [IO.Path]::GetFullPath($VariantBinaryMap, $repoRoot)
+        $variantMapData = Get-Content -LiteralPath $variantMapPath -Raw | ConvertFrom-Json -AsHashtable
+        if (-not $variantMapData.Count) { throw 'Empty variant binary map' }
+        $frozenVariantData = [ordered]@{}
+        foreach ($entry in $variantMapData.GetEnumerator()) {
+            if ($entry.Key -notmatch '^[a-zA-Z0-9_-]+$' -or -not $entry.Value) { throw 'Invalid binary variant map' }
+            $sourceDirectory = [IO.Path]::GetFullPath([string]$entry.Value, (Split-Path $variantMapPath -Parent))
+            $sourceBinary = Join-Path $sourceDirectory 'profile_case.exe'
+            if (-not (Test-Path -LiteralPath $sourceBinary -PathType Leaf)) { throw "Variant binary is missing: $($entry.Key)" }
+            $frozenDirectory = New-Item -ItemType Directory -Path (Join-Path $runRoot "variant-bin/$($entry.Key)")
+            Copy-Item -LiteralPath $sourceBinary -Destination $frozenDirectory.FullName
+            $frozenVariantData[$entry.Key] = $frozenDirectory.FullName
+
+            $variantRoot = Split-Path $sourceDirectory -Parent
+            $variantSource = Join-Path $variantRoot 'solver-source'
+            if (Test-Path -LiteralPath $variantSource -PathType Container) {
+                $frozenSourceRoot = New-Item -ItemType Directory -Path (Join-Path $runRoot 'variant-source') -Force
+                Copy-Item -LiteralPath $variantSource -Destination (Join-Path $frozenSourceRoot.FullName $entry.Key) -Recurse
+            }
+            $variantMetadata = Join-Path $variantRoot 'metadata.json'
+            if (Test-Path -LiteralPath $variantMetadata -PathType Leaf) {
+                $metadataDirectory = New-Item -ItemType Directory -Path (Join-Path $runRoot 'variant-metadata') -Force
+                Copy-Item -LiteralPath $variantMetadata -Destination (Join-Path $metadataDirectory.FullName "$($entry.Key).json")
+            }
+        }
+        $frozenVariantMap = Join-Path $runRoot 'variant-binaries.json'
+        $frozenVariantData | ConvertTo-Json | Set-Content -LiteralPath $frozenVariantMap
+    } else {
+        Copy-Item -LiteralPath $binary -Destination $bin.FullName
+    }
     if ($ReferenceBinaryDirectory) {
         $referenceBin = New-Item -ItemType Directory -Path (Join-Path $runRoot 'reference-bin')
         Copy-Item -LiteralPath $referenceCaseBinary -Destination $referenceBin.FullName
@@ -59,7 +92,7 @@ if (-not $Run) {
     # Validate and freeze the manifest and cases before detaching. The child uses
     # these copies and the copied scripts even if the working tree changes later.
     $planRoot = Join-Path $runRoot 'input'
-    & (Join-Path $runRoot 'parallelism-ladder.ps1') -RepositoryRoot $repoRoot -JobManifest $manifestPath -BinaryDirectory $bin.FullName -ReferenceBinaryDirectory $ReferenceBinaryDirectory -OutputDirectory $planRoot -Hotspots $Hotspots -PlanOnly
+    & (Join-Path $runRoot 'parallelism-ladder.ps1') -RepositoryRoot $repoRoot -JobManifest $manifestPath -BinaryDirectory $bin.FullName -ReferenceBinaryDirectory $ReferenceBinaryDirectory -VariantBinaryMap $frozenVariantMap -OutputDirectory $planRoot -Hotspots $Hotspots -PlanOnly
     $manifestPath = Join-Path $planRoot 'job-manifest.json'
     $frozenManifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
     foreach ($job in $frozenManifest.jobs) { $job.CaseFile = 'cases/' + (Split-Path $job.CaseFile -Leaf) }
@@ -72,6 +105,7 @@ if (-not $Run) {
     $shell = (Get-Process -Id $PID).Path
     $arguments = @('-NoProfile','-STA','-File',('"'+(Join-Path $runRoot 'start-benchmark-screen.ps1')+'"'),'-Run','-RepositoryRoot',('"'+$repoRoot+'"'),'-JobManifest',('"'+$manifestPath+'"'),'-OutputDirectory',('"'+$runRoot+'"'),'-Hotspots',$Hotspots)
     if ($ReferenceBinaryDirectory) { $arguments += @('-ReferenceBinaryDirectory', ('"'+$referenceBin.FullName+'"')) }
+    if ($frozenVariantMap) { $arguments += @('-VariantBinaryMap', ('"'+$frozenVariantMap+'"')) }
     if ($WitnessResult) { $arguments += @('-WitnessResult', ('"'+(Join-Path $runRoot 'witness-input.json')+'"')) }
     $arguments += @('-ReplayRepeats', $ReplayRepeats)
     $arguments += @('-CancellationGraceSeconds', $CancellationGraceSeconds)
@@ -121,7 +155,7 @@ try {
         $replayResults | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $runRoot 'replay-summary.json')
     }
     'RUNNING: see results/BENCHMARK-STATUS.txt for the current solver job.' | Set-Content -LiteralPath $status
-    & (Join-Path $runRoot 'parallelism-ladder.ps1') -RepositoryRoot $repoRoot -JobManifest $manifestPath -BinaryDirectory (Join-Path $runRoot 'bin') -ReferenceBinaryDirectory $ReferenceBinaryDirectory -OutputDirectory $suite -Hotspots $Hotspots -CancellationGraceSeconds $CancellationGraceSeconds
+    & (Join-Path $runRoot 'parallelism-ladder.ps1') -RepositoryRoot $repoRoot -JobManifest $manifestPath -BinaryDirectory (Join-Path $runRoot 'bin') -ReferenceBinaryDirectory $ReferenceBinaryDirectory -VariantBinaryMap $VariantBinaryMap -OutputDirectory $suite -Hotspots $Hotspots -CancellationGraceSeconds $CancellationGraceSeconds
     if (-not $?) { throw 'Benchmark runner failed.' }
     $allJobsAttempted = $true
     'VERIFYING: solver runs finished; checking identities and proof status.' | Set-Content -LiteralPath $status
