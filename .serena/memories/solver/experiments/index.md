@@ -43,17 +43,21 @@ Record dates follow the analysis chronology, not necessarily every run's start t
 | 32 (`mem:solver/experiments/32-weighted-sparse-quotient`)          | 2026-08-31    | Can exact weighted representatives reduce sparse elimination work?                        | Rejected; 115 improves, but 36/238 regress and sparse passes cost 6.79% more        |
 | 33 (`mem:solver/experiments/33-sparse-row-deduplication`)          | 2026-08-31    | Do identical normalized equations add avoidable sparse elimination work?                  | Rejected; zero duplicates across 164M hard input-row instances                      |
 | 47 (`mem:solver/experiments/47-rref-arithmetic-profile`)           | 2026-09-02    | Which RREF arithmetic phase and operand patterns dominate?                                | 14 verified; elimination 66–69%; test zero-destination then factor -1 shortcuts     |
-| 48 (`mem:solver/experiments/48-rref-elimination-shortcuts`)        | 2026-09-02    | Do zero-destination or negative-unit shortcuts improve completion independently?          | Isolated candidates implemented; validated and frozen; no promotion                 |
+| 48 (`mem:solver/experiments/48-rref-elimination-shortcuts`)        | 2026-09-02    | Do zero-destination or negative-unit shortcuts improve completion independently?          | 32 optimal verified; minus merits confirmation, zero mixed; neither promoted        |
 
 ## Active follow-up
 
-48 approved and implemented in isolated worktrees:
-`mem:solver/experiments/48-rref-elimination-shortcuts`.
-Zero-destination and negative-unit candidates remain separate; production main
-checkout unchanged. New shared matrix oracle and release-safe heartbeat fixture.
-32 completed timing jobs planned, 54m40 search+cleanup, under one hour.
-Validation and 15 exact CLI smokes pass; frozen, no timing run launched. `mem:solver/active`.
-47 analyzed and recorded in da2c89f; profiles motivate these tests, not a speed claim.
+Experiment48 completed and analyzed:
+`mem:solver/experiments/48-rref-elimination-shortcuts-results`.
+All 32 jobs optimal, exact outcomes/proofs and 15 structural counters match.
+Minus improves seven of eight wall pairs and all eight CPU pairs, with effectively
+unchanged 258 completion. Zero has mixed 115/258 results, including +10.62% on one
+258 pair. Only two pairs per cell; nothing promoted or combined.
+Recommend four additional minus-only pairs per workload, same frozen sources,
+54m40 search+cleanup within one hour. User approved; confirmation prepared and plan verified, not launched yet.
+`mem:solver/experiments/48-rref-negative-unit-confirmation`.
+Preparation committed fadb316; current unrelated history HEAD 6683546 preserved.
+Results/handoff memories uncommitted; no push. `mem:solver/active`.
 
 ## How the diagnosis changed
 

@@ -567,14 +567,39 @@ arbitrary-size arithmetic; source-value decisions only. Scheduling stays paused.
 Nothing running. Source/docs 1006e6f, manifest 14d3f73, RREF promotion docs c106d4c.
 Results/handoff notes uncommitted; no new commit or push.
 
-## Experiment48: independent RREF shortcuts, 2026-09-02
+## Experiment 48 analyzed, 2026-09-02
 
-User approved separate zero-destination and negative-unit candidates. Both are
-implemented in isolated worktrees with separate Cargo targets; main production
-arithmetic unchanged. Candidate patches, new exact oracle and repaired release heartbeat fixture are
-validated. Both release suites and strict Clippy configurations pass for each
-candidate; 15 exact CLI smokes and the 32-job plan pass. Binaries/source frozen. The heartbeat failure reproduced on the
-unchanged baseline; the hard10 replacement passes debug and release there.
-32-job complete-work screen planned, 54m40 search+cleanup under one hour.
-No benchmark launched, no promotion or push. Prior result docs committed da2c89f.
-Details: `mem:solver/experiments/48-rref-elimination-shortcuts`.
+`mem:solver/experiments/48-rref-elimination-shortcuts-results`.
+Finished 20:20:55.038 Europe/Paris in about 33m45, all 32 jobs optimal.
+All 263 frozen hashes, exact complete outputs/outcomes/proofs and 15 paired
+structural counters pass. Schedule, adjacent AB/BA pairs, hotspot-OFF setting and
+before-resume affinity verified. Rechecked summary equals original:
+3387537fdc14efd9f36359b4861b566be2e3f4ac399e421e3f03d07b0841a458.
+
+Minus completion paired medians on 115 all / 238 optimal / 258 minimum_links /
+36 optimal: -1.16% / -0.65% / effectively 0% / -1.14%.
+Seven of eight wall pairs and all eight CPU pairs improve.
+Zero: +0.52% / -2.64% / +4.71% / -2.28%, including an unexplained +10.62% 258
+pair that must not be discarded. Only two pairs per cell; no promotion yet.
+115 first witness remains mixed for minus, median +0.81%; zero -3.37%.
+
+Recommend minus-only confirmation with four additional pairs in each workload,
+same frozen binaries/settings, 32 jobs, 54m40 search+cleanup plus overhead margin
+under one hour. New screen first analyzed separately. Hold zero, no combination.
+Scheduling paused. No follow-up approved or launched.
+
+Candidate preparation/tests/patches/manifest fadb316; prior profile results
+da2c89f. Current unrelated history HEAD 6683546 is preserved. Main canonical.rs/
+solver.rs production prefixes still equal the frozen before source; neither
+candidate promoted. Result/handoff memories uncommitted, no new commit or push.
+Nothing running; `mem:solver/active`.
+
+## Experiment48 confirmation approved
+
+User approved minus-only confirmation. New manifest
+`benchmarks/custom/rref-negative-unit-confirmation.json`, repeats 3 through 6,
+32 jobs. Same frozen binaries, all three modes and prior placements/caps.
+41 tool tests pass; all 145 original variant hashes and 192 plan hashes rechecked.
+Plan confirms 16 adjacent pairs, balanced order and 54m40 search+cleanup allowance.
+No arithmetic change, no new build or promotion. Formatting/commit then launch;
+not running yet. `mem:solver/experiments/48-rref-negative-unit-confirmation`.

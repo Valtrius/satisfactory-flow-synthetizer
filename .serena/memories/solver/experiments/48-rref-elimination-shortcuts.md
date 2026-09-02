@@ -1,6 +1,7 @@
 # 48. Independent RREF elimination shortcuts
 
-Date: 2026-09-02. State: validated and frozen; ready to launch.
+Date: 2026-09-02. State: completed and independently verified; nothing promoted.
+Results and next recommendation: `mem:solver/experiments/48-rref-elimination-shortcuts-results`.
 Prior evidence: `mem:solver/experiments/47-rref-arithmetic-profile-results`.
 Prior analysis/docs committed separately as da2c89f.
 
@@ -83,7 +84,8 @@ negative-unit, general fractional and large factors, and zero/nonzero/large
 destinations. Exact dense-oracle comparison checks production and diagnostic paths;
 consistency avoids a contradiction collapse hiding wrong coefficients.
 Existing generated oracle covers 384 exact-order systems plus broader solver tests.
-No timing results, no speedup or promotion claim.
+At pre-launch validation there were no timing results. Completed screen analysis
+is now in the linked results memory; no promotion.
 
 ## Final validation and frozen identities
 
@@ -128,11 +130,33 @@ Smoke JSON/checks: `target/exp48-release-smoke/`.
 Freeze/smoke helpers: `target/exp48-freeze.py`, `target/exp48-release-smoke.py`.
 Final profile_case link/build steps 47.39s and 47.73s, respectively; not performance data.
 
-## Commit state / next
+## Commit state at launch
 
 This record accompanies the tests, two independent candidate patches and manifest
-commit. Commit hash will be recorded in the launch handoff. No push.
+commit. Committed as fadb316; launch details below. No push.
 Current production arithmetic remains baseline; candidates are only in isolated
-worktrees/frozen executables. Nothing promoted and no performance results yet.
+worktrees/frozen executables. Nothing promoted. This section records the launch state; see results for measured timings.
 Prepared run: `target/parallelism-ladder/rref-elimination-20260902`.
 Launch with 15s cleanup, verify live status, record PID/time, then end turn.
+
+## Launch, 2026-09-02
+
+Launched at 19:47:10 Europe/Paris, runner PID 57664. Confirmed alive with initial
+status 1/32, `zero_r36_allcpu-optimal-before-p1-w32-r2`, empty runner stderr.
+This is launch evidence only; no performance/completion inference.
+Run: `target/parallelism-ladder/rref-elimination-20260902`.
+Tests/patches/manifest/handoff committed as fadb316; prior result docs da2c89f.
+No push. Post-launch state updates remain uncommitted while timing runs.
+Windows completion/failure dialog and root/status markers configured. End turn;
+await user completion message, then verify frozen identities, exact results/proofs,
+structural work, placement, pair order and timing before recommending promotion.
+
+## Completed analysis
+
+Finished 20:20:55.038 Europe/Paris, about 33m45. All 32 optimal, 16 completed
+pairs, 263 frozen hashes, full exact outcomes/proofs and 15 structural counters
+verify. Negative-unit is the stronger confirmation candidate; zero-destination
+remains mixed, including a +10.62% 258 pair. Neither is promoted.
+`mem:solver/experiments/48-rref-elimination-shortcuts-results` has the timings,
+limitations and proposed <=1h confirmation. Nothing running. Analysis notes
+uncommitted; no push. Unrelated current history commit 6683546 is preserved.

@@ -35,29 +35,28 @@ dedup (33), N≤9 p1 guard (18).
 
 - Variables, allocation-free accounting and RREF ordering remain permanent.
   RREF source a79ecf7, promotion docs c106d4c. Prior adverse cells and the
-  unexplained earlier variable/258 timeout remain in the experiment46 records.
-- Experiment47 diagnostics finished in 18m54: 14 verified, 10 optimal controls,
-  four intended hard caps. 192 frozen hashes; exact completed outputs/proofs and
-  15 structural counters equal. No new speedup claim.
+  unexplained earlier variable/258 timeout remain in experiment46 records.
+- Experiment47 identified RREF elimination and zero/negative-unit arithmetic as
+  candidates. Its instrumentation is diagnostic, not a speedup result.
   `mem:solver/experiments/47-rref-arithmetic-profile-results`.
-- Elimination is 66–69% of instrumented RREF time; normalization 17–18%, suffix 4%.
-  Zero destinations occur in 78–80% of updates; factor -1 in 26–30%.
-  The installed rational operators lack explicit shortcuts for these patterns.
-- Recommend zero-destination shortcut first, then factor -1 separately. Preserve
-  exact arbitrary-size arithmetic and canonical order. Test hotspot-OFF completed
-  workloads with fixed affinity and balanced order before any promotion.
-- User approved independent shortcut tests. Experiment 48 implements standalone
-  zero/minus candidates in separate worktrees/targets, with no production
-  arithmetic change in the current checkout. Validation, freezing and plan checks passed:
-  `mem:solver/experiments/48-rref-elimination-shortcuts`.
-- Shared test repair replaces a heartbeat fixture now too fast in release.
-  The unchanged baseline reproduced the failure; debug/release repair passes.
-  Prior experiment 47 result documentation committed as da2c89f.
-- New screen planned: 32 completed jobs, 54m40 search+cleanup plus 5m20 overhead
-  margin. All three modes, fixed-CCD controls and unrestricted hard36 optimal.
-  No benchmark launched yet; no push.
+- Experiment48 completed in 33m45. All 32 jobs optimal; 263 frozen hashes, exact
+  solutions/outcomes/proofs and 15 paired structural counters verify.
+  `mem:solver/experiments/48-rref-elimination-shortcuts-results`.
+- Minus wall paired medians: 115 all -1.16%, 238 optimal -0.65%,
+  258 minimum_links effectively 0%, hard36 optimal -1.14%. Seven of eight wall
+  pairs and all CPU pairs improve, but only two pairs per workload.
+- Zero is mixed: same workloads +0.52%, -2.64%, +4.71%, -2.28%.
+  Preserve the adverse +10.62% 258 pair; cause unknown. Do not combine candidates.
+- Recommend a negative-unit-only confirmation, four new pairs per workload,
+  same frozen binaries and placement, 54m40 search+cleanup allowance under one
+  hour. New screen analyzed separately first. User approved; preparation/plan pass.
+  `mem:solver/experiments/48-rref-negative-unit-confirmation`.
+- Neither arithmetic shortcut is in production. Shared tests/patches/manifest
+  fadb316, prior results da2c89f. Current unrelated history HEAD 6683546 preserved;
+  current canonical/solver production prefixes match the frozen baseline.
+- Confirmation manifest and result/handoff notes await commit. No push.
 - Scheduler extras stay paused; no production affinity, cyclicity or memory gate.
-  New benchmark limit <=1h including cleanup. Nothing running.
+  New benchmark limit <=1h including cleanup. Confirmation prepared; not launched yet.
   `mem:solver/active`.
 
 ## When to read more
