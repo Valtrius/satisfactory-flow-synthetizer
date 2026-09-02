@@ -54,7 +54,7 @@ two ignored per suite; strict Clippy passes both feature configurations.
 Confirmation results: `mem:solver/experiments/48-rref-negative-unit-confirmation-results`.
 19/24 wall and 23/24 CPU pairs improved across both screens; hard36 completion
 remains effectively unchanged overall. Preserve adverse samples.
-Source and related results/docs are prepared for the isolated promotion commit.
+Source and related results/docs committed together as 6c10b35.
 Zero-destination held; scheduler extras paused. No new benchmark or push.
 `mem:solver/active`.
 

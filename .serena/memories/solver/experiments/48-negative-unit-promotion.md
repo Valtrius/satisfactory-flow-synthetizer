@@ -1,7 +1,8 @@
 # 48. Permanent negative-unit RREF shortcut
 
 Date: 2026-09-02. User explicitly approved permanent integration and commit.
-Permanently integrated and validated. This record accompanies the promotion commit.
+Permanently integrated, validated and committed as 6c10b35.
+Commit: `perf(custom): specialize negative-unit RREF elimination`.
 Evidence: `mem:solver/experiments/48-rref-negative-unit-confirmation-results`.
 
 ## Change and correctness
@@ -50,9 +51,9 @@ No benchmark runs active during validation.
 ## Commit and handoff
 
 Base edb4f0b includes unrelated user changes; preserve them.
-The seven-line runtime change, this record and confirmation evidence form the
-isolated perf(custom) promotion commit. npm run format and diff checks are required
-before committing. Commit hash is recorded in the follow-up handoff after creation.
-No push requested.
+Source and related confirmation/promotion documentation committed together as
+`6c10b35eee8b25fa7fabd55b29d042f8e67da74b`. npm run format and staged diff checks passed.
+A documentation-only follow-up records this resulting hash and clears the handoff.
+No push performed.
 Keep zero-destination held and scheduler extras paused. Future benchmark runs
 remain <=1h including cleanup.

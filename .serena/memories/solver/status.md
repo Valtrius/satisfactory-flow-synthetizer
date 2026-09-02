@@ -649,3 +649,9 @@ two ignored each. Both strict release Clippy configurations pass. No new benchma
 Source, confirmation results and promotion documentation prepared for an isolated
 perf(custom) commit; no push. Related record: `mem:solver/experiments/48-negative-unit-promotion`.
 Zero held; scheduling paused. Preserve the hard36 limitation and all adverse pairs.
+
+Promotion committed as `6c10b35eee8b25fa7fabd55b29d042f8e67da74b`,
+`perf(custom): specialize negative-unit RREF elimination`.
+Includes source, confirmation evidence and related Serena records. Formatting and
+staged diff checks passed. No push. Documentation-only follow-up records this
+resulting commit hash; no additional source changes or benchmark launches.

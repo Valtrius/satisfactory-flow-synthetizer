@@ -27,7 +27,7 @@ Scopes / benchmark names: `optimal` | `minimum_links` | `all`.
 - Complete propagation variable discovery (`520b352`, exp 44)
 - Allocation-free cache byte accounting (`331b87a`, exp 45)
 - Canonical RREF reverse pivot ordering (`a79ecf7`, exp 46)
-- Canonical RREF negative-unit elimination (exp 48, promotion commit)
+- Canonical RREF negative-unit elimination (`6c10b35`, exp 48)
 
 Rejected / absent from production source: weighted sparse quotient (32), sparse row
 dedup (33), N≤9 p1 guard (18).
@@ -47,14 +47,14 @@ dedup (33), N≤9 p1 guard (18).
   Preserve hard36's +4.70% pair. Its completion gain is not established.
 - User approved permanent negative-unit arithmetic. Integrated kernel and diagnostic
   twin exactly match the tested candidate; no duplicate test changes.
-  223/213 release tests pass with/default bench-internals, 2 ignored each;
+  223 release tests with bench-internals and 213 default pass, 2 ignored each;
   strict release Clippy passes both. `mem:solver/experiments/48-negative-unit-promotion`.
 - Zero-destination stays held. Initial 115/258 results mixed, including a +10.62%
   258 pair of unknown cause. No implicit combination or case-specific guard.
 - Candidate/shared test preparation fadb316; initial results and confirmation
   manifest 3b32c51. Unrelated edb4f0b base preserved. Production now contains the tested negative-unit
-  arithmetic. Source and supporting results/docs are ready for the promotion commit.
-  No push requested.
+  arithmetic. Source and supporting results/docs committed as 6c10b35.
+  No push performed.
 - Scheduler extras remain paused. No production affinity, cyclicity or memory
   gate. Future benchmarks <=1h including cleanup. Nothing running.
   `mem:solver/active`.
