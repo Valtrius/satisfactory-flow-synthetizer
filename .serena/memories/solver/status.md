@@ -511,3 +511,43 @@ RREF/258 CCD96 comparison, and variables/258 CCD32 with cap increased to 400s.
 hour for startup/verification. Frozen plan, provenance and exact AB/BA balance
 pass. No solver change, build, new performance result or promotion. Not launched
 yet. Original failed run preserved; no push. `mem:solver/active`.
+
+## Focused confirmation launched
+
+Launched 2026-09-02 17:48:36 Europe/Paris, runner PID 55420; awaiting analysis.
+Run target/parallelism-ladder/rref-order-confirmation-20260902. First job running,
+empty stderr, runner alive. Completion/failure dialog enabled. No result inferred.
+55-minute search+cleanup allowance, one-hour user limit. Commit eac9608 includes
+manifest, prior result notes and handoff. No push. Live launch notes uncommitted.
+
+## Focused RREF confirmation analyzed, 2026-09-02
+
+`mem:solver/experiments/46-rref-order-confirmation-results`: all 20 runs optimal,
+finished 18:26:23.904 Europe/Paris after about 37m48s. All 976 frozen hashes,
+exact solutions, paired proofs and 15 structural counters pass. Independent frozen
+summary hash matches original:
+4d9838bb82b3c8c34952da2a8be56fb47c7a31c598a896a75d1405704ffdc7cf.
+
+RREF paired wall medians -1.49% on 115 all, -1.44% on 238 optimal, +0.38% on
+258 minimum_links. All eight new CPU pairs improve, 18/18 across both screens.
+These are descriptive counts, not pooled speedups. Repeated completed 115/238
+benefits support recommending permanent retention of a79ecf7. 258 is mixed:
++1.60% and -0.84% individual pairs, no demonstrated completion gain.
+Variable/258 finishes both new pairs, -1.09% median, with candidates 293.548 and
+304.898s. Old timeout did not recur, but its cause is not established. Preserve it.
+
+No promotion commit, source edit, push or new benchmark during analysis. Next
+proposed work: profile pivot normalization/elimination/nonzero-suffix preparation
+inside canonical RREF, with factor/coefficient patterns to choose exact shortcuts.
+Existing +1 and zero-factor handling must not be rediscovered as new work.
+Stop broad ordering repeats; future benchmark budget remains <=1h including
+cleanup. Scheduler paused. Nothing running; `mem:solver/active`.
+
+## RREF promotion accepted, 2026-09-02
+
+User approved permanent retention of reverse RREF pivot ordering in a79ecf7.
+Confirmation evidence and limitations remain in
+`mem:solver/experiments/46-rref-order-confirmation-results`. Promotion notes are
+committed separately before the new diagnostic split. No production code rewrite
+needed for promotion. No push. Next work is RREF arithmetic profiling, not a new
+arithmetic optimization; benchmark budget remains <=1h including cleanup.

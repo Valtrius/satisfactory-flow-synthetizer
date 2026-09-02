@@ -45,15 +45,15 @@ Record dates follow the analysis chronology, not necessarily every run's start t
 
 ## Active follow-up
 
-`mem:solver/experiments/46-rref-order-confirmation`: prepared, plan-validated,
-not launched. Twenty jobs on unchanged binaries, 55 minutes search+cleanup.
-Repeat RREF 115/238, add RREF/258 CCD96, raise variable/258 CCD32 cap to 400s.
-Exact AB/BA balance. No solver/scheduler change, build or push.
-
-Prior results: `mem:solver/experiments/46-rref-order-results`. Original screen
-FAILED completion coverage with 39 optimal and one 320s variable/258 cap.
-RREF remains active/unpromoted in a79ecf7. Keep all adverse observations.
-Follow-up manifest and results/handoff notes being committed. `mem:solver/active`.
+46 confirmation analyzed: `mem:solver/experiments/46-rref-order-confirmation-results`.
+20/20 optimal, no failures. RREF wall medians 115 -1.49%, 238 -1.44%, 258 +0.38%;
+18/18 CPU pairs favorable across both runs, without pooling timing cohorts.
+User approved permanent retention of a79ecf7 for repeated completed gains,
+without a 258/universal speedup claim. Promotion documentation being committed.
+Variable/258 finishes twice, -1.09% median; original 320s timeout preserved.
+Nothing running. Next proposed diagnostic: split RREF arithmetic costs and measure
+factor/coefficient patterns before choosing the next exact shortcut. No source
+change, commit or push in analysis; `mem:solver/active`.
 
 ## How the diagnosis changed
 

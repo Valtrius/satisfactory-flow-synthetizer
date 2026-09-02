@@ -1,6 +1,8 @@
 # 46. Focused RREF confirmation and longer 258 control
 
-Date: 2026-09-02. State: prepared and plan-validated; not launched.
+Date: 2026-09-02. State: completed and analyzed; all 20 runs optimal.
+Results: `mem:solver/experiments/46-rref-order-confirmation-results`.
+The design/launch record below preserves pre-result knowledge.
 Approved follow-up to `mem:solver/experiments/46-rref-order-results`.
 The original 40-job screen and failure marker remain unchanged.
 
@@ -66,3 +68,12 @@ evidence carefully, without silently pooling raw times across sessions or
 excluding adverse samples. No promotion or regression dismissal before analysis.
 Freeze and launch with completion/failure dialog, then end the turn.
 Manifest/results/handoff documentation being committed; no push.
+
+## Actual launch
+
+Launched 2026-09-02 17:48:36 Europe/Paris, runner PID 55420; awaiting analysis.
+Startup verified runner alive, first job running with 400s cap and 15s cleanup,
+empty stderr. Output target/parallelism-ladder/rref-order-confirmation-20260902.
+All 20 jobs frozen; total search+cleanup allowance 55 minutes. Completion/failure
+dialog enabled. No result inferred. Manifest, earlier results and handoff committed
+in eac9608; no push. Live launch-state notes uncommitted. End turn now.
