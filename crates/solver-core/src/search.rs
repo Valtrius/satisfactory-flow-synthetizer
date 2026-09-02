@@ -355,11 +355,18 @@ fn scc_cache_entry_bytes(key: &SccSummaryKey, summary: &CachedOpenSccSummary) ->
 }
 
 fn rational_payload_bytes(value: &Rational) -> usize {
-    value
-        .numerator()
-        .to_signed_bytes_le()
-        .len()
-        .saturating_add(value.denominator().to_signed_bytes_le().len())
+    signed_payload_bytes(value.numerator())
+        .saturating_add(signed_payload_bytes(value.denominator()))
+}
+
+fn signed_payload_bytes(value: &num::BigInt) -> usize {
+    let bits = value.bits();
+    // A negative power of two at a byte boundary already contains its sign bit.
+    // Other values need a sign bit; zero still occupies one byte.
+    let sign_already_fits = bits.is_multiple_of(8)
+        && value.sign() == num::bigint::Sign::Minus
+        && value.trailing_zeros() == bits.checked_sub(1);
+    usize::try_from(bits / 8 + u64::from(!sign_already_fits)).unwrap_or(usize::MAX)
 }
 
 /// Internal failure while exhausting a fixed profile.
@@ -3303,6 +3310,39 @@ mod tests {
         assert_eq!(first, second);
         assert_eq!(context.stats.state_cache_hits, hits_before + 1);
         assert!(context.stats.instrumentation.peak_memory_bytes > 0);
+    }
+
+    #[test]
+    fn signed_payload_size_matches_allocating_oracle() {
+        let check = |value: num::BigInt| {
+            assert_eq!(
+                super::signed_payload_bytes(&value),
+                value.to_signed_bytes_le().len()
+            );
+        };
+        for value in i16::MIN..=i16::MAX {
+            check(num::BigInt::from(value));
+        }
+        for bit in 0..=4096 {
+            let power = num::BigInt::from(1_u8) << bit;
+            for offset in -1..=1 {
+                let value: num::BigInt = &power + offset;
+                check(value.clone());
+                check(-value);
+            }
+        }
+        let mut seed = 902_045_u64;
+        for length in [1, 8, 16, 32, 128, 1024] {
+            for _ in 0..32 {
+                let bytes: Vec<_> = (0..length)
+                    .map(|_| {
+                        seed = seed.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(1);
+                        seed.to_le_bytes()[4]
+                    })
+                    .collect();
+                check(num::BigInt::from_signed_bytes_le(&bytes));
+            }
+        }
     }
 
     #[test]
