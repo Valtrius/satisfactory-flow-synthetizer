@@ -2487,8 +2487,12 @@ fn rational_rref(mut rows: Vec<Vec<Rational>>, variable_count: usize) -> Vec<Vec
     } else {
         rows.retain(|row| row[..variable_count].iter().any(|value| !value.is_zero()));
     }
-    rows.sort();
-    rows.dedup();
+    // Retained rows have distinct unit pivots in increasing column order.
+    // For any two rows, the earlier pivot is their first unequal coefficient:
+    // 1 in the earlier row, 0 in the later row. Reversal therefore gives the
+    // exact lexicographic order without comparisons or duplicate elimination.
+    // Empty systems and the single canonical contradiction are unchanged.
+    rows.reverse();
     rows
 }
 
@@ -3008,7 +3012,7 @@ mod tests {
     #[test]
     fn sparse_elimination_matches_dense_reference_exactly() {
         let mut seed = 0x7b19_c21d_u64;
-        for variables in 1..=7 {
+        for variables in 0..=7 {
             for sample in 0..24 {
                 let rows = (0..sample % 9)
                     .map(|_| {
@@ -3029,8 +3033,31 @@ mod tests {
                     })
                     .collect::<Vec<_>>();
                 let expected = dense_reference_rational_rref(rows.clone(), variables);
-                let actual = rational_rref(rows, variables);
+                let actual = rational_rref(rows.clone(), variables);
                 assert_eq!(actual, expected, "variables={variables}, sample={sample}");
+                // Sorting used to hide the reducer's row order. Check the exact
+                // canonical order after permuting/scaling the generators and
+                // appending dependent and zero rows, without sorting the result.
+                let mut equivalent = rows.into_iter().rev().collect::<Vec<_>>();
+                for (index, row) in equivalent.iter_mut().enumerate() {
+                    let scale = if index % 2 == 0 {
+                        rational("-7/3")
+                    } else {
+                        rational("5/11")
+                    };
+                    for value in row {
+                        *value = &*value * &scale;
+                    }
+                }
+                if let Some(first) = equivalent.first().cloned() {
+                    equivalent.push(first);
+                }
+                equivalent.push(vec![Rational::zero(); variables + 1]);
+                assert_eq!(
+                    rational_rref(equivalent, variables),
+                    expected,
+                    "permuted/scaled variables={variables}, sample={sample}"
+                );
                 for row in &actual {
                     assert_sparse_row_round_trip(row);
                 }
