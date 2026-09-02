@@ -45,16 +45,15 @@ Record dates follow the analysis chronology, not necessarily every run's start t
 
 ## Active follow-up
 
-43 (`mem:solver/experiments/43-root258-affinity`): 28-job isolated-root factorial
-with verified CPU affinity, validated and preparing launch. Original p1/32 root
-plan is frozen; serial execution cannot prove whole-solve optimality.
-User authorized up to a few hours while AFK; scheduled caps plus cleanup <3h.
-Handoff: `mem:solver/active`. Tooling/manifest/results updates pending commit.
-
-42 follow-up analyzed (`mem:solver/experiments/42-258-confirmation-results`).
-All 46 records verify. Pooled 258 n=3 wall medians regress 22.46-27.38% despite
-local calculation savings; reference timings also vary widely. Roots 7/23 own
-the final ~108s search tail. Both optimizations remain candidates; scheduler paused.
+44 (`mem:solver/experiments/44-topology-variable-confirmation`) validated, preparing
+launch. Benchmark-only before-resume affinity, balanced pairs and separated
+CCD/full-CPU cohorts. 198 jobs, 7h26m30s search+cleanup allowance.
+Primary variables confirmation 150 jobs; independent allocation-free accounting
+48 jobs (`mem:solver/experiments/45-cache-accounting`).
+Integer rows restored (`mem:solver/experiments/41-integer-rows-restoration`).
+Candidates remain unpromoted. Restoration `5d8d924`; accounting candidate `331b87a`;
+  benchmark tooling/manifest commit pending. No push.
+Live state: `mem:solver/active`.
 
 ## How the diagnosis changed
 
@@ -212,7 +211,15 @@ the final ~108s search tail. Both optimizations remain candidates; scheduler pau
     An 82.30% local variable-collection reduction does not establish whole speedup.
 39. Isolated roots with CPU affinity (`mem:solver/experiments/43-root258-affinity`)
     retain the original ordered root plan and compare four variants within each
-    fixed logical CPU. Twenty-eight jobs are validated; no timing result yet.
+    fixed logical CPU. All 28 completions verify. Results (`mem:solver/experiments/43-root258-affinity-results`)
+    favor variables modestly, reject integer rows on these roots, and establish
+    substantial placement sensitivity. No production change yet.
+
+40. Topology-controlled confirmation (`mem:solver/experiments/44-topology-variable-confirmation`)
+    separates CCD placement from candidate effects. Plan/smokes pass; results pending.
+41. Allocation-free cache size accounting (`mem:solver/experiments/45-cache-accounting`)
+    replaces temporary byte-vector allocation with an exact length calculation.
+    Oracle/correctness checks pass; 48 independent comparison jobs pending.
 
 ## Evidence conventions
 

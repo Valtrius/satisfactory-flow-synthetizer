@@ -9,6 +9,7 @@ param(
     [string]$RepositoryRoot = '',
     [ValidateRange(1, 5)][int]$ReplayRepeats = 1,
     [ValidateRange(1, 600)][int]$CancellationGraceSeconds = 60,
+    [switch]$PlanOnly,
     [switch]$Run
 )
 $ErrorActionPreference = 'Stop'
@@ -88,11 +89,12 @@ if (-not $Run) {
     }
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'analyze-parallelism.py') -Destination $runRoot
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'parallelism-ladder.ps1') -Destination $runRoot
+    Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'benchmark-affinity.ps1'),(Join-Path $PSScriptRoot 'benchmark_policy.py') -Destination $runRoot
     Copy-Item -LiteralPath $PSCommandPath -Destination $runRoot
     # Validate and freeze the manifest and cases before detaching. The child uses
     # these copies and the copied scripts even if the working tree changes later.
     $planRoot = Join-Path $runRoot 'input'
-    & (Join-Path $runRoot 'parallelism-ladder.ps1') -RepositoryRoot $repoRoot -JobManifest $manifestPath -BinaryDirectory $bin.FullName -ReferenceBinaryDirectory $ReferenceBinaryDirectory -VariantBinaryMap $frozenVariantMap -OutputDirectory $planRoot -Hotspots $Hotspots -PlanOnly
+    & (Join-Path $runRoot 'parallelism-ladder.ps1') -RepositoryRoot $repoRoot -JobManifest $manifestPath -BinaryDirectory $bin.FullName -ReferenceBinaryDirectory $ReferenceBinaryDirectory -VariantBinaryMap $frozenVariantMap -OutputDirectory $planRoot -Hotspots $Hotspots -CancellationGraceSeconds $CancellationGraceSeconds -PlanOnly
     $manifestPath = Join-Path $planRoot 'job-manifest.json'
     $frozenManifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
     foreach ($job in $frozenManifest.jobs) { $job.CaseFile = 'cases/' + (Split-Path $job.CaseFile -Leaf) }
@@ -101,6 +103,13 @@ if (-not $Run) {
     Copy-Item -LiteralPath (Join-Path $repoRoot 'crates/solver-core/src') -Destination $source.FullName -Recurse
     Copy-Item -LiteralPath (Join-Path $repoRoot 'crates/solver-core/examples') -Destination $source.FullName -Recurse
     git -C $repoRoot diff --binary | Set-Content -LiteralPath (Join-Path $runRoot 'working-tree.diff')
+    $frozenHashes = [ordered]@{}
+    foreach ($file in (Get-ChildItem -LiteralPath $runRoot -Recurse -File | Sort-Object FullName)) {
+        $relative = [IO.Path]::GetRelativePath($runRoot, $file.FullName).Replace('\', '/')
+        $frozenHashes[$relative] = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+    }
+    $frozenHashes | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $runRoot 'frozen-hashes.json')
+    if ($PlanOnly) { 'PREPARED ONLY: no benchmark launched.' | Set-Content -LiteralPath $status; return }
     'STARTING. See results/BENCHMARK-STATUS.txt for the current job. A completion dialog will appear after verification.' | Set-Content -LiteralPath $status
     $shell = (Get-Process -Id $PID).Path
     $arguments = @('-NoProfile','-STA','-File',('"'+(Join-Path $runRoot 'start-benchmark-screen.ps1')+'"'),'-Run','-RepositoryRoot',('"'+$repoRoot+'"'),'-JobManifest',('"'+$manifestPath+'"'),'-OutputDirectory',('"'+$runRoot+'"'),'-Hotspots',$Hotspots)

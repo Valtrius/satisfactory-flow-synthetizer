@@ -55,4 +55,4 @@ profile_case.exe SHA256:
 Only search.rs differs semantically from the frozen variables source.
 Exact source hashes/build metadata accompany the binary.
 
-Candidate is active in current source, not promoted. Commit pending. No push.
+Candidate is active in current source, not promoted. Committed candidate in `331b87a`; not promoted. No push.

@@ -7,6 +7,7 @@ from collections import Counter, defaultdict
 from fractions import Fraction
 from pathlib import Path
 from statistics import median
+from benchmark_policy import paired_summary, validate_pairs, validate_placement
 
 
 def activity_summary(trace, wall_s):
@@ -67,6 +68,16 @@ rows = []
 failures = []
 for directory in args.directories:
     directory_rows = []
+    frozen_hashes_path = directory.parent / "frozen-hashes.json"
+    if frozen_hashes_path.exists():
+        frozen_hashes = json.loads(frozen_hashes_path.read_text(encoding="utf-8-sig"))
+        for relative, expected_hash in frozen_hashes.items():
+            try:
+                actual_hash = hashlib.sha256((directory.parent / relative).read_bytes()).hexdigest()
+                if actual_hash != expected_hash:
+                    failures.append(f"Frozen artifact hash mismatch: {relative}")
+            except OSError as error:
+                failures.append(f"Cannot verify frozen artifact: {relative}: {error}")
     failed_jobs_path = directory / "failed-jobs.json"
     if failed_jobs_path.exists():
         for job in json.loads(failed_jobs_path.read_text(encoding="utf-8-sig")):
@@ -78,6 +89,7 @@ for directory in args.directories:
                 row["result"] = json.loads(Path(row["result_file"]).read_text(encoding="utf-8-sig"))
                 row.setdefault("mode", "all")
                 row.setdefault("variant", "after")
+                row["run_directory"] = str(directory.resolve())
                 rows.append(row)
                 directory_rows.append(row)
     else:
@@ -102,6 +114,12 @@ for directory in args.directories:
         schedule = json.loads(schedule_path.read_text(encoding="utf-8-sig"))
         if isinstance(schedule, dict):
             schedule = [schedule]
+        try:
+            validate_pairs(schedule)
+        except ValueError as error:
+            failures.append(f"Invalid paired schedule: {error}")
+        topology_path = directory / "topology.json"
+        topology = json.loads(topology_path.read_text(encoding="utf-8-sig")) if topology_path.exists() else {}
         if len(schedule) != len(directory_rows):
             failures.append(f"Unfinished schedule: {directory}, {len(directory_rows)}/{len(schedule)} runs")
         planned = Counter((str(j["Case"]), str(j.get("Mode", "all")), str(j.get("Variant", "after")), str(j["Stage"]), str(j["Workers"]), str(j["Repeat"])) for j in schedule)
@@ -114,6 +132,10 @@ for directory in args.directories:
             row = by_id.get(identity)
             if not row or "CaseFile" not in job:
                 continue
+            try:
+                validate_placement(job, row, topology)
+            except (KeyError, ValueError, TypeError) as error:
+                failures.append(f"Invalid placement evidence: {row['result_file']}: {error}")
             expected = json.loads((directory / "cases" / Path(job["CaseFile"]).name).read_text(encoding="utf-8-sig"))
             result = row["result"]
             def exact_problem(problem):
@@ -164,7 +186,7 @@ for row in rows:
     # A preserved before binary is also an exact-result reference when the
     # comparison deliberately holds a non-baseline scheduling policy fixed.
     # Timing ratios below still require their own matching stage/settings.
-    if (row["stage"] == "baseline" or row["variant"] == "before") and row["completion"] == "optimal":
+    if (row["stage"] == "baseline" or row["variant"] == "before" or row.get("pair_role") == "reference") and row["completion"] == "optimal":
         key = case_key(row)
         if key not in baselines or row["variant"] == "before":
             baselines[key] = row["result"]
@@ -237,7 +259,7 @@ for row in rows:
                 failures.append(f"Incomplete optimal run lost its best-known witness: {row['result_file']}")
         if row["completion"] in ("globally_unsat", "bounded_exhausted") and result["layouts"]:
             failures.append(f"UNSAT proof has layouts: {row['result_file']}")
-    groups[row["case"], row["mode"], row["variant"], row["stage"], int(row["workers"]), row.get("max_nodes", "legacy"), row.get("timeout_s", "legacy")].append(row)
+    groups[row["case"], row["mode"], row["variant"], row["stage"], int(row["workers"]), row.get("max_nodes", "legacy"), row.get("timeout_s", "legacy"), row.get("processor_affinity", "")].append(row)
 
 summary = []
 def comparable_optimal_wall(samples, reference):
@@ -249,7 +271,7 @@ def comparable_optimal_wall(samples, reference):
     return median(float(row["wall_s"]) for row in reference)
 
 
-for (case, mode, variant, stage, workers, max_nodes, timeout_s), samples in sorted(groups.items()):
+for (case, mode, variant, stage, workers, max_nodes, timeout_s, affinity), samples in sorted(groups.items()):
     if len({row.get("hotspot_recording", "legacy") for row in samples}) != 1:
         failures.append(f"Mixed profiling settings: {case} {mode} {variant} {stage} w{workers}")
     observed_wall = [float(row["wall_s"]) for row in samples]
@@ -262,17 +284,18 @@ for (case, mode, variant, stage, workers, max_nodes, timeout_s), samples in sort
     all_optimal = all(row["completion"] == "optimal" for row in samples)
     wall = observed_wall if all_optimal else []
     completion_counts = dict(Counter(row["completion"] for row in samples))
-    baseline_samples = groups.get((case, mode, variant, "baseline", workers, max_nodes, timeout_s), [])
+    baseline_samples = groups.get((case, mode, variant, "baseline", workers, max_nodes, timeout_s, affinity), [])
     baseline_wall = comparable_optimal_wall(samples, baseline_samples)
-    single_samples = groups.get((case, mode, variant, stage, 1, max_nodes, timeout_s), [])
+    single_samples = groups.get((case, mode, variant, stage, 1, max_nodes, timeout_s, affinity), [])
     single_wall = comparable_optimal_wall(samples, single_samples)
     diagnostics = [{item["name"]: int(item["value"]["value"]) for item in (row["result"]["diagnostics"] or []) if item["value"]["type"] == "integer"} for row in samples]
-    before = groups.get((case, mode, "before", stage, workers, max_nodes, timeout_s), [])
+    before = groups.get((case, mode, "before", stage, workers, max_nodes, timeout_s, affinity), [])
     before_wall = comparable_optimal_wall(samples, before)
     first_valid = [float(row["first_valid_s"]) for row in samples if row.get("first_valid_s")]
     summary.append({
         "case": case, "mode": mode, "variant": variant, "stage": stage, "workers": workers, "runs": len(samples),
         "max_nodes": max_nodes, "timeout_s": timeout_s, "completion_counts": completion_counts,
+        "processor_affinity": affinity,
         "median_wall_s": median(wall) if wall else None, "min_wall_s": min(wall) if wall else None, "max_wall_s": max(wall) if wall else None,
         "median_observed_wall_s": median(observed_wall),
         "activity": activity,
@@ -298,7 +321,12 @@ for (case, mode, variant, stage, workers, max_nodes, timeout_s), samples in sort
         "median_hotspots_ns": {key: median(row["result"].get("hotspots", {}).get(key, 0) for row in samples) for key in samples[0]["result"].get("hotspots", {})},
     })
 args.output.parent.mkdir(parents=True, exist_ok=True)
-args.output.write_text(json.dumps({"failures": failures, "summary": summary}, indent=2))
+paired = []
+try:
+    paired = paired_summary(rows)
+except (ValueError, KeyError, TypeError) as error:
+    failures.append(f"Paired analysis failed: {error}")
+args.output.write_text(json.dumps({"failures": failures, "summary": summary, "paired": paired}, indent=2))
 for item in summary:
     print(f"{item['case']} {item['mode']} {item['variant']} {item['stage']} w{item['workers']}: {item['median_observed_wall_s']:.3f}s observed, {item['completion_counts']}, n={item['runs']}")
 if failures:

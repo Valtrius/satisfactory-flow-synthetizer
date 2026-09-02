@@ -30,23 +30,22 @@ dedup (33), N≤9 p1 guard (18).
 
 ## Current posture
 
-- Scheduler extras (sharing, donation, parallel remaining groups) remain paused.
-- Sparse substitution closed after exp 38; canonicalization profiling resumed.
-- Integer rows `cd46fae` and complete variables `520b352` remain active committed
-  candidates, not permanent. All 46 factorial/follow-up records verify exactly.
-- Pooled 258 n=3 medians regress for all candidates: wall +22.46 to +27.38%,
-  CPU +7.84 to +10.03%. The reference itself ranges 195.5-268.2s; do not dismiss
-  adverse samples or infer causality. Two roots own the final ~108s search tail;
-  cleanup on either longest root is under 0.6s. Variable collection falls 82.30%
-  in one diagnostic, without a whole-solve improvement.
-  Results: `mem:solver/experiments/42-258-confirmation-results`.
-- User authorized expanded AFK testing. Experiment 43's 28-job isolated-root
-  factorial fixes CPU affinity to logical CPU 0 or 31 while preserving the original
-  p1/32, target-128, 76-key root plan. Compare variants within each CPU.
-  Validated; preparing launch. No production solver or scheduler edits.
-  Record: `mem:solver/experiments/43-root258-affinity`.
-- Live handoff: `mem:solver/active`. Tooling/manifest/results updates pending commit.
-  No promotion or push.
+- Scheduler extras remain paused. No production affinity policy.
+- Integer inequality rows restored to rational rows after the controlled adverse
+  root comparisons. Record: `mem:solver/experiments/41-integer-rows-restoration`.
+- Complete variables remain a candidate. Allocation-free cache-byte accounting
+  is an independent active candidate, not promoted.
+- Exp44 implements topology-aware, before-resume benchmark affinity, adjacent
+  balanced pairs and separate per-CCD/unrestricted cohorts. The 198-job plan and
+  real-executable smokes pass. Search+cleanup allowance 7h26m30s.
+  Preparing launch; no performance result yet.
+- Primary confirmation: `mem:solver/experiments/44-topology-variable-confirmation`.
+  Extra accounting test: `mem:solver/experiments/45-cache-accounting`.
+  Live state: `mem:solver/active`.
+- 41 tooling tests, 221 feature-enabled solver-core tests, 309 workspace tests,
+  both strict Clippy configurations, release build and formatting pass.
+  Restoration `5d8d924`; accounting candidate `331b87a`;
+  benchmark tooling/manifest commit pending. No push.
 
 ## When to read more
 

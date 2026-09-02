@@ -18,10 +18,13 @@ param(
     [string]$OutputDirectory = "target/parallelism-ladder/runs-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
 )
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'benchmark-affinity.ps1')
 $repoRoot = if ($RepositoryRoot) { [IO.Path]::GetFullPath($RepositoryRoot) } else { Split-Path $PSScriptRoot -Parent }
 $outputRoot = [IO.Path]::GetFullPath($OutputDirectory, $repoRoot)
 if (Test-Path -LiteralPath $outputRoot) { throw "Output already exists: $outputRoot" }
 New-Item -ItemType Directory -Path $outputRoot | Out-Null
+Save-BenchmarkTopology (Join-Path $outputRoot 'topology.json')
+$topology = Get-Content -LiteralPath (Join-Path $outputRoot 'topology.json') -Raw | ConvertFrom-Json
 $variants = if ($VariantBinaryMap) {
     $variantMapPath = [IO.Path]::GetFullPath($VariantBinaryMap, $repoRoot)
     $variantMapRoot = Split-Path $variantMapPath -Parent
@@ -59,12 +62,22 @@ $manifestRoot = $null
 if ($JobManifest) {
     $manifestPath = [IO.Path]::GetFullPath($JobManifest, $repoRoot)
     $manifestRoot = Split-Path $manifestPath -Parent
-    $jobs = @((Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json).jobs)
+    $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+    $jobs = @($manifest.jobs)
     if (-not $jobs.Count) { throw 'Empty job manifest' }
     foreach ($job in $jobs) {
         if ($job.Case -notmatch '^[a-zA-Z0-9_-]+$' -or $job.Stage -notin $Stages -or $job.Mode -notin @('all','minimum_links','optimal') -or $job.Cohort -notin @('reference','stress')) { throw 'Invalid job identity or mode' }
         if ($job.Workers -lt 1 -or $job.Workers -gt 4096 -or $job.Repeat -lt 1 -or $job.MaxNodes -lt 0 -or $job.TimeoutSeconds -lt 1 -or $job.TimeoutSeconds -gt 86400) { throw 'Invalid job budget' }
         if ($null -ne $job.Hotspots -and $job.Hotspots -notin @('on','off')) { throw 'Invalid job hotspot recording setting' }
+        if ($null -ne $job.ProcessorAffinity -and $job.ProcessorAffinity -isnot [string]) { throw 'Affinity must be a string' }
+        $mask = ConvertTo-BenchmarkAffinityMask $job.ProcessorAffinity
+        $job | Add-Member NoteProperty ProcessorAffinity $mask -Force
+        $selected = if ($mask) { [Convert]::ToInt64($mask, 16) } else { [Convert]::ToInt64($topology.available_mask, 16) }
+        if (($mask -or $job.PairId) -and $job.Workers -gt [System.Numerics.BitOperations]::PopCount([ulong]$selected)) { throw 'Worker count exceeds selected logical CPUs' }
+        if ($null -ne $job.CacheBytes) {
+            $matchedCache = @($topology.relationships | Where-Object { $_.relation -eq 2 -and $_.level -eq 3 -and $_.cache_bytes -eq $job.CacheBytes -and $_.groups.Count -eq 1 -and $_.groups[0].group -eq 0 -and $_.groups[0].mask -eq $mask })
+            if ($matchedCache.Count -ne 1) { throw 'Requested cache domain does not match this machine' }
+        }
         $casePath = [IO.Path]::GetFullPath($job.CaseFile, $manifestRoot)
         $caseData = Get-Content -LiteralPath $casePath -Raw | ConvertFrom-Json
         if ($caseData.problem.maxLinkRate -ne '1200') { throw 'File benchmark cases must use maxLinkRate 1200' }
@@ -80,6 +93,11 @@ if ($JobManifest) {
     }
     $identities = @($jobs | ForEach-Object { "$($_.Case)-$($_.Mode)-$($_.Variant)-$($_.Stage)-$($_.Workers)-$($_.Repeat)" })
     if (@($identities | Sort-Object -Unique).Count -ne $jobs.Count) { throw 'Duplicate job identities' }
+    if ($null -ne $manifest.MaxScheduledSeconds) {
+        $worst = ($jobs | Measure-Object TimeoutSeconds -Sum).Sum + $jobs.Count * $CancellationGraceSeconds
+        if ($manifest.MaxScheduledSeconds -isnot [long] -and $manifest.MaxScheduledSeconds -isnot [int]) { throw 'Invalid schedule allowance' }
+        if ($manifest.MaxScheduledSeconds -le 0 -or $worst -gt $manifest.MaxScheduledSeconds) { throw 'Search and cleanup allowances exceed manifest budget' }
+    }
     Copy-Item -LiteralPath $manifestPath -Destination (Join-Path $outputRoot 'job-manifest.json')
     $caseOutput = New-Item -ItemType Directory -Path (Join-Path $outputRoot 'cases')
     foreach ($casePath in ($jobs.CasePath | Sort-Object -Unique)) {
@@ -89,7 +107,23 @@ if ($JobManifest) {
     $variants = @($variants | Where-Object { $_.Name -in $jobs.Variant })
 }
 $randomOrder = [Random]::new($Seed)
-$jobs = @($jobs | Sort-Object { $randomOrder.Next() })
+$pairedJobs = @($jobs | Where-Object { $_.PairId })
+if ($pairedJobs.Count) {
+    if ($pairedJobs.Count -ne $jobs.Count) { throw 'Do not mix paired and unpaired jobs' }
+    $pairs = @($jobs | Group-Object PairId)
+    foreach ($pair in $pairs) {
+        $members = @($pair.Group)
+        if ($members.Count -ne 2 -or @($members.PairRole | Sort-Object -Unique).Count -ne 2 -or 'reference' -notin $members.PairRole -or 'candidate' -notin $members.PairRole -or $members[0].Variant -eq $members[1].Variant) { throw 'Invalid reference/candidate pair' }
+        foreach ($field in @('Case','Mode','Stage','Workers','Repeat','MaxNodes','TimeoutSeconds','Hotspots','ProcessorAffinity','CacheBytes','Comparison','Cohort','CaseFile')) {
+            if ($members[0].$field -ne $members[1].$field) { throw "Unmatched pair setting: $field" }
+        }
+    }
+    $firstRole = if ($randomOrder.Next(2)) { 'reference' } else { 'candidate' }
+    $jobs = @($pairs | Sort-Object { $randomOrder.Next() } | ForEach-Object {
+        $role = if ($_.Group[0].Repeat % 2) { $firstRole } else { if ($firstRole -eq 'reference') { 'candidate' } else { 'reference' } }
+        $_.Group | Sort-Object { if ($_.PairRole -eq $role) { 0 } else { 1 } }
+    })
+} else { $jobs = @($jobs | Sort-Object { $randomOrder.Next() }) }
 $jobs | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $outputRoot 'schedule.json')
 if ($PlanOnly) { Write-Output "Validated $($jobs.Count) jobs; plan written to $outputRoot"; return }
 @{ seed=$Seed; hotspots=$Hotspots; timeout_s=$TimeoutSeconds; cancellation_grace_s=$CancellationGraceSeconds; repeats=$Repeats } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $outputRoot 'settings.json')
@@ -118,12 +152,13 @@ foreach ($job in $jobs) {
     $maxNodes = if ($JobManifest) { $job.MaxNodes } else { switch ($job.Case) { 'profile_40_25' { 6 } 'profile_tiny' { 2 } default { 12 } } }
     $timeout = if ($JobManifest) { $job.TimeoutSeconds } else { $TimeoutSeconds }
     $jobHotspots = if ($JobManifest -and $null -ne $job.Hotspots) { $job.Hotspots } else { $Hotspots }
-    $arguments = @($timeout, $job.Workers, $maxNodes, 'custom', $job.Stage, ('"' + $json + '"'), $job.Mode, $jobHotspots)
-    if ($JobManifest) { $arguments += ('"' + $job.CasePath + '"') }
+    $arguments = @([string]$timeout, [string]$job.Workers, [string]$maxNodes, 'custom', $job.Stage, $json, $job.Mode, $jobHotspots)
+    if ($JobManifest) { $arguments += $job.CasePath }
     Write-Output "Starting $index/$($jobs.Count) $name"
     @("RUNNING: $index / $($jobs.Count)", "Current: $name", "Time cap: $timeout seconds; N <= $maxNodes; hotspots $jobHotspots", "Cancellation cleanup watchdog: $CancellationGraceSeconds additional seconds", "Updated: $(Get-Date -Format o)") | Set-Content -LiteralPath (Join-Path $outputRoot 'BENCHMARK-STATUS.txt')
     $watch = [Diagnostics.Stopwatch]::StartNew()
-    $process = Start-Process -FilePath $exe -ArgumentList $arguments -WorkingDirectory $repoRoot -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $outputRoot "$name.log") -RedirectStandardError (Join-Path $outputRoot "$name.stderr.log")
+    $launch = Start-BenchmarkProcess -Executable $exe -Arguments $arguments -WorkingDirectory $repoRoot -StandardOutput (Join-Path $outputRoot "$name.log") -StandardError (Join-Path $outputRoot "$name.stderr.log") -Affinity $job.ProcessorAffinity
+    $process = $launch.Process
     $null = $process.Handle
     $cpu = 0.0
     $peakWorkingSet = 0L
@@ -196,6 +231,9 @@ foreach ($job in $jobs) {
         process_cpu_s=$cpu; cpu_utilization=($cpu / $watch.Elapsed.TotalSeconds / $job.Workers)
         accounted_timer_s=$data.accounted_timer_s; sampled_peak_working_set_bytes=$peakWorkingSet
         process_wall_s=$watch.Elapsed.TotalSeconds; result_file=$json
+        processor_affinity=$launch.RequestedMask; affinity_observed=$launch.ObservedMask
+        affinity_before_resume=$launch.BeforeResume; affinity_applied_s=$launch.AppliedSeconds
+        pair_id=$job.PairId; pair_role=$job.PairRole; comparison=$job.Comparison
     }
     $rows.Add($row)
     $rows | Export-Csv -LiteralPath (Join-Path $outputRoot 'results.csv') -NoTypeInformation

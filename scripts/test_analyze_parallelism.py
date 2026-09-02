@@ -11,9 +11,62 @@ import sys
 import tempfile
 import unittest
 from unittest.mock import patch
+from benchmark_policy import paired_summary, validate_pairs, validate_placement
 
 
 class AnalyzerTests(unittest.TestCase):
+    def test_pair_policy_rejects_unmatched_settings_and_separated_members(self):
+        jobs = [dict(Case="fixture", Mode="optimal", Stage="p1", Workers=16, Repeat=1,
+                     MaxNodes=2, TimeoutSeconds=5, Hotspots="off", ProcessorAffinity="ffff",
+                     PairId="one", PairRole=role, Variant=variant)
+                for role, variant in [("reference", "before"), ("candidate", "variables")]]
+        self.assertEqual(len(validate_pairs(jobs)), 1)
+        for field, value in [("ProcessorAffinity", "ffff0000"), ("Workers", 32),
+                             ("Hotspots", "on"), ("PairRole", "reference")]:
+            changed = [dict(j) for j in jobs]
+            changed[1][field] = value
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                validate_pairs(changed)
+        second = [dict(j, PairId="two") for j in jobs]
+        with self.assertRaisesRegex(ValueError, "adjacent"):
+            validate_pairs([jobs[0], second[0], jobs[1], second[1]])
+
+    def test_placement_policy_checks_startup_mask_topology_and_worker_count(self):
+        job = dict(ProcessorAffinity="ffff", Workers=16, PairId="one", PairRole="reference",
+                   Comparison="variables", CacheBytes=96 * 2**20)
+        row = dict(processor_affinity="ffff", affinity_observed="ffff", affinity_before_resume="True",
+                   affinity_applied_s="0.01", process_wall_s="10", pair_id="one",
+                   pair_role="reference", comparison="variables")
+        topology = dict(available_mask="ffffffff", relationships=[dict(relation=2, level=3,
+                        cache_bytes=96 * 2**20, groups=[dict(group=0, mask="ffff")])])
+        validate_placement(job, row, topology)
+        for field, value in [("affinity_observed", "ffff0000"), ("affinity_before_resume", "False"),
+                             ("processor_affinity", ""), ("pair_role", "candidate")]:
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                validate_placement(job, dict(row, **{field: value}), topology)
+        with self.assertRaises(ValueError):
+            validate_placement(dict(job, Workers=32), row, topology)
+        with self.assertRaises(ValueError):
+            validate_placement(dict(job, CacheBytes=32 * 2**20), row, topology)
+
+    def test_paired_summary_separates_cpu_masks_and_rejects_incomplete_speedups(self):
+        rows = []
+        for mask, ratio in [("ffff", 0.9), ("ffff0000", 1.1)]:
+            for repeat in range(5):
+                for role, variant, wall in [("reference", "before", 100), ("candidate", "variables", 100 * ratio)]:
+                    rows.append(dict(run_directory="fixture", pair_id=f"{mask}-{repeat}", pair_role=role,
+                        comparison="variables", case="fixture", mode="optimal", stage="p1", workers="16",
+                        max_nodes="2", timeout_s="120", processor_affinity=mask, hotspot_recording="False",
+                        variant=variant, completion="optimal", wall_s=wall, first_valid_s=wall, process_cpu_s=wall))
+        summary = paired_summary(rows)
+        self.assertEqual(len(summary), 2)
+        self.assertAlmostEqual(summary[0]["wall_s"]["median_change_pct"], -10)
+        self.assertAlmostEqual(summary[1]["wall_s"]["median_change_pct"], 10)
+        rows[0]["completion"] = "timed_out"
+        summary = paired_summary(rows)
+        self.assertIsNone(summary[0]["wall_s"])
+        self.assertFalse(summary[0]["all_completed"])
+
     def fixed_fixture(self):
         spec = importlib.util.spec_from_file_location("hard_profile", Path(__file__).with_name("hard-profile.py"))
         module = importlib.util.module_from_spec(spec)
@@ -233,7 +286,6 @@ unsafe extern "system" {
 }
 fn main() {
     let args: Vec<String> = std::env::args().collect();
-    std::thread::sleep(std::time::Duration::from_millis(300));
     let (mut mask, mut system) = (0, 0);
     assert_ne!(unsafe { GetProcessAffinityMask(GetCurrentProcess(), &mut mask, &mut system) }, 0);
     let request = std::path::Path::new(&args[1]);
@@ -256,15 +308,16 @@ fn main() {
             module.write(root / "binary.json", dict(path=str(binary), sha256=module.digest(binary)))
             shutil.copy2(Path(__file__).with_name("hard-profile.py"), root / "hard-profile.py")
             runner = Path(__file__).with_name("start-hard-profile.ps1").resolve()
-            # Suppress only this test's notification assembly; real launches retain dialogs.
             quote = lambda p: "'" + str(p).replace("'", "''") + "'"
-            command = f"function Add-Type {{}}; & {quote(runner)} -Run -RepositoryRoot {quote(root)} -OutputDirectory {quote(root)}"
+            command = f"& {quote(runner)} -Run -NoNotification -RepositoryRoot {quote(root)} -OutputDirectory {quote(root)}"
             subprocess.run(["pwsh", "-NoProfile", "-Command", command], check=True, capture_output=True, text=True, timeout=20)
             self.assertTrue((root / "BENCHMARK-FINISHED.txt").exists(), (root / "BENCHMARK-STATUS.txt").read_text())
             self.assertEqual(request.with_suffix(".affinity").read_text(), job["processor_affinity"])
-            metrics = list(csv.DictReader((root / "process-metrics.csv").open(encoding="utf-8-sig")))
+            with (root / "process-metrics.csv").open(encoding="utf-8-sig") as stream:
+                metrics = list(csv.DictReader(stream))
             module.validate_affinity(job, metrics[0])
             self.assertGreater(float(metrics[0]["affinity_applied_s"]), 0)
+            self.assertEqual(metrics[0]["affinity_before_resume"], "True")
 
     @unittest.skipUnless(os.name == "nt", "Windows profiling executable")
     def test_fixed_work_executable_returns_valid_local_proof_and_cancellation(self):
@@ -385,6 +438,7 @@ fn main() {
             output = root / "results"
             # Execute a frozen script outside the repository, just like the launcher.
             shutil.copy2(Path(__file__).with_name("parallelism-ladder.ps1"), root / "parallelism-ladder.ps1")
+            shutil.copy2(Path(__file__).with_name("benchmark-affinity.ps1"), root / "benchmark-affinity.ps1")
             process = subprocess.run(["pwsh", "-NoProfile", "-File", str(root / "parallelism-ladder.ps1"), "-RepositoryRoot", str(Path(__file__).resolve().parent.parent), "-JobManifest", str(manifest), "-BinaryDirectory", str(root / "after"), "-ReferenceBinaryDirectory", str(root / "before"), "-OutputDirectory", str(output), "-CancellationGraceSeconds", "1"], capture_output=True, text=True, timeout=30)
             self.assertEqual(process.returncode, 0, process.stdout + process.stderr)
             failed = json.loads((output / "failed-jobs.json").read_text(encoding="utf-8-sig"))
@@ -405,9 +459,13 @@ fn main() {
             hashes = json.loads((output / "binaries.json").read_text(encoding="utf-8-sig"))
             self.assertEqual({item["variant"] for item in hashes}, {"before", "after"})
 
-    def analyze(self, mutation=None, *, stress=False, allow=False, watchdog=False, no_results=False, corrupt_binary=False, stage="baseline", variants=("before", "after")):
+    def analyze(self, mutation=None, *, stress=False, allow=False, watchdog=False, no_results=False, corrupt_binary=False, corrupt_snapshot=False, stage="baseline", variants=("before", "after")):
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
+            root = Path(directory) / "results"
+            root.mkdir()
+            if corrupt_snapshot:
+                (root.parent / "source.rs").write_text("changed")
+                (root.parent / "frozen-hashes.json").write_text(json.dumps({"source.rs": hashlib.sha256(b"original").hexdigest()}))
             rows = []
             for variant in variants:
                 for mode in ("all", "optimal"):
@@ -514,6 +572,11 @@ fn main() {
         status, summary = self.analyze(corrupt_binary=True)
         self.assertNotEqual(status, 0)
         self.assertTrue(any("Binary hash mismatch" in f for f in summary["failures"]))
+
+    def test_changed_frozen_source_fails_verification(self):
+        status, summary = self.analyze(corrupt_snapshot=True)
+        self.assertNotEqual(status, 0)
+        self.assertTrue(any("Frozen artifact hash mismatch" in failure for failure in summary["failures"]))
 
     def test_different_instrumentation_does_not_produce_a_speedup(self):
         def mutate(variant, _mode, result):

@@ -53,6 +53,8 @@ def validate_search_budget(manifest, schedule):
 
 
 def validate_affinity(job, metric):
+    if job.get("affinity_before_resume") and metric.get("affinity_before_resume", "").lower() != "true":
+        raise ValueError("Missing before-resume affinity evidence")
     requested = affinity_mask(job.get("processor_affinity"))
     if requested is None:
         if metric.get("affinity_requested"):
@@ -109,7 +111,7 @@ def prepare(manifest_path, root):
                                 "source_scope": saved["scope"], "source_sha256": digest(source)})
             executable = variant_root / "bin/profile_witness.exe" if variant_root else root / "bin/profile_witness.exe"
             schedule.append(dict(id=job_id, kind=kind, variant=variant, binary=str(executable),
-                                 processor_affinity=affinity, request=job, request_file=str(replay_input), input_sha256=digest(replay_input)))
+                                 processor_affinity=affinity, affinity_before_resume=True, request=job, request_file=str(replay_input), input_sha256=digest(replay_input)))
             continue
         if kind != "fixed_obligation":
             raise ValueError("Unknown workload kind")
@@ -162,7 +164,7 @@ def prepare(manifest_path, root):
                 raise ValueError("Duplicate job identity")
             write(request_file, request)
             schedule.append(dict(id=identity, kind=kind, variant=variant, binary=str(selected_binary), request_file=str(request_file),
-                                 processor_affinity=affinity, request=request, problem=expected["problem"],
+                                 processor_affinity=affinity, affinity_before_resume=True, request=request, problem=expected["problem"],
                                  expected_profiles=[profile] if expand else expected["profiles"]))
         probe.unlink()
     if len({j["id"] for j in schedule}) != len(schedule):

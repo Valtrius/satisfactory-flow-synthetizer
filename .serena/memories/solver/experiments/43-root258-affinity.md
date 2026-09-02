@@ -1,6 +1,6 @@
 # 43. Isolated 258 roots and CPU affinity
 
-Date: 2026-09-02. State: validated; preparing launch.
+Date: 2026-09-02. State: completed and analyzed.
 Basis: `mem:solver/experiments/42-258-confirmation-results`.
 The user authorized more experiments while AFK for a few hours.
 
@@ -51,8 +51,7 @@ smokes recorded 8.4-28.5ms delays; early setup or a few early search steps may b
 unpinned. No host or production policy is changed.
 
 The fixed-work preparer still defaults to a 40-minute search-cap budget. An explicit
-`max_search_seconds` may raise it, bounded to three hours. This manifest declares
-8640. Cleanup grace is separate, as calculated above.
+`max_search_seconds` may raise it, bounded to three hours. This manifest declares 8640. Cleanup grace is separate, as calculated above.
 
 ## Frozen builds and validation
 
@@ -63,12 +62,12 @@ Builds use release + bench-internals, profile_obligation, separate short Cargo
 targets and the recorded VS2019/znver4 environment. No Rust solver source changes.
 Do not compare these executable timings directly with profile_case whole timings.
 
-| Variant | profile_obligation.exe SHA-256 |
-| --- | --- |
-| before | 6d73704ad8e665096b64f31ac8b4897ca8a295312aa872cc9ec183f906b97c19 |
-| integer | 5fb8d1eb2237f6635bf2e8a26f55be729fd7f9d92fbc6fb89ccd06f1816ae04b |
+| Variant   | profile_obligation.exe SHA-256                                   |
+| --------- | ---------------------------------------------------------------- |
+| before    | 6d73704ad8e665096b64f31ac8b4897ca8a295312aa872cc9ec183f906b97c19 |
+| integer   | 5fb8d1eb2237f6635bf2e8a26f55be729fd7f9d92fbc6fb89ccd06f1816ae04b |
 | variables | d09f4e1391230f0792abe820fb399172a1d20a61fd14dcee2910653cd8a526d6 |
-| combined | 7cb018c835b9cf8afe39205efead583f19f88b91efeb5cc9d4eda950ed1188b8 |
+| combined  | 7cb018c835b9cf8afe39205efead583f19f88b91efeb5cc9d4eda950ed1188b8 |
 
 - All four release builds pass. Metadata/source/binary hashes saved per variant.
 - All 37 runner/analyzer tests pass, including actual Windows child affinity and
@@ -90,17 +89,16 @@ Prior Rust validation applies to unchanged sources; no new Rust suite was requir
 
 ## Result and next decision
 
-Pending. Planned output: `target/parallelism-ladder/root258-affinity-20260902`.
-Freeze all binaries/sources/requests and tool versions, launch with completion/failure
-dialog, then end turn. No builds/tests during timing.
+All 28 jobs exhausted their selected roots and verify exactly. Finished 2026-09-02
+01:13:05 Europe/Paris, 51.578 process minutes. Results:
+`mem:solver/experiments/43-root258-affinity-results`.
 
-After completion verify certificates, masks, exact root results and structural work.
-Report same-mask medians/ranges and phase costs. Root 7 is a one-sample corroboration,
-not a distribution. If one CPU is consistently slower for every variant, report
-placement sensitivity without inventing a cache/clock explanation. If a candidate
-regresses on controlled completed root work, prefer restoring it over promotion.
-If calculation gains survive, use the root profile to select the next kernel change.
-Scheduler extras stay paused. No whole-solve optimality claim from a selected root.
+Complete variables save 0.29-1.70% wall in all same-CPU/root comparisons; integer
+rows cost 0.60-2.30%. CPU placement moves wall by 14-20%, much more than candidate
+effects. Empty root results measure proof search, not witness discovery.
+Recommend restoring integer rows and doing a final whole check with variables
+alone. Neither action has been applied. Scheduler extras stay paused.
 
-No production promotion, source restoration or push. Tooling/manifest/memory changes
-not yet committed. Results unavailable until the frozen runner finishes.
+Tooling/manifest/preparation committed in `986e330`; no push.
+Launched 2026-09-02 00:21:29 Europe/Paris, runner PID33544, with a completion dialog.
+Post-run results and current-state memories uncommitted. No new benchmark in flight.

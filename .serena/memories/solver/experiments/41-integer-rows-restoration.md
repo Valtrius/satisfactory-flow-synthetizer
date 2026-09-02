@@ -1,6 +1,6 @@
 # 41. Integer inequality candidate restoration
 
-Date: 2026-09-02. State: restored in working source; commit pending.
+Date: 2026-09-02. State: restored and committed in `5d8d924`.
 Basis: `mem:solver/experiments/43-root258-affinity-results`.
 User approved the benchmark policy and final variable-discovery recommendation.
 

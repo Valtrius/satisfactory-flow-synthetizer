@@ -135,8 +135,10 @@ a saved validated witness, verify equal keys/counts and test interrupted replay.
 Experiment 43 adds optional `processor_affinity` hexadecimal strings to fixed-work
 manifest job envelopes (not solver requests). The runner validates available CPUs,
 sets only the launched child's mask, checks it, and records requested/observed masks
-plus `affinity_applied_s`. Verification rejects missing/mismatched evidence.
-Affinity is set after launch; initial setup/search may precede application. Compare
+plus `affinity_applied_s` and `affinity_before_resume`. New plans require verified
+before-resume evidence; frozen historical plans retain their original checks.
+Historical experiment 43 set affinity after launch. Experiment 44 creates the child
+suspended and verifies affinity before resume. Compare
 same-mask timings and report application delays. Do not infer CCD/cache topology
 from logical CPU numbers. No production scheduling policy changes.
 Summaries retain affinity labels; exact-result comparison still spans all placements.
@@ -145,6 +147,47 @@ Fixed-work manifests keep a default 2400s total search-cap limit. An explicit
 `max_search_seconds` integer may raise it up to 10800s. Cleanup watchdog grace is
 additional: budget 60s per job when reporting a worst-case duration.
 Hotspot-on diagnostics never enter hotspot-off timing medians.
+
+## Topology-controlled protocol, 2026-09-02
+
+User confirmed dual CCD with one V-Cache CCD. Live read-only Windows cache query
+verified group 0 CPUs 0-15 share 96MiB L3, mask `ffff`; CPUs 16-31 share 32MiB L3,
+mask `ffff0000`. Do not hard-code these ranges for another machine or after topology
+changes. Windows CACHE_RELATIONSHIP and SYSTEM_CPU_SET_INFORMATION expose cache
+groups, core/SMT relationships and heterogeneous efficiency classes.
+Sources: https://learn.microsoft.com/en-us/windows/win32/api/winnt/ns-winnt-cache_relationship
+and https://learn.microsoft.com/en-us/windows/win32/api/winnt/ns-winnt-system_cpu_set_information.
+
+Approved and implemented in experiment 44; see `mem:solver/experiments/44-topology-variable-confirmation`.
+
+- Routine full-solve A/B on one CCD with identical verified process affinity and
+  explicit worker count matching that selected set, e.g. 16 logical workers on
+  this 16-logical-CPU CCD. Never keep 32 workers inadvertently after restricting
+  the execution set. Changing worker count changes adaptive planning; compare
+  fresh matched runs, never pool these with historical 32-worker results.
+- Repeat useful candidates on the other CCD as a separate cohort. Isolated roots
+  retain their original planning budget/certificate even when execution is serial.
+- Retain unrestricted full 32-worker checks for application performance. Pinning
+  the whole process to all 32 CPUs does not fix which CCD gets each long root.
+  These checks need repetition, and cannot be made identical to one-CCD tests.
+- Balance reference/candidate order in adjacent A/B or B/A pairs, at least five
+  pairs as an initial screen for small gains; add repetitions if uncertainty
+  still includes regression. Same build settings, inputs, proof coverage,
+  instrumentation, power policy and background-load conditions. No concurrent
+  heavy benchmarks. Report within-cohort paired ratios and uncertainty.
+- Apply affinity before search/worker creation, via a launch gate or suspended
+  child, and verify it. Both runners now use the shared benchmark-affinity helper.
+- Benchmark-only policy; do not change production scheduling, disable a CCD/SMT,
+  or normalize times by a fixed CPU-speed factor. Cache-sensitive changes can
+  behave differently on different CPU groups; CPU seconds do not correct that.
+
+This controls cross-CCD placement, not boost, thermal drift, background load or
+nondeterministic parallel execution. Whole manifests can cap search+cleanup with
+`MaxScheduledSeconds`; every job declares its placement, pair and comparison.
+`CacheBytes` verifies the chosen L3 domain. Whole analysis keeps affinity groups
+separate and reports paired median ratios plus exploratory percentile-bootstrap
+95% intervals. An incomplete pair has no completion speedup. The whole launcher
+supports PlanOnly and verifies all frozen artifact hashes after execution.
 
 ## Verification and interpretation
 

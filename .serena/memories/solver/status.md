@@ -273,17 +273,34 @@ the final ~108s. Their search spans are 255-266s, finish spans under 0.6s. Witne
 canonicalization totals ~0.01s. Complete variables cut aggregate variable collection
 27.384 to 4.846s (82.30%) with equal structural work, but this is not a whole gain.
 
-Experiment 43 (`mem:solver/experiments/43-root258-affinity`) is validated and preparing
-launch under the user's expanded AFK authorization. Twenty-eight sequential jobs
-compare four variants on the original selected roots, pinned separately to logical
-CPU 0/31, with independent diagnostics. Preserve p1/32 planning: target 128 and the
-same ordered 76-key identity. Serial replay is selected-root proof only.
-All 37 runner/analyzer tests, four frozen builds, the 28-job plan, four real
-affinity/cancellation smokes and four completed tiny exact controls pass.
-Search caps total 144min; cleanup allowances add 28min, plus minor overhead.
-CPU placement sensitivity remains a hypothesis; no CCD/cache mapping is claimed.
-No production or scheduler edits. Tooling/manifest/results memories pending commit;
-live state: `mem:solver/active`. No promotion or push.
+Experiment 43 (`mem:solver/experiments/43-root258-affinity-results`) verifies all
+28 selected-root completions, all four binaries and 1,156 archive hashes.
+The frozen summary rerun is byte-identical; exact root plans/proofs, empty solution
+sets and all 15 structural counters agree. Runtime 51.578 process minutes.
+Complete variables improve each same-CPU/root wall comparison 0.29-1.70%, with CPU
+also lower. Integer rows regress every wall comparison 0.60-2.30%, with CPU higher.
+CPU 31 runs 14-20% slower than CPU 0. This proves placement sensitivity on isolated
+roots, not the cause of all earlier whole-solve regressions. All roots are empty,
+so the run does not measure successful witness discovery.
+
+The user approved the topology-controlled confirmation and extra independent work.
+Integer rows are now restored; `mem:solver/experiments/41-integer-rows-restoration`.
+Exp44 implements before-resume affinity, verified cache domains, matched worker
+counts, balanced adjacent pairs, paired uncertainty summaries and frozen artifact
+hash checks. Its 198-job plan validates; 20 final frozen real-executable smokes pass.
+Primary complete-variable confirmation has 150 jobs on two 16-worker CCDs and the
+unrestricted 32-worker CPU. Independent accounting has 48 jobs on the two CCDs.
+Search+cleanup allowances total 7h26m30s. Preparing launch, not yet measuring.
+No production affinity, scheduler policy or proof change.
+
+Allocation-free cache accounting removes temporary BigInt byte vectors while
+preserving their exact length. 90,310 oracle comparisons pass. The new candidate
+is active, not promoted. Variable discovery remains active and unpromoted too.
+41 tooling tests, 221 feature-enabled solver-core tests and 309 workspace tests pass,
+with two/five ignored respectively. Both strict Clippy configurations and release
+build pass. Details: `mem:solver/experiments/44-topology-variable-confirmation`
+and `mem:solver/experiments/45-cache-accounting`.
+Restoration `5d8d924`; accounting candidate `331b87a`; tooling commit pending. No push. Live handoff: `mem:solver/active`.
 
 Experiment 33 validation: 181 default and 186 benchmark-feature solver-core library
 tests pass, with two ignored in each configuration. The exhaustive Reference and four
