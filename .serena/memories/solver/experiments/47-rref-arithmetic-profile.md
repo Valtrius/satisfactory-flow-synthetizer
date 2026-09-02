@@ -47,7 +47,17 @@ Manifest `benchmarks/custom/rref-arithmetic-profile.json`.
 
 Frozen prior RREF binary is `before`, SHA256
 `a431c5ce82fe435c75831a7d4403e84e9c5c6e53353ba04bcde05a40e00678d7`.
-New `profile` identity pending freeze; release build passed in 47.94s. No candidate optimization.
+New `profile` SHA256
+`353d5863592991bcd86531248b996dd8c0f31383c99df97e2fc066fba35483ed`.
+Release build passed in 47.94s. Diagnostic source+memories committed as 1006e6f.
+70 source files frozen; only canonical.rs, hotspot_profile.rs and profile_support/
+mod.rs differ from the prior RREF snapshot. Compiler and local Cargo config match.
+Variant map: `target/parallelism-ladder/rref-arithmetic-variants-20260902/variants.json`.
+Metadata/source/binary hashes retained beside each variant; before aliases the
+unchanged RREF binary, not the older pre-variable/accounting solver.
+Freeze log/helper: `target/exp47-freeze.log`, `target/exp47-freeze.py`.
+Plan-only validation passed all 14 jobs and topology/cache masks:
+`target/parallelism-ladder/rref-arithmetic-plan-20260902`, `target/exp47-plan.log`. No candidate optimization.
 Randomized fresh processes, fixed before-resume affinity; no paired speedup
 estimate or cross-CCD pooling. Reference workloads must complete and preserve exact
 saved solutions/keys/preferred witnesses. Capped stress samples describe encountered
@@ -85,6 +95,9 @@ No benchmark results yet. No speed claim.
 ## Decision and commit state
 
 Diagnostic only; no production arithmetic, scheduler, affinity or cyclicity policy
-change. No push. This note accompanies the diagnostic source commit; its hash is recorded after
-commit creation in the launch handoff. Freeze both identities and record launch,
-then analyze before choosing a shortcut.
+change. No push. Diagnostic source and its documentation committed as 1006e6f; no push.
+Benchmark manifest and prepared launch handoff accompany a separate commit.
+Prepared run directory: `target/parallelism-ladder/rref-arithmetic-20260902`.
+Next: launch with 15-second cancellation grace and record PID/time. After completion,
+recheck frozen hashes, exact outputs/proofs and recorder invariants before interpreting
+subphase shares or operand patterns. Do not infer gain from instrumented wall time.

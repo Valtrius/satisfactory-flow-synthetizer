@@ -49,11 +49,11 @@ dedup (33), N≤9 p1 guard (18).
   Promotion documentation committed as c106d4c. No push.
 - Approved next work: profile canonical RREF pivot normalization, elimination and
   suffix preparation, plus coefficient/factor patterns. Existing +1/zero
-  shortcuts already apply. Diagnostic twin validated, release smoke passed:
+  shortcuts already apply. Diagnostic twin committed as 1006e6f; validation/release smoke passed:
   `mem:solver/experiments/47-rref-arithmetic-profile`. No arithmetic optimization.
 - No more broad ordering repeats recommended. Scheduler extras remain paused;
   no production affinity or cyclicity gate. Future benchmarks <=1h including
-  cleanup. Diagnostic ready for freezing/launch; nothing running.
+  cleanup. Both binaries frozen, 14-job plan validated; not launched yet.
   `mem:solver/active`.
 
 ## When to read more

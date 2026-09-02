@@ -560,5 +560,6 @@ normalization/suffix/elimination/finalization and records factor/coefficient pat
 only with the existing hotspot recorder. Ordinary reducer and scheduler unchanged.
 222 core tests, 331 workspace tests, both strict Clippy configurations, 41 tooling
 tests and nine exact release CLI smokes pass. New 14-job diagnostic manifest allows
-41m30 search+cleanup, below the user one-hour ceiling. Not launched yet.
+41m30 search+cleanup, below the user one-hour ceiling. Source/docs 1006e6f committed;
+binary/source snapshots frozen and plan validated, not launched yet.
 Details and pending binary/launch identity: `mem:solver/experiments/47-rref-arithmetic-profile`.

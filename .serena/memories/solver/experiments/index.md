@@ -42,12 +42,13 @@ Record dates follow the analysis chronology, not necessarily every run's start t
 | 31 (`mem:solver/experiments/31-propagation-bounds`)                | 2026-08-31    | Can propagation remove a second copy of every physical-flow bound check?                  | 38 verified; all completed medians improve 5.36-9.40%; promote                      |
 | 32 (`mem:solver/experiments/32-weighted-sparse-quotient`)          | 2026-08-31    | Can exact weighted representatives reduce sparse elimination work?                        | Rejected; 115 improves, but 36/238 regress and sparse passes cost 6.79% more        |
 | 33 (`mem:solver/experiments/33-sparse-row-deduplication`)          | 2026-08-31    | Do identical normalized equations add avoidable sparse elimination work?                  | Rejected; zero duplicates across 164M hard input-row instances                      |
+| 47 (`mem:solver/experiments/47-rref-arithmetic-profile`)           | 2026-09-02    | Which canonical RREF arithmetic phase and operand patterns dominate?                      | Diagnostic committed 1006e6f; validated, frozen, 14-job plan ready; results pending |
 
 ## Active follow-up
 
 47 implemented and validated: `mem:solver/experiments/47-rref-arithmetic-profile`.
 Diagnostic-only RREF phase/operand profiling. 14 jobs planned, 41m30 search+cleanup
-allowance; release smoke passed; nothing launched. No new optimization or scheduler change.
+allowance; source 1006e6f and release smoke passed; frozen/plan-validated, not launched. No new optimization or scheduler change.
 46 RREF permanence recorded in c106d4c (source a79ecf7); its measured limitations
 and earlier variable/258 timeout remain in the experiment46 results.
 
