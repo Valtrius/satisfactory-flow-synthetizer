@@ -121,7 +121,6 @@
     },
     patchEntry,
     getSelectedId: () => selectedEntryId,
-    isHistoryReady: () => historyReady,
     flushSelectedChrome: () => graph.flushChrome(),
     syncViewIfSelected: (entryId, entry) => {
       if (selectedEntryId !== entryId) return;

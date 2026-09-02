@@ -423,30 +423,25 @@ export function parseHistoryDocument(raw: unknown): HistoryDocument {
   };
 }
 
-function migratedSolveMode(raw: unknown): SolveMode {
+function readSolveMode(raw: unknown): SolveMode {
   if (!raw || typeof raw !== 'object') return 'optimal';
-  const value = raw as Record<string, unknown>;
-  if (
-    value.solveMode === 'optimal' ||
-    value.solveMode === 'all_at_minimum_nodes_and_minimum_links' ||
-    value.solveMode === 'all_at_minimum_nodes'
-  ) {
-    return value.solveMode;
+  const value = (raw as Record<string, unknown>).solveMode;
+  if (value === 'optimal' || value === 'all_at_minimum_nodes_and_minimum_links' || value === 'all_at_minimum_nodes') {
+    return value;
   }
-  return value.enumerateAllAtN === true ? 'all_at_minimum_nodes' : 'optimal';
+  return 'optimal';
 }
 
-function withoutLegacyModeField(raw: unknown): Record<string, unknown> {
+function asRecord(raw: unknown): Record<string, unknown> {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
-  const { enumerateAllAtN: _removed, ...clean } = raw as Record<string, unknown>;
-  return clean;
+  return raw as Record<string, unknown>;
 }
 
 function normalizeEntry(entry: HistoryEntry): HistoryEntry {
-  const requestMode = migratedSolveMode(entry.request);
-  const formMode = entry.form ? migratedSolveMode(entry.form) : requestMode;
-  const request = withoutLegacyModeField(entry.request);
-  const form = withoutLegacyModeField(entry.form);
+  const requestMode = readSolveMode(entry.request);
+  const formMode = entry.form ? readSolveMode(entry.form) : requestMode;
+  const { enumerateAllAtN: _ignoredRequestMode, ...request } = asRecord(entry.request);
+  const { enumerateAllAtN: _ignoredFormMode, ...form } = asRecord(entry.form);
   const engine = entry.request?.engine ?? entry.form?.engine ?? 'custom';
   return {
     id: entry.id,

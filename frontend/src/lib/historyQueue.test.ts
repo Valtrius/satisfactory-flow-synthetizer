@@ -10,7 +10,6 @@ vi.mock('./api', () => ({
   watchJob: vi.fn(),
   cancelJob: vi.fn(),
 }));
-vi.mock('./historyPersist', () => ({ saveHistoryDocument: vi.fn() }));
 
 const request: SolveRequest = {
   inputs: [],
@@ -72,7 +71,6 @@ async function setup() {
       entries = entries.map((e) => (e.id === id ? { ...e, ...patch } : e));
     },
     getSelectedId: () => queued.id,
-    isHistoryReady: () => false,
     flushSelectedChrome: vi.fn(),
     syncViewIfSelected: vi.fn(),
     setError: vi.fn(),

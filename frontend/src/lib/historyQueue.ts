@@ -1,6 +1,5 @@
 import { cancelJob, createJob, getJob, watchJob, type JobWatch } from './api';
 import { assembleEntries, isTerminalJobStatus, partitionEntries, type HistoryEntry } from './historyModel';
-import { saveHistoryDocument } from './historyPersist';
 import type { JobSnapshot, SolveRequest } from '../types';
 
 export type HistoryQueueHost = {
@@ -8,7 +7,6 @@ export type HistoryQueueHost = {
   setEntries: (entries: HistoryEntry[]) => void;
   patchEntry: (id: string, patch: Partial<HistoryEntry>) => void;
   getSelectedId: () => string | null;
-  isHistoryReady: () => boolean;
   flushSelectedChrome: () => void;
   syncViewIfSelected: (entryId: string, entry: HistoryEntry) => void;
   setError: (message: string) => void;
@@ -187,11 +185,6 @@ export class HistoryQueue {
       if (this.host.getSelectedId() === entryId) this.host.flushSelectedChrome();
       const parts = partitionEntries(this.host.getEntries());
       this.host.setEntries(assembleEntries(parts.queued, parts.running, parts.history));
-      if (this.host.isHistoryReady()) {
-        void saveHistoryDocument(this.host.getEntries(), this.host.getSelectedId()).catch((error) => {
-          this.host.setError(`Could not save history: ${error instanceof Error ? error.message : String(error)}`);
-        });
-      }
       void this.pump();
     }
   }

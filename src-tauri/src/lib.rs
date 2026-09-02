@@ -17,7 +17,7 @@ use uuid::Uuid;
 
 use contract::{Solution, SolveRequest, SolverProgress, UnsatProof};
 use engines::run_job;
-use history::{load_history, save_history};
+use history::{apply_history_ops, load_history};
 
 const JOB_SNAPSHOT_EVENT: &str = "job-snapshot";
 
@@ -312,7 +312,7 @@ pub fn run() {
             get_job,
             cancel_job,
             load_history,
-            save_history
+            apply_history_ops
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

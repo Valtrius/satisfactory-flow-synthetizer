@@ -1,6 +1,6 @@
 import { isTauri } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { loadHistoryDocument, saveHistoryDocument } from './historyPersist';
+import { loadHistoryDocument, applyHistoryChanges } from './historyPersist';
 import type { HistoryDocument, HistoryEntry } from './historyModel';
 
 export type CloseFlushOptions = {
@@ -84,7 +84,7 @@ export function createPersistController(options: PersistOptions): PersistControl
       clearTimer();
       timer = setTimeout(() => {
         timer = null;
-        void saveHistoryDocument(entries, selectedEntryId).catch((error) => {
+        void applyHistoryChanges(entries, selectedEntryId).catch((error) => {
           options.onError(`Could not save history: ${error instanceof Error ? error.message : String(error)}`);
         });
       }, delayMs);
@@ -92,7 +92,7 @@ export function createPersistController(options: PersistOptions): PersistControl
     async flushNow(entries, selectedEntryId) {
       if (!options.isReady()) return;
       clearTimer();
-      await saveHistoryDocument(entries, selectedEntryId);
+      await applyHistoryChanges(entries, selectedEntryId);
     },
     dispose() {
       clearTimer();

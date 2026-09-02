@@ -1,29 +1,58 @@
 import { invoke, isTauri } from '@tauri-apps/api/core';
-import {
-  emptyDocument,
-  parseHistoryDocument,
-  persistableEntries,
-  HISTORY_DOCUMENT_VERSION,
-  type HistoryDocument,
-  type HistoryEntry,
-} from './historyModel';
+import { emptyDocument, parseHistoryDocument, type HistoryDocument, type HistoryEntry } from './historyModel';
+import { diffHistoryOps, snapshotHistory, type HistorySnapshot } from './historyOps';
 
-export async function loadHistoryDocument(): Promise<HistoryDocument> {
-  if (!isTauri()) return emptyDocument();
-  const raw = await invoke<unknown>('load_history');
-  return parseHistoryDocument(raw);
+let lastSnapshot: HistorySnapshot | null = null;
+let pending: HistorySnapshot | null = null;
+let tail: Promise<void> = Promise.resolve();
+
+export function rememberPersistedHistory(entries: HistoryEntry[], selectedEntryId: string | null): void {
+  lastSnapshot = snapshotHistory(entries, selectedEntryId);
 }
 
-export async function saveHistoryDocument(entries: HistoryEntry[], selectedEntryId: string | null): Promise<void> {
-  if (!isTauri()) return;
-  const persisted = persistableEntries(entries);
-  const document: HistoryDocument = {
-    version: HISTORY_DOCUMENT_VERSION,
-    entries: persisted,
-    selectedEntryId:
-      selectedEntryId && persisted.some((entry) => entry.id === selectedEntryId)
-        ? selectedEntryId
-        : (persisted[0]?.id ?? null),
-  };
-  await invoke('save_history', { document });
+export async function loadHistoryDocument(): Promise<HistoryDocument> {
+  if (!isTauri()) {
+    const document = emptyDocument();
+    rememberPersistedHistory(document.entries, document.selectedEntryId);
+    return document;
+  }
+  const raw = await invoke<unknown>('load_history');
+  const document = parseHistoryDocument(raw);
+  rememberPersistedHistory(document.entries, document.selectedEntryId);
+  return document;
+}
+
+/** Diff against the last committed snapshot and apply. Overlapping calls coalesce to the latest UI snapshot and run one invoke at a time. */
+export async function applyHistoryChanges(entries: HistoryEntry[], selectedEntryId: string | null): Promise<void> {
+  pending = snapshotHistory(entries, selectedEntryId);
+  const run = tail.then(flushPending);
+  tail = run.then(
+    () => undefined,
+    () => undefined,
+  );
+  await run;
+}
+
+async function flushPending(): Promise<void> {
+  while (pending) {
+    const next = pending;
+    pending = null;
+    const ops = diffHistoryOps(lastSnapshot, next);
+    if (ops.length === 0) continue;
+    try {
+      if (isTauri()) {
+        await invoke('apply_history_ops', { ops });
+      }
+      lastSnapshot = next;
+    } catch (error) {
+      pending ??= next;
+      throw error;
+    }
+  }
+}
+
+export function resetHistoryPersistForTests(): void {
+  lastSnapshot = null;
+  pending = null;
+  tail = Promise.resolve();
 }
