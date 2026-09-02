@@ -2104,8 +2104,10 @@ mod tests {
     #[test]
     fn periodic_progress_reports_live_work_before_profiles_close() {
         for worker_count in [1, 4] {
-            // This cyclic case cannot finish through the optional acyclic witness path.
-            let problem = problem(&[65], &[40, 25], 1_200);
+            // The old 65 = 40 + 25 case can finish before three timer ticks
+            // in release mode. Keep this a live-search/cancellation test.
+            let mut problem = problem(&[10], &[], 1_200);
+            problem.outputs = vec!["6.04".parse().unwrap(), "3.96".parse().unwrap()];
             let cancel = AtomicBool::new(false);
             let events = Mutex::new(Vec::new());
             let heartbeats = AtomicUsize::new(0);
@@ -2121,7 +2123,7 @@ mod tests {
                 let result = solve_with_observer(
                     &problem,
                     &SolveOptions {
-                        max_nodes: Some(6),
+                        max_nodes: Some(11),
                         worker_count,
                         ..SolveOptions::default()
                     },
@@ -2169,9 +2171,13 @@ mod tests {
                         && diagnostic_counter(progress, "custom.raw_structural_decisions") > 0
                 })
                 .collect::<Vec<_>>();
+            // Earlier profiles may close before the first timer tick. No
+            // additional profile should close during these live heartbeats.
+            let initial_closed = diagnostic_counter(live[0], "custom.completed_profiles");
             assert!(
-                live.iter()
-                    .all(|p| diagnostic_counter(p, "custom.completed_profiles") == 0)
+                live.iter().all(|p| {
+                    diagnostic_counter(p, "custom.completed_profiles") == initial_closed
+                })
             );
             assert!(
                 live.windows(2)

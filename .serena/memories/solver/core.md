@@ -46,9 +46,16 @@ dedup (33), N≤9 p1 guard (18).
 - Recommend zero-destination shortcut first, then factor -1 separately. Preserve
   exact arbitrary-size arithmetic and canonical order. Test hotspot-OFF completed
   workloads with fixed affinity and balanced order before any promotion.
-- These are proposals, not implemented changes. No new benchmark launched.
-  Diagnostic source 1006e6f and manifest 14d3f73 remain committed; current result
-  memories uncommitted. No commit/push in analysis.
+- User approved independent shortcut tests. Experiment 48 implements standalone
+  zero/minus candidates in separate worktrees/targets, with no production
+  arithmetic change in the current checkout. Validation, freezing and plan checks passed:
+  `mem:solver/experiments/48-rref-elimination-shortcuts`.
+- Shared test repair replaces a heartbeat fixture now too fast in release.
+  The unchanged baseline reproduced the failure; debug/release repair passes.
+  Prior experiment 47 result documentation committed as da2c89f.
+- New screen planned: 32 completed jobs, 54m40 search+cleanup plus 5m20 overhead
+  margin. All three modes, fixed-CCD controls and unrestricted hard36 optimal.
+  No benchmark launched yet; no push.
 - Scheduler extras stay paused; no production affinity, cyclicity or memory gate.
   New benchmark limit <=1h including cleanup. Nothing running.
   `mem:solver/active`.

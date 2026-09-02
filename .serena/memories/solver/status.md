@@ -566,3 +566,15 @@ No production optimization or speedup established by this diagnostic. Keep exact
 arbitrary-size arithmetic; source-value decisions only. Scheduling stays paused.
 Nothing running. Source/docs 1006e6f, manifest 14d3f73, RREF promotion docs c106d4c.
 Results/handoff notes uncommitted; no new commit or push.
+
+## Experiment48: independent RREF shortcuts, 2026-09-02
+
+User approved separate zero-destination and negative-unit candidates. Both are
+implemented in isolated worktrees with separate Cargo targets; main production
+arithmetic unchanged. Candidate patches, new exact oracle and repaired release heartbeat fixture are
+validated. Both release suites and strict Clippy configurations pass for each
+candidate; 15 exact CLI smokes and the 32-job plan pass. Binaries/source frozen. The heartbeat failure reproduced on the
+unchanged baseline; the hard10 replacement passes debug and release there.
+32-job complete-work screen planned, 54m40 search+cleanup under one hour.
+No benchmark launched, no promotion or push. Prior result docs committed da2c89f.
+Details: `mem:solver/experiments/48-rref-elimination-shortcuts`.

@@ -4082,6 +4082,52 @@ mod tests {
     }
 
     #[test]
+    fn rref_elimination_preserves_signed_and_zero_destinations() {
+        for factor in [
+            "1",
+            "-1",
+            "2",
+            "-2/3",
+            "100000000000000000000000000000000000003/7",
+        ] {
+            for destination in [
+                "0",
+                "3/5",
+                "-3/5",
+                "100000000000000000000000000000000000009/11",
+            ] {
+                // Two equations over three variables stay consistent, so a
+                // contradiction collapse cannot hide a wrong coefficient.
+                let rows = vec![
+                    vec![
+                        rational("1"),
+                        rational("2/3"),
+                        rational("-5/7"),
+                        rational("11/13"),
+                    ],
+                    vec![
+                        rational(factor),
+                        rational(destination),
+                        rational("0"),
+                        rational("-17/19"),
+                    ],
+                ];
+                let expected = dense_reference_rational_rref(rows.clone(), 3);
+                assert_eq!(
+                    rational_rref(rows.clone(), 3),
+                    expected,
+                    "{factor}, {destination}"
+                );
+                assert_eq!(
+                    rational_rref_profiled(rows, 3, &mut hotspot_profile::RrefProfile::default()),
+                    expected,
+                    "profiled {factor}, {destination}",
+                );
+            }
+        }
+    }
+
+    #[test]
     fn affine_rref_preserves_rhs_signs_and_collapses_all_contradictions() {
         let solved = rational_rref(
             vec![
