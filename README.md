@@ -9,9 +9,7 @@
 
 Offline Tauri desktop app for exact Satisfactory splitter/merger flow synthesis. Set rates, pick a solver, and get validated belt layouts you can inspect, edit, and export as SVG.
 
-<!-- TODO: replace docs/usage.gif with a real screenshot or demo GIF -->
-
-![Usage demo](docs/usage.gif)
+![Demo](docs/usage.png)
 
 ## Features
 
