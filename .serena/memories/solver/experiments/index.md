@@ -43,21 +43,20 @@ Record dates follow the analysis chronology, not necessarily every run's start t
 | 32 (`mem:solver/experiments/32-weighted-sparse-quotient`)          | 2026-08-31    | Can exact weighted representatives reduce sparse elimination work?                        | Rejected; 115 improves, but 36/238 regress and sparse passes cost 6.79% more        |
 | 33 (`mem:solver/experiments/33-sparse-row-deduplication`)          | 2026-08-31    | Do identical normalized equations add avoidable sparse elimination work?                  | Rejected; zero duplicates across 164M hard input-row instances                      |
 | 47 (`mem:solver/experiments/47-rref-arithmetic-profile`)           | 2026-09-02    | Which RREF arithmetic phase and operand patterns dominate?                                | 14 verified; elimination 66–69%; test zero-destination then factor -1 shortcuts     |
-| 48 (`mem:solver/experiments/48-rref-elimination-shortcuts`)        | 2026-09-02    | Do zero-destination or negative-unit shortcuts improve completion independently?          | 32 optimal verified; minus merits confirmation, zero mixed; neither promoted        |
+| 48 (`mem:solver/experiments/48-rref-elimination-shortcuts`)        | 2026-09-02    | Do zero-destination or negative-unit shortcuts improve completion independently?          | Negative-unit permanent after confirmation and integration checks; zero held        |
 
 ## Active follow-up
 
-Experiment48 completed and analyzed:
-`mem:solver/experiments/48-rref-elimination-shortcuts-results`.
-All 32 jobs optimal, exact outcomes/proofs and 15 structural counters match.
-Minus improves seven of eight wall pairs and all eight CPU pairs, with effectively
-unchanged 258 completion. Zero has mixed 115/258 results, including +10.62% on one
-258 pair. Only two pairs per cell; nothing promoted or combined.
-Recommend four additional minus-only pairs per workload, same frozen sources,
-54m40 search+cleanup within one hour. User approved; confirmation prepared and plan verified, not launched yet.
-`mem:solver/experiments/48-rref-negative-unit-confirmation`.
-Preparation committed fadb316; current unrelated history HEAD 6683546 preserved.
-Results/handoff memories uncommitted; no push. `mem:solver/active`.
+Negative-unit is permanently integrated after user approval:
+`mem:solver/experiments/48-negative-unit-promotion`.
+Seven added source lines match the tested candidate. 223/213 release tests pass,
+two ignored per suite; strict Clippy passes both feature configurations.
+Confirmation results: `mem:solver/experiments/48-rref-negative-unit-confirmation-results`.
+19/24 wall and 23/24 CPU pairs improved across both screens; hard36 completion
+remains effectively unchanged overall. Preserve adverse samples.
+Source and related results/docs are prepared for the isolated promotion commit.
+Zero-destination held; scheduler extras paused. No new benchmark or push.
+`mem:solver/active`.
 
 ## How the diagnosis changed
 

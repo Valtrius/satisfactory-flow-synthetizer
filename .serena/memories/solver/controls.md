@@ -128,3 +128,10 @@ observed rational bit lengths. The ordinary reducer is unchanged. These nested
 phase times include local instrumentation and overlap outer RREF/equality timers.
 Integer/unit/zero categories overlap; factor row counts differ from weighted update
 counts. See `mem:solver/experiments/47-rref-arithmetic-profile` before interpreting them.
+
+Experiment48 permanently specializes exact factor -1 elimination in canonical RREF:
+classify once per row, then add the pivot coefficient. The diagnostic twin uses
+the same arithmetic while retaining operand-counter definitions. Arbitrary-size
+Rational values and canonical ordering are unchanged. No new option or scope gate.
+Zero-destination remains an unapplied benchmark variant.
+`mem:solver/experiments/48-negative-unit-promotion`.

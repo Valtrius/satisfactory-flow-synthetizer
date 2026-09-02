@@ -27,6 +27,7 @@ Scopes / benchmark names: `optimal` | `minimum_links` | `all`.
 - Complete propagation variable discovery (`520b352`, exp 44)
 - Allocation-free cache byte accounting (`331b87a`, exp 45)
 - Canonical RREF reverse pivot ordering (`a79ecf7`, exp 46)
+- Canonical RREF negative-unit elimination (exp 48, promotion commit)
 
 Rejected / absent from production source: weighted sparse quotient (32), sparse row
 dedup (33), N≤9 p1 guard (18).
@@ -34,29 +35,28 @@ dedup (33), N≤9 p1 guard (18).
 ## Current posture
 
 - Variables, allocation-free accounting and RREF ordering remain permanent.
-  RREF source a79ecf7, promotion docs c106d4c. Prior adverse cells and the
-  unexplained earlier variable/258 timeout remain in experiment46 records.
-- Experiment47 identified RREF elimination and zero/negative-unit arithmetic as
-  candidates. Its instrumentation is diagnostic, not a speedup result.
-  `mem:solver/experiments/47-rref-arithmetic-profile-results`.
-- Experiment48 completed in 33m45. All 32 jobs optimal; 263 frozen hashes, exact
-  solutions/outcomes/proofs and 15 paired structural counters verify.
-  `mem:solver/experiments/48-rref-elimination-shortcuts-results`.
-- Minus wall paired medians: 115 all -1.16%, 238 optimal -0.65%,
-  258 minimum_links effectively 0%, hard36 optimal -1.14%. Seven of eight wall
-  pairs and all CPU pairs improve, but only two pairs per workload.
-- Zero is mixed: same workloads +0.52%, -2.64%, +4.71%, -2.28%.
-  Preserve the adverse +10.62% 258 pair; cause unknown. Do not combine candidates.
-- Recommend a negative-unit-only confirmation, four new pairs per workload,
-  same frozen binaries and placement, 54m40 search+cleanup allowance under one
-  hour. New screen analyzed separately first. User approved; preparation/plan pass.
-  `mem:solver/experiments/48-rref-negative-unit-confirmation`.
-- Neither arithmetic shortcut is in production. Shared tests/patches/manifest
-  fadb316, prior results da2c89f. Current unrelated history HEAD 6683546 preserved;
-  current canonical/solver production prefixes match the frozen baseline.
-- Confirmation manifest and result/handoff notes await commit. No push.
-- Scheduler extras stay paused; no production affinity, cyclicity or memory gate.
-  New benchmark limit <=1h including cleanup. Confirmation prepared; not launched yet.
+  Earlier adverse observations stay in the experiment46 records.
+- Experiment48 negative-unit confirmation completed in 36m02. All 32 new jobs
+  optimal; 191 frozen hashes, exact outputs/proofs and 15 structural counters pass.
+  `mem:solver/experiments/48-rref-negative-unit-confirmation-results`.
+- New completion paired medians: 115 all -1.59%, 238 optimal -2.05%,
+  258 minimum_links -1.96%, hard36 optimal +0.39%.
+  The new 115 and long 258 comparisons improve in all four pairs.
+- Secondary six-pair medians by the same workload/placement: -1.16%, -1.42%,
+  -1.35%, -0.05%. Across both screens, 19/24 wall and 23/24 CPU pairs improve.
+  Preserve hard36's +4.70% pair. Its completion gain is not established.
+- User approved permanent negative-unit arithmetic. Integrated kernel and diagnostic
+  twin exactly match the tested candidate; no duplicate test changes.
+  223/213 release tests pass with/default bench-internals, 2 ignored each;
+  strict release Clippy passes both. `mem:solver/experiments/48-negative-unit-promotion`.
+- Zero-destination stays held. Initial 115/258 results mixed, including a +10.62%
+  258 pair of unknown cause. No implicit combination or case-specific guard.
+- Candidate/shared test preparation fadb316; initial results and confirmation
+  manifest 3b32c51. Unrelated edb4f0b base preserved. Production now contains the tested negative-unit
+  arithmetic. Source and supporting results/docs are ready for the promotion commit.
+  No push requested.
+- Scheduler extras remain paused. No production affinity, cyclicity or memory
+  gate. Future benchmarks <=1h including cleanup. Nothing running.
   `mem:solver/active`.
 
 ## When to read more

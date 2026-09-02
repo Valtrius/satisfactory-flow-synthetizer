@@ -2466,9 +2466,14 @@ fn rational_rref(mut rows: Vec<Vec<Rational>>, variable_count: usize) -> Vec<Vec
             }
             let factor = std::mem::replace(&mut row[column], Rational::zero());
             let unit_factor = factor.numerator() == factor.denominator();
+            // Classify once per row, outside its coefficient update loop.
+            let negative_unit_factor = factor.is_negative()
+                && factor.numerator().magnitude() == factor.denominator().magnitude();
             for &(index, pivot_value) in &nonzero {
                 row[index] = if unit_factor {
                     &row[index] - pivot_value
+                } else if negative_unit_factor {
+                    &row[index] + pivot_value
                 } else {
                     &row[index] - &factor * pivot_value
                 };
@@ -2572,6 +2577,8 @@ fn rational_rref_profiled(
                 profile.observe(pivot_value);
                 row[index] = if unit_factor {
                     &row[index] - pivot_value
+                } else if negative_unit_factor {
+                    &row[index] + pivot_value
                 } else {
                     &row[index] - &factor * pivot_value
                 };

@@ -603,3 +603,49 @@ User approved minus-only confirmation. New manifest
 Plan confirms 16 adjacent pairs, balanced order and 54m40 search+cleanup allowance.
 No arithmetic change, no new build or promotion. Formatting/commit then launch;
 not running yet. `mem:solver/experiments/48-rref-negative-unit-confirmation`.
+
+Confirmation launch: 2026-09-02 21:29:14 Europe/Paris, runner PID 4088.
+Verified alive, initial status 1/32 `minus_r36_allcpu-optimal-before-p1-w32-r6`,
+empty stderr. New output `target/parallelism-ladder/rref-negative-unit-confirmation-20260902`.
+Manifest, initial results and handoff committed 3b32c51 after formatting. No push.
+Post-launch notes uncommitted. Results pending; no completion or speedup inferred.
+End turn, no builds/tests during timing. `mem:solver/active`.
+
+## Negative-unit confirmation analyzed, 2026-09-02
+
+`mem:solver/experiments/48-rref-negative-unit-confirmation-results`.
+Completed 22:05:15.996 Europe/Paris after about 36m02. All 32 jobs optimal;
+191 frozen hashes and identical original/rechecked summary:
+2d724ba0ec39a0c3d5d9d0fa946edf269345b684b5614af15b47f6184084d5e5.
+Exact solutions/outcomes/proofs, 15 structural counters, pair order and verified
+before-resume placement match. Secondary audit verifies both screens' exact
+outputs, binary identity and structural work for all 48 minus comparison records.
+
+New four-pair wall medians on 115 all / 238 optimal / 258 minimum_links / 36 optimal:
+-1.59% / -2.05% / -1.96% / +0.39%. New first witness on 115 -4.44%, all four improve.
+Six-pair secondary completion medians: -1.16% / -1.42% / -1.35% / -0.05%.
+19/24 wall pairs and 23/24 CPU pairs improve. Do not pool across placements or claim
+hard36 completion improvement; retain its +4.70% pair. 238 also has one +1.13% wall
+pair. Confidence intervals remain exploratory with small samples.
+
+Recommend permanent negative-unit arithmetic only, with fresh integration tests,
+strict Clippy and this evidence in its isolated commit. Not applied in this analysis.
+Hold zero and keep +10.62% initial 258 evidence; no implicit combination or guard.
+Scheduler extras paused; future benches <=1h including cleanup.
+Current HEAD edb4f0b and unrelated commits preserved. Main arithmetic remains the
+frozen before implementation. Prior commit 3b32c51 includes initial results/manifest;
+new result/handoff notes uncommitted, no source edit, new commit, push or run.
+Nothing in flight; `mem:solver/active`.
+
+## Permanent negative-unit integration, 2026-09-02
+
+User approved permanent commit. Integrated seven lines in canonical.rs ordinary
+and diagnostic RREF paths. Exact factor -1 uses addition; no flags, N/cyclicity/
+affinity/memory policy. Full canonical.rs matches tested minus source after newline
+normalization. Existing matrix and heartbeat tests reused, solver.rs unchanged.
+
+Fresh release solver-core all-targets: 223 tests with bench-internals, 213 default;
+two ignored each. Both strict release Clippy configurations pass. No new benchmark.
+Source, confirmation results and promotion documentation prepared for an isolated
+perf(custom) commit; no push. Related record: `mem:solver/experiments/48-negative-unit-promotion`.
+Zero held; scheduling paused. Preserve the hard36 limitation and all adverse pairs.

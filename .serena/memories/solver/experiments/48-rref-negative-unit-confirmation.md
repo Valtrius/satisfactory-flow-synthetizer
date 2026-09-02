@@ -1,7 +1,9 @@
 # 48. Negative-unit confirmation
 
 Date: 2026-09-02. User approved the confirmation recommendation.
-Prepared and validated, not launched yet.
+Completed and independently analyzed. Permanent retention accepted and integrated after analysis.
+Promotion: `mem:solver/experiments/48-negative-unit-promotion`.
+Results: `mem:solver/experiments/48-rref-negative-unit-confirmation-results`.
 Initial measured results: `mem:solver/experiments/48-rref-elimination-shortcuts-results`.
 
 ## Question and scope
@@ -74,7 +76,31 @@ Helpers/logs: `target/exp48-confirmation-prepare.py`,
 
 Neither arithmetic candidate is promoted. Existing preparation fadb316 and
 earlier results da2c89f remain; unrelated history commit 6683546 is preserved.
-This manifest and related Serena analysis/handoff will be committed after formatting.
-No push. After launch record PID/time and live status, then end turn.
+Manifest, initial results and related handoff committed as 3b32c51 after
+npm run format and diff checks. No push. Post-launch state notes are uncommitted.
 Windows completion/failure dialog plus BENCHMARK-STATUS/FINISHED/FAILED files
 provide notification. No builds or tests during timed jobs.
+
+## Launch
+
+Launched 2026-09-02 21:29:14 Europe/Paris. Runner PID 4088 started 21:29:16,
+confirmed alive with status 1/32 at 21:29:19.292:
+`minus_r36_allcpu-optimal-before-p1-w32-r6`, 25s cap, 15s cleanup.
+Runner stderr empty. No concurrent benchmark/build processes detected before launch.
+These are launch observations only, not timing or completion evidence.
+
+Current job: `results/BENCHMARK-STATUS.txt`; authoritative root status and
+FINISHED/FAILED marker plus Windows dialog indicate completion/failure.
+At completion independently recheck exact result sets/proofs, counters, placements,
+pair order and all frozen hashes. Analyze the four new pairs per workload first.
+Keep old adverse zero samples and all original evidence. End turn after launch.
+
+## Completed analysis
+
+Finished 22:05:15.996 Europe/Paris in about 36m02. All 32 runs optimal; 191 frozen
+hashes, full exact outputs/proofs, schedule/placement and 15 structural counters
+verify. New paired wall medians on 115/238/258/36: -1.59%, -2.05%, -1.96%, +0.39%.
+Across both screens, 19/24 wall pairs and 23/24 CPU pairs improve. Hard36 is mixed
+and effectively unchanged overall. Recommend permanent negative-unit only; zero
+held, scheduling paused. No source promotion, commit or push during analysis.
+Results/handoff memories uncommitted. Nothing running. See linked result memory.
