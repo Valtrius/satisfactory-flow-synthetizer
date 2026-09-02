@@ -552,14 +552,17 @@ committed separately before the new diagnostic split. No production code rewrite
 needed for promotion. No push. Next work is RREF arithmetic profiling, not a new
 arithmetic optimization; benchmark budget remains <=1h including cleanup.
 
-## Experiment47: RREF arithmetic profile (2026-09-02)
+## Experiment47: RREF arithmetic profile results, 2026-09-02
 
-Permanent RREF promotion documentation: c106d4c; source a79ecf7 unchanged.
-Diagnostic twin implemented and validated; no new arithmetic optimization. It splits
-normalization/suffix/elimination/finalization and records factor/coefficient patterns
-only with the existing hotspot recorder. Ordinary reducer and scheduler unchanged.
-222 core tests, 331 workspace tests, both strict Clippy configurations, 41 tooling
-tests and nine exact release CLI smokes pass. New 14-job diagnostic manifest allows
-41m30 search+cleanup, below the user one-hour ceiling. Source/docs 1006e6f committed;
-binary/source snapshots frozen and plan validated, not launched yet.
-Details and pending binary/launch identity: `mem:solver/experiments/47-rref-arithmetic-profile`.
+`mem:solver/experiments/47-rref-arithmetic-profile-results`.
+All 14 records verify in 18m54: 10 optimal controls, 4 intended hard caps. 192 frozen
+hashes and identical rechecked summary. Completed full solutions, keys, preferred
+witnesses, outcomes/proofs and 15 structural counters match; repeated profile counts
+agree exactly. Hard36 has 8 matching partial solutions, hard10 no witness.
+Elimination owns 66–69% of measured RREF time. Zero destinations 78–80% and
+factor -1 updates 26–30% motivate two separate small tests, in that order. Checked the
+installed rational operators; no explicit shortcuts for either pattern.
+No production optimization or speedup established by this diagnostic. Keep exact
+arbitrary-size arithmetic; source-value decisions only. Scheduling stays paused.
+Nothing running. Source/docs 1006e6f, manifest 14d3f73, RREF promotion docs c106d4c.
+Results/handoff notes uncommitted; no new commit or push.

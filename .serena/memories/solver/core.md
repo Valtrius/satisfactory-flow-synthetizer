@@ -33,27 +33,24 @@ dedup (33), N≤9 p1 guard (18).
 
 ## Current posture
 
-- Variables and allocation-free accounting remain permanent; all prior adverse
-  observations retained. Promotion notes 6812173.
-- RREF confirmation finished in about 37m48s: all 20 optimal. Independent frozen
-  recheck, 976 hashes and ten exact paired proofs/15 structural counters pass.
-  `mem:solver/experiments/46-rref-order-confirmation-results`.
-- User approved permanent RREF retention in existing a79ecf7. Repeated completed
-  wall gains on 115/238; CPU lower in all 18 RREF pairs across both runs.
-  New wall medians -1.49%/-1.44% for 115/238. 258 +0.38% with one faster and one
-  slower pair: no demonstrated 258 completion gain. No universal speedup claim.
-- Previously capped variable/258 control completed twice, wall -1.09% median.
-  Both below the old 320s deadline too. Earlier timeout is not reproduced and
-  remains unexplained; preserve its failure record.
-- RREF is permanent; promotion documentation precedes new diagnostic work.
-  Promotion documentation committed as c106d4c. No push.
-- Approved next work: profile canonical RREF pivot normalization, elimination and
-  suffix preparation, plus coefficient/factor patterns. Existing +1/zero
-  shortcuts already apply. Diagnostic twin committed as 1006e6f; validation/release smoke passed:
-  `mem:solver/experiments/47-rref-arithmetic-profile`. No arithmetic optimization.
-- No more broad ordering repeats recommended. Scheduler extras remain paused;
-  no production affinity or cyclicity gate. Future benchmarks <=1h including
-  cleanup. Both binaries frozen, 14-job plan validated; not launched yet.
+- Variables, allocation-free accounting and RREF ordering remain permanent.
+  RREF source a79ecf7, promotion docs c106d4c. Prior adverse cells and the
+  unexplained earlier variable/258 timeout remain in the experiment46 records.
+- Experiment47 diagnostics finished in 18m54: 14 verified, 10 optimal controls,
+  four intended hard caps. 192 frozen hashes; exact completed outputs/proofs and
+  15 structural counters equal. No new speedup claim.
+  `mem:solver/experiments/47-rref-arithmetic-profile-results`.
+- Elimination is 66–69% of instrumented RREF time; normalization 17–18%, suffix 4%.
+  Zero destinations occur in 78–80% of updates; factor -1 in 26–30%.
+  The installed rational operators lack explicit shortcuts for these patterns.
+- Recommend zero-destination shortcut first, then factor -1 separately. Preserve
+  exact arbitrary-size arithmetic and canonical order. Test hotspot-OFF completed
+  workloads with fixed affinity and balanced order before any promotion.
+- These are proposals, not implemented changes. No new benchmark launched.
+  Diagnostic source 1006e6f and manifest 14d3f73 remain committed; current result
+  memories uncommitted. No commit/push in analysis.
+- Scheduler extras stay paused; no production affinity, cyclicity or memory gate.
+  New benchmark limit <=1h including cleanup. Nothing running.
   `mem:solver/active`.
 
 ## When to read more

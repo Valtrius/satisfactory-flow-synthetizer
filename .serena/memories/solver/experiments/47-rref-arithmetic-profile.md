@@ -1,6 +1,6 @@
 # 47. Canonical RREF arithmetic profile
 
-Date: 2026-09-02. State: implemented; validated; release smoke passed, not launched.
+Date: 2026-09-02. State: completed and analyzed. Results: `mem:solver/experiments/47-rref-arithmetic-profile-results`.
 Related: permanent RREF ordering in `mem:solver/experiments/46-rref-order-confirmation-results`.
 Promotion documentation committed separately as c106d4c; source a79ecf7.
 
@@ -90,7 +90,8 @@ crossing its line threshold. Fixed markup; a reasoned local expect retains the f
 atomic-field mapping. Final strict passes above; original failure log retained.
 Logs: `target/exp47-{core-tests,workspace-tests,clippy-feature-final,clippy-default,tool-tests,format,build}.log`;
 `target/exp47-release-smoke.log` and its nine JSON outputs/verification.json.
-No benchmark results yet. No speed claim.
+14 records verified, 10 optimal and four intended stress caps. Results and recommendations:
+`mem:solver/experiments/47-rref-arithmetic-profile-results`. No speedup claim.
 
 ## Decision and commit state
 
@@ -98,6 +99,17 @@ Diagnostic only; no production arithmetic, scheduler, affinity or cyclicity poli
 change. No push. Diagnostic source and its documentation committed as 1006e6f; no push.
 Benchmark manifest and prepared launch handoff accompany a separate commit.
 Prepared run directory: `target/parallelism-ladder/rref-arithmetic-20260902`.
-Next: launch with 15-second cancellation grace and record PID/time. After completion,
-recheck frozen hashes, exact outputs/proofs and recorder invariants before interpreting
-subphase shares or operand patterns. Do not infer gain from instrumented wall time.
+Run completed and independently rechecked. Elimination dominates measured RREF;
+zero-destination and factor -1 shortcuts are proposed next, not implemented.
+Do not infer gain from instrumented wall time.
+
+## Launch (2026-09-02)
+
+Launched 18:49:37 Europe/Paris, runner PID 14980. Confirmed alive with status 1/14
+(hard36 all before), empty runner stderr. This is launch evidence only; no result or
+performance conclusion. Run: `target/parallelism-ladder/rref-arithmetic-20260902`.
+Source/docs 1006e6f; manifest/prepared handoff 14d3f73; permanent promotion notes c106d4c.
+No push. Launch and result state updates remain uncommitted after analysis.
+Use root `BENCHMARK-STATUS.txt`, result progress status and FINISHED/FAILED marker;
+completion/failure dialog was configured. Finished 19:08:31.369 Europe/Paris.
+All 14 records and 192 frozen hashes reverified; detailed results are linked above.
