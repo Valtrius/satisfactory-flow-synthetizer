@@ -294,16 +294,6 @@
   background: #10232d;
 }
 
-.flow-wrap .svelte-flow__minimap {
-  @apply rounded-md border;
-  border-color: #29414d;
-  background: #0b1a23;
-}
-
-.flow-wrap .svelte-flow__minimap-mask {
-  fill: rgb(7 16 23 / 72%);
-}
-
 @media (max-width: 760px) {
   .flow-wrap {
     min-height: 430px;

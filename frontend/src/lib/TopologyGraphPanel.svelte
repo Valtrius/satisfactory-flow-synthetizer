@@ -4,7 +4,6 @@
     BackgroundVariant,
     ControlButton,
     Controls,
-    MiniMap,
     SvelteFlow,
     type Edge,
     type Node,
@@ -148,10 +147,7 @@
   const helpSections = [
     {
       title: 'Navigate',
-      items: [
-        'Drag the background to pan; scroll or pinch to zoom.',
-        'Use the bottom-right controls or the minimap for the same.',
-      ],
+      items: ['Drag the background to pan; scroll or pinch to zoom.', 'Use the bottom-right controls for the same.'],
     },
     {
       title: 'Move nodes',
@@ -352,7 +348,6 @@
           {/if}
         </ControlButton>
       </Controls>
-      <MiniMap position="bottom-left" pannable zoomable />
     </SvelteFlow>
   </div>
 </div>
