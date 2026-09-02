@@ -7,13 +7,12 @@ const version = process.argv[2];
 
 const CARGO_PACKAGE_NAMES = [
   'satisfactory-flow-synthetizer',
-  'custom-solver-adapter',
   'solver-api',
   'solver-core',
-  'solver-db',
   'solver-reference',
   'solver-validation',
   'solver-z3',
+  'synthetizer-app',
 ];
 
 if (process.argv.length !== 3 || !isSemver(version)) {
