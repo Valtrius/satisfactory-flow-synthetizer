@@ -45,18 +45,15 @@ Record dates follow the analysis chronology, not necessarily every run's start t
 
 ## Active follow-up
 
-46 (`mem:solver/experiments/46-rref-order`) is implemented and validated in
-a79ecf7, active but not promoted. It replaces only the final canonical RREF
-sort/dedup with reversal of ordered unique pivot rows.
-40-job plan: 20 new-candidate jobs, 12 adverse variable controls, eight
-unrestricted accounting controls. 52 minutes search+cleanup, within user limit
-of one hour. Exact AB/BA balance. Full tests, Clippy, release and smoke pass.
-Nothing launched yet; `mem:solver/active`.
+`mem:solver/experiments/46-rref-order-confirmation`: prepared, plan-validated,
+not launched. Twenty jobs on unchanged binaries, 55 minutes search+cleanup.
+Repeat RREF 115/238, add RREF/258 CCD96, raise variable/258 CCD32 cap to 400s.
+Exact AB/BA balance. No solver/scheduler change, build or push.
 
-Variables/accounting are permanent in 520b352/331b87a, promotion notes in 6812173.
-Prior results remain in
-`mem:solver/experiments/44-topology-variable-confirmation-results` and
-`mem:solver/experiments/45-cache-accounting-results`. No scheduler change or push.
+Prior results: `mem:solver/experiments/46-rref-order-results`. Original screen
+FAILED completion coverage with 39 optimal and one 320s variable/258 cap.
+RREF remains active/unpromoted in a79ecf7. Keep all adverse observations.
+Follow-up manifest and results/handoff notes being committed. `mem:solver/active`.
 
 ## How the diagnosis changed
 

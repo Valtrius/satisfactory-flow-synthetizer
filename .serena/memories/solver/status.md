@@ -468,3 +468,46 @@ accounting/rref separately from before/variables and variables/accounting.
 New long RREF/258 and accounting/unrestricted258 work is deferred. No timing result.
 No run launched yet. Variables/accounting permanent, promotion note 6812173.
 Candidate not promoted. No scheduler change or push. `mem:solver/active`.
+
+## Experiment 46 launched
+
+Launched 2026-09-02 17:02:38 Europe/Paris, runner PID 20048; awaiting analysis.
+Startup verified job 1/40, runner alive, empty stderr. Output:
+target/parallelism-ladder/rref-order-hour-20260902. No result inferred.
+40 jobs; search+cleanup maximum 52 minutes, user limit one hour.
+Promotion 6812173, candidate a79ecf7, benchmark/handoff f6f422c. No push.
+Live launch notes uncommitted. End turn; no builds/tests during timing.
+
+## Experiment 46 analyzed, 2026-09-02
+
+`mem:solver/experiments/46-rref-order-results` is authoritative. Finished 17:39:06
+Europe/Paris after about 36m29s. 40 attempted, 39 optimal, one clean 320s variables
+cap on 258/CCD32. Whole screen FAILED its required completion coverage. Independent
+frozen recheck reproduces the same sole failure and summary hash
+7e36e0f85414ef9a437c719c83d6efb2519211595f973ffa103ee92917269715.
+977 frozen hashes and all 39 exact outputs pass; 19 complete pairs preserve proofs
+and 15 structural counters. No crash, watchdog kill or false optimal outcome.
+
+RREF candidate wall medians improve 0.44/1.68/0.83% on 115/238/36. All ten CPU
+pairs improve; only six wall pairs do, and every exploratory wall interval crosses
+zero. Recommend a focused confirmation, not promotion yet. No RREF/258 coverage.
+Variable/258 has one completed -0.64% pair and one cap against 302.350s reference;
+no aggregate completion speedup. Other variable controls favor the change.
+Accounting/unrestricted115 wall +0.54% and 36 -1.06%, two pairs each. Retain these
+limitations without pooling 16/32-worker timings or rolling back prior promotions
+solely from this small screen. No causal background-load claim is established.
+
+Nothing running. Next proposed run stays <=1h including cleanup, with fewer jobs
+and more per-job time for the capped 258 control. No new calculation candidate
+before confirming RREF. No source edits, new commits or push in this analysis.
+Result/handoff notes uncommitted; `mem:solver/active`.
+
+## Focused experiment 46 confirmation prepared
+
+User approved follow-up; `mem:solver/experiments/46-rref-order-confirmation`.
+20 jobs reuse the unchanged four frozen executables. RREF 115/238 repeat, new
+RREF/258 CCD96 comparison, and variables/258 CCD32 with cap increased to 400s.
+3000s search caps + 300s cleanup = 55 minutes, leaving five minutes within one
+hour for startup/verification. Frozen plan, provenance and exact AB/BA balance
+pass. No solver change, build, new performance result or promotion. Not launched
+yet. Original failed run preserved; no push. `mem:solver/active`.

@@ -1,6 +1,9 @@
 # 46. Canonical RREF ordering without sorting
 
-Date: 2026-09-02. State: implemented and correctness-validated; benchmark not launched.
+Date: 2026-09-02. State: analyzed; 39 optimal, one reference-cohort cap.
+Results: `mem:solver/experiments/46-rref-order-results`.
+Whole screen failed its completion requirement. RREF remains unpromoted.
+The preparation/launch record below preserves what was known before results.
 User approved prior recommendations and limited the next benchmark to one hour.
 Prior promotions: `mem:solver/experiments/44-topology-variable-confirmation-results`
 and `mem:solver/experiments/45-cache-accounting-results`, recorded in 6812173.
@@ -95,3 +98,12 @@ Launch with start-benchmark-screen.ps1, the above manifest/map and
 -CancellationGraceSeconds 15. Completion/failure dialog enabled by wrapper.
 No run launched yet; no performance conclusion. Benchmark manifest and handoff
 are being committed separately. No push.
+
+## Actual launch
+
+Launched 2026-09-02 17:02:38 Europe/Paris, runner PID 20048; awaiting analysis.
+Startup check: runner alive, job 1/40 running, empty stderr.
+Output target/parallelism-ladder/rref-order-hour-20260902.
+All source hashes still matched the validated snapshot immediately before launch.
+Promotion 6812173; RREF candidate a79ecf7; benchmark manifest/handoff f6f422c.
+No push. Live launch-state note uncommitted. No builds/tests during timing.

@@ -32,22 +32,28 @@ dedup (33), N≤9 p1 guard (18).
 
 ## Current posture
 
-- Variables and allocation-free accounting are permanent, with the measured
-  limitations retained in experiments 44/45. Promotion notes: 6812173.
-- New isolated candidate: reverse final canonical RREF pivot rows instead of
-  sorting/deduplicating. Source a79ecf7, active but not promoted.
-  No elimination, identity, pruning, cache or proof change.
-- 221 solver-core and 330 workspace all-target tests pass, two/five ignored.
-  Both strict Clippy configurations, 41 tooling tests, release build, 12 exact
-  executable smokes and the frozen 40-job plan pass.
-- User limit: one hour. Experiment 46 has 40 jobs, 20 adjacent pairs, search caps
-  plus cleanup 52 minutes. All order counts exactly balanced; no timing yet.
-- Read `mem:solver/experiments/46-rref-order`. Nothing launched yet.
-  Live state `mem:solver/active`.
-- Scheduler extras remain paused; no production affinity policy. No push.
-  Integer inequality rows remain restored in 5d8d924.
-- Do not confuse a committed candidate with a permanent optimization. New
-  RREF/258 and accounting/unrestricted258 are deferred to respect the time limit.
+- Variables and allocation-free accounting remain permanent, with all measured
+  limitations retained. Promotion notes: 6812173.
+- RREF reverse-order candidate a79ecf7 remains active but unpromoted.
+  Exp46 finished in about 36m29s: 39 optimal, one clean cap; whole screen FAILED.
+  All 977 frozen hashes, exact completed outputs and 19 complete paired proofs/
+  15 structural counters pass. Failure is the variables/258/CCD32 320s timeout.
+- RREF wall medians: 115 -0.44%, 238 -1.68%, 36 -0.83%. CPU lower in all ten pairs,
+  but wall lower in only six; all small-sample wall intervals cross zero.
+  Recommend one focused confirmation before making permanent.
+- Variable controls: 115/36 favorable medians; 258 has one -0.64% completed pair
+  and one capped candidate against a 302.350s completed reference. Retain both;
+  no overall 258 completion ratio. Regression question remains unresolved.
+- Accounting unrestricted controls: 115 wall +0.54%, 36 -1.06%, two pairs each.
+  Keep prior promotion but do not claim a universal win.
+- Prior results: `mem:solver/experiments/46-rref-order-results`.
+  Focused confirmation is plan-validated, not launched yet:
+  `mem:solver/experiments/46-rref-order-confirmation`. 20 jobs, 55 minutes
+  search+cleanup, 400s cap for variables/258 and new RREF/258 coverage.
+  Same frozen binaries; no new solver candidate or build.
+- Scheduler extras remain paused; no production affinity policy. Integer
+  inequality rows remain restored. No new source edit or push.
+  Follow-up manifest and results/handoff notes being committed; `mem:solver/active`.
 
 ## When to read more
 

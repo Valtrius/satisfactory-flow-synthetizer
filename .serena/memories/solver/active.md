@@ -1,36 +1,32 @@
 # solver/active
 
-Experiment 46 ready to launch; no run started yet.
-Read `mem:solver/experiments/46-rref-order`.
-Promotion notes 6812173. RREF candidate a79ecf7, active but not promoted.
-Variables (520b352) and accounting (331b87a) are permanent.
+Focused experiment 46 confirmation prepared and plan-validated; not launched.
+Read `mem:solver/experiments/46-rref-order-confirmation`.
+Prior failed screen: `mem:solver/experiments/46-rref-order-results`.
+No new solver code; RREF a79ecf7 remains active/unpromoted.
 
 ## Launch
 
-Manifest benchmarks/custom/rref-order-hour-screening.json.
+Manifest benchmarks/custom/rref-order-confirmation-screening.json.
 Map target/parallelism-ladder/rref-order-variants-20260902/variants.json.
-Output target/parallelism-ladder/rref-order-hour-20260902.
+Run target/parallelism-ladder/rref-order-confirmation-20260902.
 Use scripts/start-benchmark-screen.ps1 with -CancellationGraceSeconds 15.
-40 jobs, 20 adjacent pairs. 2520s search + 600s cleanup = 52 minutes.
-User limit one hour, eight minutes reserved for startup/verification.
-Completion/failure dialog and durable status enabled.
+20 jobs, ten adjacent pairs, exact order balance. 3000s search + 300s cleanup =
+55 minutes. Five minutes reserved within the user's hour for startup/verification.
+Completion/failure dialog required; end turn after launching.
 
-## Validated
+## Scope
 
-221 solver-core and 330 workspace tests, both strict Clippy builds, 41 tooling
-tests, release build and 12 frozen exact executable smokes pass.
-Frozen 40-job plan passes with exactly balanced AB/BA order.
-RREF executable SHA256:
-a431c5ce82fe435c75831a7d4403e84e9c5c6e53353ba04bcde05a40e00678d7.
-70 frozen source files, only canonical.rs differs from accounting.
-No performance result. Candidate a79ecf7; no push.
+accounting/rref: 115 all CCD96 two pairs, 238 optimal CCD32 four pairs,
+258 minimum_links CCD96 two pairs. before/variables: 258 minimum_links CCD32
+two pairs with 400s cap instead of 320s. All workers16, capacity1200, p1, hotspots off.
+Unrestricted accounting/36 repeats omitted to fit the budget.
+All frozen binaries/source hashes and the full plan verified. No new build/test.
+No performance result. No production scheduling/affinity change or push.
 
-## After launch/completion
+## After completion
 
-Check root BENCHMARK-FINISHED.txt or BENCHMARK-FAILED.txt, not just job status.
-Reverify frozen hashes, all scheduled outcomes, complete solution objects, proofs
-and structural work before interpreting paired timings. Preserve caps/failures.
-Four RREF pairs on 115/238 and two on 36 are screening, not universal proof.
-The other two-pair cells are regression spot checks. Do not pool placements.
-No RREF/258 or accounting/unrestricted258 run in this time-limited batch.
-No builds/tests while timing; end turn after launch.
+Check root BENCHMARK-FINISHED.txt or BENCHMARK-FAILED.txt. Reverify frozen hashes,
+all exact outputs, proofs and structural work. Reference-cohort caps are failures,
+not stress data. Keep the old failed 320s run intact. Do not pool placements or
+silently merge sessions. Interpret two-pair cells as limited evidence.
