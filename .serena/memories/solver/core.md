@@ -32,30 +32,22 @@ dedup (33), N≤9 p1 guard (18).
 
 ## Current posture
 
-- Scheduler extras remain paused. No production affinity policy.
-- Integer inequality rows restored to rational rows in 5d8d924.
-  Record: `mem:solver/experiments/41-integer-rows-restoration`.
-- Exp44/45 completed 198/198 optimally; independent frozen recheck and 905
-  artifact hashes pass. All 99 pairs preserve exact results, proofs and 15
-  structural counters. Summary recheck is byte-identical.
-- User approved permanent retention of both small improvements. Complete
-  variables wins 53/75 wall pairs, CPU 67/75; accounting wins 21/24 wall pairs,
-  CPU 24/24. These are descriptive counts, not pooled speedups.
-- Variables are not uniformly faster: 258/CCD32 paired wall median +1.07%,
-  interval -2.21 to +2.78%. Preserve this uncertainty. Accounting is clearer,
-  but its long 258 sample is only two pairs/CCD and w32 was not tested.
-- Results: `mem:solver/experiments/44-topology-variable-confirmation-results`
-  and `mem:solver/experiments/45-cache-accounting-results`.
-- Benchmark topology policy worked; residual timing drift remains. 258 favors
-  CCD96 while other cases favor unrestricted execution. No universal pinning.
-- Proposed next isolated hypothesis: replace redundant final RREF row sort/dedup
-  with reversal of its unique ordered pivot rows. Exact oracle first; no code
-  change or speed claim yet. Keep larger RREF arithmetic work separate.
-- Variables are permanent in 520b352, accounting in 331b87a. Promotion notes
-  will be committed before the next isolated RREF candidate. Tooling 7309fb7.
-  No production source rewrite needed for these two promotions. No push.
-  Next benchmark has a user-imposed one-hour limit including cleanup.
-  Nothing running yet. Current handoff: `mem:solver/active`.
+- Variables and allocation-free accounting are permanent, with the measured
+  limitations retained in experiments 44/45. Promotion notes: 6812173.
+- New isolated candidate: reverse final canonical RREF pivot rows instead of
+  sorting/deduplicating. Source a79ecf7, active but not promoted.
+  No elimination, identity, pruning, cache or proof change.
+- 221 solver-core and 330 workspace all-target tests pass, two/five ignored.
+  Both strict Clippy configurations, 41 tooling tests, release build, 12 exact
+  executable smokes and the frozen 40-job plan pass.
+- User limit: one hour. Experiment 46 has 40 jobs, 20 adjacent pairs, search caps
+  plus cleanup 52 minutes. All order counts exactly balanced; no timing yet.
+- Read `mem:solver/experiments/46-rref-order`. Nothing launched yet.
+  Live state `mem:solver/active`.
+- Scheduler extras remain paused; no production affinity policy. No push.
+  Integer inequality rows remain restored in 5d8d924.
+- Do not confuse a committed candidate with a permanent optimization. New
+  RREF/258 and accounting/unrestricted258 are deferred to respect the time limit.
 
 ## When to read more
 

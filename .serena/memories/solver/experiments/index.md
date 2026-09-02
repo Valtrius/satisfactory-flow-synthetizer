@@ -45,18 +45,18 @@ Record dates follow the analysis chronology, not necessarily every run's start t
 
 ## Active follow-up
 
-198/198 optimal results analyzed in
+46 (`mem:solver/experiments/46-rref-order`) is implemented and validated in
+a79ecf7, active but not promoted. It replaces only the final canonical RREF
+sort/dedup with reversal of ordered unique pivot rows.
+40-job plan: 20 new-candidate jobs, 12 adverse variable controls, eight
+unrestricted accounting controls. 52 minutes search+cleanup, within user limit
+of one hour. Exact AB/BA balance. Full tests, Clippy, release and smoke pass.
+Nothing launched yet; `mem:solver/active`.
+
+Variables/accounting are permanent in 520b352/331b87a, promotion notes in 6812173.
+Prior results remain in
 `mem:solver/experiments/44-topology-variable-confirmation-results` and
-`mem:solver/experiments/45-cache-accounting-results`.
-User approved permanent retention of both small changes, with stronger accounting evidence.
-Variable wall medians improve in 12/15 cells; the +1.07% 258/CCD32 result is
-uncertain and retained. Accounting wall medians improve in all six cells.
-No pooled CPU-placement speedup. No production scheduling change.
-Next proposed experiment: remove redundant final RREF row sort/dedup using exact
-pivot order, followed by matched completed controls. Not implemented or launched.
-Permanent source changes already committed (520b352, 331b87a). Promotion notes
-are being committed before the next candidate. No push. New benchmark limit:
-one hour including cleanup. `mem:solver/active`.
+`mem:solver/experiments/45-cache-accounting-results`. No scheduler change or push.
 
 ## How the diagnosis changed
 

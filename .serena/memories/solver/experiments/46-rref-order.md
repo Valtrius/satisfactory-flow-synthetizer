@@ -67,8 +67,31 @@ VS2019/znver4 environment. Formatting and diff checks pass.
 Logs: target/exp46-oracle.log, exp46-core-tests.log, exp46-workspace-tests.log,
 exp46-clippy-feature.log, exp46-clippy-default.log, exp46-tool-tests.log,
 exp46-build.log and exp46-format.log.
-Frozen provenance, real executable smoke and full-plan checks remain pending.
-No performance result.
+Frozen provenance verified: 70 source files, only canonical.rs differs from the
+retained accounting source. All 12 frozen real-executable tiny smokes pass, with
+exact optimal/minimum_links outputs on both CCDs and unrestricted execution.
+Full 40-job frozen plan passes; every comparison has exactly balanced AB/BA order.
+The 3120s search+cleanup sum is independently checked. No performance result.
 An initial patch used an incorrect trailing function anchor and failed before
 changing source; reapplied with the exact observed context. No runtime failure.
 Complete/failure notification required; end turn immediately after launch.
+
+## Frozen identity and prelaunch status
+
+RREF candidate source commit a79ecf7, not promoted. Promotions recorded in 6812173.
+New profile_case SHA256:
+a431c5ce82fe435c75831a7d4403e84e9c5c6e53353ba04bcde05a40e00678d7.
+Map: target/parallelism-ladder/rref-order-variants-20260902/variants.json.
+Source/build metadata, source hashes and exact executable are alongside that map.
+Frozen references remain identical to experiment 44:
+before 8b2dd2768976469ba74617cf5e0d31e72324cf2b41e831f8473777dc837d2ea2;
+variables b19b601f29e8f9bed6b3427a89152c376466ab68408e0b201d87ad384f594acf;
+accounting 253b8245c9106211ee1a0a44f006bffc246138b0cb59ef2e895bfb4f1b6b1573.
+
+Plan evidence: target/exp46-plan.log and rref-order-hour-plan-20260902/input.
+Smoke evidence: target/exp46-smoke-analysis.log and rref-order-smoke-20260902/results.
+Intended real output: target/parallelism-ladder/rref-order-hour-20260902.
+Launch with start-benchmark-screen.ps1, the above manifest/map and
+-CancellationGraceSeconds 15. Completion/failure dialog enabled by wrapper.
+No run launched yet; no performance conclusion. Benchmark manifest and handoff
+are being committed separately. No push.

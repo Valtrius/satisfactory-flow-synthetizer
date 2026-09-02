@@ -452,3 +452,19 @@ accounting (331b87a). The earlier recommendation is now accepted; no source
 change was required. Preserve the measured uncertainty and all adverse cells.
 Promotion documentation precedes the next isolated RREF candidate. New benchmark
 limit is one hour, including cleanup; no run launched yet. No push authorized.
+
+## Experiment 46 ready to launch
+
+`mem:solver/experiments/46-rref-order`: candidate a79ecf7 replaces only final
+canonical RREF sort/dedup with exact reverse pivot order. Dense oracle including
+zero-variable, scaled/permuted, dependent and contradictory inputs passes.
+221 solver-core tests, 330 workspace all-target tests, both strict Clippy builds,
+41 tooling tests, release and 12 frozen real-executable smokes pass.
+Source/binary provenance verified, only canonical.rs differs from accounting.
+
+40-job plan is ready with exact order balance, 2520s search caps and 600s cleanup.
+User one-hour limit leaves eight minutes for startup and verification. Compare
+accounting/rref separately from before/variables and variables/accounting.
+New long RREF/258 and accounting/unrestricted258 work is deferred. No timing result.
+No run launched yet. Variables/accounting permanent, promotion note 6812173.
+Candidate not promoted. No scheduler change or push. `mem:solver/active`.
