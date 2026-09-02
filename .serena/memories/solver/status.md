@@ -551,3 +551,14 @@ Confirmation evidence and limitations remain in
 committed separately before the new diagnostic split. No production code rewrite
 needed for promotion. No push. Next work is RREF arithmetic profiling, not a new
 arithmetic optimization; benchmark budget remains <=1h including cleanup.
+
+## Experiment47: RREF arithmetic profile (2026-09-02)
+
+Permanent RREF promotion documentation: c106d4c; source a79ecf7 unchanged.
+Diagnostic twin implemented and validated; no new arithmetic optimization. It splits
+normalization/suffix/elimination/finalization and records factor/coefficient patterns
+only with the existing hotspot recorder. Ordinary reducer and scheduler unchanged.
+222 core tests, 331 workspace tests, both strict Clippy configurations, 41 tooling
+tests and nine exact release CLI smokes pass. New 14-job diagnostic manifest allows
+41m30 search+cleanup, below the user one-hour ceiling. Not launched yet.
+Details and pending binary/launch identity: `mem:solver/experiments/47-rref-arithmetic-profile`.

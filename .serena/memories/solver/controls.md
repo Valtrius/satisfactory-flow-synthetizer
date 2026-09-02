@@ -121,3 +121,10 @@ discharge the containing profile. See [21](experiments/21-adaptive-root-profilin
 
 The exact contracts (`mem:solver/contracts`) take precedence over scheduler heuristics.
 Before editing, check status (`mem:solver/status`) for the committed/uncommitted boundary.
+
+Experiment47 splits canonical RREF only with hotspot recording: normalization,
+suffix construction, elimination, finalization, factor/update counts and maximum
+observed rational bit lengths. The ordinary reducer is unchanged. These nested
+phase times include local instrumentation and overlap outer RREF/equality timers.
+Integer/unit/zero categories overlap; factor row counts differ from weighted update
+counts. See `mem:solver/experiments/47-rref-arithmetic-profile` before interpreting them.

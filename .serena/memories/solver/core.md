@@ -46,13 +46,14 @@ dedup (33), N≤9 p1 guard (18).
   Both below the old 320s deadline too. Earlier timeout is not reproduced and
   remains unexplained; preserve its failure record.
 - RREF is permanent; promotion documentation precedes new diagnostic work.
-  No source rewrite needed. No push.
+  Promotion documentation committed as c106d4c. No push.
 - Approved next work: profile canonical RREF pivot normalization, elimination and
   suffix preparation, plus coefficient/factor patterns. Existing +1/zero
-  shortcuts already apply; no new arithmetic change implemented or measured.
+  shortcuts already apply. Diagnostic twin validated, release smoke passed:
+  `mem:solver/experiments/47-rref-arithmetic-profile`. No arithmetic optimization.
 - No more broad ordering repeats recommended. Scheduler extras remain paused;
   no production affinity or cyclicity gate. Future benchmarks <=1h including
-  cleanup. Nothing running; results/handoff notes uncommitted.
+  cleanup. Diagnostic ready for freezing/launch; nothing running.
   `mem:solver/active`.
 
 ## When to read more

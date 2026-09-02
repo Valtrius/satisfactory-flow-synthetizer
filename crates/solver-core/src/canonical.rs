@@ -2288,7 +2288,14 @@ fn primitive_equality_basis(
     }
     drop(row_build_timer);
     let rref_timer = CanonicalTimer::start_if(CanonicalPhase::EqualityRref, record_subphases);
-    let basis = rational_rref(rows, variable_count);
+    let basis = if record_subphases {
+        let mut profile = hotspot_profile::RrefProfile::default();
+        let basis = rational_rref_profiled(rows, variable_count, &mut profile);
+        hotspot_profile::record_rref_profile(&profile);
+        basis
+    } else {
+        rational_rref(rows, variable_count)
+    };
     drop(rref_timer);
     basis
 }
@@ -2493,6 +2500,104 @@ fn rational_rref(mut rows: Vec<Vec<Rational>>, variable_count: usize) -> Vec<Vec
     // exact lexicographic order without comparisons or duplicate elimination.
     // Empty systems and the single canonical contradiction are unchanged.
     rows.reverse();
+    rows
+}
+
+/// Diagnostic twin of `rational_rref`: preserve the arithmetic and output order.
+/// Local counters are merged once per call, never atomically per coefficient.
+/// Subphase times include local instrumentation, so use them to locate work,
+/// not to estimate the wall-time benefit of removing an arithmetic operation.
+fn rational_rref_profiled(
+    mut rows: Vec<Vec<Rational>>,
+    variable_count: usize,
+    profile: &mut hotspot_profile::RrefProfile,
+) -> Vec<Vec<Rational>> {
+    rows.retain(|row| row.iter().any(|value| !value.is_zero()));
+    let mut pivot_row = 0;
+    for column in 0..variable_count {
+        let Some(selected) = (pivot_row..rows.len()).find(|&row| !rows[row][column].is_zero())
+        else {
+            continue;
+        };
+        rows.swap(pivot_row, selected);
+        profile.pivots += 1;
+        let started = Instant::now();
+        let pivot = rows[pivot_row][column].clone();
+        profile.observe(&pivot);
+        if pivot.numerator() != pivot.denominator() {
+            profile.nonunit_pivots += 1;
+            for value in &mut rows[pivot_row][column..] {
+                if !value.is_zero() {
+                    profile.normalization_values += 1;
+                    profile.observe(value);
+                    *value = &*value / &pivot;
+                    profile.observe(value);
+                }
+            }
+        }
+        profile.normalization += started.elapsed();
+        let started = Instant::now();
+        let (before, pivot_and_after) = rows.split_at_mut(pivot_row);
+        let (normalized_pivot, after) = pivot_and_after.split_first_mut().unwrap();
+        let nonzero = normalized_pivot
+            .iter()
+            .enumerate()
+            .skip(column + 1)
+            .filter(|(_, value)| !value.is_zero())
+            .collect::<Vec<_>>();
+        profile.suffix += started.elapsed();
+        let started = Instant::now();
+        for row in before.iter_mut().chain(after) {
+            if row[column].is_zero() {
+                continue;
+            }
+            let factor = std::mem::replace(&mut row[column], Rational::zero());
+            let unit_factor = factor.numerator() == factor.denominator();
+            profile.eliminated_rows += 1;
+            profile.unit_factors += u64::from(unit_factor);
+            let negative_unit_factor = factor.is_negative()
+                && factor.numerator().magnitude() == factor.denominator().magnitude();
+            profile.negative_unit_factors += u64::from(negative_unit_factor);
+            profile.integer_factors += u64::from(factor.denominator().is_one());
+            profile.observe(&factor);
+            for &(index, pivot_value) in &nonzero {
+                profile.coefficient_updates += 1;
+                profile.unit_factor_updates += u64::from(unit_factor);
+                profile.negative_unit_factor_updates += u64::from(negative_unit_factor);
+                profile.zero_destinations += u64::from(row[index].is_zero());
+                profile.unit_pivot_updates +=
+                    u64::from(pivot_value.numerator() == pivot_value.denominator());
+                profile.integer_pivot_updates += u64::from(pivot_value.denominator().is_one());
+                profile.observe(&row[index]);
+                profile.observe(pivot_value);
+                row[index] = if unit_factor {
+                    &row[index] - pivot_value
+                } else {
+                    &row[index] - &factor * pivot_value
+                };
+                profile.observe(&row[index]);
+            }
+        }
+        profile.elimination += started.elapsed();
+        pivot_row += 1;
+        if pivot_row == rows.len() {
+            break;
+        }
+    }
+    let started = Instant::now();
+    let inconsistent = rows.iter().any(|row| {
+        row[..variable_count].iter().all(Rational::is_zero) && !row[variable_count].is_zero()
+    });
+    if inconsistent {
+        let mut contradiction = vec![Rational::zero(); variable_count + 1];
+        contradiction[variable_count] = Rational::one();
+        rows.clear();
+        rows.push(contradiction);
+    } else {
+        rows.retain(|row| row[..variable_count].iter().any(|value| !value.is_zero()));
+    }
+    rows.reverse();
+    profile.finalization += started.elapsed();
     rows
 }
 
@@ -3035,6 +3140,20 @@ mod tests {
                 let expected = dense_reference_rational_rref(rows.clone(), variables);
                 let actual = rational_rref(rows.clone(), variables);
                 assert_eq!(actual, expected, "variables={variables}, sample={sample}");
+                let mut profile = hotspot_profile::RrefProfile::default();
+                assert_eq!(
+                    rational_rref_profiled(rows.clone(), variables, &mut profile),
+                    expected,
+                    "profiled variables={variables}, sample={sample}"
+                );
+                assert!(profile.nonunit_pivots <= profile.pivots);
+                assert!(
+                    profile.unit_factors + profile.negative_unit_factors <= profile.integer_factors
+                );
+                assert!(profile.integer_factors <= profile.eliminated_rows);
+                assert!(profile.zero_destinations <= profile.coefficient_updates);
+                assert!(profile.unit_pivot_updates <= profile.integer_pivot_updates);
+                assert!(profile.integer_pivot_updates <= profile.coefficient_updates);
                 // Sorting used to hide the reducer's row order. Check the exact
                 // canonical order after permuting/scaling the generators and
                 // appending dependent and zero rows, without sorting the result.
@@ -3054,9 +3173,18 @@ mod tests {
                 }
                 equivalent.push(vec![Rational::zero(); variables + 1]);
                 assert_eq!(
-                    rational_rref(equivalent, variables),
+                    rational_rref(equivalent.clone(), variables),
                     expected,
                     "permuted/scaled variables={variables}, sample={sample}"
+                );
+                assert_eq!(
+                    rational_rref_profiled(
+                        equivalent,
+                        variables,
+                        &mut hotspot_profile::RrefProfile::default(),
+                    ),
+                    expected,
+                    "profiled permuted/scaled variables={variables}, sample={sample}"
                 );
                 for row in &actual {
                     assert_sparse_row_round_trip(row);
@@ -3922,6 +4050,35 @@ mod tests {
         );
         assert_eq!(left, expected);
         assert_eq!(right, expected);
+    }
+
+    #[test]
+    fn profiled_rref_counts_arithmetic_without_changing_the_basis() {
+        let rows = vec![
+            vec![rational("2"), rational("2"), rational("0")],
+            vec![rational("-1"), rational("0"), rational("0")],
+            vec![rational("0"), rational("1"), rational("0")],
+        ];
+        let mut profile = hotspot_profile::RrefProfile::default();
+        assert_eq!(
+            rational_rref_profiled(rows.clone(), 2, &mut profile),
+            dense_reference_rational_rref(rows, 2),
+        );
+        assert_eq!(profile.pivots, 2);
+        assert_eq!(profile.nonunit_pivots, 1);
+        assert_eq!(profile.normalization_values, 2);
+        assert_eq!(profile.eliminated_rows, 3);
+        assert_eq!(profile.unit_factors, 2);
+        assert_eq!(profile.unit_factor_updates, 0);
+        assert_eq!(profile.negative_unit_factor_updates, 1);
+        assert_eq!(profile.negative_unit_factors, 1);
+        assert_eq!(profile.integer_factors, 3);
+        assert_eq!(profile.coefficient_updates, 1);
+        assert_eq!(profile.zero_destinations, 1);
+        assert_eq!(profile.unit_pivot_updates, 1);
+        assert_eq!(profile.integer_pivot_updates, 1);
+        assert_eq!(profile.max_numerator_bits, 2);
+        assert_eq!(profile.max_denominator_bits, 1);
     }
 
     #[test]

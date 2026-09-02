@@ -70,6 +70,26 @@ static EQUALITY_NS: AtomicU64 = AtomicU64::new(0);
 static EQUALITY_INDEX_NS: AtomicU64 = AtomicU64::new(0);
 static EQUALITY_ROW_BUILD_NS: AtomicU64 = AtomicU64::new(0);
 static EQUALITY_RREF_NS: AtomicU64 = AtomicU64::new(0);
+static EQUALITY_RREF_PROFILED_CALLS: AtomicU64 = AtomicU64::new(0);
+static EQUALITY_RREF_NORMALIZATION_NS: AtomicU64 = AtomicU64::new(0);
+static EQUALITY_RREF_SUFFIX_NS: AtomicU64 = AtomicU64::new(0);
+static EQUALITY_RREF_ELIMINATION_NS: AtomicU64 = AtomicU64::new(0);
+static EQUALITY_RREF_FINALIZATION_NS: AtomicU64 = AtomicU64::new(0);
+static EQUALITY_RREF_PIVOTS: AtomicU64 = AtomicU64::new(0);
+static EQUALITY_RREF_NONUNIT_PIVOTS: AtomicU64 = AtomicU64::new(0);
+static EQUALITY_RREF_NORMALIZATION_VALUES: AtomicU64 = AtomicU64::new(0);
+static EQUALITY_RREF_ELIMINATED_ROWS: AtomicU64 = AtomicU64::new(0);
+static EQUALITY_RREF_UNIT_FACTORS: AtomicU64 = AtomicU64::new(0);
+static EQUALITY_RREF_UNIT_FACTOR_UPDATES: AtomicU64 = AtomicU64::new(0);
+static EQUALITY_RREF_NEGATIVE_UNIT_FACTOR_UPDATES: AtomicU64 = AtomicU64::new(0);
+static EQUALITY_RREF_NEGATIVE_UNIT_FACTORS: AtomicU64 = AtomicU64::new(0);
+static EQUALITY_RREF_INTEGER_FACTORS: AtomicU64 = AtomicU64::new(0);
+static EQUALITY_RREF_COEFFICIENT_UPDATES: AtomicU64 = AtomicU64::new(0);
+static EQUALITY_RREF_ZERO_DESTINATIONS: AtomicU64 = AtomicU64::new(0);
+static EQUALITY_RREF_UNIT_PIVOT_UPDATES: AtomicU64 = AtomicU64::new(0);
+static EQUALITY_RREF_INTEGER_PIVOT_UPDATES: AtomicU64 = AtomicU64::new(0);
+static EQUALITY_RREF_MAX_NUMERATOR_BITS: AtomicU64 = AtomicU64::new(0);
+static EQUALITY_RREF_MAX_DENOMINATOR_BITS: AtomicU64 = AtomicU64::new(0);
 static INEQUALITY_NS: AtomicU64 = AtomicU64::new(0);
 static INEQUALITY_PIVOT_INDEX_NS: AtomicU64 = AtomicU64::new(0);
 static INEQUALITY_ROW_BUILD_NS: AtomicU64 = AtomicU64::new(0);
@@ -141,6 +161,26 @@ pub struct HotspotSnapshot {
     pub equality_index_ns: u64,
     pub equality_row_build_ns: u64,
     pub equality_rref_ns: u64,
+    pub equality_rref_profiled_calls: u64,
+    pub equality_rref_normalization_ns: u64,
+    pub equality_rref_suffix_ns: u64,
+    pub equality_rref_elimination_ns: u64,
+    pub equality_rref_finalization_ns: u64,
+    pub equality_rref_pivots: u64,
+    pub equality_rref_nonunit_pivots: u64,
+    pub equality_rref_normalization_values: u64,
+    pub equality_rref_eliminated_rows: u64,
+    pub equality_rref_unit_factors: u64,
+    pub equality_rref_unit_factor_updates: u64,
+    pub equality_rref_negative_unit_factor_updates: u64,
+    pub equality_rref_negative_unit_factors: u64,
+    pub equality_rref_integer_factors: u64,
+    pub equality_rref_coefficient_updates: u64,
+    pub equality_rref_zero_destinations: u64,
+    pub equality_rref_unit_pivot_updates: u64,
+    pub equality_rref_integer_pivot_updates: u64,
+    pub equality_rref_max_numerator_bits: u64,
+    pub equality_rref_max_denominator_bits: u64,
     pub inequality_ns: u64,
     pub inequality_pivot_index_ns: u64,
     pub inequality_row_build_ns: u64,
@@ -185,6 +225,10 @@ pub fn peek_snapshot() -> HotspotSnapshot {
     load_snapshot()
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the flat atomic-to-snapshot mapping together."
+)]
 fn load_snapshot() -> HotspotSnapshot {
     HotspotSnapshot {
         witness_leaves: WITNESS_LEAVES.load(Ordering::Relaxed),
@@ -257,6 +301,33 @@ fn load_snapshot() -> HotspotSnapshot {
         equality_index_ns: EQUALITY_INDEX_NS.load(Ordering::Relaxed),
         equality_row_build_ns: EQUALITY_ROW_BUILD_NS.load(Ordering::Relaxed),
         equality_rref_ns: EQUALITY_RREF_NS.load(Ordering::Relaxed),
+        equality_rref_profiled_calls: EQUALITY_RREF_PROFILED_CALLS.load(Ordering::Relaxed),
+        equality_rref_normalization_ns: EQUALITY_RREF_NORMALIZATION_NS.load(Ordering::Relaxed),
+        equality_rref_suffix_ns: EQUALITY_RREF_SUFFIX_NS.load(Ordering::Relaxed),
+        equality_rref_elimination_ns: EQUALITY_RREF_ELIMINATION_NS.load(Ordering::Relaxed),
+        equality_rref_finalization_ns: EQUALITY_RREF_FINALIZATION_NS.load(Ordering::Relaxed),
+        equality_rref_pivots: EQUALITY_RREF_PIVOTS.load(Ordering::Relaxed),
+        equality_rref_nonunit_pivots: EQUALITY_RREF_NONUNIT_PIVOTS.load(Ordering::Relaxed),
+        equality_rref_normalization_values: EQUALITY_RREF_NORMALIZATION_VALUES
+            .load(Ordering::Relaxed),
+        equality_rref_eliminated_rows: EQUALITY_RREF_ELIMINATED_ROWS.load(Ordering::Relaxed),
+        equality_rref_unit_factors: EQUALITY_RREF_UNIT_FACTORS.load(Ordering::Relaxed),
+        equality_rref_unit_factor_updates: EQUALITY_RREF_UNIT_FACTOR_UPDATES
+            .load(Ordering::Relaxed),
+        equality_rref_negative_unit_factor_updates: EQUALITY_RREF_NEGATIVE_UNIT_FACTOR_UPDATES
+            .load(Ordering::Relaxed),
+        equality_rref_negative_unit_factors: EQUALITY_RREF_NEGATIVE_UNIT_FACTORS
+            .load(Ordering::Relaxed),
+        equality_rref_integer_factors: EQUALITY_RREF_INTEGER_FACTORS.load(Ordering::Relaxed),
+        equality_rref_coefficient_updates: EQUALITY_RREF_COEFFICIENT_UPDATES
+            .load(Ordering::Relaxed),
+        equality_rref_zero_destinations: EQUALITY_RREF_ZERO_DESTINATIONS.load(Ordering::Relaxed),
+        equality_rref_unit_pivot_updates: EQUALITY_RREF_UNIT_PIVOT_UPDATES.load(Ordering::Relaxed),
+        equality_rref_integer_pivot_updates: EQUALITY_RREF_INTEGER_PIVOT_UPDATES
+            .load(Ordering::Relaxed),
+        equality_rref_max_numerator_bits: EQUALITY_RREF_MAX_NUMERATOR_BITS.load(Ordering::Relaxed),
+        equality_rref_max_denominator_bits: EQUALITY_RREF_MAX_DENOMINATOR_BITS
+            .load(Ordering::Relaxed),
         inequality_ns: INEQUALITY_NS.load(Ordering::Relaxed),
         inequality_pivot_index_ns: INEQUALITY_PIVOT_INDEX_NS.load(Ordering::Relaxed),
         inequality_row_build_ns: INEQUALITY_ROW_BUILD_NS.load(Ordering::Relaxed),
@@ -322,6 +393,26 @@ fn clear_buckets() {
         &EQUALITY_INDEX_NS,
         &EQUALITY_ROW_BUILD_NS,
         &EQUALITY_RREF_NS,
+        &EQUALITY_RREF_PROFILED_CALLS,
+        &EQUALITY_RREF_NORMALIZATION_NS,
+        &EQUALITY_RREF_SUFFIX_NS,
+        &EQUALITY_RREF_ELIMINATION_NS,
+        &EQUALITY_RREF_FINALIZATION_NS,
+        &EQUALITY_RREF_PIVOTS,
+        &EQUALITY_RREF_NONUNIT_PIVOTS,
+        &EQUALITY_RREF_NORMALIZATION_VALUES,
+        &EQUALITY_RREF_ELIMINATED_ROWS,
+        &EQUALITY_RREF_UNIT_FACTORS,
+        &EQUALITY_RREF_UNIT_FACTOR_UPDATES,
+        &EQUALITY_RREF_NEGATIVE_UNIT_FACTOR_UPDATES,
+        &EQUALITY_RREF_NEGATIVE_UNIT_FACTORS,
+        &EQUALITY_RREF_INTEGER_FACTORS,
+        &EQUALITY_RREF_COEFFICIENT_UPDATES,
+        &EQUALITY_RREF_ZERO_DESTINATIONS,
+        &EQUALITY_RREF_UNIT_PIVOT_UPDATES,
+        &EQUALITY_RREF_INTEGER_PIVOT_UPDATES,
+        &EQUALITY_RREF_MAX_NUMERATOR_BITS,
+        &EQUALITY_RREF_MAX_DENOMINATOR_BITS,
         &INEQUALITY_NS,
         &INEQUALITY_PIVOT_INDEX_NS,
         &INEQUALITY_ROW_BUILD_NS,
@@ -490,6 +581,66 @@ pub(crate) fn record_sparse_profile(
         &PROPAGATION_SPARSE_TERM_BUCKET_CALLS,
         &PROPAGATION_SPARSE_TERM_BUCKET_NS,
     );
+}
+
+/// Per-call canonical RREF diagnostics; ordinary solves never construct this.
+#[derive(Default)]
+pub(crate) struct RrefProfile {
+    pub normalization: Duration,
+    pub suffix: Duration,
+    pub elimination: Duration,
+    pub finalization: Duration,
+    pub pivots: u64,
+    pub nonunit_pivots: u64,
+    pub normalization_values: u64,
+    pub eliminated_rows: u64,
+    pub unit_factors: u64,
+    pub unit_factor_updates: u64,
+    pub negative_unit_factor_updates: u64,
+    pub negative_unit_factors: u64,
+    pub integer_factors: u64,
+    pub coefficient_updates: u64,
+    pub zero_destinations: u64,
+    pub unit_pivot_updates: u64,
+    pub integer_pivot_updates: u64,
+    pub max_numerator_bits: u64,
+    pub max_denominator_bits: u64,
+}
+
+impl RrefProfile {
+    /// Maxima cover normalization/elimination operands and stored results,
+    /// not hidden `BigRational` multiplication intermediates.
+    pub fn observe(&mut self, value: &solver_api::Rational) {
+        self.max_numerator_bits = self.max_numerator_bits.max(value.numerator().bits());
+        self.max_denominator_bits = self.max_denominator_bits.max(value.denominator().bits());
+    }
+}
+
+pub(crate) fn record_rref_profile(profile: &RrefProfile) {
+    if !ENABLED.load(Ordering::Relaxed) {
+        return;
+    }
+    EQUALITY_RREF_PROFILED_CALLS.fetch_add(1, Ordering::Relaxed);
+    EQUALITY_RREF_NORMALIZATION_NS.fetch_add(duration_ns(profile.normalization), Ordering::Relaxed);
+    EQUALITY_RREF_SUFFIX_NS.fetch_add(duration_ns(profile.suffix), Ordering::Relaxed);
+    EQUALITY_RREF_ELIMINATION_NS.fetch_add(duration_ns(profile.elimination), Ordering::Relaxed);
+    EQUALITY_RREF_FINALIZATION_NS.fetch_add(duration_ns(profile.finalization), Ordering::Relaxed);
+    EQUALITY_RREF_PIVOTS.fetch_add(profile.pivots, Ordering::Relaxed);
+    EQUALITY_RREF_NONUNIT_PIVOTS.fetch_add(profile.nonunit_pivots, Ordering::Relaxed);
+    EQUALITY_RREF_NORMALIZATION_VALUES.fetch_add(profile.normalization_values, Ordering::Relaxed);
+    EQUALITY_RREF_ELIMINATED_ROWS.fetch_add(profile.eliminated_rows, Ordering::Relaxed);
+    EQUALITY_RREF_UNIT_FACTORS.fetch_add(profile.unit_factors, Ordering::Relaxed);
+    EQUALITY_RREF_UNIT_FACTOR_UPDATES.fetch_add(profile.unit_factor_updates, Ordering::Relaxed);
+    EQUALITY_RREF_NEGATIVE_UNIT_FACTOR_UPDATES
+        .fetch_add(profile.negative_unit_factor_updates, Ordering::Relaxed);
+    EQUALITY_RREF_NEGATIVE_UNIT_FACTORS.fetch_add(profile.negative_unit_factors, Ordering::Relaxed);
+    EQUALITY_RREF_INTEGER_FACTORS.fetch_add(profile.integer_factors, Ordering::Relaxed);
+    EQUALITY_RREF_COEFFICIENT_UPDATES.fetch_add(profile.coefficient_updates, Ordering::Relaxed);
+    EQUALITY_RREF_ZERO_DESTINATIONS.fetch_add(profile.zero_destinations, Ordering::Relaxed);
+    EQUALITY_RREF_UNIT_PIVOT_UPDATES.fetch_add(profile.unit_pivot_updates, Ordering::Relaxed);
+    EQUALITY_RREF_INTEGER_PIVOT_UPDATES.fetch_add(profile.integer_pivot_updates, Ordering::Relaxed);
+    EQUALITY_RREF_MAX_NUMERATOR_BITS.fetch_max(profile.max_numerator_bits, Ordering::Relaxed);
+    EQUALITY_RREF_MAX_DENOMINATOR_BITS.fetch_max(profile.max_denominator_bits, Ordering::Relaxed);
 }
 
 fn count(value: usize) -> u64 {

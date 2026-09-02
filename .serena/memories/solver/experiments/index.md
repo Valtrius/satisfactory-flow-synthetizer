@@ -45,15 +45,11 @@ Record dates follow the analysis chronology, not necessarily every run's start t
 
 ## Active follow-up
 
-46 confirmation analyzed: `mem:solver/experiments/46-rref-order-confirmation-results`.
-20/20 optimal, no failures. RREF wall medians 115 -1.49%, 238 -1.44%, 258 +0.38%;
-18/18 CPU pairs favorable across both runs, without pooling timing cohorts.
-User approved permanent retention of a79ecf7 for repeated completed gains,
-without a 258/universal speedup claim. Promotion documentation being committed.
-Variable/258 finishes twice, -1.09% median; original 320s timeout preserved.
-Nothing running. Next proposed diagnostic: split RREF arithmetic costs and measure
-factor/coefficient patterns before choosing the next exact shortcut. No source
-change, commit or push in analysis; `mem:solver/active`.
+47 implemented and validated: `mem:solver/experiments/47-rref-arithmetic-profile`.
+Diagnostic-only RREF phase/operand profiling. 14 jobs planned, 41m30 search+cleanup
+allowance; release smoke passed; nothing launched. No new optimization or scheduler change.
+46 RREF permanence recorded in c106d4c (source a79ecf7); its measured limitations
+and earlier variable/258 timeout remain in the experiment46 results.
 
 ## How the diagnosis changed
 

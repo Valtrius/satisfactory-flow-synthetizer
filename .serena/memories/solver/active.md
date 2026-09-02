@@ -1,8 +1,8 @@
 # solver/active
 
-Nothing running yet. User approved permanent RREF ordering in a79ecf7.
-Evidence: `mem:solver/experiments/46-rref-order-confirmation-results`.
-Promotion notes are being committed separately before RREF arithmetic profiling.
-No new optimization: next work is diagnostic-only normalization/elimination/suffix
-cost and factor/coefficient measurements. User benchmark limit remains one hour
-including cleanup. No scheduler/affinity change or push.
+2026-09-02: RREF arithmetic diagnostics implemented and validated; nothing running.
+Permanent ordering promotion docs committed as c106d4c (source a79ecf7).
+Next: freeze diagnostic source/binary and launch the 14-job profile in
+`mem:solver/experiments/47-rref-arithmetic-profile`. 41m30 search+cleanup budget,
+under the user one-hour limit. Source commit being created with related memories.
+No production arithmetic/scheduler change or push. Results pending.
