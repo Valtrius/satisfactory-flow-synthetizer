@@ -26,6 +26,8 @@ improve 18.3-38.1% with exact outputs intact.
 
 | Change                                                | Evidence                                                            | Commit                                                                    |
 | ----------------------------------------------------- | ------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| Complete propagation variables                        | Exp44: 53/75 completed wall pairs favorable; retain adverse cells   | `520b352`, permanent after user approval                                  |
+| Allocation-free cache accounting                      | Exp45: 21/24 completed wall pairs favorable; 24/24 CPU              | `331b87a`, permanent after user approval                                  |
 | Lazy MRV and exact RREF/inequality arithmetic         | 792 verified runs, 1.81-2.36x serial gains                          | `319191e`                                                                 |
 | Remove ordering-only full-witness refinement          | 6.54x isolated replay, same keys/permutations                       | `3e804e8`                                                                 |
 | Constructor eligibility, per-N reuse, integer subsets | Avoided helper work; stable no-deadline screen                      | `099cc12`, 10 (`mem:solver/experiments/10-constructor-promotion`)         |
@@ -283,24 +285,42 @@ CPU 31 runs 14-20% slower than CPU 0. This proves placement sensitivity on isola
 roots, not the cause of all earlier whole-solve regressions. All roots are empty,
 so the run does not measure successful witness discovery.
 
-The user approved the topology-controlled confirmation and extra independent work.
-Integer rows are now restored; `mem:solver/experiments/41-integer-rows-restoration`.
-Exp44 implements before-resume affinity, verified cache domains, matched worker
-counts, balanced adjacent pairs, paired uncertainty summaries and frozen artifact
-hash checks. Its 198-job plan validates; 20 final frozen real-executable smokes pass.
-Primary complete-variable confirmation has 150 jobs on two 16-worker CCDs and the
-unrestricted 32-worker CPU. Independent accounting has 48 jobs on the two CCDs.
-Search+cleanup allowances total 7h26m30s. Preparing launch, not yet measuring.
-No production affinity, scheduler policy or proof change.
+Experiments 44/45 finished at 12:41:03 Europe/Paris on 2026-09-02, about 3h29m.
+All 198 jobs completed optimally, with zero caps/failures. Independent frozen
+recheck passes all 905 hashes, topology/affinity, full exact results and proof
+checks; summary SHA256 d92a22be3d10147bd98180b0b7f56d79cc647a77c2b1525b3ad11ff392af3837.
+All 99 matched pairs preserve proofs and 15 structural counters.
+Details: `mem:solver/experiments/44-topology-variable-confirmation-results`
+and `mem:solver/experiments/45-cache-accounting-results`.
 
-Allocation-free cache accounting removes temporary BigInt byte vectors while
-preserving their exact length. 90,310 oracle comparisons pass. The new candidate
-is active, not promoted. Variable discovery remains active and unpromoted too.
-41 tooling tests, 221 feature-enabled solver-core tests and 309 workspace tests pass,
-with two/five ignored respectively. Both strict Clippy configurations and release
-build pass. Details: `mem:solver/experiments/44-topology-variable-confirmation`
-and `mem:solver/experiments/45-cache-accounting`.
-Restoration `5d8d924`; accounting candidate `331b87a`; tooling commit pending. No push. Live handoff: `mem:solver/active`.
+Recommend retaining complete variables and allocation-free cache accounting as
+small optimizations, not universal speedups. Variables wins 53/75 completed wall
+pairs and 12/15 cell medians, CPU 67/75 and all medians. Preserve adverse cells:
+258/CCD32 +1.07% paired wall median, exploratory interval -2.21 to +2.78%;
+115/unrestricted +0.32%; 36/CCD32 +0.18%. CPU savings alone would not justify
+promotion; repeated completed wall gains and exact-work preservation support it.
+Accounting wins 21/24 wall pairs and every CPU pair, with all six cell medians
+favorable. 115 all improves in all ten pairs. 258 has only two pairs per CCD and
+accounting lacks unrestricted/36/10 coverage; add selective regression controls
+to the next useful screen, not another full matrix.
+
+Topology policy remains benchmark-only. 258 reference medians are 193.189s on
+CCD96/w16, 287.085s on CCD32/w16, 244.719s unrestricted/w32. Other controls favor
+unrestricted CPU. Worker counts can change adaptive plans. Do not pool or infer
+a universal production affinity rule. Unrestricted 258's final half averages
+about 2.3 busy logical cores, so the long CPU trough remains.
+
+Next isolated hypothesis: rational_rref's final sort/dedup may be replaced with
+reversal because its retained exact unit-pivot rows are unique and already in
+ascending pivot order. Preserve byte order via the dense oracle, including
+contradictions and rank deficiency. No implementation or speed result yet.
+Integer inequality rows remain restored. Scheduler extras remain paused.
+No source changes or new tests in this analysis-only turn.
+
+Source status: variables active in 520b352, accounting active in 331b87a.
+Retention recommended, no new promotion commit. Restoration 5d8d924 and tooling
+7309fb7 unchanged. No commit or push during analysis; result/handoff memories
+uncommitted. Nothing running; `mem:solver/active`.
 
 Experiment 33 validation: 181 default and 186 benchmark-feature solver-core library
 tests pass, with two ignored in each configuration. The exhaustive Reference and four
@@ -424,3 +444,11 @@ tests, builds and formatting passed. Earlier benchmark commit `92b111c` passed
 194 package/example tests, two ignored, and strict Clippy. The 297-test workspace
 validation is a separate historical record. See 08 (`mem:solver/experiments/08-repeat-scheduling`)
 and `mem:solver/experiments/09-serializer-and-find-all` for those logs and source splits.
+
+## Accepted promotions, 2026-09-02
+
+User approved permanent retention of complete variables (520b352) and cache byte
+accounting (331b87a). The earlier recommendation is now accepted; no source
+change was required. Preserve the measured uncertainty and all adverse cells.
+Promotion documentation precedes the next isolated RREF candidate. New benchmark
+limit is one hour, including cleanup; no run launched yet. No push authorized.

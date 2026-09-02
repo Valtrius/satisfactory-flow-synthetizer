@@ -1,6 +1,8 @@
 # 44. Topology-controlled variable-discovery confirmation
 
-Date: 2026-09-02. State: implementation and plan validated; final checks before launch.
+Date: 2026-09-02. State: completed and analyzed.
+Results and recommendation: `mem:solver/experiments/44-topology-variable-confirmation-results`.
+The launch/preparation record below describes what was known before results.
 User approved the benchmark policy and final complete-variable check, plus extra
 independent experiments while AFK for approximately 8h.
 Prior results: `mem:solver/experiments/43-root258-affinity-results`.
@@ -95,7 +97,7 @@ target/parallelism-ladder/topology-final-plan-20260902 and topology-final-smoke-
 Final hash-aware smoke passes 20/20 using the frozen runner, all three binaries
 and all selected placements. Evidence: target/exp44-smoke2-analysis.log and
 target/parallelism-ladder/topology-final-smoke2-20260902. Formatting and diff checks
-pass. Restoration `5d8d924`; accounting candidate `331b87a`; tooling commit pending. Planned real output:
+pass. Restoration `5d8d924`; accounting candidate `331b87a`; tooling committed in `7309fb7`. Active output:
 target/parallelism-ladder/topology-final-20260902.
 
 ## After completion
@@ -108,5 +110,15 @@ whether the independent candidate merits confirmation. Preserve any capped/faili
 records; do not claim speed from partial work. Scheduler extras stay paused.
 
 No performance result yet. Restoration committed in `5d8d924`; accounting candidate committed in `331b87a`.
-Benchmark tooling/manifest commit pending; no push. Launch with completion/failure
+Benchmark tooling/manifest committed in `7309fb7`; no push. Launch with completion/failure
 dialog, save active handoff, then end turn. No builds/tests during the real run.
+
+## Actual launch
+
+Started 2026-09-02 09:11:57 Europe/Paris, runner PID 42192. Frozen launcher validates all 198 jobs.
+Initial startup check: first job running, runner alive, empty stderr.
+Root status: target/parallelism-ladder/topology-final-20260902/BENCHMARK-STATUS.txt.
+Current job: results/BENCHMARK-STATUS.txt under that run.
+Completion/failure dialog enabled. No performance/completion inference yet.
+Restoration 5d8d924, accounting candidate 331b87a, tooling 7309fb7 committed; no push.
+These live launch-state memory updates are uncommitted. End turn; no builds/tests.

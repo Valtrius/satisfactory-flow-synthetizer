@@ -24,6 +24,8 @@ Scopes / benchmark names: `optimal` | `minimum_links` | `all`.
 - Deferred state canonicalization (exp 29); no-cache ablation rejected (exp 30)
 - Propagation bound de-duplication (`9f63f01`, exp 31)
 - Fully-known / no-known / mixed-row integer substitution (exps 36–38)
+- Complete propagation variable discovery (`520b352`, exp 44)
+- Allocation-free cache byte accounting (`331b87a`, exp 45)
 
 Rejected / absent from production source: weighted sparse quotient (32), sparse row
 dedup (33), N≤9 p1 guard (18).
@@ -31,21 +33,29 @@ dedup (33), N≤9 p1 guard (18).
 ## Current posture
 
 - Scheduler extras remain paused. No production affinity policy.
-- Integer inequality rows restored to rational rows after the controlled adverse
-  root comparisons. Record: `mem:solver/experiments/41-integer-rows-restoration`.
-- Complete variables remain a candidate. Allocation-free cache-byte accounting
-  is an independent active candidate, not promoted.
-- Exp44 implements topology-aware, before-resume benchmark affinity, adjacent
-  balanced pairs and separate per-CCD/unrestricted cohorts. The 198-job plan and
-  real-executable smokes pass. Search+cleanup allowance 7h26m30s.
-  Preparing launch; no performance result yet.
-- Primary confirmation: `mem:solver/experiments/44-topology-variable-confirmation`.
-  Extra accounting test: `mem:solver/experiments/45-cache-accounting`.
-  Live state: `mem:solver/active`.
-- 41 tooling tests, 221 feature-enabled solver-core tests, 309 workspace tests,
-  both strict Clippy configurations, release build and formatting pass.
-  Restoration `5d8d924`; accounting candidate `331b87a`;
-  benchmark tooling/manifest commit pending. No push.
+- Integer inequality rows restored to rational rows in 5d8d924.
+  Record: `mem:solver/experiments/41-integer-rows-restoration`.
+- Exp44/45 completed 198/198 optimally; independent frozen recheck and 905
+  artifact hashes pass. All 99 pairs preserve exact results, proofs and 15
+  structural counters. Summary recheck is byte-identical.
+- User approved permanent retention of both small improvements. Complete
+  variables wins 53/75 wall pairs, CPU 67/75; accounting wins 21/24 wall pairs,
+  CPU 24/24. These are descriptive counts, not pooled speedups.
+- Variables are not uniformly faster: 258/CCD32 paired wall median +1.07%,
+  interval -2.21 to +2.78%. Preserve this uncertainty. Accounting is clearer,
+  but its long 258 sample is only two pairs/CCD and w32 was not tested.
+- Results: `mem:solver/experiments/44-topology-variable-confirmation-results`
+  and `mem:solver/experiments/45-cache-accounting-results`.
+- Benchmark topology policy worked; residual timing drift remains. 258 favors
+  CCD96 while other cases favor unrestricted execution. No universal pinning.
+- Proposed next isolated hypothesis: replace redundant final RREF row sort/dedup
+  with reversal of its unique ordered pivot rows. Exact oracle first; no code
+  change or speed claim yet. Keep larger RREF arithmetic work separate.
+- Variables are permanent in 520b352, accounting in 331b87a. Promotion notes
+  will be committed before the next isolated RREF candidate. Tooling 7309fb7.
+  No production source rewrite needed for these two promotions. No push.
+  Next benchmark has a user-imposed one-hour limit including cleanup.
+  Nothing running yet. Current handoff: `mem:solver/active`.
 
 ## When to read more
 

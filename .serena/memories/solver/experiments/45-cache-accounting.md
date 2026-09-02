@@ -1,6 +1,8 @@
 # 45. Allocation-free cache memory accounting
 
-Date: 2026-09-02. State: implemented, validated, candidate; benchmark pending.
+Date: 2026-09-02. State: completed and analyzed; retention recommended.
+Results: `mem:solver/experiments/45-cache-accounting-results`.
+The implementation/launch record below preserves pre-result knowledge.
 Authorized additional independent experiments during the user's approximately 8h AFK.
 Related primary run: `mem:solver/experiments/44-topology-variable-confirmation`.
 
@@ -56,3 +58,7 @@ Only search.rs differs semantically from the frozen variables source.
 Exact source hashes/build metadata accompany the binary.
 
 Candidate is active in current source, not promoted. Committed candidate in `331b87a`; not promoted. No push.
+
+Launched within experiment 44 at 2026-09-02 09:11:57 Europe/Paris, runner PID 42192.
+Full run target/parallelism-ladder/topology-final-20260902; 48 accounting jobs.
+No timing result yet. Live launch-state memory update uncommitted.

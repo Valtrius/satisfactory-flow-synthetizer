@@ -1,9 +1,10 @@
 # solver/active
 
-Experiments 44/45 implemented; final validation and commits before launch.
-User authorized the topology policy, final variable confirmation and expanded AFK tests.
-Read `mem:solver/experiments/44-topology-variable-confirmation` for the 198-job plan.
-Independent candidate: `mem:solver/experiments/45-cache-accounting`.
-Integer rows restored, variables and allocation-free accounting active/unpromoted.
-No real benchmark running yet. Planned run target/parallelism-ladder/topology-final-20260902.
-No push. Update this memory with commits and actual launch status before ending turn.
+Nothing running yet. User approved permanent complete variables (520b352) and
+cache accounting (331b87a). Results remain in
+`mem:solver/experiments/44-topology-variable-confirmation-results` and
+`mem:solver/experiments/45-cache-accounting-results`.
+
+Preparing the isolated RREF ordering shortcut and a focused follow-up. User limit:
+one hour of benchmarks including cleanup. No production scheduler/affinity change.
+Promotion documentation is being committed first. No push authorized.

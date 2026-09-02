@@ -45,15 +45,18 @@ Record dates follow the analysis chronology, not necessarily every run's start t
 
 ## Active follow-up
 
-44 (`mem:solver/experiments/44-topology-variable-confirmation`) validated, preparing
-launch. Benchmark-only before-resume affinity, balanced pairs and separated
-CCD/full-CPU cohorts. 198 jobs, 7h26m30s search+cleanup allowance.
-Primary variables confirmation 150 jobs; independent allocation-free accounting
-48 jobs (`mem:solver/experiments/45-cache-accounting`).
-Integer rows restored (`mem:solver/experiments/41-integer-rows-restoration`).
-Candidates remain unpromoted. Restoration `5d8d924`; accounting candidate `331b87a`;
-  benchmark tooling/manifest commit pending. No push.
-Live state: `mem:solver/active`.
+198/198 optimal results analyzed in
+`mem:solver/experiments/44-topology-variable-confirmation-results` and
+`mem:solver/experiments/45-cache-accounting-results`.
+User approved permanent retention of both small changes, with stronger accounting evidence.
+Variable wall medians improve in 12/15 cells; the +1.07% 258/CCD32 result is
+uncertain and retained. Accounting wall medians improve in all six cells.
+No pooled CPU-placement speedup. No production scheduling change.
+Next proposed experiment: remove redundant final RREF row sort/dedup using exact
+pivot order, followed by matched completed controls. Not implemented or launched.
+Permanent source changes already committed (520b352, 331b87a). Promotion notes
+are being committed before the next candidate. No push. New benchmark limit:
+one hour including cleanup. `mem:solver/active`.
 
 ## How the diagnosis changed
 
@@ -216,10 +219,13 @@ Live state: `mem:solver/active`.
     substantial placement sensitivity. No production change yet.
 
 40. Topology-controlled confirmation (`mem:solver/experiments/44-topology-variable-confirmation`)
-    separates CCD placement from candidate effects. Plan/smokes pass; results pending.
+    separates CCD placement from candidate effects. All 198 runs verify; variables
+    provide small but nonuniform wall gains. Results:
+    `mem:solver/experiments/44-topology-variable-confirmation-results`.
 41. Allocation-free cache size accounting (`mem:solver/experiments/45-cache-accounting`)
     replaces temporary byte-vector allocation with an exact length calculation.
-    Oracle/correctness checks pass; 48 independent comparison jobs pending.
+    Oracle/correctness checks pass; 21/24 completed wall pairs and all CPU pairs
+    improve. Retention recommended; `mem:solver/experiments/45-cache-accounting-results`.
 
 ## Evidence conventions
 
