@@ -721,10 +721,15 @@ pub(crate) enum CanonicalPhase {
     EqualityIndex,
     EqualityRowBuild,
     EqualityRref,
-    Inequality,
+    // Version-1 bound encoders exist only in the test oracle. Keep their public
+    // snapshot counters at zero in production for diagnostic-format continuity.
+    #[cfg(test)]
     InequalityPivotIndex,
+    #[cfg(test)]
     InequalityRowBuild,
+    #[cfg(test)]
     InequalityNormalize,
+    #[cfg(test)]
     InequalitySortDedup,
     SemanticEncoding,
 }
@@ -771,10 +776,13 @@ impl Drop for CanonicalTimer {
             CanonicalPhase::EqualityIndex => &EQUALITY_INDEX_NS,
             CanonicalPhase::EqualityRowBuild => &EQUALITY_ROW_BUILD_NS,
             CanonicalPhase::EqualityRref => &EQUALITY_RREF_NS,
-            CanonicalPhase::Inequality => &INEQUALITY_NS,
+            #[cfg(test)]
             CanonicalPhase::InequalityPivotIndex => &INEQUALITY_PIVOT_INDEX_NS,
+            #[cfg(test)]
             CanonicalPhase::InequalityRowBuild => &INEQUALITY_ROW_BUILD_NS,
+            #[cfg(test)]
             CanonicalPhase::InequalityNormalize => &INEQUALITY_NORMALIZE_NS,
+            #[cfg(test)]
             CanonicalPhase::InequalitySortDedup => &INEQUALITY_SORT_DEDUP_NS,
             CanonicalPhase::SemanticEncoding => &SEMANTIC_ENCODING_NS,
         };

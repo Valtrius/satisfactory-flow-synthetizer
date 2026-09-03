@@ -12,7 +12,9 @@ use std::{
 };
 
 use canonaut::structs::{CanonautManager, DenseGraph};
-use num::{BigInt, Integer, One, Signed, Zero};
+#[cfg(test)]
+use num::{BigInt, Integer, Zero};
+use num::{One, Signed};
 use solver_api::{
     CanonicalGraphKey, ConsumerPortRef, DiscardTerminalIndex, InputTerminalIndex, NodeId,
     NodeProfile, NodeType, OutputTerminalIndex, PhysicalGraph, PhysicalLink, PhysicalNode, Problem,
@@ -62,12 +64,12 @@ pub struct PartialTopology {
 /// - strict positivity and capacity rows follow from the encoded physical ports
 ///   and exact problem capacity.
 ///
-/// Equality rows are reduced to exact RREF and inequalities are reduced modulo
-/// that basis, positively normalized, sorted, and deduplicated. Candidate
-/// selection minimizes topology plus algebra together, so topology automorphisms
-/// cannot leak arbitrary labels into the semantic order. A propagated link value
-/// contributes only an equality row; raw `None`/`Some` coloring and algebra row
-/// insertion order never enter the key.
+/// Equality rows are reduced to exact RREF in the selected canonical port order.
+/// Uniform strict positivity and capacity bounds are determined by this basis,
+/// the variable count and the already encoded capacity; no derived bound payload
+/// is needed to distinguish states. A propagated link value contributes only an
+/// equality row; raw `None`/`Some` coloring and algebra row insertion order never
+/// enter the key.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct StateKey(Box<[u8]>);
 
@@ -2075,6 +2077,7 @@ fn encode_scc_summary_input(
     bytes
 }
 
+#[cfg(test)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 enum SemanticInequalityRelation {
     LessThan,
@@ -2121,34 +2124,17 @@ fn encode_semantic_system(
     let encoding_timer = CanonicalTimer::start(CanonicalPhase::SemanticEncoding);
     // Internal state/SCC protocol only. Public witness and marked-port/link
     // encodings keep their existing byte format and ordering.
-    bytes.extend_from_slice(b"sparse-exact-rows\0\x01");
+    // Version 2 omits inequalities that are a deterministic function of these
+    // equalities, variable_count and the capacity in encode_partial_state.
+    // The full old key can be reconstructed from this payload, so cache equality
+    // is unchanged. Actual feasibility checks remain in propagation/validation.
+    bytes.extend_from_slice(b"sparse-exact-rows\0\x02");
     write_varint(bytes, variable_count);
     write_varint(bytes, equalities.len());
     for row in &equalities {
         write_sparse_row(bytes, row);
     }
     drop(encoding_timer);
-
-    let inequality_timer = CanonicalTimer::start(CanonicalPhase::Inequality);
-    let inequalities = if inequality_timer.is_recording() {
-        primitive_inequality_basis_profiled(
-            &source.problem.max_link_rate,
-            variable_count,
-            &equalities,
-        )
-    } else {
-        primitive_inequality_basis(&source.problem.max_link_rate, variable_count, &equalities)
-    };
-    drop(inequality_timer);
-    let _encoding_timer = CanonicalTimer::start(CanonicalPhase::SemanticEncoding);
-    write_varint(bytes, inequalities.len());
-    for (relation, row) in inequalities {
-        bytes.push(match relation {
-            SemanticInequalityRelation::LessThan => 0,
-            SemanticInequalityRelation::LessThanOrEqual => 1,
-        });
-        write_sparse_row(bytes, &row);
-    }
 }
 
 fn write_varint(bytes: &mut Vec<u8>, mut value: usize) {
@@ -2300,6 +2286,8 @@ fn primitive_equality_basis(
     basis
 }
 
+// Retain the version-1 calculation only as an oracle for key equivalence tests.
+#[cfg(test)]
 fn primitive_inequality_basis(
     capacity: &Rational,
     variable_count: usize,
@@ -2340,6 +2328,7 @@ fn primitive_inequality_basis(
     rows
 }
 
+#[cfg(test)]
 fn primitive_inequality_basis_profiled(
     capacity: &Rational,
     variable_count: usize,
@@ -2638,6 +2627,7 @@ fn reduce_modulo_equalities(
     }
 }
 
+#[cfg(test)]
 fn normalize_positive_scale(row: &mut [Rational]) {
     let denominator_lcm = row
         .iter()
@@ -2796,6 +2786,10 @@ fn write_len(bytes: &mut Vec<u8>, length: usize) {
 fn write_u32(bytes: &mut Vec<u8>, value: u32) {
     bytes.extend_from_slice(&value.to_be_bytes());
 }
+
+#[cfg(test)]
+#[path = "canonical/derived_bounds_tests.rs"]
+mod derived_bounds_tests;
 
 #[cfg(test)]
 mod tests {
