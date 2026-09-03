@@ -1,0 +1,639 @@
+diff --git a/crates/solver-core/examples/profile_support/mod.rs b/crates/solver-core/examples/profile_support/mod.rs
+index 362344a..889c918 100644
+--- a/crates/solver-core/examples/profile_support/mod.rs
++++ b/crates/solver-core/examples/profile_support/mod.rs
+@@ -914,6 +914,26 @@ pub fn hotspot_json(h: &HotspotSnapshot) -> serde_json::Value {
+             "equality_rref_profiled_calls",
+             h.equality_rref_profiled_calls,
+         ),
++        (
++            "equality_rref_small_attempts",
++            h.equality_rref_small_attempts,
++        ),
++        (
++            "equality_rref_small_successes",
++            h.equality_rref_small_successes,
++        ),
++        (
++            "equality_rref_small_fallbacks",
++            h.equality_rref_small_fallbacks,
++        ),
++        (
++            "equality_rref_small_attempt_ns",
++            h.equality_rref_small_attempt_ns,
++        ),
++        (
++            "equality_rref_small_conversion_ns",
++            h.equality_rref_small_conversion_ns,
++        ),
+         (
+             "equality_rref_normalization_ns",
+             h.equality_rref_normalization_ns,
+diff --git a/crates/solver-core/src/canonical.rs b/crates/solver-core/src/canonical.rs
+index 6351263..c4be893 100644
+--- a/crates/solver-core/src/canonical.rs
++++ b/crates/solver-core/src/canonical.rs
+@@ -26,6 +26,8 @@ use crate::{
+     topology::OpenPortRef,
+ };
+ 
++mod small_rref;
++
+ /// One structural connection in a partial topology.
+ #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+ pub struct PartialLink {
+@@ -2421,7 +2423,16 @@ fn conservation_row(
+     row
+ }
+ 
+-fn rational_rref(mut rows: Vec<Vec<Rational>>, variable_count: usize) -> Vec<Vec<Rational>> {
++fn rational_rref(rows: Vec<Vec<Rational>>, variable_count: usize) -> Vec<Vec<Rational>> {
++    small_rref::try_rref::<false>(
++        &rows,
++        variable_count,
++        &mut hotspot_profile::RrefProfile::default(),
++    )
++    .unwrap_or_else(|| rational_rref_big(rows, variable_count))
++}
++
++fn rational_rref_big(mut rows: Vec<Vec<Rational>>, variable_count: usize) -> Vec<Vec<Rational>> {
+     rows.retain(|row| row.iter().any(|value| !value.is_zero()));
+     let mut pivot_row = 0;
+     for column in 0..variable_count {
+@@ -2502,6 +2513,24 @@ fn rational_rref(mut rows: Vec<Vec<Rational>>, variable_count: usize) -> Vec<Vec
+ /// Subphase times include local instrumentation, so use them to locate work,
+ /// not to estimate the wall-time benefit of removing an arithmetic operation.
+ fn rational_rref_profiled(
++    rows: Vec<Vec<Rational>>,
++    variable_count: usize,
++    profile: &mut hotspot_profile::RrefProfile,
++) -> Vec<Vec<Rational>> {
++    let started = Instant::now();
++    profile.small_attempts += 1;
++    let result = small_rref::try_rref::<true>(&rows, variable_count, profile);
++    profile.small_attempt += started.elapsed();
++    if let Some(result) = result {
++        profile.small_successes += 1;
++        result
++    } else {
++        profile.small_fallbacks += 1;
++        rational_rref_big_profiled(rows, variable_count, profile)
++    }
++}
++
++fn rational_rref_big_profiled(
+     mut rows: Vec<Vec<Rational>>,
+     variable_count: usize,
+     profile: &mut hotspot_profile::RrefProfile,
+diff --git a/crates/solver-core/src/canonical/small_rref.rs b/crates/solver-core/src/canonical/small_rref.rs
+new file mode 100644
+index 0000000..15fc987
+--- /dev/null
++++ b/crates/solver-core/src/canonical/small_rref.rs
+@@ -0,0 +1,398 @@
++//! Checked local arithmetic for canonical RREF. The caller retains the original
++//! arbitrary-precision rows and restarts there if any conversion or operation fails.
++
++use std::time::Instant;
++
++use num::{BigRational, Integer, ToPrimitive};
++use solver_api::Rational;
++
++use crate::hotspot_profile::RrefProfile;
++
++/// Reduced fraction with positive denominator. MIN is excluded so absolute
++/// values and sign changes are representable. Overflow is a fallback, never a prune.
++#[derive(Clone, Copy, Debug, PartialEq, Eq)]
++struct Small {
++    numerator: i64,
++    denominator: i64,
++}
++
++impl Small {
++    const ZERO: Self = Self {
++        numerator: 0,
++        denominator: 1,
++    };
++    const ONE: Self = Self {
++        numerator: 1,
++        denominator: 1,
++    };
++
++    fn new(numerator: i64, denominator: i64) -> Option<Self> {
++        let magnitude = numerator.checked_abs()?;
++        let positive_denominator = denominator.checked_abs()?;
++        if positive_denominator == 0 {
++            return None;
++        }
++        let divisor = magnitude.gcd(&positive_denominator);
++        Some(Self {
++            numerator: if denominator < 0 {
++                -numerator
++            } else {
++                numerator
++            } / divisor,
++            denominator: positive_denominator / divisor,
++        })
++    }
++
++    fn from_rational(value: &Rational) -> Option<Self> {
++        let numerator = value.numerator().to_i64()?;
++        numerator.checked_abs()?;
++        Some(Self {
++            numerator,
++            denominator: value.denominator().to_i64()?,
++        })
++    }
++
++    fn into_rational(self) -> Rational {
++        // All operations preserve reduction and a positive denominator. Avoid
++        // reducing the already canonical pair again during the conversion back.
++        BigRational::new_raw(self.numerator.into(), self.denominator.into()).into()
++    }
++
++    fn add(self, other: Self) -> Option<Self> {
++        let divisor = self.denominator.gcd(&other.denominator);
++        let left = other.denominator / divisor;
++        let right = self.denominator / divisor;
++        Self::new(
++            self.numerator
++                .checked_mul(left)?
++                .checked_add(other.numerator.checked_mul(right)?)?,
++            self.denominator.checked_mul(left)?,
++        )
++    }
++
++    fn sub(self, other: Self) -> Option<Self> {
++        self.add(Self {
++            numerator: -other.numerator,
++            ..other
++        })
++    }
++
++    fn mul(self, other: Self) -> Option<Self> {
++        let left = self.numerator.abs().gcd(&other.denominator);
++        let right = other.numerator.abs().gcd(&self.denominator);
++        let numerator = (self.numerator / left).checked_mul(other.numerator / right)?;
++        numerator.checked_abs()?;
++        Some(Self {
++            numerator,
++            denominator: (self.denominator / right).checked_mul(other.denominator / left)?,
++        })
++    }
++
++    fn div(self, other: Self) -> Option<Self> {
++        self.mul(Self::new(other.denominator, other.numerator)?)
++    }
++
++    fn observe(self, profile: &mut RrefProfile) {
++        profile.max_numerator_bits = profile.max_numerator_bits.max(u64::from(
++            u64::BITS - self.numerator.unsigned_abs().leading_zeros(),
++        ));
++        profile.max_denominator_bits = profile.max_denominator_bits.max(u64::from(
++            u64::BITS - self.denominator.unsigned_abs().leading_zeros(),
++        ));
++    }
++}
++
++fn normalize_pivot<const PROFILE: bool>(
++    row: &mut [Small],
++    column: usize,
++    profile: &mut RrefProfile,
++) -> Option<()> {
++    let started = PROFILE.then(Instant::now);
++    let pivot = row[column];
++    if PROFILE {
++        profile.pivots += 1;
++        pivot.observe(profile);
++    }
++    if pivot != Small::ONE {
++        if PROFILE {
++            profile.nonunit_pivots += 1;
++        }
++        for value in &mut row[column..] {
++            if value.numerator != 0 {
++                if PROFILE {
++                    profile.normalization_values += 1;
++                    value.observe(profile);
++                }
++                *value = value.div(pivot)?;
++                if PROFILE {
++                    value.observe(profile);
++                }
++            }
++        }
++    }
++    if let Some(started) = started {
++        profile.normalization += started.elapsed();
++    }
++    Some(())
++}
++
++fn eliminate_column<const PROFILE: bool>(
++    rows: &mut [Vec<Small>],
++    pivot_row: usize,
++    column: usize,
++    profile: &mut RrefProfile,
++) -> Option<()> {
++    let started = PROFILE.then(Instant::now);
++    let (before, pivot_and_after) = rows.split_at_mut(pivot_row);
++    let (normalized_pivot, after) = pivot_and_after.split_first_mut().unwrap();
++    let nonzero = normalized_pivot
++        .iter()
++        .enumerate()
++        .skip(column + 1)
++        .filter(|(_, value)| value.numerator != 0)
++        .collect::<Vec<_>>();
++    if let Some(started) = started {
++        profile.suffix += started.elapsed();
++    }
++    let started = PROFILE.then(Instant::now);
++    for row in before.iter_mut().chain(after) {
++        if row[column].numerator == 0 {
++            continue;
++        }
++        let factor = std::mem::replace(&mut row[column], Small::ZERO);
++        let unit_factor = factor == Small::ONE;
++        let negative_unit_factor = factor.numerator == -1 && factor.denominator == 1;
++        if PROFILE {
++            profile.eliminated_rows += 1;
++            profile.unit_factors += u64::from(unit_factor);
++            profile.negative_unit_factors += u64::from(negative_unit_factor);
++            profile.integer_factors += u64::from(factor.denominator == 1);
++            factor.observe(profile);
++        }
++        for &(index, pivot_value) in &nonzero {
++            if PROFILE {
++                profile.coefficient_updates += 1;
++                profile.unit_factor_updates += u64::from(unit_factor);
++                profile.negative_unit_factor_updates += u64::from(negative_unit_factor);
++                profile.zero_destinations += u64::from(row[index].numerator == 0);
++                profile.unit_pivot_updates += u64::from(*pivot_value == Small::ONE);
++                profile.integer_pivot_updates += u64::from(pivot_value.denominator == 1);
++                row[index].observe(profile);
++                pivot_value.observe(profile);
++            }
++            row[index] = if unit_factor {
++                row[index].sub(*pivot_value)?
++            } else if negative_unit_factor {
++                row[index].add(*pivot_value)?
++            } else {
++                row[index].sub(factor.mul(*pivot_value)?)?
++            };
++            if PROFILE {
++                row[index].observe(profile);
++            }
++        }
++    }
++    if let Some(started) = started {
++        profile.elimination += started.elapsed();
++    }
++    Some(())
++}
++
++/// Both modes execute identical arithmetic. Const specialization removes the
++/// per-coefficient counters and timers from ordinary solves.
++pub(super) fn try_rref<const PROFILE: bool>(
++    original: &[Vec<Rational>],
++    variable_count: usize,
++    profile: &mut RrefProfile,
++) -> Option<Vec<Vec<Rational>>> {
++    let conversion = PROFILE.then(Instant::now);
++    let converted = original
++        .iter()
++        .map(|row| {
++            row.iter()
++                .map(Small::from_rational)
++                .collect::<Option<Vec<_>>>()
++        })
++        .collect::<Option<Vec<_>>>();
++    if let Some(started) = conversion {
++        profile.small_conversion += started.elapsed();
++    }
++    let mut rows = converted?;
++    rows.retain(|row| row.iter().any(|value| value.numerator != 0));
++    let mut pivot_row = 0;
++    for column in 0..variable_count {
++        let Some(selected) = (pivot_row..rows.len()).find(|&row| rows[row][column].numerator != 0)
++        else {
++            continue;
++        };
++        rows.swap(pivot_row, selected);
++        normalize_pivot::<PROFILE>(&mut rows[pivot_row], column, profile)?;
++        eliminate_column::<PROFILE>(&mut rows, pivot_row, column, profile)?;
++        pivot_row += 1;
++        if pivot_row == rows.len() {
++            break;
++        }
++    }
++    let started = PROFILE.then(Instant::now);
++    if rows.iter().any(|row| {
++        row[..variable_count].iter().all(|v| v.numerator == 0) && row[variable_count].numerator != 0
++    }) {
++        rows.clear();
++        let mut contradiction = vec![Small::ZERO; variable_count + 1];
++        contradiction[variable_count] = Small::ONE;
++        rows.push(contradiction);
++    } else {
++        rows.retain(|row| {
++            row[..variable_count]
++                .iter()
++                .any(|value| value.numerator != 0)
++        });
++    }
++    rows.reverse();
++    if let Some(started) = started {
++        profile.finalization += started.elapsed();
++    }
++    let started = PROFILE.then(Instant::now);
++    let result = rows
++        .into_iter()
++        .map(|row| row.into_iter().map(Small::into_rational).collect())
++        .collect();
++    if let Some(started) = started {
++        profile.small_conversion += started.elapsed();
++    }
++    Some(result)
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++    use crate::canonical::{rational_rref, rational_rref_big, rational_rref_profiled};
++
++    fn assert_same_encoding(actual: &Rational, expected: &Rational) {
++        assert_eq!(actual.numerator(), expected.numerator());
++        assert_eq!(actual.denominator(), expected.denominator());
++    }
++
++    fn assert_same_basis(actual: &[Vec<Rational>], expected: &[Vec<Rational>]) {
++        assert_eq!(actual.len(), expected.len());
++        for (left, right) in actual.iter().zip(expected) {
++            assert_eq!(left.len(), right.len());
++            for (a, b) in left.iter().zip(right) {
++                assert_same_encoding(a, b);
++            }
++        }
++    }
++
++    #[test]
++    fn checked_operations_match_arbitrary_precision() {
++        let mut values = Vec::new();
++        for numerator in -12..=12 {
++            for denominator in 1..=8 {
++                values.push(Small::new(numerator, denominator).unwrap());
++            }
++        }
++        for numerator in [i64::MIN + 1, -4_000_000_007, 4_000_000_007, i64::MAX] {
++            for denominator in [1, 3, i64::MAX] {
++                values.push(Small::new(numerator, denominator).unwrap());
++            }
++        }
++        for &a in &values {
++            for &b in &values {
++                let x = a.into_rational();
++                let y = b.into_rational();
++                for (actual, expected) in [
++                    (a.add(b), &x + &y),
++                    (a.sub(b), &x - &y),
++                    (a.mul(b), &x * &y),
++                ] {
++                    if let Some(actual) = actual {
++                        assert_same_encoding(&actual.into_rational(), &expected);
++                    }
++                }
++                if let Some(actual) = a.div(b) {
++                    assert_same_encoding(&actual.into_rational(), &(&x / &y));
++                } else if b.numerator == 0 {
++                    assert!(x.checked_div(&y).is_none());
++                }
++            }
++        }
++        assert!(Small::new(i64::MIN, 1).is_none());
++        assert!(Small::new(1, i64::MIN).is_none());
++        assert!(Small::new(1, 0).is_none());
++    }
++
++    #[test]
++    fn overflow_restarts_from_original_rows_in_both_modes() {
++        let huge = Rational::new(num::BigInt::from(1) << 100, 3).unwrap();
++        let fractional_huge = Rational::new(1, num::BigInt::from(1) << 100).unwrap();
++        for rows in [
++            vec![vec![Rational::one(), huge]],
++            vec![vec![Rational::one(), fractional_huge]],
++            vec![vec![Rational::one(), Rational::from(i64::MIN)]],
++            // Inputs fit, but eliminating the first column multiplies MAX * MAX.
++            vec![
++                vec![Rational::one(), Rational::from(i64::MAX), Rational::one()],
++                vec![Rational::from(i64::MAX), Rational::one(), Rational::zero()],
++            ],
++            // Non-unit pivot normalization overflows a denominator.
++            vec![vec![
++                Rational::from(i64::MAX),
++                Rational::new(1, i64::MAX - 1).unwrap(),
++            ]],
++        ] {
++            let variables = rows[0].len() - 1;
++            assert!(try_rref::<false>(&rows, variables, &mut RrefProfile::default()).is_none());
++            let expected = rational_rref_big(rows.clone(), variables);
++            assert_eq!(rational_rref(rows.clone(), variables), expected);
++            let mut profile = RrefProfile::default();
++            assert_eq!(
++                rational_rref_profiled(rows, variables, &mut profile),
++                expected
++            );
++            assert_eq!(profile.small_attempts, 1);
++            assert_eq!(profile.small_successes, 0);
++            assert_eq!(profile.small_fallbacks, 1);
++        }
++    }
++
++    #[test]
++    fn small_matrices_match_big_kernel_and_profile() {
++        let mut state = 50_u64;
++        for variables in 0..=8 {
++            for sample in 0..120 {
++                let rows = (0..sample % 11)
++                    .map(|_| {
++                        (0..=variables)
++                            .map(|_| {
++                                state = state
++                                    .wrapping_mul(6_364_136_223_846_793_005)
++                                    .wrapping_add(1);
++                                let numerator = i64::try_from((state >> 32) % 15).unwrap() - 7;
++                                let denominator = i64::try_from((state >> 48) % 7).unwrap() + 1;
++                                Rational::new(numerator, denominator).unwrap()
++                            })
++                            .collect()
++                    })
++                    .collect::<Vec<_>>();
++                let expected = rational_rref_big(rows.clone(), variables);
++                assert_same_basis(&rational_rref(rows.clone(), variables), &expected);
++                let mut profile = RrefProfile::default();
++                assert_same_basis(
++                    &rational_rref_profiled(rows, variables, &mut profile),
++                    &expected,
++                );
++                assert_eq!(
++                    profile.small_attempts,
++                    profile.small_successes + profile.small_fallbacks
++                );
++            }
++        }
++        let mut profile = RrefProfile::default();
++        rational_rref_profiled(
++            vec![vec![Rational::from(2), Rational::from(3)]],
++            1,
++            &mut profile,
++        );
++        assert_eq!(profile.small_successes, 1);
++    }
++}
+diff --git a/crates/solver-core/src/hotspot_profile.rs b/crates/solver-core/src/hotspot_profile.rs
+index 8c26323..8eeba01 100644
+--- a/crates/solver-core/src/hotspot_profile.rs
++++ b/crates/solver-core/src/hotspot_profile.rs
+@@ -71,6 +71,11 @@ static EQUALITY_INDEX_NS: AtomicU64 = AtomicU64::new(0);
+ static EQUALITY_ROW_BUILD_NS: AtomicU64 = AtomicU64::new(0);
+ static EQUALITY_RREF_NS: AtomicU64 = AtomicU64::new(0);
+ static EQUALITY_RREF_PROFILED_CALLS: AtomicU64 = AtomicU64::new(0);
++static EQUALITY_RREF_SMALL_ATTEMPTS: AtomicU64 = AtomicU64::new(0);
++static EQUALITY_RREF_SMALL_SUCCESSES: AtomicU64 = AtomicU64::new(0);
++static EQUALITY_RREF_SMALL_FALLBACKS: AtomicU64 = AtomicU64::new(0);
++static EQUALITY_RREF_SMALL_ATTEMPT_NS: AtomicU64 = AtomicU64::new(0);
++static EQUALITY_RREF_SMALL_CONVERSION_NS: AtomicU64 = AtomicU64::new(0);
+ static EQUALITY_RREF_NORMALIZATION_NS: AtomicU64 = AtomicU64::new(0);
+ static EQUALITY_RREF_SUFFIX_NS: AtomicU64 = AtomicU64::new(0);
+ static EQUALITY_RREF_ELIMINATION_NS: AtomicU64 = AtomicU64::new(0);
+@@ -162,6 +167,11 @@ pub struct HotspotSnapshot {
+     pub equality_row_build_ns: u64,
+     pub equality_rref_ns: u64,
+     pub equality_rref_profiled_calls: u64,
++    pub equality_rref_small_attempts: u64,
++    pub equality_rref_small_successes: u64,
++    pub equality_rref_small_fallbacks: u64,
++    pub equality_rref_small_attempt_ns: u64,
++    pub equality_rref_small_conversion_ns: u64,
+     pub equality_rref_normalization_ns: u64,
+     pub equality_rref_suffix_ns: u64,
+     pub equality_rref_elimination_ns: u64,
+@@ -302,6 +312,12 @@ fn load_snapshot() -> HotspotSnapshot {
+         equality_row_build_ns: EQUALITY_ROW_BUILD_NS.load(Ordering::Relaxed),
+         equality_rref_ns: EQUALITY_RREF_NS.load(Ordering::Relaxed),
+         equality_rref_profiled_calls: EQUALITY_RREF_PROFILED_CALLS.load(Ordering::Relaxed),
++        equality_rref_small_attempts: EQUALITY_RREF_SMALL_ATTEMPTS.load(Ordering::Relaxed),
++        equality_rref_small_successes: EQUALITY_RREF_SMALL_SUCCESSES.load(Ordering::Relaxed),
++        equality_rref_small_fallbacks: EQUALITY_RREF_SMALL_FALLBACKS.load(Ordering::Relaxed),
++        equality_rref_small_attempt_ns: EQUALITY_RREF_SMALL_ATTEMPT_NS.load(Ordering::Relaxed),
++        equality_rref_small_conversion_ns: EQUALITY_RREF_SMALL_CONVERSION_NS
++            .load(Ordering::Relaxed),
+         equality_rref_normalization_ns: EQUALITY_RREF_NORMALIZATION_NS.load(Ordering::Relaxed),
+         equality_rref_suffix_ns: EQUALITY_RREF_SUFFIX_NS.load(Ordering::Relaxed),
+         equality_rref_elimination_ns: EQUALITY_RREF_ELIMINATION_NS.load(Ordering::Relaxed),
+@@ -338,6 +354,7 @@ fn load_snapshot() -> HotspotSnapshot {
+ }
+ 
+ fn clear_buckets() {
++    clear_rref_buckets();
+     for bucket in [
+         &WITNESS_LEAVES,
+         &WITNESS_BRANCHES,
+@@ -392,8 +409,39 @@ fn clear_buckets() {
+         &EQUALITY_NS,
+         &EQUALITY_INDEX_NS,
+         &EQUALITY_ROW_BUILD_NS,
++        &INEQUALITY_NS,
++        &INEQUALITY_PIVOT_INDEX_NS,
++        &INEQUALITY_ROW_BUILD_NS,
++        &INEQUALITY_NORMALIZE_NS,
++        &INEQUALITY_SORT_DEDUP_NS,
++        &SEMANTIC_ENCODING_NS,
++    ] {
++        bucket.store(0, Ordering::Relaxed);
++    }
++    for buckets in [
++        &PROPAGATION_SPARSE_CAUSE_CALLS,
++        &PROPAGATION_SPARSE_ROW_BUCKET_CALLS,
++        &PROPAGATION_SPARSE_ROW_BUCKET_NS,
++        &PROPAGATION_SPARSE_VARIABLE_BUCKET_CALLS,
++        &PROPAGATION_SPARSE_VARIABLE_BUCKET_NS,
++        &PROPAGATION_SPARSE_TERM_BUCKET_CALLS,
++        &PROPAGATION_SPARSE_TERM_BUCKET_NS,
++    ] {
++        for bucket in buckets {
++            bucket.store(0, Ordering::Relaxed);
++        }
++    }
++}
++
++fn clear_rref_buckets() {
++    for bucket in [
+         &EQUALITY_RREF_NS,
+         &EQUALITY_RREF_PROFILED_CALLS,
++        &EQUALITY_RREF_SMALL_ATTEMPTS,
++        &EQUALITY_RREF_SMALL_SUCCESSES,
++        &EQUALITY_RREF_SMALL_FALLBACKS,
++        &EQUALITY_RREF_SMALL_ATTEMPT_NS,
++        &EQUALITY_RREF_SMALL_CONVERSION_NS,
+         &EQUALITY_RREF_NORMALIZATION_NS,
+         &EQUALITY_RREF_SUFFIX_NS,
+         &EQUALITY_RREF_ELIMINATION_NS,
+@@ -413,28 +461,9 @@ fn clear_buckets() {
+         &EQUALITY_RREF_INTEGER_PIVOT_UPDATES,
+         &EQUALITY_RREF_MAX_NUMERATOR_BITS,
+         &EQUALITY_RREF_MAX_DENOMINATOR_BITS,
+-        &INEQUALITY_NS,
+-        &INEQUALITY_PIVOT_INDEX_NS,
+-        &INEQUALITY_ROW_BUILD_NS,
+-        &INEQUALITY_NORMALIZE_NS,
+-        &INEQUALITY_SORT_DEDUP_NS,
+-        &SEMANTIC_ENCODING_NS,
+     ] {
+         bucket.store(0, Ordering::Relaxed);
+     }
+-    for buckets in [
+-        &PROPAGATION_SPARSE_CAUSE_CALLS,
+-        &PROPAGATION_SPARSE_ROW_BUCKET_CALLS,
+-        &PROPAGATION_SPARSE_ROW_BUCKET_NS,
+-        &PROPAGATION_SPARSE_VARIABLE_BUCKET_CALLS,
+-        &PROPAGATION_SPARSE_VARIABLE_BUCKET_NS,
+-        &PROPAGATION_SPARSE_TERM_BUCKET_CALLS,
+-        &PROPAGATION_SPARSE_TERM_BUCKET_NS,
+-    ] {
+-        for bucket in buckets {
+-            bucket.store(0, Ordering::Relaxed);
+-        }
+-    }
+ }
+ 
+ fn load_array(buckets: &[AtomicU64; 4]) -> [u64; 4] {
+@@ -583,9 +612,15 @@ pub(crate) fn record_sparse_profile(
+     );
+ }
+ 
+-/// Per-call canonical RREF diagnostics; ordinary solves never construct this.
++/// Per-call canonical RREF diagnostics; updates compile out of ordinary solves.
+ #[derive(Default)]
+ pub(crate) struct RrefProfile {
++    pub small_attempts: u64,
++    pub small_successes: u64,
++    pub small_fallbacks: u64,
++    /// Includes conversion and any work abandoned before `BigInt` fallback.
++    pub small_attempt: Duration,
++    pub small_conversion: Duration,
+     pub normalization: Duration,
+     pub suffix: Duration,
+     pub elimination: Duration,
+@@ -621,6 +656,12 @@ pub(crate) fn record_rref_profile(profile: &RrefProfile) {
+         return;
+     }
+     EQUALITY_RREF_PROFILED_CALLS.fetch_add(1, Ordering::Relaxed);
++    EQUALITY_RREF_SMALL_ATTEMPTS.fetch_add(profile.small_attempts, Ordering::Relaxed);
++    EQUALITY_RREF_SMALL_SUCCESSES.fetch_add(profile.small_successes, Ordering::Relaxed);
++    EQUALITY_RREF_SMALL_FALLBACKS.fetch_add(profile.small_fallbacks, Ordering::Relaxed);
++    EQUALITY_RREF_SMALL_ATTEMPT_NS.fetch_add(duration_ns(profile.small_attempt), Ordering::Relaxed);
++    EQUALITY_RREF_SMALL_CONVERSION_NS
++        .fetch_add(duration_ns(profile.small_conversion), Ordering::Relaxed);
+     EQUALITY_RREF_NORMALIZATION_NS.fetch_add(duration_ns(profile.normalization), Ordering::Relaxed);
+     EQUALITY_RREF_SUFFIX_NS.fetch_add(duration_ns(profile.suffix), Ordering::Relaxed);
+     EQUALITY_RREF_ELIMINATION_NS.fetch_add(duration_ns(profile.elimination), Ordering::Relaxed);

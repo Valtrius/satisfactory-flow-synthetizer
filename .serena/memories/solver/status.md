@@ -655,3 +655,40 @@ Promotion committed as `6c10b35eee8b25fa7fabd55b29d042f8e67da74b`,
 Includes source, confirmation evidence and related Serena records. Formatting and
 staged diff checks passed. No push. Documentation-only follow-up records this
 resulting commit hash; no additional source changes or benchmark launches.
+
+## Wall-time recommendations, 2026-09-02
+
+Source audit at f89b6d9: `mem:solver/experiments/49-wall-time-priorities`.
+Recommend an isolated removal of derived inequality rows from internal state/SCC
+key encoding. Capacity, variable count and exact equality basis already determine
+them. Mathematical key-equivalence argument, no implementation or speed measurement.
+Keep actual feasibility checks, existing memoization and all production defaults.
+Later proposals: current reprofile, canonical RREF exact arithmetic, conditional
+pruning order, then separately scoped tail scheduling. Sharing/donation currently
+disable deferred state keys and must be accounted for explicitly.
+No source edits, tests, benchmark, commit or push; proposal/handoff notes only.
+
+## Experiment49 implementation ready, 2026-09-02
+
+User authorized all recommendations. First candidate removes deterministic inequality
+rows from internal state/SCC semantic keys, version 2. Public topology/witness format
+and actual feasibility checks remain unchanged. Main source contains the uncommitted
+candidate. `mem:solver/experiments/49-wall-time-priorities`.
+224/214 release tests pass, two ignored each; final test-helper oracle and both strict
+Clippy configurations pass. 41 tooling tests and 12 actual CLI parity checks pass.
+347 frozen/prepared hashes and 24 balanced-as-possible pairs verify. No speed result.
+48-job screen ready, 53m40 search+cleanup, one-hour overall limit. Remaining authorized
+reprofile/arithmetic/pruning/tail work follows results; no repeat approval needed.
+No commit or push. See `mem:solver/active` for launch state.
+
+Experiment49 launched, runner PID 33320. Run target/parallelism-ladder/derived-key-screen-20260902; completion/failure signal enabled. Awaiting analysis, no speedup inferred. No builds/tests while running. See active and experiment49 for remaining authorized work.
+
+2026-09-03: Experiment49 complete and retained: all17 substantive timing pairs improved, median wall -10.2% to -21.3%, full public result/proof identity preserved,48/48 records verified. See `mem:solver/experiments/49-derived-key-results`. Active source uncommitted, no push. New profile motivates isolated checked-small-rational RREF experiment50; preparation only, no run yet. Later pruning/scheduler stages remain authorized.
+
+Experiment50 implemented and validating, see `mem:solver/experiments/50-checked-rref`: checked64 canonical RREF with untouched-original BigInt fallback and explicit diagnostic coverage counters. Separate candidate worktree sf50-checked and target sf50-checked-build; baseline frozen49after. No run launched or speedup claim. All main changes uncommitted.
+
+Experiment50 ready for56-job paired screen2026-09-03:227/217 final release tests and both strict Clippy pass,16 CLI parity checks including real BigInt fallback,353 hashes verified, no source mismatch. Main49+50 active/uncommitted, no push, no50 performance claim. `mem:solver/experiments/50-checked-rref`; check `mem:solver/active` for live launch state.
+
+Launched2026-09-03 Europe/Paris, runnerPID34104, target/parallelism-ladder/checked-rref-screen-20260903. Startup active; completion/failure dialog and durable markers available. Awaiting analysis, no performance/completion inferred. End turn now per AGENTS.md; no builds/tests while timing. All changes uncommitted, no push.
+
+2026-09-03 final checkpoint: derived inequality-key removal permanently committed4d711b1 after user request, exact frozen49after source. Experiment50 completed56/56 records, full public outputs/proofs and15 structural counters match. Checked64 candidate not promoted: wall -2.48%115, -0.22%238, -0.21%258, +2.80%36;36 CPU+8.49% with all5 pairs worse. Restored production to49; preserved patch/manifest/fixture. `mem:solver/experiments/50-checked-rref-results`. No new benchmark, no push. Supporting research/handoff commit pending. Remaining approved pruning/scheduling work is not complete.

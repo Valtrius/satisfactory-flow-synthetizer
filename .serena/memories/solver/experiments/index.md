@@ -44,19 +44,13 @@ Record dates follow the analysis chronology, not necessarily every run's start t
 | 33 (`mem:solver/experiments/33-sparse-row-deduplication`)          | 2026-08-31    | Do identical normalized equations add avoidable sparse elimination work?                  | Rejected; zero duplicates across 164M hard input-row instances                      |
 | 47 (`mem:solver/experiments/47-rref-arithmetic-profile`)           | 2026-09-02    | Which RREF arithmetic phase and operand patterns dominate?                                | 14 verified; elimination 66–69%; test zero-destination then factor -1 shortcuts     |
 | 48 (`mem:solver/experiments/48-rref-elimination-shortcuts`)        | 2026-09-02    | Do zero-destination or negative-unit shortcuts improve completion independently?          | Negative-unit permanent after confirmation and integration checks; zero held        |
+| 49 (`mem:solver/experiments/49-derived-key-results`)               | 2026-09-03    | Remove deterministic inequality-key payload?                                              | Permanent4d711b1; all17 substantive wall pairs improve,10.2–21.3% medians           |
+| 50 (`mem:solver/experiments/50-checked-rref-results`)              | 2026-09-03    | Checked64 canonical RREF with BigInt fallback?                                            | Not promoted;115 -2.48%,238/258 flat,36 +2.80% wall/+8.49% CPU; source restored     |
 
-## Active follow-up
+## Current optimization work
 
-Negative-unit is permanently integrated after user approval:
-`mem:solver/experiments/48-negative-unit-promotion`.
-Seven added source lines match the tested candidate. 223/213 release tests pass,
-two ignored per suite; strict Clippy passes both feature configurations.
-Confirmation results: `mem:solver/experiments/48-rref-negative-unit-confirmation-results`.
-19/24 wall and 23/24 CPU pairs improved across both screens; hard36 completion
-remains effectively unchanged overall. Preserve adverse samples.
-Source and related results/docs committed together as 6c10b35.
-Zero-destination held; scheduler extras paused. No new benchmark or push.
-`mem:solver/active`.
+49 is permanent and committed4d711b1. 50 completed56/56 verified jobs but was not promoted; candidate preserved as a benchmark patch. Production source matches the tested49 baseline. No run active or push. `mem:solver/active`.
+Original staged recommendations remain in `mem:solver/experiments/49-wall-time-priorities`; pruning-order and tail scheduling remain pending. Negative-unit48 remains permanent, zero-destination held.
 
 ## How the diagnosis changed
 
@@ -244,3 +238,5 @@ records in experiment 01. The eight initial kernel diagnostics are in experiment
 
 Use the template (`mem:solver/experiments/template`) for the next distinct experiment. Do not erase
 failed records when replacing a runner or promoting a successful optimization.
+
+2026-09-03 checkpoint:49 permanently committed4d711b1;50 not promoted and removed from production after verified mixed results. See the current optimization section and `mem:solver/experiments/50-checked-rref-results`.

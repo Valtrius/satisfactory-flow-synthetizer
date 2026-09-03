@@ -119,6 +119,13 @@ Frozen adaptive-root replay regenerates the production p1 plan and verifies its 
 canonical-key identity before searching one serial root. Root exhaustion cannot
 discharge the containing profile. See [21](experiments/21-adaptive-root-profiling.md).
 
+Experiment49 working candidate changes only the internal sparse-exact-rows payload
+to version 2, omitting uniform inequalities derived from encoded equalities and
+capacity. State/SCC cache equality is preserved; shared public topology/witness
+formats remain unchanged. Old bound encoders are test-only oracles and historical
+inequality snapshot fields remain zero in production. Performance pending; see
+`mem:solver/experiments/49-wall-time-priorities`.
+
 The exact contracts (`mem:solver/contracts`) take precedence over scheduler heuristics.
 Before editing, check status (`mem:solver/status`) for the committed/uncommitted boundary.
 
@@ -135,3 +142,7 @@ the same arithmetic while retaining operand-counter definitions. Arbitrary-size
 Rational values and canonical ordering are unchanged. No new option or scope gate.
 Zero-destination remains an unapplied benchmark variant.
 `mem:solver/experiments/48-negative-unit-promotion`.
+
+2026-09-03 working tree: exp49 derived-key removal retained after verified screen; exp50 adds private checked64 canonical RREF with untouched-original BigInt fallback, no new runtime flag. Both production and profiler use the same small arithmetic. Five new equality_rref_small_* diagnostics report attempts/successes/fallbacks, conversion and total attempt time; attempt includes conversion and abandoned work, nested times must not be summed into CPU. BigInt fallback keeps unbounded exact input support. Source50 active/uncommitted and performance unmeasured. `mem:solver/experiments/50-checked-rref`.
+
+Final2026-09-03:49 permanently committed4d711b1. Experiment50 checked64 path and its extra counters are removed from production source after mixed performance; retained only in benchmarks/custom/variants/checked-rref.patch. Production again matches frozen50-before. Earlier50 working-tree descriptions above are historical. No new runtime flags/policy. `mem:solver/experiments/50-checked-rref-results`.

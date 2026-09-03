@@ -1,16 +1,9 @@
-# solver/active
+# Idle checkpoint after experiment50
 
-IDLE. Negative-unit RREF shortcut is permanent and committed as 6c10b35.
-`mem:solver/experiments/48-negative-unit-promotion`.
+2026-09-03: No benchmark running or queued. User requested permanent commit of49 and analysis of50; both handled. Production49 commit4d711b1899ebca8cefe1b87cfb060596257d1049, no push.
 
-The commit includes the seven-line arithmetic change, confirmation results and
-related Serena documentation. Release tests pass: 223 with bench-internals,
-213 default, two ignored each. Strict release Clippy passes both configurations.
-npm run format and diff checks pass. No push, no new benchmark.
+Experiment50 run target/parallelism-ladder/checked-rref-screen-20260903 finished09:20:58 Paris. All56 records and200 frozen hashes verified;52 completed,4 expected caps. Rechecked summary byte-identical. Exact public results/proofs and15 structural counters match. Candidate not promoted:115 wall-2.48%,238/258 approximately-0.2%,36 +2.80% with+8.49% CPU. Source restored to committed49; identity matches frozen50-before.
 
-Zero-destination remains held. Scheduler extras unchanged/paused. No new options,
-case/N/cyclicity/affinity/memory gate. Hard36 completion benefit remains unproven;
-the results retain all adverse pairs. Future benchmarks <=1h including cleanup.
+Candidate preserved as benchmarks/custom/variants/checked-rref.patch, with checked-rref-screen.json and mixed-huge.json. Patch applies cleanly to4d711b1. Detached sf50-checked and sf50-checked-build and all frozen evidence remain. Full details in `mem:solver/experiments/50-checked-rref-results`, implementation/fixture failures in `mem:solver/experiments/50-checked-rref`.
 
-Base edb4f0b and unrelated changes preserved. This documentation-only follow-up
-records the resulting source commit hash and closes the integration handoff.
+Research artifacts and current handoff are recorded in the separate docs(custom): preserve checked-rref benchmark results commit; no rejected arithmetic enters production. Remaining original approved recommendations include pruning-order instrumentation and deferred-cache-compatible tail scheduling. No new implementation or benchmark started during this checkpoint.
