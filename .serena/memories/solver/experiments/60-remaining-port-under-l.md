@@ -1,6 +1,6 @@
 # 60. Isolated remaining-port under-L prune
 
-Date: 2026-09-04/05. State: permanent this commit, unpushed.
+Date: 2026-09-04/05. State: permanent in `2d6501c`, unpushed.
 Related: experiment59 count-only opportunity screen.
 
 ## Question and hypothesis
@@ -36,4 +36,4 @@ Exact public identity held. Structural counters differ where the prune fires, as
 
 ## Decision and next step
 
-Accepted. Permanent this commit, unpushed. Do not add over-L-before-prepare or complete-L-before-solve from experiment59. Isolated screened diff remains `benchmarks/custom/variants/remaining-port-under-l.patch` (do not re-apply). 258 can be a later control, not a promotion gate given the 238 no-hit identity match. Next: post-58/60 hotspot-on cost-mix, then SCC deferral only if it still owns a material nested share.
+Accepted. Permanent in `2d6501c`, unpushed. Do not add over-L-before-prepare or complete-L-before-solve from experiment59. Isolated screened diff remains `benchmarks/custom/variants/remaining-port-under-l.patch` (do not re-apply). 258 can be a later control, not a promotion gate given the 238 no-hit identity match. Next: post-58/60 hotspot-on cost-mix, then SCC deferral only if it still owns a material nested share.

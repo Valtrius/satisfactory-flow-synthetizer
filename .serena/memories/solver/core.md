@@ -28,7 +28,7 @@ Faster proven optimum and complete min-N enumeration on hard inputs. Keep first 
 - Skip remaining-profile reachability no-ops and borrow TopologyState for the search dead verdict,exp51. Public PartialTopology analyzer unchanged. Early pre-SCC move rejected. Permanent in `7799c11`, unpushed. `mem:solver/experiments/51-reachability-results`.
 - Bareiss-forward bookkeeping without pivot-row clones, set-union scans, or denom-1 `div_rem`,exp54. Same fraction-free quotients. Permanent in `d6902a4`, unpushed. `mem:solver/experiments/54-bareiss-forward`.
 - Dirty-component bound scan: after a successful fixed-point, positivity/capacity/negative-ratio checks walk only dirty weighted-UF components,exp58. Same predicates; no `ExactInequality` restore. Permanent in `90747a4`, unpushed. `mem:solver/experiments/58-bounds-labeling-abc`.
-- Remaining-port under-L prune: applied children whose current operator-link count plus remaining node-port capacity cannot reach the exact L group are exhausted before `prepare_applied_child`,exp60. No over-L-before-prepare and no complete-L-before-solve. Permanent this commit, unpushed. `mem:solver/experiments/60-remaining-port-under-l`.
+- Remaining-port under-L prune: applied children whose current operator-link count plus remaining node-port capacity cannot reach the exact L group are exhausted before `prepare_applied_child`,exp60. No over-L-before-prepare and no complete-L-before-solve. Permanent in `2d6501c`, unpushed. `mem:solver/experiments/60-remaining-port-under-l`.
 
 ## Current decision
 
@@ -44,7 +44,7 @@ Rejected/held: weighted sparse quotient32, sparse row dedup33, N<=9 p1 guard18, 
 
 ## Remaining authorized work
 
-Original apply-all request in `mem:solver/experiments/49-wall-time-priorities` is exhausted. Experiment58 dirty-component bound scan is permanent; BaseColor/labeling cache is rejected. Experiment60 remaining-port under-L prune is permanent this commit, unpushed. Do not add over-L-before-prepare or complete-L-before-solve. Do not retry RREF kernels or labeling reuse. Do not enable `work_stealing`. Park templates, sharing, donation, checked64, fraction-free RREF, weighted quotients, duplicate-row removal, rollback-aware Bareiss, early reachability, and labeling. Remaining 57 ranking item is SCC deferral (7–11% of accounted), smaller than leftover state-key canonaut (23–27%). Next: hotspot-on cost-mix of production after 58+60, then SCC deferral only if it still owns a material nested share. `mem:solver/experiments/60-remaining-port-under-l`. Check `mem:solver/active`.
+Original apply-all request in `mem:solver/experiments/49-wall-time-priorities` is exhausted. Experiment58 dirty-component bound scan is permanent; BaseColor/labeling cache is rejected. Experiment60 remaining-port under-L prune is permanent in `2d6501c`, unpushed. Do not add over-L-before-prepare or complete-L-before-solve. Do not retry RREF kernels or labeling reuse. Do not enable `work_stealing`. Park templates, sharing, donation, checked64, fraction-free RREF, weighted quotients, duplicate-row removal, rollback-aware Bareiss, early reachability, and labeling. Remaining 57 ranking item is SCC deferral (7–11% of accounted), smaller than leftover state-key canonaut (23–27%). Next: hotspot-on cost-mix of production after 58+60, then SCC deferral only if it still owns a material nested share. `mem:solver/experiments/60-remaining-port-under-l`. Check `mem:solver/active`.
 
 ## Routing
 
@@ -53,4 +53,4 @@ Original apply-all request in `mem:solver/experiments/49-wall-time-priorities` i
 - Flags/source map: `mem:solver/controls`.
 - Update Serena after every meaningful decision. Benchmarks <=1h including cleanup; launch with completion signal then end turn; no builds/tests during timing.
 
-2026-09-05 update: experiment60 remaining-port under-L prune permanent this commit, unpushed. Experiment59 count-only exact-L diagnostic: under-L 28.6–48.9% except 238 (0%); over-L 0; complete mismatch rare. Do not implement over-L-before-prepare or complete-L-before-solve. Experiment58 dirty bounds remain permanent in `90747a4`, unpushed; labeling rejected. `mem:solver/experiments/60-remaining-port-under-l`.
+2026-09-05 update: experiment60 remaining-port under-L prune permanent in `2d6501c`, unpushed. Experiment59 count-only exact-L diagnostic: under-L 28.6–48.9% except 238 (0%); over-L 0; complete mismatch rare. Do not implement over-L-before-prepare or complete-L-before-solve. Experiment58 dirty bounds remain permanent in `90747a4`, unpushed; labeling rejected. `mem:solver/experiments/60-remaining-port-under-l`.
