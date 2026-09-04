@@ -81,6 +81,67 @@ pub fn analyze_reachability(state: &TopologyState) -> ReachabilityAnalysis {
     analyze_partial_reachability(&state.partial_topology())
 }
 
+/// Search-only projection of the full reachability oracle onto its dead verdict.
+///
+/// `TopologyState` owns its representation: materialization assigns contiguous IDs,
+/// connect validates endpoints and unique occupancy, and rollback restores both.
+/// Borrow these invariants instead of revalidating an owned `PartialTopology`. The
+/// public snapshot analyzer remains conservative for arbitrary malformed input.
+/// Open ports seed potential paths; without remaining nodes, any node outside
+/// that closure has exactly the closed-region proof used by the full analyzer.
+pub(crate) fn is_proven_unreachable(state: &TopologyState) -> bool {
+    if !state.remaining_profile().is_empty()
+        || state.problem().inputs.is_empty()
+        || state.problem().outputs.is_empty()
+    {
+        return false;
+    }
+    let count = state.nodes().len();
+    let mut adjacency = vec![Vec::new(); count];
+    let mut reverse_adjacency = vec![Vec::new(); count];
+    let mut ingress = vec![false; count];
+    let mut egress = vec![false; count];
+    for link in state.links() {
+        match (link.producer, link.consumer) {
+            (ProducerPortRef::Input(_), ConsumerPortRef::Node { node, .. }) => {
+                ingress[node.0 as usize] = true;
+            }
+            (
+                ProducerPortRef::Node { node, .. },
+                ConsumerPortRef::Output(_) | ConsumerPortRef::Discard(_),
+            ) => {
+                egress[node.0 as usize] = true;
+            }
+            (ProducerPortRef::Node { node: from, .. }, ConsumerPortRef::Node { node: to, .. }) => {
+                adjacency[from.0 as usize].push(to.0 as usize);
+                reverse_adjacency[to.0 as usize].push(from.0 as usize);
+            }
+            (
+                ProducerPortRef::Input(_),
+                ConsumerPortRef::Output(_) | ConsumerPortRef::Discard(_),
+            ) => {}
+        }
+    }
+    for (port_ref, port) in state.consumer_ports() {
+        if port.connection.is_none()
+            && let ConsumerPortRef::Node { node, .. } = port_ref
+        {
+            ingress[node.0 as usize] = true;
+        }
+    }
+    for (port_ref, port) in state.producer_ports() {
+        if port.connection.is_none()
+            && let ProducerPortRef::Node { node, .. } = port_ref
+        {
+            egress[node.0 as usize] = true;
+        }
+    }
+    // On complete states there are no open ports, so these closures also equal
+    // actual source/sink reachability. We need neither proof vectors nor paths.
+    spread(&adjacency, &ingress).contains(&false)
+        || spread(&reverse_adjacency, &egress).contains(&false)
+}
+
 /// Rebuilds conservative reachability facts from an immutable partial-topology snapshot.
 ///
 /// # Soundness
@@ -713,7 +774,153 @@ mod tests {
         false
     }
 
+    fn assert_search_verdict(state: &TopologyState) {
+        assert_eq!(
+            is_proven_unreachable(state),
+            matches!(
+                analyze_reachability(state).verdict,
+                ReachabilityVerdict::ProvenDead(_)
+            ),
+            "{:?}",
+            state.partial_topology()
+        );
+    }
+
+    #[test]
+    fn borrowed_verdict_matches_all_fixture_link_subsets_and_remaining_profiles() {
+        let mut discarded = covered_parallel_topology();
+        discarded.discard_count = 1;
+        discarded.links.last_mut().unwrap().consumer = discard(0);
+        let fixtures = [
+            covered_parallel_topology(),
+            disconnected_cycle_with_bypass(),
+            backward_closed_fixture([0, 1], false),
+            discarded,
+            partial(
+                problem(&[1], &[1], 1),
+                Vec::new(),
+                vec![(input(0), output(0))],
+            ),
+            partial(
+                problem(&[], &[1], 1),
+                vec![(0, NodeType::Merger2)],
+                Vec::new(),
+            ),
+            partial(
+                problem(&[1], &[], 1),
+                vec![(0, NodeType::Splitter2)],
+                Vec::new(),
+            ),
+            partial(
+                problem(&[3], &[3], 3),
+                vec![(0, NodeType::Splitter3), (1, NodeType::Merger3)],
+                vec![
+                    (input(0), consumer(0, 0)),
+                    (producer(0, 0), consumer(1, 0)),
+                    (producer(0, 1), consumer(1, 1)),
+                    (producer(0, 2), consumer(1, 2)),
+                    (producer(1, 0), output(0)),
+                ],
+            ),
+            partial(
+                problem(&[2], &[2], 2),
+                vec![(0, NodeType::Merger2), (1, NodeType::Splitter2)],
+                vec![
+                    (input(0), consumer(0, 0)),
+                    (producer(0, 0), consumer(1, 0)),
+                    (producer(1, 0), consumer(0, 1)),
+                    (producer(1, 1), output(0)),
+                ],
+            ),
+        ];
+        let inventories = [
+            NodeProfile::default(),
+            NodeProfile {
+                splitter2: 1,
+                ..NodeProfile::default()
+            },
+            NodeProfile {
+                splitter3: 1,
+                ..NodeProfile::default()
+            },
+            NodeProfile {
+                merger2: 1,
+                ..NodeProfile::default()
+            },
+            NodeProfile {
+                merger3: 1,
+                ..NodeProfile::default()
+            },
+        ];
+        let mut compared = 0;
+        for fixture in fixtures {
+            for mask in 0..(1_usize << fixture.links.len()) {
+                for remaining_profile in inventories {
+                    let mut topology = fixture.clone();
+                    topology.links = fixture
+                        .links
+                        .iter()
+                        .enumerate()
+                        .filter(|(index, _)| mask & (1 << index) != 0)
+                        .map(|(_, link)| link.clone())
+                        .collect();
+                    topology.remaining_profile = remaining_profile;
+                    for reverse in [false, true] {
+                        if reverse {
+                            topology.links.reverse();
+                        }
+                        let state = TopologyState::from_partial_topology(&topology).unwrap();
+                        assert_search_verdict(&state);
+                        compared += 1;
+                    }
+                }
+            }
+        }
+        assert_eq!(compared, 1320);
+    }
+
+    #[test]
+    fn borrowed_verdict_has_no_fixed_node_mask_limit() {
+        let mut topology = partial(problem(&[2; 35], &[2; 35], 2), Vec::new(), Vec::new());
+        for pair in 0..35 {
+            let left = pair * 2;
+            let right = left + 1;
+            topology.nodes.extend([
+                PhysicalNode {
+                    id: NodeId(left),
+                    node_type: NodeType::Splitter2,
+                },
+                PhysicalNode {
+                    id: NodeId(right),
+                    node_type: NodeType::Merger2,
+                },
+            ]);
+            for (producer, consumer) in [
+                (input(pair), consumer(left, 0)),
+                (producer(left, 0), consumer(right, 0)),
+                (producer(left, 1), consumer(right, 1)),
+                (producer(right, 0), output(pair)),
+            ] {
+                topology.links.push(PartialLink {
+                    producer,
+                    consumer,
+                    flow: None,
+                });
+            }
+        }
+        let state = TopologyState::from_partial_topology(&topology).unwrap();
+        assert_search_verdict(&state);
+        assert!(!is_proven_unreachable(&state));
+        // Close the final pair into an isolated cycle, retaining an external bypass.
+        topology.links[136].consumer = output(34);
+        topology.links[139].consumer = consumer(68, 0);
+        let state = TopologyState::from_partial_topology(&topology).unwrap();
+        assert_search_verdict(&state);
+        assert!(is_proven_unreachable(&state));
+    }
+
     fn audit_prefixes(state: &mut TopologyState, prefixes: &mut usize, dead: &mut usize) {
+        assert_search_verdict(state);
         *prefixes += 1;
         if matches!(
             analyze_reachability(state).verdict,
@@ -732,6 +939,7 @@ mod tests {
             state.apply(decision).unwrap();
             audit_prefixes(state, prefixes, dead);
             state.rollback(checkpoint);
+            assert_search_verdict(state);
         }
     }
 

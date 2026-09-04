@@ -1,6 +1,6 @@
 # Current decisions and handoff
 
-Updated 2026-09-02. Hot path: `mem:critical_info` → `mem:solver/core`.
+Updated 2026-09-04. Hot path: `mem:critical_info` → `mem:solver/core`. Live: `mem:solver/active` (experiment51 permanent, unpushed; hotspot profile next).
 Historical records: `mem:solver/experiments/index`.
 
 ## Objective
@@ -692,3 +692,5 @@ Experiment50 ready for56-job paired screen2026-09-03:227/217 final release tests
 Launched2026-09-03 Europe/Paris, runnerPID34104, target/parallelism-ladder/checked-rref-screen-20260903. Startup active; completion/failure dialog and durable markers available. Awaiting analysis, no performance/completion inferred. End turn now per AGENTS.md; no builds/tests while timing. All changes uncommitted, no push.
 
 2026-09-03 final checkpoint: derived inequality-key removal permanently committed4d711b1 after user request, exact frozen49after source. Experiment50 completed56/56 records, full public outputs/proofs and15 structural counters match. Checked64 candidate not promoted: wall -2.48%115, -0.22%238, -0.21%258, +2.80%36;36 CPU+8.49% with all5 pairs worse. Restored production to49; preserved patch/manifest/fixture. `mem:solver/experiments/50-checked-rref-results`. No new benchmark, no push. Supporting research/handoff commit pending. Remaining approved pruning/scheduling work is not complete.
+
+Experiment51 skip+borrowed dead-verdict is permanent in production source, unpushed. Early not applied. Experiment52 tail-only sibling help rejected after a 200-job screen: 115 all-mode lost layouts (49→43/44) and identity-passing 238/36 slowed. Source restored before the 51 commit. `mem:solver/experiments/51-reachability-results`.

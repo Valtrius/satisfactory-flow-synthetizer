@@ -41,7 +41,7 @@ use crate::{
         PropagationCheckpoint, PropagationConflict, PropagationError, PropagationOutcome,
         PropagationState,
     },
-    reachability::{ReachabilityVerdict, analyze_reachability},
+    reachability::is_proven_unreachable,
     scc::{SccError, detect_affected_sccs, summarize_open_scc},
     telemetry::SearchInstrumentation,
     topology::{FlowVarId, TopologyDecision, TopologyState},
@@ -1664,11 +1664,12 @@ fn prepare_applied_child(
         }
     }
 
-    if context.features.reachability {
+    // Full analysis always returns Open while profile nodes remain unmaterialized.
+    if context.features.reachability && state.remaining_profile().is_empty() {
         let reachability_started = Instant::now();
-        let reachability = analyze_reachability(state);
+        let dead = is_proven_unreachable(state);
         hotspot_profile::record_reachability(reachability_started.elapsed());
-        if matches!(reachability.verdict, ReachabilityVerdict::ProvenDead(_)) {
+        if dead {
             increment(&mut context.stats.instrumentation.lower_bound_prunes);
             return Err(DfsResult::Exhausted(None));
         }

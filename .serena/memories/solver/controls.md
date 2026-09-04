@@ -39,8 +39,12 @@ while joining, including with one worker. All children must finish before parent
 
 The current experiment-29 working tree defers local state canonicalization until a
 cheap invariant bucket repeats. A fingerprint never proves equality. Repeated buckets,
-shared-cache paths, and donation paths use authoritative canonical state keys. The
-frozen A/B passed and the implementation is permanent.
+shared-cache paths, and donation paths use authoritative canonical state keys. Public
+`work_stealing` still pairs donation with sharing and therefore exact keys. Experiment52
+tried donation without sharing so deferred keys could stay on; it lost 115 all-mode
+layouts because join keeps only the helper best witness, and it is absent from
+production source. The frozen A/B for deferred canonicalization passed and the
+implementation is permanent.
 [Experiment 30](experiments/30-no-state-cache-ablation.md) removed this local cache in
 a validated fail-fast trial. Structural work rose enough to make 238 optimal 3.00x
 slower, so the uncached policy is absent from production source.
@@ -146,3 +150,5 @@ Zero-destination remains an unapplied benchmark variant.
 2026-09-03 working tree: exp49 derived-key removal retained after verified screen; exp50 adds private checked64 canonical RREF with untouched-original BigInt fallback, no new runtime flag. Both production and profiler use the same small arithmetic. Five new equality_rref_small_* diagnostics report attempts/successes/fallbacks, conversion and total attempt time; attempt includes conversion and abandoned work, nested times must not be summed into CPU. BigInt fallback keeps unbounded exact input support. Source50 active/uncommitted and performance unmeasured. `mem:solver/experiments/50-checked-rref`.
 
 Final2026-09-03:49 permanently committed4d711b1. Experiment50 checked64 path and its extra counters are removed from production source after mixed performance; retained only in benchmarks/custom/variants/checked-rref.patch. Production again matches frozen50-before. Earlier50 working-tree descriptions above are historical. No new runtime flags/policy. `mem:solver/experiments/50-checked-rref-results`.
+
+Experiment51 is permanent: `search.rs::prepare_applied_child` skips reachability while remaining inventory is nonempty, then calls `reachability::is_proven_unreachable` on borrowed `TopologyState` instead of cloning `PartialTopology`. Check order remains propagation, dynamic SCC, reachability. Public `analyze_reachability` is unchanged. No new flag. Unpushed. `mem:solver/experiments/51-reachability-results`.
