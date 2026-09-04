@@ -665,13 +665,19 @@ impl PropagationState {
         let started = hotspot_profile::recorder_enabled().then(Instant::now);
         let result = self.check_exact_bounds_inner();
         record_propagation_elapsed(started, PropagationPhase::Bounds);
+        if matches!(result, Ok(None)) {
+            self.weighted.clear_bounds_dirty();
+        }
         result
     }
 
     fn check_exact_bounds_inner(
         &mut self,
     ) -> Result<Option<PropagationConflict>, PropagationError> {
-        for &variable in self.registered_ports.keys() {
+        if !self.weighted.is_bounds_dirty() {
+            return Ok(None);
+        }
+        for variable in self.weighted.dirty_variables() {
             let (representative, factor) = self.weighted.representative(variable)?;
             if factor.is_negative() {
                 return Ok(Some(PropagationConflict::NegativeRatio {

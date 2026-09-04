@@ -54,6 +54,8 @@ own Cargo target directory; do not share build artifacts across source variants.
 
 - `completed-sharing.patch` — experiment 55 completed-state sharing that kept deferred owners. Rejected; not production p1. Applies against `d6902a4`.
 - `fraction-free-rref.patch` — experiment 56 fraction-free canonical dense RREF. Rejected. Applies against `d6902a4`.
+- `dirty-bounds.patch` — experiment 58 isolated dirty-component bound scan. Now production; do not re-apply. Screened against `d6902a4`.
+- `color-labeling.patch` — experiment 58 isolated BaseColor known-support strip plus labeling cache. Rejected. Applies against `d6902a4`. Do not combine with production dirty bounds.
 - `legacy-semantic-encoding.patch` — restores dense decimal rational row encoding
   while keeping boxed keys and the current constructor. Exp 09 `before` binary;
   see `mem:solver/experiments/09-serializer-and-find-all`. Not the old recovery binary.

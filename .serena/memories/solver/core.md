@@ -1,6 +1,6 @@
 # solver/core
 
-Updated 2026-09-04. Full history: `mem:solver/status`. Live state: `mem:solver/active` (idle after experiment56 analysis).
+Updated 2026-09-04. Full history: `mem:solver/status`. Live state: `mem:solver/active` (idle after experiment58 promotion).
 
 ## Objective and contracts
 
@@ -27,6 +27,7 @@ Faster proven optimum and complete min-N enumeration on hard inputs. Keep first 
 - Omit derived inequality payload from internal state/SCC keys,4d711b1,exp49. Actual feasibility bounds remain. Version2 key equality is equivalent to version1; public witness protocol unchanged. All17 substantive timing pairs improved, medians10.2% to21.3%, exact full results/proofs match. `mem:solver/experiments/49-derived-key-results`.
 - Skip remaining-profile reachability no-ops and borrow TopologyState for the search dead verdict,exp51. Public PartialTopology analyzer unchanged. Early pre-SCC move rejected. Permanent in `7799c11`, unpushed. `mem:solver/experiments/51-reachability-results`.
 - Bareiss-forward bookkeeping without pivot-row clones, set-union scans, or denom-1 `div_rem`,exp54. Same fraction-free quotients. Permanent in `d6902a4`, unpushed. `mem:solver/experiments/54-bareiss-forward`.
+- Dirty-component bound scan: after a successful fixed-point, positivity/capacity/negative-ratio checks walk only dirty weighted-UF components,exp58. Same predicates; no `ExactInequality` restore. Permanent this commit, unpushed. `mem:solver/experiments/58-bounds-labeling-abc`.
 
 ## Current decision
 
@@ -42,7 +43,7 @@ Rejected/held: weighted sparse quotient32, sparse row dedup33, N<=9 p1 guard18, 
 
 ## Remaining authorized work
 
-Original apply-all request in `mem:solver/experiments/49-wall-time-priorities` is exhausted except item 2’s conditional prep-template reuse. Items 1/3/4/5 are done or rejected (49, 50+56, 51 early, 52+55). Do not implement templates from the pre-54 experiment53 profile. If continuing, hotspot-on profile production 54 first. Park sharing, donation, checked64, fraction-free RREF, weighted quotients, duplicate-row removal, rollback-aware Bareiss, and early reachability. Do not enable `work_stealing`. `mem:solver/experiments/56-fraction-free-rref`. Check `mem:solver/active`.
+Original apply-all request in `mem:solver/experiments/49-wall-time-priorities` is exhausted. Experiment58 dirty-component bound scan is permanent; BaseColor/labeling cache is rejected. Do not retry RREF kernels or labeling reuse. Do not enable `work_stealing`. Park templates, sharing, donation, checked64, fraction-free RREF, weighted quotients, duplicate-row removal, rollback-aware Bareiss, early reachability, and labeling. Remaining 57 ranking item is SCC deferral (7–11% of accounted), smaller than leftover state-key canonaut (23–27%). Next: hotspot-on cost-mix of production after 58, then SCC deferral only if it still owns a material nested share. `mem:solver/experiments/58-bounds-labeling-abc`. Check `mem:solver/active`.
 
 ## Routing
 
@@ -51,4 +52,4 @@ Original apply-all request in `mem:solver/experiments/49-wall-time-priorities` i
 - Flags/source map: `mem:solver/controls`.
 - Update Serena after every meaningful decision. Benchmarks <=1h including cleanup; launch with completion signal then end turn; no builds/tests during timing.
 
-2026-09-04 update: experiment51 permanent in `7799c11`, unpushed. Experiment52 rejected. Experiment53 profile analyzed. Experiment54 Bareiss-forward A/B verified 66/66; permanent in `d6902a4`, unpushed. Experiment55 sharing rejected and restored. Experiment56 fraction-free RREF rejected; `canonical.rs` restored. `mem:solver/experiments/56-fraction-free-rref`.
+2026-09-04 update: experiment51 permanent in `7799c11`, unpushed. Experiment52 rejected. Experiment53 profile analyzed. Experiment54 Bareiss-forward A/B verified 66/66; permanent in `d6902a4`, unpushed. Experiment55 sharing rejected and restored. Experiment56 fraction-free RREF rejected; `canonical.rs` restored. Experiment57 hotspot-on profile of production 54 analyzed; prep templates parked. Experiment58 isolated dirty-bounds and color-labeling A/B/C analyzed; dirty bounds permanent this commit, unpushed; labeling rejected. `mem:solver/experiments/58-bounds-labeling-abc`.

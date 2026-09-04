@@ -1,0 +1,229 @@
+diff --git a/crates/solver-core/src/algebra/weighted.rs b/crates/solver-core/src/algebra/weighted.rs
+index 52df032..96fda5e 100644
+--- a/crates/solver-core/src/algebra/weighted.rs
++++ b/crates/solver-core/src/algebra/weighted.rs
+@@ -14,7 +14,7 @@
+ //! inequality layer, not this purely algebraic data structure.
+ 
+ use std::cmp::Ordering;
+-use std::collections::BTreeMap;
++use std::collections::{BTreeMap, BTreeSet};
+ 
+ use solver_api::Rational;
+ use thiserror::Error;
+@@ -58,9 +58,10 @@ pub enum WeightedError {
+ }
+ 
+ /// Opaque position in a [`WeightedUnionFind`] rollback trail.
+-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
++#[derive(Clone, Debug, PartialEq, Eq)]
+ pub struct WeightedCheckpoint {
+     trail_len: usize,
++    dirty_roots: BTreeSet<usize>,
+ }
+ 
+ #[derive(Clone, Debug, PartialEq, Eq)]
+@@ -70,6 +71,7 @@ struct Node {
+     weight_to_parent: Rational,
+     component_size: usize,
+     known_root_value: Option<Rational>,
++    next: usize,
+ }
+ 
+ #[derive(Clone, Debug, PartialEq, Eq)]
+@@ -90,6 +92,8 @@ enum Undo {
+         child_known: Option<Rational>,
+         parent_size: usize,
+         parent_known: Option<Rational>,
++        parent_next: usize,
++        child_next: usize,
+     },
+ }
+ 
+@@ -102,6 +106,7 @@ pub struct WeightedUnionFind {
+     indices: BTreeMap<FlowVarId, usize>,
+     nodes: Vec<Node>,
+     trail: Vec<Undo>,
++    dirty_roots: BTreeSet<usize>,
+ }
+ 
+ impl WeightedUnionFind {
+@@ -112,6 +117,7 @@ impl WeightedUnionFind {
+             indices: BTreeMap::new(),
+             nodes: Vec::new(),
+             trail: Vec::new(),
++            dirty_roots: BTreeSet::new(),
+         }
+     }
+ 
+@@ -149,10 +155,12 @@ impl WeightedUnionFind {
+             weight_to_parent: Rational::one(),
+             component_size: 1,
+             known_root_value: None,
++            next: index,
+         });
+         let previous = self.indices.insert(variable, index);
+         debug_assert!(previous.is_none());
+         self.trail.push(Undo::Added { variable, index });
++        self.dirty_roots.insert(index);
+         true
+     }
+ 
+@@ -161,6 +169,7 @@ impl WeightedUnionFind {
+     pub fn checkpoint(&self) -> WeightedCheckpoint {
+         WeightedCheckpoint {
+             trail_len: self.trail.len(),
++            dirty_roots: self.dirty_roots.clone(),
+         }
+     }
+ 
+@@ -201,15 +210,20 @@ impl WeightedUnionFind {
+                     child_known,
+                     parent_size,
+                     parent_known,
++                    parent_next,
++                    child_next,
+                 } => {
+                     self.nodes[parent].component_size = parent_size;
+                     self.nodes[parent].known_root_value = parent_known;
+                     self.nodes[child].parent = child_parent;
+                     self.nodes[child].weight_to_parent = child_weight;
+                     self.nodes[child].known_root_value = child_known;
++                    self.nodes[parent].next = parent_next;
++                    self.nodes[child].next = child_next;
+                 }
+             }
+         }
++        self.dirty_roots = checkpoint.dirty_roots;
+     }
+ 
+     /// Adds the exact relation `value(left) = factor * value(right)`.
+@@ -305,6 +319,7 @@ impl WeightedUnionFind {
+                     previous: None,
+                 });
+                 self.nodes[root].known_root_value = Some(root_value);
++                self.dirty_roots.insert(root);
+                 Ok(ConstraintOutcome::Changed)
+             }
+         }
+@@ -392,6 +407,7 @@ impl WeightedUnionFind {
+                     previous: None,
+                 });
+                 self.nodes[root].known_root_value = Some(Rational::zero());
++                self.dirty_roots.insert(root);
+                 ConstraintOutcome::Changed
+             }
+         }
+@@ -411,6 +427,8 @@ impl WeightedUnionFind {
+             .clone()
+             .or_else(|| child_known.as_ref().map(|known| known / &child_to_parent));
+ 
++        let parent_next = self.nodes[parent].next;
++        let child_next = self.nodes[child].next;
+         self.trail.push(Undo::Merged {
+             child,
+             parent,
+@@ -419,12 +437,46 @@ impl WeightedUnionFind {
+             child_known,
+             parent_size,
+             parent_known,
++            parent_next,
++            child_next,
+         });
+         self.nodes[child].parent = parent;
+         self.nodes[child].weight_to_parent = child_to_parent;
+         self.nodes[child].known_root_value = None;
+         self.nodes[parent].component_size += self.nodes[child].component_size;
+         self.nodes[parent].known_root_value = merged_parent_known;
++        self.nodes[parent].next = child_next;
++        self.nodes[child].next = parent_next;
++        self.dirty_roots.remove(&child);
++        self.dirty_roots.insert(parent);
++    }
++
++    pub(crate) fn is_bounds_dirty(&self) -> bool {
++        !self.dirty_roots.is_empty()
++    }
++
++    pub(crate) fn clear_bounds_dirty(&mut self) {
++        self.dirty_roots.clear();
++    }
++
++    pub(crate) fn dirty_variables(&self) -> Vec<FlowVarId> {
++        let mut seen_roots = BTreeSet::new();
++        let mut variables = Vec::new();
++        for &index in &self.dirty_roots {
++            let (root, _) = self.root_and_weight(index);
++            if !seen_roots.insert(root) {
++                continue;
++            }
++            let mut cursor = root;
++            loop {
++                variables.push(self.nodes[cursor].variable);
++                cursor = self.nodes[cursor].next;
++                if cursor == root {
++                    break;
++                }
++            }
++        }
++        variables
+     }
+ }
+ 
+@@ -799,4 +851,31 @@ mod tests {
+             assert_matches_oracle(&union_find, &oracle_snapshot);
+         }
+     }
++
++    #[test]
++    fn dirty_bounds_follow_merged_components_and_rollback() {
++        let mut union_find = populated(4);
++        assert_eq!(union_find.dirty_variables().len(), 4);
++        union_find.clear_bounds_dirty();
++        assert!(!union_find.is_bounds_dirty());
++
++        assert_eq!(
++            union_find.relate(variable(0), &Rational::from(2), variable(1)),
++            Ok(ConstraintOutcome::Changed)
++        );
++        let mut merged = union_find.dirty_variables();
++        merged.sort_by_key(|variable| variable.0);
++        assert_eq!(merged, vec![variable(0), variable(1)]);
++
++        union_find.clear_bounds_dirty();
++        let checkpoint = union_find.checkpoint();
++        assert_eq!(
++            union_find.assign(variable(2), &Rational::from(3)),
++            Ok(ConstraintOutcome::Changed)
++        );
++        assert_eq!(union_find.dirty_variables(), vec![variable(2)]);
++        union_find.rollback(checkpoint);
++        assert!(!union_find.is_bounds_dirty());
++        assert_eq!(union_find.dirty_variables(), Vec::<FlowVarId>::new());
++    }
+ }
+diff --git a/crates/solver-core/src/propagation.rs b/crates/solver-core/src/propagation.rs
+index 6d48ac2..56d0369 100644
+--- a/crates/solver-core/src/propagation.rs
++++ b/crates/solver-core/src/propagation.rs
+@@ -665,13 +665,19 @@ impl PropagationState {
+         let started = hotspot_profile::recorder_enabled().then(Instant::now);
+         let result = self.check_exact_bounds_inner();
+         record_propagation_elapsed(started, PropagationPhase::Bounds);
++        if matches!(result, Ok(None)) {
++            self.weighted.clear_bounds_dirty();
++        }
+         result
+     }
+ 
+     fn check_exact_bounds_inner(
+         &mut self,
+     ) -> Result<Option<PropagationConflict>, PropagationError> {
+-        for &variable in self.registered_ports.keys() {
++        if !self.weighted.is_bounds_dirty() {
++            return Ok(None);
++        }
++        for variable in self.weighted.dirty_variables() {
+             let (representative, factor) = self.weighted.representative(variable)?;
+             if factor.is_negative() {
+                 return Ok(Some(PropagationConflict::NegativeRatio {
