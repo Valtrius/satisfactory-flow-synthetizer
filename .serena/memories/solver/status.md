@@ -1,6 +1,6 @@
 # Current decisions and handoff
 
-Updated 2026-09-04. Hot path: `mem:critical_info` → `mem:solver/core`. Live: `mem:solver/active` (experiment51 permanent, unpushed; hotspot profile next).
+Updated 2026-09-04. Hot path: `mem:critical_info` → `mem:solver/core`. Live: `mem:solver/active` (experiment54 promoting this commit; experiment51 committed `7799c11`; both unpushed).
 Historical records: `mem:solver/experiments/index`.
 
 ## Objective
@@ -693,4 +693,6 @@ Launched2026-09-03 Europe/Paris, runnerPID34104, target/parallelism-ladder/check
 
 2026-09-03 final checkpoint: derived inequality-key removal permanently committed4d711b1 after user request, exact frozen49after source. Experiment50 completed56/56 records, full public outputs/proofs and15 structural counters match. Checked64 candidate not promoted: wall -2.48%115, -0.22%238, -0.21%258, +2.80%36;36 CPU+8.49% with all5 pairs worse. Restored production to49; preserved patch/manifest/fixture. `mem:solver/experiments/50-checked-rref-results`. No new benchmark, no push. Supporting research/handoff commit pending. Remaining approved pruning/scheduling work is not complete.
 
-Experiment51 skip+borrowed dead-verdict is permanent in production source, unpushed. Early not applied. Experiment52 tail-only sibling help rejected after a 200-job screen: 115 all-mode lost layouts (49→43/44) and identity-passing 238/36 slowed. Source restored before the 51 commit. `mem:solver/experiments/51-reachability-results`.
+Experiment51 skip+borrowed dead-verdict is permanent in `7799c110e8266b96cb59dd0480b62e59c576cda7`, unpushed. Early not applied. Experiment52 tail-only sibling help rejected after a 200-job screen: 115 all-mode lost layouts (49→43/44) and identity-passing 238/36 slowed. Source restored before the 51 commit. Experiment53 hotspot-on profile verified 12/12 at `target/parallelism-ladder/post51-cost-profile-20260904`. Propagation 54–67% of accounted; 258 Bareiss forward 21% of accounted on leftover 16–31-row systems; overlapping long roots, not one unique tail. `mem:solver/experiments/53-post51-cost-profile`.
+
+Experiment54 isolated Bareiss-forward bookkeeping launched 2026-09-04 ~15:44 Europe/Paris. Runner PID 24648. Finished 16:34:39+02:00. 66/66 verified, `failures=[]`. Output `target/parallelism-ladder/bareiss-forward-screen-20260904`. Before SHA256 `d3b1f0f2b4f2bab2ed03b58ebc5634f9c710cd57a591e4d9043a2daa1d465952`. After SHA256 `ad645b376c898607281701fe453c76b304ba05acfa55c50d599ecaee7c27fc5d`. Summary SHA256 `5949585c770c23a7389a942c71d52ef87b6348a10c764cbd5dfb88035332cd9b`. Permanent this commit, unpushed. 115 all wall −10.85% CCD96 / −10.58% CCD32; 258 min-links −8.49% wall / −9.54% CPU; 238 −2.89%/−2.39% wall (CCD32 wall bootstrap includes 0); 36 −0.83% wall with bootstrap including 0. 31/31 completed pairs keep exact keys/proofs/structural counters. Experiment55 sharing is next. `mem:solver/experiments/54-bareiss-forward`.

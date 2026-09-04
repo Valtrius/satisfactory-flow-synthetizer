@@ -706,16 +706,16 @@ fn bareiss_forward(
             .get(&variable)
             .expect("selected pivot is nonzero")
             .clone();
-        let pivot_source = rows[pivot_row].clone();
-
-        for (row_index, target) in rows.iter_mut().enumerate().skip(pivot_row + 1) {
+        let (head, tail) = rows.split_at_mut(pivot_row + 1);
+        let pivot_source = &head[pivot_row];
+        for (offset, target) in tail.iter_mut().enumerate() {
             bareiss_eliminate(
                 target,
-                &pivot_source,
+                pivot_source,
                 variable,
                 &pivot,
                 &previous_pivot,
-                row_index,
+                pivot_row + 1 + offset,
             )?;
         }
 
@@ -746,42 +746,95 @@ fn bareiss_eliminate(
         .get(&pivot_variable)
         .cloned()
         .unwrap_or_default();
-    let active_variables = target
+    if eliminated.is_zero() {
+        return scale_working_row(target, pivot, previous_pivot, row_index, pivot_variable);
+    }
+
+    let mut coefficients = BTreeMap::new();
+    let mut target_terms = target
         .coefficients
         .range((
             std::ops::Bound::Excluded(pivot_variable),
             std::ops::Bound::Unbounded,
         ))
-        .map(|(&variable, _)| variable)
-        .chain(
-            pivot_row
-                .coefficients
-                .range((
-                    std::ops::Bound::Excluded(pivot_variable),
-                    std::ops::Bound::Unbounded,
-                ))
-                .map(|(&variable, _)| variable),
-        )
-        .collect::<BTreeSet<_>>();
-    let mut coefficients = BTreeMap::new();
-    for variable in active_variables {
-        let numerator = target
-            .coefficients
-            .get(&variable)
-            .cloned()
-            .unwrap_or_default()
-            * pivot
-            - &eliminated
-                * pivot_row
-                    .coefficients
-                    .get(&variable)
-                    .cloned()
-                    .unwrap_or_default();
-        let value = exact_bareiss_quotient(&numerator, previous_pivot, row_index, pivot_variable)?;
-        if !value.is_zero() {
-            coefficients.insert(variable, value);
+        .peekable();
+    let mut pivot_terms = pivot_row
+        .coefficients
+        .range((
+            std::ops::Bound::Excluded(pivot_variable),
+            std::ops::Bound::Unbounded,
+        ))
+        .peekable();
+    loop {
+        match (
+            target_terms.peek().map(|entry| *entry.0),
+            pivot_terms.peek().map(|entry| *entry.0),
+        ) {
+            (Some(target_variable), Some(pivot_term_variable)) => {
+                match target_variable.cmp(&pivot_term_variable) {
+                    std::cmp::Ordering::Less => {
+                        let (&variable, coeff) = target_terms.next().expect("peeked target term");
+                        insert_eliminated_coefficient(
+                            &mut coefficients,
+                            variable,
+                            &(coeff * pivot),
+                            previous_pivot,
+                            row_index,
+                            pivot_variable,
+                        )?;
+                    }
+                    std::cmp::Ordering::Greater => {
+                        let (&variable, coeff) = pivot_terms.next().expect("peeked pivot term");
+                        insert_eliminated_coefficient(
+                            &mut coefficients,
+                            variable,
+                            &(-(&eliminated * coeff)),
+                            previous_pivot,
+                            row_index,
+                            pivot_variable,
+                        )?;
+                    }
+                    std::cmp::Ordering::Equal => {
+                        let (&variable, target_coeff) =
+                            target_terms.next().expect("peeked target term");
+                        let (_, pivot_coeff) = pivot_terms.next().expect("peeked pivot term");
+                        insert_eliminated_coefficient(
+                            &mut coefficients,
+                            variable,
+                            &(target_coeff * pivot - &eliminated * pivot_coeff),
+                            previous_pivot,
+                            row_index,
+                            pivot_variable,
+                        )?;
+                    }
+                }
+            }
+            (Some(_), None) => {
+                let (&variable, coeff) = target_terms.next().expect("remaining target term");
+                insert_eliminated_coefficient(
+                    &mut coefficients,
+                    variable,
+                    &(coeff * pivot),
+                    previous_pivot,
+                    row_index,
+                    pivot_variable,
+                )?;
+            }
+            (None, Some(_)) => {
+                let (&variable, coeff) = pivot_terms.next().expect("remaining pivot term");
+                insert_eliminated_coefficient(
+                    &mut coefficients,
+                    variable,
+                    &(-(&eliminated * coeff)),
+                    previous_pivot,
+                    row_index,
+                    pivot_variable,
+                )?;
+            }
+            (None, None) => break,
         }
     }
+
     let rhs_numerator = &target.rhs * pivot - &eliminated * &pivot_row.rhs;
     let rhs = exact_bareiss_quotient(&rhs_numerator, previous_pivot, row_index, pivot_variable)?;
     target.coefficients = coefficients;
@@ -795,12 +848,67 @@ fn exact_bareiss_quotient(
     row: usize,
     pivot: FlowVarId,
 ) -> Result<BigInt, SparseAlgebraError> {
+    if denominator.is_one() {
+        return Ok(numerator.clone());
+    }
     let (quotient, remainder) = numerator.div_rem(denominator);
     if remainder.is_zero() {
         Ok(quotient)
     } else {
         Err(SparseAlgebraError::NonExactBareissDivision { row, pivot })
     }
+}
+
+fn scale_working_row(
+    target: &mut WorkingRow,
+    pivot: &BigInt,
+    previous_pivot: &BigInt,
+    row_index: usize,
+    pivot_variable: FlowVarId,
+) -> Result<(), SparseAlgebraError> {
+    target.coefficients.remove(&pivot_variable);
+    if pivot.is_one() && previous_pivot.is_one() {
+        return Ok(());
+    }
+    let mut zeros = Vec::new();
+    for (&variable, coeff) in &mut target.coefficients {
+        let numerator = if pivot.is_one() {
+            coeff.clone()
+        } else {
+            &*coeff * pivot
+        };
+        let value = exact_bareiss_quotient(&numerator, previous_pivot, row_index, pivot_variable)?;
+        if value.is_zero() {
+            zeros.push(variable);
+        } else {
+            *coeff = value;
+        }
+    }
+    for variable in zeros {
+        target.coefficients.remove(&variable);
+    }
+    let rhs_numerator = if pivot.is_one() {
+        target.rhs.clone()
+    } else {
+        &target.rhs * pivot
+    };
+    target.rhs = exact_bareiss_quotient(&rhs_numerator, previous_pivot, row_index, pivot_variable)?;
+    Ok(())
+}
+
+fn insert_eliminated_coefficient(
+    coefficients: &mut BTreeMap<FlowVarId, BigInt>,
+    variable: FlowVarId,
+    numerator: &BigInt,
+    previous_pivot: &BigInt,
+    row_index: usize,
+    pivot_variable: FlowVarId,
+) -> Result<(), SparseAlgebraError> {
+    let value = exact_bareiss_quotient(numerator, previous_pivot, row_index, pivot_variable)?;
+    if !value.is_zero() {
+        coefficients.insert(variable, value);
+    }
+    Ok(())
 }
 
 fn fraction_free_back_reduce(rows: &mut [WorkingRow], pivots: &[FlowVarId]) {
@@ -1344,6 +1452,20 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn missing_pivot_entry_scales_existing_terms_without_filling_from_the_pivot_row() {
+        let mut system = SparseSystem::new();
+        system.insert(row([(0, 2), (1, 1)], 5));
+        system.insert(row([(1, 1), (2, 3)], 7));
+        let analysis = system
+            .analyze_over([var(0), var(1), var(2)], &BTreeMap::new())
+            .unwrap();
+        assert_eq!(analysis.consistency, Consistency::Consistent);
+        assert_eq!(analysis.coefficient_rank, 2);
+        assert_eq!(analysis.augmented_rank, 2);
+        assert_eq!(analysis.free_variables, vec![var(2)]);
     }
 
     struct DirectAnalysis {

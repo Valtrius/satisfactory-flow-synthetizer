@@ -1,6 +1,6 @@
 # 51. Reachability results
 
-Date: 2026-09-04. State: permanent in production source, unpushed. Related: `mem:solver/experiments/51-reachability-plan`.
+Date: 2026-09-04. State: permanent in `7799c110e8266b96cb59dd0480b62e59c576cda7`, unpushed. Related: `mem:solver/experiments/51-reachability-plan`.
 Raw: `target/parallelism-ladder/reachability-screen-20260903`. Official `results/summary.json` failures=[]. Finished 2026-09-04T03:48:28+02:00. Runner PID 34676.
 
 ## Question
