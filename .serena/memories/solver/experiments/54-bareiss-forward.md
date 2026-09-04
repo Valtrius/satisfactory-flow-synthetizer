@@ -44,6 +44,6 @@ Nested timers were off. Stress caps have no completion-speedup claim. 238 CCD32 
 
 ## Decision and next step
 
-Permanent in this commit; unpushed. Do not restore. Do not revive weighted quotients (32), duplicate-row removal (33), rollback-aware Bareiss (34), or prep-template reuse.
+Permanent in `d6902a421b26f309788fc6ed6626555cb24b256a`; unpushed. Do not restore. Do not revive weighted quotients (32), duplicate-row removal (33), rollback-aware Bareiss (34), or prep-template reuse.
 
 Next isolated experiment is 55: completed-state sharing that keeps deferred on owners. Not in this binary. 115 all-mode identity is the hard gate. Park fraction-free RREF, reachability, live DFS donation, production affinity.

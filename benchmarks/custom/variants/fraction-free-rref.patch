@@ -1,0 +1,389 @@
+diff --git a/crates/solver-core/src/canonical.rs b/crates/solver-core/src/canonical.rs
+index 6351263..b5a9695 100644
+--- a/crates/solver-core/src/canonical.rs
++++ b/crates/solver-core/src/canonical.rs
+@@ -12,9 +12,7 @@ use std::{
+ };
+ 
+ use canonaut::structs::{CanonautManager, DenseGraph};
+-#[cfg(test)]
+-use num::{BigInt, Integer, Zero};
+-use num::{One, Signed};
++use num::{BigInt, Integer, One, Signed, Zero};
+ use solver_api::{
+     CanonicalGraphKey, ConsumerPortRef, DiscardTerminalIndex, InputTerminalIndex, NodeId,
+     NodeProfile, NodeType, OutputTerminalIndex, PhysicalGraph, PhysicalLink, PhysicalNode, Problem,
+@@ -2421,80 +2419,177 @@ fn conservation_row(
+     row
+ }
+ 
++fn integer_row_from_rationals(row: &[Rational]) -> Vec<BigInt> {
++    let mut lcm = BigInt::one();
++    for value in row {
++        if !value.is_zero() {
++            lcm = lcm.lcm(value.denominator());
++        }
++    }
++    row.iter()
++        .map(|value| {
++            if value.is_zero() {
++                BigInt::zero()
++            } else if value.denominator() == &lcm {
++                value.numerator().clone()
++            } else {
++                value.numerator() * (&lcm / value.denominator())
++            }
++        })
++        .collect()
++}
++
++fn gcd_reduce_integers(row: &mut [BigInt]) {
++    let mut gcd = BigInt::zero();
++    for value in row.iter() {
++        if value.is_zero() {
++            continue;
++        }
++        gcd = if gcd.is_zero() {
++            value.abs()
++        } else {
++            gcd.gcd(value)
++        };
++        if gcd.is_one() {
++            return;
++        }
++    }
++    if gcd.is_zero() || gcd.is_one() {
++        return;
++    }
++    for value in row {
++        if !value.is_zero() {
++            *value /= &gcd;
++        }
++    }
++}
++
++fn unit_pivot_rational_row(row: Vec<BigInt>, variable_count: usize) -> Vec<Rational> {
++    let pivot = row[..variable_count]
++        .iter()
++        .find(|value| !value.is_zero())
++        .expect("nonzero variable support")
++        .clone();
++    if pivot.is_one() {
++        return row.into_iter().map(Rational::from).collect();
++    }
++    let scale = Rational::from(pivot);
++    row.into_iter()
++        .map(|value| {
++            if value.is_zero() {
++                Rational::zero()
++            } else {
++                &Rational::from(value) / &scale
++            }
++        })
++        .collect()
++}
++
++fn integer_rows_to_canonical(ints: Vec<Vec<BigInt>>, variable_count: usize) -> Vec<Vec<Rational>> {
++    let inconsistent = ints.iter().any(|row| {
++        row[..variable_count].iter().all(Zero::is_zero) && !row[variable_count].is_zero()
++    });
++    if inconsistent {
++        let mut contradiction = vec![Rational::zero(); variable_count + 1];
++        contradiction[variable_count] = Rational::one();
++        return vec![contradiction];
++    }
++    let mut rows = ints
++        .into_iter()
++        .filter(|row| row[..variable_count].iter().any(|value| !value.is_zero()))
++        .map(|mut row| {
++            gcd_reduce_integers(&mut row);
++            unit_pivot_rational_row(row, variable_count)
++        })
++        .collect::<Vec<_>>();
++    rows.reverse();
++    rows
++}
++
++fn eliminate_integer_row(
++    row: &mut [BigInt],
++    column: usize,
++    pivot: &BigInt,
++    nonzero: &[(usize, BigInt)],
++    mut profile: Option<&mut hotspot_profile::RrefProfile>,
++) {
++    let factor = std::mem::replace(&mut row[column], BigInt::zero());
++    let unit_factor = factor.is_one();
++    let negative_unit_factor = factor.is_negative() && factor.magnitude().is_one();
++    let pivot_is_one = pivot.is_one();
++    if let Some(profile) = profile.as_mut() {
++        profile.eliminated_rows += 1;
++        profile.unit_factors += u64::from(unit_factor);
++        profile.negative_unit_factors += u64::from(negative_unit_factor);
++        profile.integer_factors += 1;
++        profile.observe(&Rational::from(factor.clone()));
++    }
++    if !pivot_is_one {
++        for (index, value) in row.iter_mut().enumerate() {
++            if index != column && !value.is_zero() {
++                *value *= pivot;
++            }
++        }
++    }
++    for &(index, ref pivot_value) in nonzero {
++        if let Some(profile) = profile.as_mut() {
++            profile.coefficient_updates += 1;
++            profile.unit_factor_updates += u64::from(unit_factor);
++            profile.negative_unit_factor_updates += u64::from(negative_unit_factor);
++            profile.zero_destinations += u64::from(row[index].is_zero());
++            profile.unit_pivot_updates += u64::from(pivot_value.is_one());
++            profile.integer_pivot_updates += 1;
++            profile.observe(&Rational::from(row[index].clone()));
++            profile.observe(&Rational::from(pivot_value.clone()));
++        }
++        row[index] = if pivot_is_one && unit_factor {
++            &row[index] - pivot_value
++        } else if pivot_is_one && negative_unit_factor {
++            &row[index] + pivot_value
++        } else {
++            &row[index] - &factor * pivot_value
++        };
++        if let Some(profile) = profile.as_mut() {
++            profile.observe(&Rational::from(row[index].clone()));
++        }
++    }
++}
++
+ fn rational_rref(mut rows: Vec<Vec<Rational>>, variable_count: usize) -> Vec<Vec<Rational>> {
+     rows.retain(|row| row.iter().any(|value| !value.is_zero()));
++    let mut ints = rows
++        .into_iter()
++        .map(|row| integer_row_from_rationals(&row))
++        .collect::<Vec<_>>();
+     let mut pivot_row = 0;
+     for column in 0..variable_count {
+-        let Some(selected) = (pivot_row..rows.len()).find(|&row| !rows[row][column].is_zero())
++        let Some(selected) = (pivot_row..ints.len()).find(|&row| !ints[row][column].is_zero())
+         else {
+             continue;
+         };
+-        rows.swap(pivot_row, selected);
+-        let pivot = rows[pivot_row][column].clone();
+-        if pivot.numerator() != pivot.denominator() {
+-            for value in &mut rows[pivot_row][column..] {
+-                if !value.is_zero() {
+-                    *value = &*value / &pivot;
+-                }
+-            }
+-        }
+-        // Earlier columns in this pivot row are zero. Borrow its nonzero suffix
+-        // once, avoiding a full rational-row clone and zero multiplications for
+-        // every elimination. Pivot order and exact normalized rows are unchanged.
+-        let (before, pivot_and_after) = rows.split_at_mut(pivot_row);
++        ints.swap(pivot_row, selected);
++        let pivot = ints[pivot_row][column].clone();
++        let (before, pivot_and_after) = ints.split_at_mut(pivot_row);
+         let (normalized_pivot, after) = pivot_and_after.split_first_mut().unwrap();
+         let nonzero = normalized_pivot
+             .iter()
+             .enumerate()
+             .skip(column + 1)
+             .filter(|(_, value)| !value.is_zero())
++            .map(|(index, value)| (index, value.clone()))
+             .collect::<Vec<_>>();
+         for row in before.iter_mut().chain(after) {
+             if row[column].is_zero() {
+                 continue;
+             }
+-            let factor = std::mem::replace(&mut row[column], Rational::zero());
+-            let unit_factor = factor.numerator() == factor.denominator();
+-            // Classify once per row, outside its coefficient update loop.
+-            let negative_unit_factor = factor.is_negative()
+-                && factor.numerator().magnitude() == factor.denominator().magnitude();
+-            for &(index, pivot_value) in &nonzero {
+-                row[index] = if unit_factor {
+-                    &row[index] - pivot_value
+-                } else if negative_unit_factor {
+-                    &row[index] + pivot_value
+-                } else {
+-                    &row[index] - &factor * pivot_value
+-                };
+-            }
++            eliminate_integer_row(row, column, &pivot, &nonzero, None);
+         }
+         pivot_row += 1;
+-        if pivot_row == rows.len() {
++        if pivot_row == ints.len() {
+             break;
+         }
+     }
+-    let inconsistent = rows.iter().any(|row| {
+-        row[..variable_count].iter().all(Rational::is_zero) && !row[variable_count].is_zero()
+-    });
+-    if inconsistent {
+-        let mut contradiction = vec![Rational::zero(); variable_count + 1];
+-        contradiction[variable_count] = Rational::one();
+-        // Every inconsistent affine system has the empty solution set. Once
+-        // `0 = 1` belongs to the augmented row space, retaining variable-pivot
+-        // rows would make equivalent contradictions depend on their generating
+-        // rows because pivots intentionally stop before the RHS column.
+-        rows.clear();
+-        rows.push(contradiction);
+-    } else {
+-        rows.retain(|row| row[..variable_count].iter().any(|value| !value.is_zero()));
+-    }
+-    // Retained rows have distinct unit pivots in increasing column order.
+-    // For any two rows, the earlier pivot is their first unequal coefficient:
+-    // 1 in the earlier row, 0 in the later row. Reversal therefore gives the
+-    // exact lexicographic order without comparisons or duplicate elimination.
+-    // Empty systems and the single canonical contradiction are unchanged.
+-    rows.reverse();
+-    rows
++    integer_rows_to_canonical(ints, variable_count)
+ }
+ 
+ /// Diagnostic twin of `rational_rref`: preserve the arithmetic and output order.
+@@ -2507,37 +2602,39 @@ fn rational_rref_profiled(
+     profile: &mut hotspot_profile::RrefProfile,
+ ) -> Vec<Vec<Rational>> {
+     rows.retain(|row| row.iter().any(|value| !value.is_zero()));
++    let started = Instant::now();
++    let mut ints = rows
++        .into_iter()
++        .map(|row| {
++            profile.normalization_values += u64::try_from(row.len()).unwrap_or(u64::MAX);
++            integer_row_from_rationals(&row)
++        })
++        .collect::<Vec<_>>();
++    profile.normalization += started.elapsed();
+     let mut pivot_row = 0;
+     for column in 0..variable_count {
+-        let Some(selected) = (pivot_row..rows.len()).find(|&row| !rows[row][column].is_zero())
++        let Some(selected) = (pivot_row..ints.len()).find(|&row| !ints[row][column].is_zero())
+         else {
+             continue;
+         };
+-        rows.swap(pivot_row, selected);
++        ints.swap(pivot_row, selected);
+         profile.pivots += 1;
+         let started = Instant::now();
+-        let pivot = rows[pivot_row][column].clone();
+-        profile.observe(&pivot);
+-        if pivot.numerator() != pivot.denominator() {
++        let pivot = ints[pivot_row][column].clone();
++        profile.observe(&Rational::from(pivot.clone()));
++        if !pivot.is_one() {
+             profile.nonunit_pivots += 1;
+-            for value in &mut rows[pivot_row][column..] {
+-                if !value.is_zero() {
+-                    profile.normalization_values += 1;
+-                    profile.observe(value);
+-                    *value = &*value / &pivot;
+-                    profile.observe(value);
+-                }
+-            }
+         }
+         profile.normalization += started.elapsed();
+         let started = Instant::now();
+-        let (before, pivot_and_after) = rows.split_at_mut(pivot_row);
++        let (before, pivot_and_after) = ints.split_at_mut(pivot_row);
+         let (normalized_pivot, after) = pivot_and_after.split_first_mut().unwrap();
+         let nonzero = normalized_pivot
+             .iter()
+             .enumerate()
+             .skip(column + 1)
+             .filter(|(_, value)| !value.is_zero())
++            .map(|(index, value)| (index, value.clone()))
+             .collect::<Vec<_>>();
+         profile.suffix += started.elapsed();
+         let started = Instant::now();
+@@ -2545,56 +2642,23 @@ fn rational_rref_profiled(
+             if row[column].is_zero() {
+                 continue;
+             }
+-            let factor = std::mem::replace(&mut row[column], Rational::zero());
+-            let unit_factor = factor.numerator() == factor.denominator();
+-            profile.eliminated_rows += 1;
+-            profile.unit_factors += u64::from(unit_factor);
+-            let negative_unit_factor = factor.is_negative()
+-                && factor.numerator().magnitude() == factor.denominator().magnitude();
+-            profile.negative_unit_factors += u64::from(negative_unit_factor);
+-            profile.integer_factors += u64::from(factor.denominator().is_one());
+-            profile.observe(&factor);
+-            for &(index, pivot_value) in &nonzero {
+-                profile.coefficient_updates += 1;
+-                profile.unit_factor_updates += u64::from(unit_factor);
+-                profile.negative_unit_factor_updates += u64::from(negative_unit_factor);
+-                profile.zero_destinations += u64::from(row[index].is_zero());
+-                profile.unit_pivot_updates +=
+-                    u64::from(pivot_value.numerator() == pivot_value.denominator());
+-                profile.integer_pivot_updates += u64::from(pivot_value.denominator().is_one());
+-                profile.observe(&row[index]);
+-                profile.observe(pivot_value);
+-                row[index] = if unit_factor {
+-                    &row[index] - pivot_value
+-                } else if negative_unit_factor {
+-                    &row[index] + pivot_value
+-                } else {
+-                    &row[index] - &factor * pivot_value
+-                };
+-                profile.observe(&row[index]);
+-            }
++            eliminate_integer_row(row, column, &pivot, &nonzero, Some(profile));
+         }
+         profile.elimination += started.elapsed();
+         pivot_row += 1;
+-        if pivot_row == rows.len() {
++        if pivot_row == ints.len() {
+             break;
+         }
+     }
+     let started = Instant::now();
+-    let inconsistent = rows.iter().any(|row| {
+-        row[..variable_count].iter().all(Rational::is_zero) && !row[variable_count].is_zero()
+-    });
+-    if inconsistent {
+-        let mut contradiction = vec![Rational::zero(); variable_count + 1];
+-        contradiction[variable_count] = Rational::one();
+-        rows.clear();
+-        rows.push(contradiction);
+-    } else {
+-        rows.retain(|row| row[..variable_count].iter().any(|value| !value.is_zero()));
++    let result = integer_rows_to_canonical(ints, variable_count);
++    for row in &result {
++        for value in row {
++            profile.observe(value);
++        }
+     }
+-    rows.reverse();
+     profile.finalization += started.elapsed();
+-    rows
++    result
+ }
+ 
+ #[cfg(test)]
+@@ -4065,18 +4129,21 @@ mod tests {
+             rational_rref_profiled(rows.clone(), 2, &mut profile),
+             dense_reference_rational_rref(rows, 2),
+         );
++        // Integer Gauss–Jordan does not divide pivot rows to 1 until the final
++        // Q conversion, so both pivots stay nonunit and conversion counts every
++        // dense entry rather than only the first pivot row.
+         assert_eq!(profile.pivots, 2);
+-        assert_eq!(profile.nonunit_pivots, 1);
+-        assert_eq!(profile.normalization_values, 2);
++        assert_eq!(profile.nonunit_pivots, 2);
++        assert_eq!(profile.normalization_values, 9);
+         assert_eq!(profile.eliminated_rows, 3);
+-        assert_eq!(profile.unit_factors, 2);
++        assert_eq!(profile.unit_factors, 1);
+         assert_eq!(profile.unit_factor_updates, 0);
+         assert_eq!(profile.negative_unit_factor_updates, 1);
+         assert_eq!(profile.negative_unit_factors, 1);
+         assert_eq!(profile.integer_factors, 3);
+         assert_eq!(profile.coefficient_updates, 1);
+         assert_eq!(profile.zero_destinations, 1);
+-        assert_eq!(profile.unit_pivot_updates, 1);
++        assert_eq!(profile.unit_pivot_updates, 0);
+         assert_eq!(profile.integer_pivot_updates, 1);
+         assert_eq!(profile.max_numerator_bits, 2);
+         assert_eq!(profile.max_denominator_bits, 1);

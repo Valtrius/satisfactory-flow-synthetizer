@@ -1,0 +1,266 @@
+diff --git a/crates/solver-core/src/search.rs b/crates/solver-core/src/search.rs
+index 4140db7..9515cc9 100644
+--- a/crates/solver-core/src/search.rs
++++ b/crates/solver-core/src/search.rs
+@@ -1345,9 +1345,10 @@ fn search_state(
+         increment(&mut context.stats.instrumentation.lower_bound_prunes);
+         return DfsResult::Exhausted(None);
+     }
+-    let defer = context.features.state_cache == StateCacheMode::Deferred
+-        && context.shared.is_none()
+-        && context.donations.is_none();
++    // Sharing publishes only completed exact keys and never waits, so owners can
++    // still defer the first visit. Donation helpers keep exact keys.
++    let defer =
++        context.features.state_cache == StateCacheMode::Deferred && context.donations.is_none();
+     let (state_token, open_port_order, status) = if defer {
+         let Some(fingerprint) = state_fingerprint(&snapshot, context.cancel) else {
+             return DfsResult::Incomplete;
+@@ -3662,7 +3663,7 @@ mod tests {
+             expected.push(exhausted_result(result).0);
+         }
+         assert!(!shared.witnesses(fixed).is_empty());
+-        let mut hits = 0;
++        let mut visits = 0;
+         for (partition, expected) in partitions.iter().zip(expected) {
+             let result = search_profile_root_partition_with_execution(
+                 &normalized,
+@@ -3679,9 +3680,71 @@ mod tests {
+             );
+             let (actual, stats) = exhausted_result(result);
+             assert_eq!(actual, expected);
+-            hits += stats.instrumentation.shared_cache_hits;
++            visits += stats.instrumentation.deferred_state_visits;
+         }
+-        assert!(hits > 0);
++        assert!(visits > 0);
++    }
++
++    #[test]
++    fn shared_completed_keys_keep_deferred_visits_and_the_same_witness_set() {
++        let normalized = normalized(&problem(&["2", "3"], &["1", "4"], "5"));
++        let fixed = profile(1, 0, 1, 0);
++        let cancel = AtomicBool::new(false);
++        let partitions = root_partitions(&normalized, fixed);
++        let private_keys = {
++            let mut keys = BTreeSet::new();
++            for partition in &partitions {
++                let result = search_profile_root_partition_with_execution(
++                    &normalized,
++                    fixed,
++                    &cancel,
++                    None,
++                    partition,
++                    true,
++                    None,
++                    SearchExecution {
++                        shared: None,
++                        donations: None,
++                    },
++                );
++                match result {
++                    ProfileSearchResult::Exhausted { witnesses, .. } => {
++                        keys.extend(witnesses.into_iter().map(|w| w.canonical_graph_key));
++                    }
++                    other => panic!("expected exhaustive profile result, got {other:?}"),
++                }
++            }
++            keys
++        };
++        let shared = SharedStateCache::default();
++        let mut shared_keys = BTreeSet::new();
++        let mut visits = 0;
++        for partition in &partitions {
++            let result = search_profile_root_partition_with_execution(
++                &normalized,
++                fixed,
++                &cancel,
++                None,
++                partition,
++                true,
++                None,
++                SearchExecution {
++                    shared: Some(&shared),
++                    donations: None,
++                },
++            );
++            match result {
++                ProfileSearchResult::Exhausted {
++                    witnesses, stats, ..
++                } => {
++                    visits += stats.instrumentation.deferred_state_visits;
++                    shared_keys.extend(witnesses.into_iter().map(|w| w.canonical_graph_key));
++                }
++                other => panic!("expected exhaustive profile result, got {other:?}"),
++            }
++        }
++        assert_eq!(shared_keys, private_keys);
++        assert!(visits > 0);
+     }
+ 
+     #[test]
+diff --git a/crates/solver-core/src/search/donation.rs b/crates/solver-core/src/search/donation.rs
+index 955de82..6d0aff5 100644
+--- a/crates/solver-core/src/search/donation.rs
++++ b/crates/solver-core/src/search/donation.rs
+@@ -5,10 +5,10 @@
+ //! pool behind its own queued children. The caller publishes its state proof
+ //! only after every donated child has returned.
+ use super::{
+-    AtomicBool, BTreeMap, DfsResult, HashMap, NodeProfile, Ordering, Problem, ProfileSearchError,
+-    ProfileSearchStats, ProfileWitness, PropagationState, SearchContext, SearchFeatures,
+-    SharedStateCache, TopologyDecision, TopologyState, increment, retain_smallest_key,
+-    search_decision,
++    AtomicBool, BTreeMap, CanonicalGraphKey, DfsResult, HashMap, NodeProfile, Ordering, Problem,
++    ProfileSearchError, ProfileSearchStats, ProfileWitness, PropagationState, SearchContext,
++    SearchFeatures, SharedStateCache, TopologyDecision, TopologyState, increment,
++    retain_smallest_key, search_decision,
+ };
+ use std::{
+     collections::VecDeque,
+@@ -73,6 +73,7 @@ pub(super) struct Outcome {
+     result: DfsResult,
+     stats: ProfileSearchStats,
+     best: Option<ProfileWitness>,
++    witnesses: BTreeMap<CanonicalGraphKey, ProfileWitness>,
+ }
+ 
+ #[derive(Default)]
+@@ -166,6 +167,7 @@ impl DonationPool {
+                 result,
+                 stats: context.stats,
+                 best: context.best_witness,
++                witnesses: context.witnesses,
+             }
+         }))
+         .unwrap_or_else(|_| Outcome {
+@@ -174,6 +176,7 @@ impl DonationPool {
+             )),
+             stats: ProfileSearchStats::default(),
+             best: None,
++            witnesses: BTreeMap::new(),
+         });
+         *job.completion
+             .outcome
+@@ -217,6 +220,9 @@ impl DonationPool {
+                         .stats
+                         .validated_cyclic_topologies
+                         .saturating_add(outcome.stats.validated_cyclic_topologies);
++                    for witness in outcome.witnesses.into_values() {
++                        context.retain_witness(witness);
++                    }
+                     if let Some(witness) = outcome.best {
+                         context.retain_witness(witness);
+                     }
+@@ -256,6 +262,7 @@ pub(super) fn fold_result(total: &mut DfsResult, child: DfsResult) {
+ 
+ #[cfg(test)]
+ mod tests {
++    use super::super::{PhysicalGraph, ValidationSummary};
+     use super::*;
+     use std::{sync::mpsc, thread};
+ 
+@@ -306,6 +313,7 @@ mod tests {
+                 result: DfsResult::Incomplete,
+                 stats: ProfileSearchStats::default(),
+                 best: None,
++                witnesses: BTreeMap::new(),
+             });
+             child.ready.notify_all();
+             assert!(finish.recv_timeout(Duration::from_secs(2)).unwrap());
+@@ -357,4 +365,53 @@ mod tests {
+         assert!(shared.lookup(None, &key).is_none());
+         assert!(pool.queue.lock().unwrap().is_empty());
+     }
++
++    fn dummy_witness(key: u8) -> ProfileWitness {
++        ProfileWitness {
++            canonical_graph_key: CanonicalGraphKey::from_bytes(vec![key]),
++            graph: PhysicalGraph {
++                nodes: Vec::new(),
++                links: Vec::new(),
++            },
++            validation: ValidationSummary {
++                validator_version: 1,
++                node_count: 0,
++                link_count: 0,
++                physical_link_count: 0,
++                discard_link_count: 0,
++                cyclic_scc_count: 0,
++            },
++        }
++    }
++
++    #[test]
++    fn join_merges_helper_witness_maps() {
++        let cancel = AtomicBool::new(false);
++        let shared = SharedStateCache::default();
++        let pool = DonationPool::new(1);
++        let mut ctx = context(&cancel);
++        ctx.shared = Some(&shared);
++        ctx.collect_all_witnesses = true;
++        let first = dummy_witness(1);
++        let second = dummy_witness(2);
++        let mut witnesses = BTreeMap::new();
++        witnesses.insert(first.canonical_graph_key.clone(), first.clone());
++        witnesses.insert(second.canonical_graph_key.clone(), second.clone());
++        let child = Arc::new(Completion::default());
++        *child
++            .outcome
++            .lock()
++            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(Outcome {
++            result: DfsResult::Exhausted(Some(second.canonical_graph_key.clone())),
++            stats: ProfileSearchStats::default(),
++            best: Some(first.clone()),
++            witnesses,
++        });
++        child.ready.notify_all();
++        let mut result = DfsResult::Exhausted(None);
++        pool.join(vec![child], &mut ctx, &mut result);
++        assert_eq!(ctx.witnesses.len(), 2);
++        assert!(ctx.witnesses.contains_key(&first.canonical_graph_key));
++        assert!(ctx.witnesses.contains_key(&second.canonical_graph_key));
++    }
+ }
+diff --git a/crates/solver-core/src/solver.rs b/crates/solver-core/src/solver.rs
+index a0c8ca8..b9aadf7 100644
+--- a/crates/solver-core/src/solver.rs
++++ b/crates/solver-core/src/solver.rs
+@@ -72,7 +72,8 @@ pub struct SolveOptions {
+ pub struct ParallelismOptions {
+     /// Refine the static proof frontier before dispatch.
+     pub deep_partitions: bool,
+-    /// Reuse completed states and their validated witnesses within a group.
++    /// Reuse completed canonical states and their validated witnesses within a group.
++    /// Owners still defer the first local visit; lookup never waits on an in-flight owner.
+     pub shared_state_cache: bool,
+     /// Donate DFS siblings to the bounded group pool.
+     pub work_stealing: bool,
+diff --git a/crates/solver-core/src/lib.rs b/crates/solver-core/src/lib.rs
+index 1d02586..1553973 100644
+--- a/crates/solver-core/src/lib.rs
++++ b/crates/solver-core/src/lib.rs
+@@ -26,6 +26,7 @@ pub use solver::{
+ fn production_parallelism() -> ParallelismOptions {
+     ParallelismOptions {
+         deep_partitions: true,
++        shared_state_cache: true,
+         ..ParallelismOptions::default()
+     }
+ }
+diff --git a/crates/solver-core/examples/profile_support/mod.rs b/crates/solver-core/examples/profile_support/mod.rs
+index 362344a..06332ed 100644
+--- a/crates/solver-core/examples/profile_support/mod.rs
++++ b/crates/solver-core/examples/profile_support/mod.rs
+@@ -238,7 +238,10 @@ pub(super) fn parallelism_stage(stage: Option<&str>) -> ParallelismOptions {
+     let mut options = ParallelismOptions::default();
+     match stage.unwrap_or("baseline") {
+         "baseline" => {}
+-        "p1" => options.deep_partitions = true,
++        "p1" => {
++            options.deep_partitions = true;
++            options.shared_state_cache = true;
++        }
+         "shared" => options.shared_state_cache = true,
+         "groups" => options.parallel_remaining_groups = true,
+         "p14" => {

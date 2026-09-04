@@ -52,6 +52,8 @@ Patches under `benchmarks/custom/variants/` are benchmark inputs, not production
 options. Never apply them during a running screen. Use a detached checkout and its
 own Cargo target directory; do not share build artifacts across source variants.
 
+- `completed-sharing.patch` — experiment 55 completed-state sharing that kept deferred owners. Rejected; not production p1. Applies against `d6902a4`.
+- `fraction-free-rref.patch` — experiment 56 fraction-free canonical dense RREF. Rejected. Applies against `d6902a4`.
 - `legacy-semantic-encoding.patch` — restores dense decimal rational row encoding
   while keeping boxed keys and the current constructor. Exp 09 `before` binary;
   see `mem:solver/experiments/09-serializer-and-find-all`. Not the old recovery binary.

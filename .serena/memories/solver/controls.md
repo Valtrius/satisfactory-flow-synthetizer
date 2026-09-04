@@ -39,12 +39,16 @@ while joining, including with one worker. All children must finish before parent
 
 The current experiment-29 working tree defers local state canonicalization until a
 cheap invariant bucket repeats. A fingerprint never proves equality. Repeated buckets,
-shared-cache paths, and donation paths use authoritative canonical state keys. Public
-`work_stealing` still pairs donation with sharing and therefore exact keys. Experiment52
-tried donation without sharing so deferred keys could stay on; it lost 115 all-mode
-layouts because join keeps only the helper best witness, and it is absent from
-production source. The frozen A/B for deferred canonicalization passed and the
-implementation is permanent.
+shared-cache paths, and donation paths use authoritative canonical state keys.
+Sharing still disables deferred first visits on owners (`shared.is_none()`), matching
+experiment 29. Donation helpers still take exact keys. Donation `join` keeps only
+`best`. Experiment 55 measured completed-state sharing that kept deferred owners
+against production p1: 115 identity held (49 layouts), but wall speedup was
+concentrated on 258 while peak working set rose 28–45% even on cells with zero
+shared hits. The candidate was rejected and its solver source fully restored to
+experiment 54. Production p1 stays partitions only. Public `work_stealing` remains
+off. The frozen A/B for deferred canonicalization passed and the implementation is
+permanent.
 [Experiment 30](experiments/30-no-state-cache-ablation.md) removed this local cache in
 a validated fail-fast trial. Structural work rose enough to make 238 optimal 3.00x
 slower, so the uncached policy is absent from production source.
