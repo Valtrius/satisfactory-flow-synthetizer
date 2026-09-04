@@ -27,7 +27,7 @@ Faster proven optimum and complete min-N enumeration on hard inputs. Keep first 
 - Omit derived inequality payload from internal state/SCC keys,4d711b1,exp49. Actual feasibility bounds remain. Version2 key equality is equivalent to version1; public witness protocol unchanged. All17 substantive timing pairs improved, medians10.2% to21.3%, exact full results/proofs match. `mem:solver/experiments/49-derived-key-results`.
 - Skip remaining-profile reachability no-ops and borrow TopologyState for the search dead verdict,exp51. Public PartialTopology analyzer unchanged. Early pre-SCC move rejected. Permanent in `7799c11`, unpushed. `mem:solver/experiments/51-reachability-results`.
 - Bareiss-forward bookkeeping without pivot-row clones, set-union scans, or denom-1 `div_rem`,exp54. Same fraction-free quotients. Permanent in `d6902a4`, unpushed. `mem:solver/experiments/54-bareiss-forward`.
-- Dirty-component bound scan: after a successful fixed-point, positivity/capacity/negative-ratio checks walk only dirty weighted-UF components,exp58. Same predicates; no `ExactInequality` restore. Permanent this commit, unpushed. `mem:solver/experiments/58-bounds-labeling-abc`.
+- Dirty-component bound scan: after a successful fixed-point, positivity/capacity/negative-ratio checks walk only dirty weighted-UF components,exp58. Same predicates; no `ExactInequality` restore. Permanent in `90747a4`, unpushed. `mem:solver/experiments/58-bounds-labeling-abc`.
 
 ## Current decision
 
@@ -52,4 +52,4 @@ Original apply-all request in `mem:solver/experiments/49-wall-time-priorities` i
 - Flags/source map: `mem:solver/controls`.
 - Update Serena after every meaningful decision. Benchmarks <=1h including cleanup; launch with completion signal then end turn; no builds/tests during timing.
 
-2026-09-04 update: experiment51 permanent in `7799c11`, unpushed. Experiment52 rejected. Experiment53 profile analyzed. Experiment54 Bareiss-forward A/B verified 66/66; permanent in `d6902a4`, unpushed. Experiment55 sharing rejected and restored. Experiment56 fraction-free RREF rejected; `canonical.rs` restored. Experiment57 hotspot-on profile of production 54 analyzed; prep templates parked. Experiment58 isolated dirty-bounds and color-labeling A/B/C analyzed; dirty bounds permanent this commit, unpushed; labeling rejected. `mem:solver/experiments/58-bounds-labeling-abc`.
+2026-09-04 update: experiment51 permanent in `7799c11`, unpushed. Experiment52 rejected. Experiment53 profile analyzed. Experiment54 Bareiss-forward A/B verified 66/66; permanent in `d6902a4`, unpushed. Experiment55 sharing rejected and restored. Experiment56 fraction-free RREF rejected; `canonical.rs` restored. Experiment57 hotspot-on profile of production 54 analyzed; prep templates parked. Experiment58 isolated dirty-bounds and color-labeling A/B/C analyzed; dirty bounds permanent in `90747a4`, unpushed; labeling rejected. `mem:solver/experiments/58-bounds-labeling-abc`.

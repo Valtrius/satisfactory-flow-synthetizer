@@ -57,7 +57,7 @@ Record dates follow the analysis chronology, not necessarily every run's start t
 
 ## Current optimization work
 
-Experiment58 isolated dirty-bounds and color-labeling A/B/C analyzed. 72/72 at `target/parallelism-ladder/bounds-labeling-abc-screen-20260904`. Dirty bounds permanent this commit, unpushed; labeling rejected. Next: post-58 hotspot profile, then SCC deferral only if still material. `mem:solver/experiments/58-bounds-labeling-abc`. `mem:solver/active`.
+Experiment58 isolated dirty-bounds and color-labeling A/B/C analyzed. 72/72 at `target/parallelism-ladder/bounds-labeling-abc-screen-20260904`. Dirty bounds permanent in `90747a4`, unpushed; labeling rejected. Next: post-58 hotspot profile, then SCC deferral only if still material. `mem:solver/experiments/58-bounds-labeling-abc`. `mem:solver/active`.
 Experiment57 hotspot-on cost-mix profile of production 54 analyzed. 12/12 verified at `target/parallelism-ladder/post54-cost-profile-20260904`. Prep-template reuse parked. Original 49 apply-all list exhausted. `mem:solver/experiments/57-post54-cost-profile`.
 49 is permanent and committed4d711b1. 50 not promoted. Experiment51 skip+borrowed-verdict is permanent in `7799c11`, unpushed. Experiment52 rejected. Experiment53 is pre-54. Experiment54 Bareiss-forward is permanent in `d6902a4`, unpushed. Experiments 55 and 56 rejected; solver source matches 54. Park templates, sharing, donation, checked64, fraction-free RREF, weighted quotients, duplicate-row removal, rollback-aware Bareiss, and early reachability. Negative-unit48 remains permanent, zero-destination held.
 
@@ -250,4 +250,4 @@ failed records when replacing a runner or promoting a successful optimization.
 
 2026-09-03 checkpoint:49 permanently committed4d711b1;50 not promoted and removed from production after verified mixed results. See the current optimization section and `mem:solver/experiments/50-checked-rref-results`.
 
-2026-09-04 experiment51 permanent in `7799c11`, unpushed. Experiment52 rejected. Experiment53 profile analyzed. Experiment54 Bareiss-forward permanent in `d6902a4`, unpushed. Experiment55 sharing rejected and restored. Experiment56 fraction-free RREF rejected and restored. Experiment57 hotspot-on profile analyzed; prep templates parked. Experiment58 dirty bounds permanent this commit, unpushed; labeling rejected. `mem:solver/experiments/58-bounds-labeling-abc`.
+2026-09-04 experiment51 permanent in `7799c11`, unpushed. Experiment52 rejected. Experiment53 profile analyzed. Experiment54 Bareiss-forward permanent in `d6902a4`, unpushed. Experiment55 sharing rejected and restored. Experiment56 fraction-free RREF rejected and restored. Experiment57 hotspot-on profile analyzed; prep templates parked. Experiment58 dirty bounds permanent in `90747a4`, unpushed; labeling rejected. `mem:solver/experiments/58-bounds-labeling-abc`.

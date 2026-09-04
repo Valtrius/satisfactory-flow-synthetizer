@@ -1,6 +1,6 @@
 # 58. Isolated dirty bounds and color/labeling A/B/C
 
-Date: 2026-09-04. State: analyzed; dirty bounds permanent this commit, unpushed. Related: `mem:solver/experiments/57-post54-cost-profile`, `mem:solver/experiments/54-bareiss-forward`.
+Date: 2026-09-04. State: analyzed; dirty bounds permanent in `90747a4`, unpushed. Related: `mem:solver/experiments/57-post54-cost-profile`, `mem:solver/experiments/54-bareiss-forward`.
 
 ## Question and hypothesis
 
@@ -63,7 +63,7 @@ n=2 cells have wide sampling uncertainty in principle; dirty_bounds ratios on th
 
 ## Decision and next step
 
-**Promote dirty_bounds.** Permanent in production this commit, unpushed. Wall wins with CIs excluding 0 on every completed 115/238/258 cell; 36 wall flat. Exact keys/proofs/structural counters match. Isolated screened diff remains `benchmarks/custom/variants/dirty-bounds.patch` (do not re-apply).
+**Promote dirty_bounds.** Permanent in production in `90747a4`, unpushed. Wall wins with CIs excluding 0 on every completed 115/238/258 cell; 36 wall flat. Exact keys/proofs/structural counters match. Isolated screened diff remains `benchmarks/custom/variants/dirty-bounds.patch` (do not re-apply).
 
 **Reject color_labeling.** No consistent wall win. 238 CCD96 regresses with CI excluding 0; 115 wall slightly worse with CI including 0; 36’s −1.10% does not outweigh that. Keep `benchmarks/custom/variants/color-labeling.patch`. Do not combine with bounds.
 
