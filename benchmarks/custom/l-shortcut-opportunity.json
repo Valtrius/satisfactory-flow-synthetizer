@@ -1,0 +1,54 @@
+{
+  "description": "Experiment59: count-only exact-L shortcut opportunities on production p1. Does not prune. Hotspots off. One current binary as Variant after. Not an A/B timing screen. Question: how often would remaining-port under-L, over-L before prepare, and complete-L-before-solve fire? 4 jobs: 280s search + 240s cleanup = 520s.",
+  "MaxScheduledSeconds": 900,
+  "jobs": [
+    {
+      "Case": "lcut_r24_all",
+      "CaseFile": "cases/acyclic24.json",
+      "Mode": "all",
+      "Stage": "p1",
+      "Variant": "after",
+      "Workers": 16,
+      "Repeat": 1,
+      "TimeoutSeconds": 30,
+      "MaxNodes": 7,
+      "Cohort": "reference"
+    },
+    {
+      "Case": "lcut_r115_all",
+      "CaseFile": "cases/cyclic115.json",
+      "Mode": "all",
+      "Stage": "p1",
+      "Variant": "after",
+      "Workers": 16,
+      "Repeat": 1,
+      "TimeoutSeconds": 120,
+      "MaxNodes": 10,
+      "Cohort": "reference"
+    },
+    {
+      "Case": "lcut_r238_opt",
+      "CaseFile": "cases/cyclic238.json",
+      "Mode": "optimal",
+      "Stage": "p1",
+      "Variant": "after",
+      "Workers": 16,
+      "Repeat": 1,
+      "TimeoutSeconds": 40,
+      "MaxNodes": 10,
+      "Cohort": "reference"
+    },
+    {
+      "Case": "lcut_r36_opt",
+      "CaseFile": "cases/acyclic36.json",
+      "Mode": "optimal",
+      "Stage": "p1",
+      "Variant": "after",
+      "Workers": 32,
+      "Repeat": 1,
+      "TimeoutSeconds": 90,
+      "MaxNodes": 9,
+      "Cohort": "reference"
+    }
+  ]
+}

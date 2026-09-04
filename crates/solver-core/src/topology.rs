@@ -579,6 +579,55 @@ impl TopologyState {
                 .all(|port| port.connection.is_some())
     }
 
+    /// Operator-to-operator links already present in this partial topology.
+    #[must_use]
+    pub fn operator_link_count(&self) -> u32 {
+        u32::try_from(
+            self.links
+                .iter()
+                .filter(|link| {
+                    matches!(link.producer, ProducerPortRef::Node { .. })
+                        && matches!(link.consumer, ConsumerPortRef::Node { .. })
+                })
+                .count(),
+        )
+        .unwrap_or(u32::MAX)
+    }
+
+    /// Exact maximum additional operator links still possible from unused node
+    /// ports and unmaterialized inventory. Terminal ports cannot raise this bound.
+    #[must_use]
+    pub fn remaining_operator_link_upper_bound(&self) -> u32 {
+        let remaining = self.remaining.as_node_profile();
+        let Some(inventory_producers) = inventory_producer_ports(remaining) else {
+            return u32::MAX;
+        };
+        let Some(inventory_consumers) = inventory_consumer_ports(remaining) else {
+            return u32::MAX;
+        };
+        let open_producers = u32::try_from(
+            self.producer_ports
+                .iter()
+                .filter(|(reference, port)| {
+                    port.connection.is_none() && matches!(reference, ProducerPortRef::Node { .. })
+                })
+                .count(),
+        )
+        .unwrap_or(u32::MAX);
+        let open_consumers = u32::try_from(
+            self.consumer_ports
+                .iter()
+                .filter(|(reference, port)| {
+                    port.connection.is_none() && matches!(reference, ConsumerPortRef::Node { .. })
+                })
+                .count(),
+        )
+        .unwrap_or(u32::MAX);
+        open_producers
+            .saturating_add(inventory_producers)
+            .min(open_consumers.saturating_add(inventory_consumers))
+    }
+
     #[must_use]
     /// Copies the current flattened physical state into its immutable canonical DTO.
     ///
@@ -1176,6 +1225,23 @@ impl TopologyState {
     }
 }
 
+fn inventory_producer_ports(profile: NodeProfile) -> Option<u32> {
+    profile
+        .splitter2
+        .checked_mul(2)?
+        .checked_add(profile.splitter3.checked_mul(3)?)?
+        .checked_add(profile.merger2)?
+        .checked_add(profile.merger3)
+}
+
+fn inventory_consumer_ports(profile: NodeProfile) -> Option<u32> {
+    profile
+        .splitter2
+        .checked_add(profile.splitter3)?
+        .checked_add(profile.merger2.checked_mul(2)?)?
+        .checked_add(profile.merger3.checked_mul(3)?)
+}
+
 const NODE_TYPES: [NodeType; 4] = [
     NodeType::Splitter2,
     NodeType::Splitter3,
@@ -1328,6 +1394,21 @@ mod tests {
         assert_eq!(decisions.len(), 1);
         state.apply(decisions[0]).unwrap();
         assert!(state.is_complete());
+    }
+
+    #[test]
+    fn remaining_operator_link_bound_is_min_of_open_and_inventory_node_ports() {
+        let state =
+            TopologyState::new(&normalized(&["2"], &["1", "1"]), profile(1, 0, 0, 0)).unwrap();
+        assert_eq!(state.operator_link_count(), 0);
+        // One 2-splitter: two producer ports, one consumer port.
+        assert_eq!(state.remaining_operator_link_upper_bound(), 1);
+
+        let mixed =
+            TopologyState::new(&normalized(&["1", "1"], &["2"]), profile(0, 0, 1, 0)).unwrap();
+        assert_eq!(mixed.operator_link_count(), 0);
+        // One 2-merger: one producer port, two consumer ports.
+        assert_eq!(mixed.remaining_operator_link_upper_bound(), 1);
     }
 
     #[test]

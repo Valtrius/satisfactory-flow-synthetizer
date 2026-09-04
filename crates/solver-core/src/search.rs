@@ -1626,6 +1626,10 @@ fn evaluate_applied_child(
     context: &mut SearchContext<'_>,
     link_index: usize,
 ) -> DfsResult {
+    if remaining_ports_cannot_reach_expected_l(state, context) {
+        increment(&mut context.stats.instrumentation.lower_bound_prunes);
+        return DfsResult::Exhausted(None);
+    }
     if let Err(result) = prepare_applied_child(state, propagation, context, link_index) {
         return result;
     }
@@ -2206,6 +2210,18 @@ fn retain_smallest_key(
     {
         *target = Some(candidate);
     }
+}
+
+fn remaining_ports_cannot_reach_expected_l(
+    state: &TopologyState,
+    context: &SearchContext<'_>,
+) -> bool {
+    context.expected_link_count.is_some_and(|expected| {
+        state
+            .operator_link_count()
+            .saturating_add(state.remaining_operator_link_upper_bound())
+            < expected
+    })
 }
 
 fn increment(counter: &mut u64) {
@@ -3572,6 +3588,25 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn remaining_port_under_l_prunes_applied_child_before_prepare() {
+        let caller = problem(&["2"], &["1", "1"], "1200");
+        let normalized = normalized(&caller);
+        let fixed = profile(1, 0, 0, 0);
+        let cancel = AtomicBool::new(false);
+        let mut context = SearchContext::new(&normalized, fixed, &cancel);
+        context.expected_link_count = Some(2);
+        let mut state = TopologyState::new(&normalized, fixed).unwrap();
+        let mut propagation =
+            Some(PropagationState::new(&state, &normalized.max_link_rate).unwrap());
+        let decisions = state.legal_decisions();
+        assert!(!decisions.is_empty());
+        let before = context.stats.instrumentation.lower_bound_prunes;
+        let result = search_decision(&mut state, &mut propagation, &mut context, decisions[0]);
+        assert!(matches!(result, DfsResult::Exhausted(None)));
+        assert!(context.stats.instrumentation.lower_bound_prunes > before);
     }
 
     fn partial_search_outcome(
