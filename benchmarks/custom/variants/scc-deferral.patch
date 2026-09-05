@@ -1,0 +1,887 @@
+diff --git a/crates/solver-core/src/canonical.rs b/crates/solver-core/src/canonical.rs
+index 6351263..cdd218e 100644
+--- a/crates/solver-core/src/canonical.rs
++++ b/crates/solver-core/src/canonical.rs
+@@ -109,6 +109,12 @@ impl SccSummaryKey {
+     pub fn as_bytes(&self) -> &[u8] {
+         &self.0
+     }
++
++    /// Empty placeholder used only with identity port maps on a first deferred
++    /// SCC visit. Never inserted into the exact SCC cache.
++    pub(crate) fn identity_placeholder() -> Self {
++        Self(Box::from([]))
++    }
+ }
+ 
+ /// One physical flow variable expressed in the canonical labeling selected for
+diff --git a/crates/solver-core/src/proof_ledger.rs b/crates/solver-core/src/proof_ledger.rs
+index 7aa5ea1..faefd09 100644
+--- a/crates/solver-core/src/proof_ledger.rs
++++ b/crates/solver-core/src/proof_ledger.rs
+@@ -541,6 +541,12 @@ fn merge_stats(total: &mut ProfileSearchStats, child: &ProfileSearchStats) {
+         .saturating_add(source.lower_bound_prunes);
+     target.scc_solves = target.scc_solves.saturating_add(source.scc_solves);
+     target.scc_cache_hits = target.scc_cache_hits.saturating_add(source.scc_cache_hits);
++    target.deferred_scc_visits = target
++        .deferred_scc_visits
++        .saturating_add(source.deferred_scc_visits);
++    target.deferred_scc_promotions = target
++        .deferred_scc_promotions
++        .saturating_add(source.deferred_scc_promotions);
+     target.canonicalization_time_ns = target
+         .canonicalization_time_ns
+         .saturating_add(source.canonicalization_time_ns);
+diff --git a/crates/solver-core/src/search.rs b/crates/solver-core/src/search.rs
+index 71b142e..ae733a4 100644
+--- a/crates/solver-core/src/search.rs
++++ b/crates/solver-core/src/search.rs
+@@ -42,7 +42,7 @@ use crate::{
+         PropagationState,
+     },
+     reachability::is_proven_unreachable,
+-    scc::{SccError, detect_affected_sccs, summarize_open_scc},
++    scc::{SccError, SccRegion, detect_affected_sccs, summarize_open_scc},
+     telemetry::SearchInstrumentation,
+     topology::{FlowVarId, TopologyDecision, TopologyState},
+ };
+@@ -143,6 +143,27 @@ enum DeferredStateBucket {
+     Canonicalized,
+ }
+ 
++#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
++struct SccFingerprint {
++    region_len: u32,
++    digest: u64,
++}
++
++#[derive(Clone, Debug)]
++struct DeferredSccEntry {
++    snapshot: DeferredSnapshot,
++    region_nodes: Vec<NodeId>,
++    known_producers: BTreeMap<ProducerPortRef, Rational>,
++    known_consumers: BTreeMap<ConsumerPortRef, Rational>,
++    summary: CachedOpenSccSummary,
++}
++
++#[derive(Clone, Debug)]
++enum DeferredSccBucket {
++    Unique(Box<DeferredSccEntry>),
++    Canonicalized,
++}
++
+ #[derive(Clone, Debug)]
+ enum StateCacheToken {
+     Exact(StateKey),
+@@ -233,7 +254,13 @@ fn deferred_state_entry_bytes(entry: &DeferredStateEntry) -> u64 {
+     .unwrap_or(u64::MAX)
+ }
+ 
+-fn state_fingerprint(topology: &PartialTopology, cancel: &AtomicBool) -> Option<StateFingerprint> {
++struct FingerprintParts {
++    node_types: BTreeMap<NodeId, NodeType>,
++    node_incidents: BTreeMap<NodeId, Vec<FingerprintIncident>>,
++    link_descriptors: Vec<(FingerprintOwner, FingerprintOwner, Option<Rational>)>,
++}
++
++fn fingerprint_parts(topology: &PartialTopology, cancel: &AtomicBool) -> Option<FingerprintParts> {
+     let node_types = topology
+         .nodes
+         .iter()
+@@ -267,11 +294,24 @@ fn state_fingerprint(topology: &PartialTopology, cancel: &AtomicBool) -> Option<
+         }
+     }
+     link_descriptors.sort();
++    Some(FingerprintParts {
++        node_types,
++        node_incidents,
++        link_descriptors,
++    })
++}
++
++fn state_fingerprint(topology: &PartialTopology, cancel: &AtomicBool) -> Option<StateFingerprint> {
++    let parts = fingerprint_parts(topology, cancel)?;
+     let mut node_descriptors = topology
+         .nodes
+         .iter()
+         .map(|node| {
+-            let mut incidents = node_incidents.remove(&node.id).unwrap_or_default();
++            let mut incidents = parts
++                .node_incidents
++                .get(&node.id)
++                .cloned()
++                .unwrap_or_default();
+             incidents.sort();
+             (node.node_type, incidents)
+         })
+@@ -281,7 +321,7 @@ fn state_fingerprint(topology: &PartialTopology, cancel: &AtomicBool) -> Option<
+     let mut hasher = DefaultHasher::new();
+     topology.remaining_profile.hash(&mut hasher);
+     topology.discard_count.hash(&mut hasher);
+-    link_descriptors.hash(&mut hasher);
++    parts.link_descriptors.hash(&mut hasher);
+     node_descriptors.hash(&mut hasher);
+     Some(StateFingerprint {
+         remaining_profile: topology.remaining_profile,
+@@ -290,6 +330,75 @@ fn state_fingerprint(topology: &PartialTopology, cancel: &AtomicBool) -> Option<
+     })
+ }
+ 
++fn scc_fingerprint(
++    topology: &PartialTopology,
++    region_nodes: &[NodeId],
++    known_producers: &BTreeMap<ProducerPortRef, Rational>,
++    known_consumers: &BTreeMap<ConsumerPortRef, Rational>,
++    cancel: &AtomicBool,
++) -> Option<SccFingerprint> {
++    let mut parts = fingerprint_parts(topology, cancel)?;
++    let mut region_descriptors = region_nodes
++        .iter()
++        .map(|node| {
++            let node_type = parts.node_types[node];
++            let mut incidents = parts.node_incidents.remove(node).unwrap_or_default();
++            incidents.sort();
++            (node_type, incidents)
++        })
++        .collect::<Vec<_>>();
++    region_descriptors.sort();
++    let mut known_producer_descriptors = known_producers
++        .iter()
++        .map(|(port, value)| {
++            (
++                fingerprint_producer_owner(topology, &parts.node_types, *port),
++                producer_fingerprint_index(*port),
++                value.clone(),
++            )
++        })
++        .collect::<Vec<_>>();
++    known_producer_descriptors.sort();
++    let mut known_consumer_descriptors = known_consumers
++        .iter()
++        .map(|(port, value)| {
++            (
++                fingerprint_consumer_owner(topology, &parts.node_types, *port),
++                consumer_fingerprint_index(*port),
++                value.clone(),
++            )
++        })
++        .collect::<Vec<_>>();
++    known_consumer_descriptors.sort();
++
++    let mut hasher = DefaultHasher::new();
++    topology.remaining_profile.hash(&mut hasher);
++    topology.discard_count.hash(&mut hasher);
++    parts.link_descriptors.hash(&mut hasher);
++    region_descriptors.hash(&mut hasher);
++    known_producer_descriptors.hash(&mut hasher);
++    known_consumer_descriptors.hash(&mut hasher);
++    Some(SccFingerprint {
++        region_len: u32::try_from(region_nodes.len()).unwrap_or(u32::MAX),
++        digest: hasher.finish(),
++    })
++}
++
++fn producer_fingerprint_index(producer: ProducerPortRef) -> u32 {
++    match producer {
++        ProducerPortRef::Input(index) => index.0,
++        ProducerPortRef::Node { port, .. } => u32::from(port),
++    }
++}
++
++fn consumer_fingerprint_index(consumer: ConsumerPortRef) -> u32 {
++    match consumer {
++        ConsumerPortRef::Output(index) => index.0,
++        ConsumerPortRef::Discard(index) => index.0,
++        ConsumerPortRef::Node { port, .. } => u32::from(port),
++    }
++}
++
+ fn fingerprint_producer_owner(
+     topology: &PartialTopology,
+     node_types: &BTreeMap<NodeId, NodeType>,
+@@ -354,6 +463,90 @@ fn scc_cache_entry_bytes(key: &SccSummaryKey, summary: &CachedOpenSccSummary) ->
+     .unwrap_or(u64::MAX)
+ }
+ 
++fn deferred_scc_entry_bytes(entry: &DeferredSccEntry) -> u64 {
++    let rational_payload = entry
++        .snapshot
++        .links
++        .iter()
++        .filter_map(|link| link.flow.as_ref())
++        .map(rational_payload_bytes)
++        .chain(
++            entry
++                .known_producers
++                .values()
++                .chain(entry.known_consumers.values())
++                .map(rational_payload_bytes),
++        )
++        .chain(
++            entry
++                .summary
++                .known_values
++                .iter()
++                .map(|deduction| rational_payload_bytes(&deduction.value)),
++        )
++        .chain(
++            entry
++                .summary
++                .homogeneous_ratios
++                .iter()
++                .map(|deduction| rational_payload_bytes(&deduction.factor)),
++        )
++        .fold(0_usize, usize::saturating_add);
++    u64::try_from(
++        std::mem::size_of::<SccFingerprint>()
++            .saturating_add(std::mem::size_of::<DeferredSccEntry>())
++            .saturating_add(
++                entry
++                    .snapshot
++                    .nodes
++                    .len()
++                    .saturating_mul(std::mem::size_of::<PhysicalNode>()),
++            )
++            .saturating_add(
++                entry
++                    .snapshot
++                    .links
++                    .len()
++                    .saturating_mul(std::mem::size_of::<PartialLink>()),
++            )
++            .saturating_add(
++                entry
++                    .region_nodes
++                    .len()
++                    .saturating_mul(std::mem::size_of::<NodeId>()),
++            )
++            .saturating_add(
++                entry
++                    .known_producers
++                    .len()
++                    .saturating_mul(std::mem::size_of::<(ProducerPortRef, Rational)>()),
++            )
++            .saturating_add(
++                entry
++                    .known_consumers
++                    .len()
++                    .saturating_mul(std::mem::size_of::<(ConsumerPortRef, Rational)>()),
++            )
++            .saturating_add(std::mem::size_of::<CachedOpenSccSummary>())
++            .saturating_add(
++                entry
++                    .summary
++                    .known_values
++                    .len()
++                    .saturating_mul(std::mem::size_of::<CachedKnownValue>()),
++            )
++            .saturating_add(
++                entry
++                    .summary
++                    .homogeneous_ratios
++                    .len()
++                    .saturating_mul(std::mem::size_of::<CachedHomogeneousRatio>()),
++            )
++            .saturating_add(rational_payload),
++    )
++    .unwrap_or(u64::MAX)
++}
++
+ fn rational_payload_bytes(value: &Rational) -> usize {
+     signed_payload_bytes(value.numerator())
+         .saturating_add(signed_payload_bytes(value.denominator()))
+@@ -802,6 +995,7 @@ struct SearchFeatures {
+ enum SccCacheMode {
+     Disabled,
+     Enabled,
++    Deferred,
+ }
+ 
+ #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+@@ -820,7 +1014,7 @@ impl SearchFeatures {
+         profile_lower_bounds: Some(ProfileBounds),
+         reachability: true,
+         dynamic_scc: true,
+-        scc_cache: SccCacheMode::Enabled,
++        scc_cache: SccCacheMode::Deferred,
+         state_cache: StateCacheMode::Deferred,
+     };
+ 
+@@ -879,6 +1073,12 @@ impl SearchFeatures {
+         state_cache: StateCacheMode::Exact,
+         ..Self::PRODUCTION
+     };
++
++    #[cfg(test)]
++    const EXACT_SCC_CACHE: Self = Self {
++        scc_cache: SccCacheMode::Enabled,
++        ..Self::PRODUCTION
++    };
+ }
+ 
+ fn search_profile_with_features(
+@@ -1018,6 +1218,7 @@ struct SearchContext<'a> {
+     shared: Option<&'a SharedStateCache>,
+     donations: Option<&'a DonationPool>,
+     scc_cache: HashMap<SccSummaryKey, CachedOpenSccSummary>,
++    deferred_scc_cache: HashMap<SccFingerprint, DeferredSccBucket>,
+     owned_cache_bytes: u64,
+     best_witness: Option<ProfileWitness>,
+     witnesses: BTreeMap<CanonicalGraphKey, ProfileWitness>,
+@@ -1057,6 +1258,7 @@ impl<'a> SearchContext<'a> {
+             shared: None,
+             donations: None,
+             scc_cache: HashMap::new(),
++            deferred_scc_cache: HashMap::new(),
+             owned_cache_bytes: 0,
+             best_witness: None,
+             witnesses: BTreeMap::new(),
+@@ -1238,6 +1440,33 @@ impl<'a> SearchContext<'a> {
+         self.replace_owned_cache_bytes(old_bytes, new_bytes);
+     }
+ 
++    fn insert_deferred_scc(&mut self, fingerprint: SccFingerprint, entry: DeferredSccEntry) {
++        let new_bytes = deferred_scc_entry_bytes(&entry);
++        let old_bytes = self
++            .deferred_scc_cache
++            .insert(fingerprint, DeferredSccBucket::Unique(Box::new(entry)))
++            .and_then(|bucket| match bucket {
++                DeferredSccBucket::Unique(entry) => Some(deferred_scc_entry_bytes(&entry)),
++                DeferredSccBucket::Canonicalized => None,
++            })
++            .unwrap_or(0);
++        self.replace_owned_cache_bytes(old_bytes, new_bytes);
++    }
++
++    fn promote_deferred_scc(&mut self, fingerprint: SccFingerprint) -> Option<DeferredSccEntry> {
++        let previous = self
++            .deferred_scc_cache
++            .insert(fingerprint, DeferredSccBucket::Canonicalized)?;
++        match previous {
++            DeferredSccBucket::Unique(entry) => {
++                let removed = deferred_scc_entry_bytes(&entry);
++                self.owned_cache_bytes = self.owned_cache_bytes.saturating_sub(removed);
++                Some(*entry)
++            }
++            DeferredSccBucket::Canonicalized => None,
++        }
++    }
++
+     fn replace_owned_cache_bytes(&mut self, old_bytes: u64, new_bytes: u64) {
+         self.owned_cache_bytes = self
+             .owned_cache_bytes
+@@ -1275,6 +1504,17 @@ impl<'a> SearchContext<'a> {
+             );
+             drop(std::mem::take(&mut self.deferred_cache));
+         }
++        {
++            let _activity = crate::diagnostics::ActivitySpan::start(
++                "deferred_scc_cache_drop",
++                self.expected_node_count,
++                self.expected_link_count,
++                Some(self.profile),
++                None,
++                1,
++            );
++            drop(std::mem::take(&mut self.deferred_scc_cache));
++        }
+         {
+             let _activity = crate::diagnostics::ActivitySpan::start(
+                 "scc_cache_drop",
+@@ -1713,45 +1953,14 @@ fn analyze_affected_dynamic_sccs_inner(
+             detect_affected_sccs(state, affected_link).map_err(|error| scc_error(&error))?;
+         let mut added_fact = false;
+         for region in affected.affected_regions().filter(|region| region.cyclic) {
+-            let canonical_started = Instant::now();
+-            let Some(coordinates) =
+-                canonical_scc_summary_coordinates(state, &region.nodes, &known, context.cancel)?
++            let prepared = prepare_open_scc(state, region, &known, context)?;
++            let PreparedOpenScc::Ready {
++                cached,
++                coordinates,
++            } = prepared
+             else {
+                 return Ok(DynamicSccVerdict::Cancelled);
+             };
+-            let elapsed = canonical_started.elapsed();
+-            context.record_canonicalization(elapsed);
+-            hotspot_profile::record_scc_canonicalize(elapsed);
+-
+-            // Soundness: the key canonically encodes the full partial-state
+-            // equations, selected region, and every supplied exact known port
+-            // value. Deductions are stored in the *same winning joint port
+-            // labeling*, so a hit translates exact logical consequences across
+-            // an isomorphism rather than reusing topology-local identifiers.
+-            let cached = if context.features.scc_cache == SccCacheMode::Enabled
+-                && context.scc_cache.contains_key(&coordinates.key)
+-            {
+-                increment(&mut context.stats.instrumentation.scc_cache_hits);
+-                context
+-                    .scc_cache
+-                    .get(&coordinates.key)
+-                    .expect("the cache key was just observed")
+-                    .clone()
+-            } else {
+-                increment(&mut context.stats.instrumentation.scc_solves);
+-                let algebra_started = Instant::now();
+-                let summary =
+-                    summarize_open_scc(state, region, &known).map_err(|error| scc_error(&error));
+-                let elapsed = algebra_started.elapsed();
+-                context.record_algebra(elapsed);
+-                hotspot_profile::record_scc_algebra(elapsed);
+-                let summary = summary?;
+-                let cached = cache_open_scc_summary(&summary.algebra, &coordinates)?;
+-                if context.features.scc_cache == SccCacheMode::Enabled {
+-                    context.insert_scc_summary(coordinates.key.clone(), cached.clone());
+-                }
+-                cached
+-            };
+ 
+             // Every equation in an open summary belongs to an already
+             // materialized node or physical link. Future decisions can add
+@@ -1799,18 +2008,174 @@ fn analyze_affected_dynamic_sccs_inner(
+     }
+ }
+ 
+-struct SccSummaryCoordinates {
+-    key: SccSummaryKey,
+-    raw_to_canonical: BTreeMap<FlowVarId, CanonicalFlowEndpoint>,
+-    canonical_to_raw: BTreeMap<CanonicalFlowEndpoint, FlowVarId>,
++enum PreparedOpenScc {
++    Cancelled,
++    Ready {
++        cached: CachedOpenSccSummary,
++        coordinates: SccSummaryCoordinates,
++    },
+ }
+ 
+-fn canonical_scc_summary_coordinates(
++fn prepare_open_scc(
+     state: &TopologyState,
+-    region_nodes: &[solver_api::NodeId],
++    region: &SccRegion,
+     known: &BTreeMap<FlowVarId, Rational>,
+-    cancel: &AtomicBool,
+-) -> Result<Option<SccSummaryCoordinates>, ProfileSearchError> {
++    context: &mut SearchContext<'_>,
++) -> Result<PreparedOpenScc, ProfileSearchError> {
++    if context.features.scc_cache == SccCacheMode::Deferred {
++        prepare_deferred_open_scc(state, region, known, context)
++    } else {
++        lookup_or_solve_open_scc(state, region, known, context)
++    }
++}
++
++fn prepare_deferred_open_scc(
++    state: &TopologyState,
++    region: &SccRegion,
++    known: &BTreeMap<FlowVarId, Rational>,
++    context: &mut SearchContext<'_>,
++) -> Result<PreparedOpenScc, ProfileSearchError> {
++    let topology = state.partial_topology();
++    let (known_producers, known_consumers) = scc_known_ports(state, known);
++    let Some(fingerprint) = scc_fingerprint(
++        &topology,
++        &region.nodes,
++        &known_producers,
++        &known_consumers,
++        context.cancel,
++    ) else {
++        return Ok(PreparedOpenScc::Cancelled);
++    };
++    match context.deferred_scc_cache.get(&fingerprint) {
++        None => {
++            increment(&mut context.stats.instrumentation.deferred_scc_visits);
++            let coordinates = identity_scc_coordinates(state)?;
++            let cached = solve_open_scc(state, region, known, context, &coordinates)?;
++            context.insert_deferred_scc(
++                fingerprint,
++                DeferredSccEntry {
++                    snapshot: DeferredSnapshot::from_partial(topology),
++                    region_nodes: region.nodes.clone(),
++                    known_producers,
++                    known_consumers,
++                    summary: cached.clone(),
++                },
++            );
++            Ok(PreparedOpenScc::Ready {
++                cached,
++                coordinates,
++            })
++        }
++        Some(DeferredSccBucket::Unique(_)) => {
++            increment(&mut context.stats.instrumentation.deferred_scc_promotions);
++            let prior = context
++                .promote_deferred_scc(fingerprint)
++                .expect("unique deferred SCC bucket must contain its first summary");
++            if !promote_deferred_scc_entry(prior, context)? {
++                return Ok(PreparedOpenScc::Cancelled);
++            }
++            lookup_or_solve_open_scc(state, region, known, context)
++        }
++        Some(DeferredSccBucket::Canonicalized) => {
++            lookup_or_solve_open_scc(state, region, known, context)
++        }
++    }
++}
++
++fn promote_deferred_scc_entry(
++    prior: DeferredSccEntry,
++    context: &mut SearchContext<'_>,
++) -> Result<bool, ProfileSearchError> {
++    let prior_topology = prior.snapshot.restore(&context.problem);
++    let region_nodes = prior.region_nodes.iter().copied().collect::<BTreeSet<_>>();
++    let canonical_started = Instant::now();
++    let Some(canonical) = canonicalize_scc_summary_input_with_relabeling_cancellable(
++        &prior_topology,
++        &region_nodes,
++        &prior.known_producers,
++        &prior.known_consumers,
++        context.cancel,
++    ) else {
++        return Ok(false);
++    };
++    let elapsed = canonical_started.elapsed();
++    context.record_canonicalization(elapsed);
++    hotspot_profile::record_scc_canonicalize(elapsed);
++    let summary = relabel_deferred_scc_summary(
++        prior.summary,
++        &canonical.producer_relabeling,
++        &canonical.consumer_relabeling,
++    )?;
++    context.insert_scc_summary(canonical.key, summary);
++    Ok(true)
++}
++
++fn lookup_or_solve_open_scc(
++    state: &TopologyState,
++    region: &SccRegion,
++    known: &BTreeMap<FlowVarId, Rational>,
++    context: &mut SearchContext<'_>,
++) -> Result<PreparedOpenScc, ProfileSearchError> {
++    let canonical_started = Instant::now();
++    let Some(coordinates) =
++        canonical_scc_summary_coordinates(state, &region.nodes, known, context.cancel)?
++    else {
++        return Ok(PreparedOpenScc::Cancelled);
++    };
++    let elapsed = canonical_started.elapsed();
++    context.record_canonicalization(elapsed);
++    hotspot_profile::record_scc_canonicalize(elapsed);
++
++    // Soundness: the key canonically encodes the full partial-state
++    // equations, selected region, and every supplied exact known port
++    // value. Deductions are stored in the *same winning joint port
++    // labeling*, so a hit translates exact logical consequences across
++    // an isomorphism rather than reusing topology-local identifiers.
++    let cached = if context.features.scc_cache != SccCacheMode::Disabled
++        && context.scc_cache.contains_key(&coordinates.key)
++    {
++        increment(&mut context.stats.instrumentation.scc_cache_hits);
++        context
++            .scc_cache
++            .get(&coordinates.key)
++            .expect("the cache key was just observed")
++            .clone()
++    } else {
++        let cached = solve_open_scc(state, region, known, context, &coordinates)?;
++        if context.features.scc_cache != SccCacheMode::Disabled {
++            context.insert_scc_summary(coordinates.key.clone(), cached.clone());
++        }
++        cached
++    };
++    Ok(PreparedOpenScc::Ready {
++        cached,
++        coordinates,
++    })
++}
++
++fn solve_open_scc(
++    state: &TopologyState,
++    region: &SccRegion,
++    known: &BTreeMap<FlowVarId, Rational>,
++    context: &mut SearchContext<'_>,
++    coordinates: &SccSummaryCoordinates,
++) -> Result<CachedOpenSccSummary, ProfileSearchError> {
++    increment(&mut context.stats.instrumentation.scc_solves);
++    let algebra_started = Instant::now();
++    let summary = summarize_open_scc(state, region, known).map_err(|error| scc_error(&error));
++    let elapsed = algebra_started.elapsed();
++    context.record_algebra(elapsed);
++    hotspot_profile::record_scc_algebra(elapsed);
++    cache_open_scc_summary(&summary?.algebra, coordinates)
++}
++
++fn scc_known_ports(
++    state: &TopologyState,
++    known: &BTreeMap<FlowVarId, Rational>,
++) -> (
++    BTreeMap<ProducerPortRef, Rational>,
++    BTreeMap<ConsumerPortRef, Rational>,
++) {
+     let known_producers = state
+         .producer_ports()
+         .iter()
+@@ -1820,7 +2185,7 @@ fn canonical_scc_summary_coordinates(
+                 .cloned()
+                 .map(|value| (reference, value))
+         })
+-        .collect::<BTreeMap<_, _>>();
++        .collect();
+     let known_consumers = state
+         .consumer_ports()
+         .iter()
+@@ -1830,7 +2195,123 @@ fn canonical_scc_summary_coordinates(
+                 .cloned()
+                 .map(|value| (reference, value))
+         })
+-        .collect::<BTreeMap<_, _>>();
++        .collect();
++    (known_producers, known_consumers)
++}
++
++fn identity_scc_coordinates(
++    state: &TopologyState,
++) -> Result<SccSummaryCoordinates, ProfileSearchError> {
++    let mut raw_to_canonical = BTreeMap::new();
++    let mut canonical_to_raw = BTreeMap::new();
++    for (&reference, port) in state.producer_ports() {
++        insert_scc_coordinate(
++            &mut raw_to_canonical,
++            &mut canonical_to_raw,
++            port.flow_var,
++            CanonicalFlowEndpoint::Producer(reference),
++        )?;
++    }
++    for (&reference, port) in state.consumer_ports() {
++        insert_scc_coordinate(
++            &mut raw_to_canonical,
++            &mut canonical_to_raw,
++            port.flow_var,
++            CanonicalFlowEndpoint::Consumer(reference),
++        )?;
++    }
++    Ok(SccSummaryCoordinates {
++        key: SccSummaryKey::identity_placeholder(),
++        raw_to_canonical,
++        canonical_to_raw,
++    })
++}
++
++fn relabel_deferred_scc_summary(
++    summary: CachedOpenSccSummary,
++    producer_relabeling: &BTreeMap<ProducerPortRef, ProducerPortRef>,
++    consumer_relabeling: &BTreeMap<ConsumerPortRef, ConsumerPortRef>,
++) -> Result<CachedOpenSccSummary, ProfileSearchError> {
++    let mut known_values = summary
++        .known_values
++        .into_iter()
++        .map(|deduction| {
++            Ok(CachedKnownValue {
++                variable: relabel_scc_endpoint(
++                    deduction.variable,
++                    producer_relabeling,
++                    consumer_relabeling,
++                )?,
++                value: deduction.value,
++            })
++        })
++        .collect::<Result<Vec<_>, ProfileSearchError>>()?;
++    known_values
++        .sort_by(|left, right| (&left.variable, &left.value).cmp(&(&right.variable, &right.value)));
++    let mut homogeneous_ratios = summary
++        .homogeneous_ratios
++        .into_iter()
++        .map(|deduction| {
++            Ok(CachedHomogeneousRatio {
++                lhs: relabel_scc_endpoint(deduction.lhs, producer_relabeling, consumer_relabeling)?,
++                rhs: relabel_scc_endpoint(deduction.rhs, producer_relabeling, consumer_relabeling)?,
++                factor: deduction.factor,
++            })
++        })
++        .collect::<Result<Vec<_>, ProfileSearchError>>()?;
++    homogeneous_ratios.sort_by(|left, right| {
++        (&left.lhs, &left.rhs, &left.factor).cmp(&(&right.lhs, &right.rhs, &right.factor))
++    });
++    Ok(CachedOpenSccSummary {
++        consistency: summary.consistency,
++        coefficient_rank: summary.coefficient_rank,
++        augmented_rank: summary.augmented_rank,
++        variable_count: summary.variable_count,
++        known_values,
++        homogeneous_ratios,
++    })
++}
++
++fn relabel_scc_endpoint(
++    endpoint: CanonicalFlowEndpoint,
++    producer_relabeling: &BTreeMap<ProducerPortRef, ProducerPortRef>,
++    consumer_relabeling: &BTreeMap<ConsumerPortRef, ConsumerPortRef>,
++) -> Result<CanonicalFlowEndpoint, ProfileSearchError> {
++    match endpoint {
++        CanonicalFlowEndpoint::Producer(raw) => producer_relabeling
++            .get(&raw)
++            .copied()
++            .map(CanonicalFlowEndpoint::Producer)
++            .ok_or_else(|| {
++                ProfileSearchError::Scc(
++                    "deferred SCC deduction omitted a producer relabeling".to_owned(),
++                )
++            }),
++        CanonicalFlowEndpoint::Consumer(raw) => consumer_relabeling
++            .get(&raw)
++            .copied()
++            .map(CanonicalFlowEndpoint::Consumer)
++            .ok_or_else(|| {
++                ProfileSearchError::Scc(
++                    "deferred SCC deduction omitted a consumer relabeling".to_owned(),
++                )
++            }),
++    }
++}
++
++struct SccSummaryCoordinates {
++    key: SccSummaryKey,
++    raw_to_canonical: BTreeMap<FlowVarId, CanonicalFlowEndpoint>,
++    canonical_to_raw: BTreeMap<CanonicalFlowEndpoint, FlowVarId>,
++}
++
++fn canonical_scc_summary_coordinates(
++    state: &TopologyState,
++    region_nodes: &[solver_api::NodeId],
++    known: &BTreeMap<FlowVarId, Rational>,
++    cancel: &AtomicBool,
++) -> Result<Option<SccSummaryCoordinates>, ProfileSearchError> {
++    let (known_producers, known_consumers) = scc_known_ports(state, known);
+     let region_nodes = region_nodes.iter().copied().collect::<BTreeSet<_>>();
+     let Some(canonical) = canonicalize_scc_summary_input_with_relabeling_cancellable(
+         &state.partial_topology(),
+@@ -2796,16 +3277,16 @@ mod tests {
+             .unwrap(),
+             DynamicSccVerdict::Open
+         );
+-        let cached = context
+-            .scc_cache
+-            .values()
+-            .next()
+-            .expect("the first isomorph installs one SCC summary");
++        let cached = match context.deferred_scc_cache.values().next() {
++            Some(DeferredSccBucket::Unique(entry)) => &entry.summary,
++            _ => panic!("the first isomorph installs one deferred SCC summary"),
++        };
+         assert!(
+             !cached.homogeneous_ratios.is_empty(),
+             "the fixture must cache a real exact SCC deduction"
+         );
+         assert_eq!(context.stats.instrumentation.scc_solves, 1);
++        assert_eq!(context.stats.instrumentation.deferred_scc_visits, 1);
+ 
+         assert_eq!(
+             analyze_affected_dynamic_sccs(
+@@ -2822,6 +3303,14 @@ mod tests {
+             "an isomorphic relabeling must reuse the exact canonical payload"
+         );
+         assert_eq!(context.stats.instrumentation.scc_cache_hits, 1);
++        assert_eq!(context.stats.instrumentation.deferred_scc_promotions, 1);
++        assert!(
++            context
++                .scc_cache
++                .values()
++                .any(|summary| !summary.homogeneous_ratios.is_empty()),
++            "promotion must install the exact canonical payload"
++        );
+     }
+ 
+     #[test]
+@@ -2995,6 +3484,30 @@ mod tests {
+         }
+     }
+ 
++    #[test]
++    fn deferred_and_exact_scc_caches_return_the_same_fixed_profile_witnesses() {
++        let cases = [
++            (problem(&["1"], &["1"], "2"), profile(1, 0, 1, 0)),
++            (problem(&["1"], &["1"], "1"), profile(1, 0, 1, 0)),
++        ];
++        for (caller_problem, profile) in cases {
++            let normalized = normalized(&caller_problem);
++            let deferred = exhaustive_witness(search_profile_with_features(
++                &normalized,
++                profile,
++                &AtomicBool::new(false),
++                SearchFeatures::PRODUCTION,
++            ));
++            let exact = exhaustive_witness(search_profile_with_features(
++                &normalized,
++                profile,
++                &AtomicBool::new(false),
++                SearchFeatures::EXACT_SCC_CACHE,
++            ));
++            assert_eq!(deferred, exact, "fixed profile {profile:?}");
++        }
++    }
++
+     #[test]
+     fn deferred_and_exact_state_caches_return_the_same_fixed_profile_witnesses() {
+         let cases = [
+diff --git a/crates/solver-core/src/search/donation.rs b/crates/solver-core/src/search/donation.rs
+index 955de82..6fa3bff 100644
+--- a/crates/solver-core/src/search/donation.rs
++++ b/crates/solver-core/src/search/donation.rs
+@@ -55,6 +55,7 @@ impl Seed {
+             cache: HashMap::new(),
+             deferred_cache: HashMap::new(),
+             scc_cache: HashMap::new(),
++            deferred_scc_cache: HashMap::new(),
+             shared: None,
+             donations: None,
+             owned_cache_bytes: 0,
+diff --git a/crates/solver-core/src/solver.rs b/crates/solver-core/src/solver.rs
+index a0c8ca8..a0417d8 100644
+--- a/crates/solver-core/src/solver.rs
++++ b/crates/solver-core/src/solver.rs
+@@ -1664,6 +1664,12 @@ pub(crate) fn merge_instrumentation(
+         .saturating_add(profile.lower_bound_prunes);
+     total.scc_solves = total.scc_solves.saturating_add(profile.scc_solves);
+     total.scc_cache_hits = total.scc_cache_hits.saturating_add(profile.scc_cache_hits);
++    total.deferred_scc_visits = total
++        .deferred_scc_visits
++        .saturating_add(profile.deferred_scc_visits);
++    total.deferred_scc_promotions = total
++        .deferred_scc_promotions
++        .saturating_add(profile.deferred_scc_promotions);
+     total.canonicalization_time_ns = total
+         .canonicalization_time_ns
+         .saturating_add(profile.canonicalization_time_ns);
+diff --git a/crates/solver-core/src/telemetry.rs b/crates/solver-core/src/telemetry.rs
+index 2e89313..45bb1a3 100644
+--- a/crates/solver-core/src/telemetry.rs
++++ b/crates/solver-core/src/telemetry.rs
+@@ -50,6 +50,10 @@ pub struct SearchInstrumentation {
+     pub scc_solves: u64,
+     /// Reusable SCC summaries found in cache.
+     pub scc_cache_hits: u64,
++    /// First open-SCC visits held under a cheap invariant before canonical promotion.
++    pub deferred_scc_visits: u64,
++    /// SCC invariant buckets promoted to exact canonical keys after a repeat.
++    pub deferred_scc_promotions: u64,
+     /// Nanoseconds spent canonicalizing topology and algebra.
+     pub canonicalization_time_ns: u64,
+     /// Nanoseconds spent in exact algebra.
+@@ -137,6 +141,16 @@ impl SearchInstrumentation {
+                 "SCC cache hits",
+                 self.scc_cache_hits,
+             ),
++            Diagnostic::counter(
++                "custom.deferred_scc_visits",
++                "Deferred SCC visits",
++                self.deferred_scc_visits,
++            ),
++            Diagnostic::counter(
++                "custom.deferred_scc_promotions",
++                "Deferred SCC promotions",
++                self.deferred_scc_promotions,
++            ),
+             Diagnostic::counter(
+                 "custom.canonicalization_time_ns",
+                 "Canonicalization ns",

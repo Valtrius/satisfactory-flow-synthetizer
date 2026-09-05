@@ -1,0 +1,88 @@
+diff --git a/crates/solver-core/src/search.rs b/crates/solver-core/src/search.rs
+index 71b142e..c746b3e 100644
+--- a/crates/solver-core/src/search.rs
++++ b/crates/solver-core/src/search.rs
+@@ -1328,6 +1328,9 @@ fn search_state(
+     if context.cancel.load(Ordering::Relaxed) {
+         return DfsResult::Incomplete;
+     }
++    if prune_remaining_port_under_l(state, context) {
++        return DfsResult::Exhausted(None);
++    }
+ 
+     let snapshot_started = Instant::now();
+     let snapshot = match propagation {
+@@ -1626,8 +1629,7 @@ fn evaluate_applied_child(
+     context: &mut SearchContext<'_>,
+     link_index: usize,
+ ) -> DfsResult {
+-    if remaining_ports_cannot_reach_expected_l(state, context) {
+-        increment(&mut context.stats.instrumentation.lower_bound_prunes);
++    if prune_remaining_port_under_l(state, context) {
+         return DfsResult::Exhausted(None);
+     }
+     if let Err(result) = prepare_applied_child(state, propagation, context, link_index) {
+@@ -1642,6 +1644,9 @@ fn prepare_applied_child(
+     context: &mut SearchContext<'_>,
+     link_index: usize,
+ ) -> Result<(), DfsResult> {
++    if prune_remaining_port_under_l(state, context) {
++        return Err(DfsResult::Exhausted(None));
++    }
+     if let Some(propagation) = propagation.as_mut() {
+         let propagation_started = Instant::now();
+         let outcome = propagation.synchronize_after_topology_mutation(state);
+@@ -2224,6 +2229,15 @@ fn remaining_ports_cannot_reach_expected_l(
+     })
+ }
+ 
++fn prune_remaining_port_under_l(state: &TopologyState, context: &mut SearchContext<'_>) -> bool {
++    if remaining_ports_cannot_reach_expected_l(state, context) {
++        increment(&mut context.stats.instrumentation.lower_bound_prunes);
++        true
++    } else {
++        false
++    }
++}
++
+ fn increment(counter: &mut u64) {
+     *counter = counter.saturating_add(1);
+ }
+@@ -3609,6 +3623,37 @@ mod tests {
+         assert!(context.stats.instrumentation.lower_bound_prunes > before);
+     }
+ 
++    #[test]
++    fn remaining_port_under_l_prunes_search_state_and_prepare() {
++        let caller = problem(&["2"], &["1", "1"], "1200");
++        let normalized = normalized(&caller);
++        let fixed = profile(1, 0, 0, 0);
++        let cancel = AtomicBool::new(false);
++        let mut context = SearchContext::new(&normalized, fixed, &cancel);
++        context.expected_link_count = Some(2);
++        let mut state = TopologyState::new(&normalized, fixed).unwrap();
++        let mut propagation =
++            Some(PropagationState::new(&state, &normalized.max_link_rate).unwrap());
++        let before = context.stats.instrumentation.lower_bound_prunes;
++        let result = search_state(&mut state, &mut propagation, &mut context);
++        assert!(matches!(result, DfsResult::Exhausted(None)));
++        assert!(context.stats.instrumentation.lower_bound_prunes > before);
++
++        let mut prepare_context = SearchContext::new(&normalized, fixed, &cancel);
++        prepare_context.expected_link_count = Some(2);
++        let mut prepare_state = TopologyState::new(&normalized, fixed).unwrap();
++        let mut prepare_propagation =
++            Some(PropagationState::new(&prepare_state, &normalized.max_link_rate).unwrap());
++        let prepared = prepare_applied_child(
++            &mut prepare_state,
++            &mut prepare_propagation,
++            &mut prepare_context,
++            0,
++        );
++        assert!(matches!(prepared, Err(DfsResult::Exhausted(None))));
++        assert!(prepare_context.stats.instrumentation.lower_bound_prunes > 0);
++    }
++
+     fn partial_search_outcome(
+         problem: &NormalizedProblem,
+         profile: NodeProfile,

@@ -1,3 +1,1 @@
-# Idle after experiment60 promotion
-
-2026-09-05. Remaining-port under-L prune is permanent in `2d6501c`, unpushed. Do not add over-L-before-prepare or complete-L-before-solve. No benchmark running. Next evidence step: hotspot-on cost-mix of production after 58+60, then SCC deferral only if it still owns a material nested share. `mem:solver/experiments/60-remaining-port-under-l`.
+Idle. 2026-09-05. Experiment 62 remaining-port L-bound A/B/C analyzed and rejected both candidates. Production solver-core remains `6bb0763`. Patches kept: `benchmarks/custom/variants/under-l-places.patch`, `benchmarks/custom/variants/forced-remaining-l.patch`. Next authorized work: hotspot-on cost-mix of production after 58+60. `mem:solver/experiments/62-l-bound-abc`.

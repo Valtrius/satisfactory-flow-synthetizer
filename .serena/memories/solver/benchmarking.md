@@ -56,6 +56,9 @@ own Cargo target directory; do not share build artifacts across source variants.
 - `fraction-free-rref.patch` — experiment 56 fraction-free canonical dense RREF. Rejected. Applies against `d6902a4`.
 - `dirty-bounds.patch` — experiment 58 isolated dirty-component bound scan. Now production; do not re-apply. Screened against `d6902a4`.
 - `remaining-port-under-l.patch` — experiment 60 isolated remaining-port under-L prune. Now production; do not re-apply. Screened against `53794bd`.
+- `scc-deferral.patch` — experiment 61 isolated SCC deferral. Rejected. Applies against `6bb0763`. Do not re-apply unless a later screen overrides the 36 wall regression. `mem:solver/experiments/61-scc-deferral`.
+- `under-l-places.patch` — experiment 62 isolated earlier remaining-port under-L placement. Rejected. Applies against `6bb0763`. Do not re-apply unless a later screen overrides the 238 CCD32 wall regression. `mem:solver/experiments/62-l-bound-abc`.
+- `forced-remaining-l.patch` — experiment 62 isolated forced remaining-L lower bound. Rejected. Applies against `6bb0763`. Do not re-apply unless a later screen overrides the 115 CCD96 wall/CPU regression. Do not combine with `under-l-places.patch`. `mem:solver/experiments/62-l-bound-abc`.
 - `color-labeling.patch` — experiment 58 isolated BaseColor known-support strip plus labeling cache. Rejected. Applies against `d6902a4`. Do not combine with production dirty bounds.
 - `legacy-semantic-encoding.patch` — restores dense decimal rational row encoding
   while keeping boxed keys and the current constructor. Exp 09 `before` binary;

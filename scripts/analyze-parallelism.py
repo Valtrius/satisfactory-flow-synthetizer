@@ -317,6 +317,8 @@ for (case, mode, variant, stage, workers, max_nodes, timeout_s, affinity), sampl
         "median_states": median(item.get("custom.canonical_states_retained", 0) for item in diagnostics),
         "median_deferred_state_visits": median(item.get("custom.deferred_state_visits", 0) for item in diagnostics),
         "median_deferred_state_promotions": median(item.get("custom.deferred_state_promotions", 0) for item in diagnostics),
+        "median_deferred_scc_visits": median(item.get("custom.deferred_scc_visits", 0) for item in diagnostics),
+        "median_deferred_scc_promotions": median(item.get("custom.deferred_scc_promotions", 0) for item in diagnostics),
         "median_decisions": median(item.get("custom.raw_structural_decisions", 0) for item in diagnostics),
         "median_hotspots_ns": {key: median(row["result"].get("hotspots", {}).get(key, 0) for row in samples) for key in samples[0]["result"].get("hotspots", {})},
     })
