@@ -47,26 +47,25 @@ jobs:
             throw "Tag version $tagVersion does not match tauri.conf.json version $tauriVersion"
           }
 
-      - name: Write 0.1.0 release notes
-        if: github.ref_name == '0.1.0'
-        shell: pwsh
-        run: |
-          @"
-          Initial public beta.
-
-          Windows NSIS installer and portable executable. Set supply and demand rates, choose Custom or Z3, and inspect validated splitter/merger layouts.
-
-          This build is unsigned, so Windows SmartScreen may warn on first run.
-          "@ | Set-Content -Encoding utf8 RELEASE_NOTES.md
-
       - name: Generate release notes
-        if: github.ref_name != '0.1.0'
         uses: orhun/git-cliff-action@v4
         with:
           config: cliff.toml
           args: --latest --strip header
         env:
           OUTPUT: RELEASE_NOTES.md
+
+      # Optional user-facing preface, including charts. Commit
+      # docs/release-notes/<tag>.md (and any SVG/PNG it links) on the
+      # tagged revision. GitHub release bodies need absolute image URLs.
+      - name: Prepend version highlights
+        shell: pwsh
+        run: |
+          $highlights = "docs/release-notes/${{ github.ref_name }}.md"
+          if (-not (Test-Path -LiteralPath $highlights)) { return }
+          $head = Get-Content -LiteralPath $highlights -Raw
+          $body = Get-Content -LiteralPath RELEASE_NOTES.md -Raw
+          Set-Content -LiteralPath RELEASE_NOTES.md -Encoding utf8 ($head.TrimEnd() + "`n`n" + $body)
 
       - name: Build Tauri application
         run: npm run tauri build -- --bundles nsis

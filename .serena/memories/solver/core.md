@@ -46,6 +46,7 @@ Rejected/held: weighted sparse quotient32, sparse row dedup33, N<=9 p1 guard18, 
 
 ## Remaining authorized work
 
+Experiment64 develop-vs-master analyzed: 24/24 at `target/parallelism-ladder/develop-vs-master-20260905`. Identity held. Develop faster on all 22 completed jobs. 115 all wall −57.6%; 258 −13.3% with identical decisions; cyclic10 both capped. No solver change. `mem:solver/experiments/64-develop-vs-master`.
 Experiment63 overflow-next-L rejected after 20/20 at `target/parallelism-ladder/overflow-next-l-ab-20260905`. Public keys/solutions held. 36 optimal wall +20.03% [+19.86, +20.11] / CPU +31.89% with extra imported later-L search. 115 all wall −6.55% but first-valid 4.7× later. 258 min-links flat. Solver-core restored. Candidate `benchmarks/custom/variants/overflow-next-link-group.patch`. Results recorded in `2b7a1c5`. Do not speculate across N. `mem:solver/experiments/63-overflow-next-link-group`.
 
 Experiment62 remaining-port L-bound A/B/C rejected both isolated candidates after 60/60 at `target/parallelism-ladder/l-bound-abc-20260905`. Identity held. places: 238 CCD32 wall +1.26% CI excludes 0; no 115 completion win. forced: prune fires 1:1 with propagation contradictions; decisions/states unchanged; 115 CCD96 wall +0.91% / CPU +0.34% CIs exclude 0. Production stays `6bb0763`. Patches kept. Results recorded in `4adddc2`. Do not add earlier under-L placement or forced remaining-L. `mem:solver/experiments/62-l-bound-abc`.

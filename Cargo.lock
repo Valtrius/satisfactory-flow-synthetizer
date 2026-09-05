@@ -2801,7 +2801,7 @@ dependencies = [
 
 [[package]]
 name = "satisfactory-flow-synthetizer"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "rusqlite",
  "serde",
@@ -3137,7 +3137,7 @@ dependencies = [
 
 [[package]]
 name = "solver-api"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "num",
  "serde",
@@ -3147,7 +3147,7 @@ dependencies = [
 
 [[package]]
 name = "solver-core"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "canonaut",
  "num",
@@ -3162,7 +3162,7 @@ dependencies = [
 
 [[package]]
 name = "solver-reference"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "solver-api",
  "solver-validation",
@@ -3171,7 +3171,7 @@ dependencies = [
 
 [[package]]
 name = "solver-validation"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "canonaut",
  "num",
@@ -3181,7 +3181,7 @@ dependencies = [
 
 [[package]]
 name = "solver-z3"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "num",
  "serde",
@@ -3331,7 +3331,7 @@ dependencies = [
 
 [[package]]
 name = "synthetizer-app"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "num",
  "serde",

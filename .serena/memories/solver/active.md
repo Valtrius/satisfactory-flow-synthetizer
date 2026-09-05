@@ -1,1 +1,1 @@
-Idle. Experiment63 overflow-next-L rejected after 20/20 at `target/parallelism-ladder/overflow-next-l-ab-20260905`. Solver-core restored. Candidate `benchmarks/custom/variants/overflow-next-link-group.patch`. Results recorded in `2b7a1c5`. `mem:solver/experiments/63-overflow-next-link-group`.
+Idle. Experiment64 develop-vs-master analyzed: 24/24 at `target/parallelism-ladder/develop-vs-master-20260905`, failures []. Develop faster on all 22 completed jobs; 115 all wall −57.6%; cyclic10 both capped. No solver change. `mem:solver/experiments/64-develop-vs-master`.
