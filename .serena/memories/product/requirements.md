@@ -13,7 +13,7 @@ Agent knowledge for product behavior lives here (not in README).
 
 - Every physical belt (including discard) carries positive flow ≤ belt capacity.
 - Rates are decimals or exact fractions (rationals); capacity is part of problem identity.
-- Automatic supply on one belt; totals above capacity require explicit input belts.
+- Automatic supply on one belt totaling sum of demand; above capacity requires explicit input belts.
 - Returned witnesses pass independent validation before UI.
 
 ## Solvers (same UI workflow)
@@ -23,17 +23,16 @@ Agent knowledge for product behavior lives here (not in README).
 - **Z3** — portfolio SMT: parallel attempts, feedback verification,
   cancellation, minimum-node enumeration.
 
-## Objective (both solvers)
+## Objective (all solvers)
 
 Lexicographic:
 
 1. Minimize physical splitter/merger count (**N**)
 2. Then minimize non-discard operator-to-operator link count (**L**)
 
-Custom proves that order with its link-group ledger. Z3 Opt finds a min-N layout,
-streams improving `best_known` under a strict belt cap, then proves nothing better.
+Streams improving `best_known` under a strict belt cap, then proves nothing better if applicable.
 
-## Exact scopes (product + Custom benchmarks)
+## Exact scopes
 
 | Name            | Meaning                                            |
 | --------------- | -------------------------------------------------- |
@@ -41,7 +40,7 @@ streams improving `best_known` under a strict belt cap, then proves nothing bett
 | `minimum_links` | All layouts at min N and that min L                |
 | `all`           | All layouts across every feasible L at min N       |
 
-Goal: resolve the problem using the selected solver and scope **as fast as possible**, while returning a validated layout and proof of optimality (or all layouts at min N and min L, or all layouts at min N).
+**Main goal**: resolve the problem using the selected solver and scope **as fast as possible**, while returning a validated layout and proof of optimality (or all layouts at min N and min L, or all layouts at min N).
 
 ## Result semantics
 
@@ -52,9 +51,9 @@ Goal: resolve the problem using the selected solver and scope **as fast as possi
 - Cancel enumeration: keep layouts already delivered.
 - Successful enumeration completion: preferred layout → `proven_optimal`; other
   min-N layouts remain validated `best_known` alternatives.
-- Cancel Z3 Opt mid-improve: best streamed incumbent stays `best_known`.
+- Cancel mid-improve: best streamed incumbent stays `best_known`.
 - Progress may include node bounds, current search size, link obligations/caps,
-  incumbent counts. Missing common fields are null.
+  incumbent counts. Missing common fields are null. Progress is not mandatory but is a nice-to-have.
 
 ## UX / app behavior
 
@@ -64,7 +63,6 @@ Goal: resolve the problem using the selected solver and scope **as fast as possi
 
 ## Non-goals / do not confuse
 
-- Benchmark case names (`acyclic36`, etc.) are labels only — never solver math inputs.
 - Dev-build timings are not representative; use release builds for performance claims.
 - Custom-opt experiment history → `mem:solver/*`, not this memory.
 

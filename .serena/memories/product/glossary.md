@@ -9,16 +9,9 @@ and agent replies. Proof contracts: `mem:solver/contracts`. Product rules:
 - **N** — number of physical splitter/merger nodes (primary lex objective).
 - **L** — number of non-discard operator-to-operator links (secondary lex objective).
 - **min N / min L** — proven minimums for the exact problem; not a user hint.
-- **node cap** — upper bound on searchable N (limits largest N, not the starting N).
-- **link group / equal-L group** — all work at a fixed N and fixed L before moving on.
+- **N cap** — upper bound on searchable N (limits largest N, not the starting N).
+- **L group** — all work at a fixed N and fixed L before moving on.
 - **lexicographic objective** — minimize N, then L among min-N layouts.
-
-## Scopes / modes
-
-- **optimal** (`optimal`) — prove min N and min L; return one preferred layout.
-- **minimum_links** (`minimum_links`) — enumerate every layout at min N and that min L; stop before larger L.
-- **all** (`all`) — enumerate every feasible L at min N.
-- **scope: selected_prefix / selected_root** — diagnostic/benchmark scopes; not product UI modes.
 
 ## Result / proof language
 
@@ -28,8 +21,8 @@ and agent replies. Proof contracts: `mem:solver/contracts`. Product rules:
 - **proven_optimal** — optimality (and preferred layout) established by a completed proof path.
 - **best_known** — validated only; not a proof of optimality.
 - **global UNSAT** — no feasible layout exists (distinct from timeout/cap/kill/incomplete).
-- **first validated witness / time to first** — wall time to the first validator-accepted layout; separate from terminal completion. Prefer this name over inventing other “TTF” aliases.
 - **canonical layout key** — exact identity used to compare layouts; counts alone ≠ equivalence.
+- **time to first** — wall time to the first validator-accepted layout; separate from terminal completion. Prefer this name over inventing other “TTF” aliases.
 - **time to min L** — wall time until every layout at min N and that min L is delivered.
   For `minimum_links`, that is terminal completion. For `all`, it is only the end of the
   min-L group — **not** whole-`all` completion (later L groups may still be running).
@@ -63,9 +56,3 @@ and agent replies. Proof contracts: `mem:solver/contracts`. Product rules:
 - **verified record** — analyzer-accepted result identity for a job.
 - **capped / incomplete** — hit time/node resource limit without discharging proof.
 - **kill / watchdog** — process killed; failed measurement, no returned proof.
-
-## Product / app
-
-- **Custom / Z3** — the two production engines behind one UI.
-- **job / history / queue** — UI work items and persisted past solves.
-- **independent validator** — `solver-validation` firewall; required before UI trust.
