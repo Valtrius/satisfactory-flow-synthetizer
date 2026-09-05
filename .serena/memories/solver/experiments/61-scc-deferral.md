@@ -52,7 +52,7 @@ Identity held on all 15 before/after pairs: status, layout counts, exact `layout
 
 ## Decision and next step
 
-Rejected. One completed cell (36) regresses with bootstrap CI excluding 0, matching the experiment 50 / labeling experiment 58 bar. 115/238 wall wins and identity are real but insufficient. Solver-core source restored to `6bb0763`. Candidate preserved as `benchmarks/custom/variants/scc-deferral.patch` plus the screen/variant-map JSON. Analyzer `deferred_scc_*` median columns remain (harmless zeros on production runs). No commit, no push.
+Rejected. One completed cell (36) regresses with bootstrap CI excluding 0, matching the experiment 50 / labeling experiment 58 bar. 115/238 wall wins and identity are real but insufficient. Solver-core source restored to `6bb0763`. Candidate preserved as `benchmarks/custom/variants/scc-deferral.patch` plus the screen/variant-map JSON. Analyzer `deferred_scc_*` median columns remain (harmless zeros on production runs). Results recorded in `4adddc2`. No push.
 
 Parked with the other rejected kernel/cache variants: do not enable production SCC deferral. Next authorized work: hotspot-on cost-mix of production after 58+60. Remaining large nested share is leftover state-key canonaut. Keep parked: templates, sharing, donation, checked64, fraction-free RREF, weighted quotients, duplicate-row removal, rollback-aware Bareiss, early reachability, labeling, over-L-before-prepare, complete-L-before-solve. Do not enable `work_stealing`.
 
