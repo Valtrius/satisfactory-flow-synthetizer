@@ -1,1 +1,1 @@
-Idle. Experiment63 overflow-next-L rejected after 20/20 at `target/parallelism-ladder/overflow-next-l-ab-20260905`. Solver-core restored. Candidate `benchmarks/custom/variants/overflow-next-link-group.patch`. `mem:solver/experiments/63-overflow-next-link-group`.
+Idle. Experiment63 overflow-next-L rejected after 20/20 at `target/parallelism-ladder/overflow-next-l-ab-20260905`. Solver-core restored. Candidate `benchmarks/custom/variants/overflow-next-link-group.patch`. Results recorded in `2b7a1c5`. `mem:solver/experiments/63-overflow-next-link-group`.

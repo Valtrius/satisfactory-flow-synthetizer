@@ -1,6 +1,6 @@
 # 63. Overflow next equal-L group
 
-Date: 2026-09-05. State: analyzed, rejected. Source restored. Related: exp16 occupancy tail, exp20 root tails, exp52 tail-help reject, p14 remaining groups.
+Date: 2026-09-05. State: analyzed, rejected. Source restored. Results recorded in `2b7a1c5`. Related: exp16 occupancy tail, exp20 root tails, exp52 tail-help reject, p14 remaining groups.
 
 ## Question and hypothesis
 
@@ -45,4 +45,4 @@ Exact public identity held. 36 proof accounting is not identical: overflow compl
 
 ## Decision and next step
 
-Rejected. Solver-core restored. Candidate remains `benchmarks/custom/variants/overflow-next-link-group.patch`. Do not treat the 115 all completion win as a production reason: first witness is 4.7× later and 36 wall/CPU CIs exclude 0. Do not revive donation, a coarse occupancy queue, or next-N speculation.
+Rejected. Solver-core restored. Candidate remains `benchmarks/custom/variants/overflow-next-link-group.patch`. Results recorded in `2b7a1c5`. Do not treat the 115 all completion win as a production reason: first witness is 4.7× later and 36 wall/CPU CIs exclude 0. Do not revive donation, a coarse occupancy queue, or next-N speculation.

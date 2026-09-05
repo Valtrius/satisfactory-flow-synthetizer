@@ -46,7 +46,7 @@ Rejected/held: weighted sparse quotient32, sparse row dedup33, N<=9 p1 guard18, 
 
 ## Remaining authorized work
 
-Experiment63 overflow-next-L rejected after 20/20 at `target/parallelism-ladder/overflow-next-l-ab-20260905`. Public keys/solutions held. 36 optimal wall +20.03% [+19.86, +20.11] / CPU +31.89% with extra imported later-L search. 115 all wall −6.55% but first-valid 4.7× later. 258 min-links flat. Solver-core restored. Candidate `benchmarks/custom/variants/overflow-next-link-group.patch`. Do not speculate across N. `mem:solver/experiments/63-overflow-next-link-group`.
+Experiment63 overflow-next-L rejected after 20/20 at `target/parallelism-ladder/overflow-next-l-ab-20260905`. Public keys/solutions held. 36 optimal wall +20.03% [+19.86, +20.11] / CPU +31.89% with extra imported later-L search. 115 all wall −6.55% but first-valid 4.7× later. 258 min-links flat. Solver-core restored. Candidate `benchmarks/custom/variants/overflow-next-link-group.patch`. Results recorded in `2b7a1c5`. Do not speculate across N. `mem:solver/experiments/63-overflow-next-link-group`.
 
 Experiment62 remaining-port L-bound A/B/C rejected both isolated candidates after 60/60 at `target/parallelism-ladder/l-bound-abc-20260905`. Identity held. places: 238 CCD32 wall +1.26% CI excludes 0; no 115 completion win. forced: prune fires 1:1 with propagation contradictions; decisions/states unchanged; 115 CCD96 wall +0.91% / CPU +0.34% CIs exclude 0. Production stays `6bb0763`. Patches kept. Results recorded in `4adddc2`. Do not add earlier under-L placement or forced remaining-L. `mem:solver/experiments/62-l-bound-abc`.
 
