@@ -1,6 +1,6 @@
 # Current decisions and handoff
 
-Updated 2026-09-05. Hot path: `mem:critical_info` → `mem:solver/core`. Live: idle (`mem:solver/active`). Experiment62 remaining-port L-bound A/B/C rejected both after 60/60 at `target/parallelism-ladder/l-bound-abc-20260905`. Production solver-core remains `6bb0763`. Experiment61 SCC deferral rejected. Experiment60 remaining-port under-L prune permanent in `2d6501c`. Dirty bounds `90747a4`; experiment54 `d6902a4`; experiment51 `7799c11`.
+Updated 2026-09-05. Hot path: `mem:critical_info` → `mem:solver/core`. Live: idle (`mem:solver/active`). Experiment63 overflow-next-L rejected after 20/20 at `target/parallelism-ladder/overflow-next-l-ab-20260905`. 36 wall +20.0% / CPU +31.9%; 115 first-valid 4.7× later; 258 flat. Solver-core restored. Candidate `benchmarks/custom/variants/overflow-next-link-group.patch`. Experiment62 remaining-port L-bound A/B/C rejected both after 60/60 at `target/parallelism-ladder/l-bound-abc-20260905`. Production solver-core remains `6bb0763`. Experiment61 SCC deferral rejected. Experiment60 remaining-port under-L prune permanent in `2d6501c`. Dirty bounds `90747a4`; experiment54 `d6902a4`; experiment51 `7799c11`.
 Historical records: `mem:solver/experiments/index`.
 
 ## Objective

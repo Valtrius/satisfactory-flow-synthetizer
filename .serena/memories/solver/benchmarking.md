@@ -59,6 +59,8 @@ own Cargo target directory; do not share build artifacts across source variants.
 - `scc-deferral.patch` — experiment 61 isolated SCC deferral. Rejected. Applies against `6bb0763`. Do not re-apply unless a later screen overrides the 36 wall regression. `mem:solver/experiments/61-scc-deferral`.
 - `under-l-places.patch` — experiment 62 isolated earlier remaining-port under-L placement. Rejected. Applies against `6bb0763`. Do not re-apply unless a later screen overrides the 238 CCD32 wall regression. `mem:solver/experiments/62-l-bound-abc`.
 - `forced-remaining-l.patch` — experiment 62 isolated forced remaining-L lower bound. Rejected. Applies against `6bb0763`. Do not re-apply unless a later screen overrides the 115 CCD96 wall/CPU regression. Do not combine with `under-l-places.patch`. `mem:solver/experiments/62-l-bound-abc`.
+- `overflow-next-link-group.patch` — experiment 63 overflow-next-L scheduler. Rejected. Applies against `7cb9340`. Do not re-apply unless a later screen overrides the 36 wall/CPU regression and 115 first-valid delay. `mem:solver/experiments/63-overflow-next-link-group`.
+- `overflow-p1-stage.patch` — experiment 63 screen-only overlay so stage `p1` also enabled overflow. Applies only on top of `overflow-next-link-group.patch`. Do not apply to production. `mem:solver/experiments/63-overflow-next-link-group`.
 - `color-labeling.patch` — experiment 58 isolated BaseColor known-support strip plus labeling cache. Rejected. Applies against `d6902a4`. Do not combine with production dirty bounds.
 - `legacy-semantic-encoding.patch` — restores dense decimal rational row encoding
   while keeping boxed keys and the current constructor. Exp 09 `before` binary;

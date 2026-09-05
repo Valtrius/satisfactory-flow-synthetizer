@@ -1,0 +1,931 @@
+diff --git a/crates/solver-core/examples/profile_support/mod.rs b/crates/solver-core/examples/profile_support/mod.rs
+index 362344a..1061f20 100644
+--- a/crates/solver-core/examples/profile_support/mod.rs
++++ b/crates/solver-core/examples/profile_support/mod.rs
+@@ -239,6 +239,10 @@ pub(super) fn parallelism_stage(stage: Option<&str>) -> ParallelismOptions {
+     match stage.unwrap_or("baseline") {
+         "baseline" => {}
+         "p1" => options.deep_partitions = true,
++        "p1o" => {
++            options.deep_partitions = true;
++            options.overflow_next_link_group = true;
++        }
+         "shared" => options.shared_state_cache = true,
+         "groups" => options.parallel_remaining_groups = true,
+         "p14" => {
+diff --git a/crates/solver-core/src/solver.rs b/crates/solver-core/src/solver.rs
+index a0c8ca8..e9baf03 100644
+--- a/crates/solver-core/src/solver.rs
++++ b/crates/solver-core/src/solver.rs
+@@ -7,7 +7,7 @@ use std::{
+     collections::BTreeMap,
+     panic::{AssertUnwindSafe, catch_unwind},
+     sync::{
+-        Mutex,
++        Mutex, OnceLock,
+         atomic::{AtomicBool, AtomicUsize, Ordering},
+         mpsc,
+     },
+@@ -78,6 +78,11 @@ pub struct ParallelismOptions {
+     pub work_stealing: bool,
+     /// Search higher-L groups concurrently after the first SAT group, in enumeration only.
+     pub parallel_remaining_groups: bool,
++    /// When the current equal-L group cannot fill the pool, search the next same-N L group.
++    ///
++    /// Overflow uses at most `idle_workers - 1` workers so one idle slot stays free. A SAT result in
++    /// the current group cancels overflow unless later L groups are required (`all` mode).
++    pub overflow_next_link_group: bool,
+ }
+ 
+ impl Default for SolveOptions {
+@@ -389,7 +394,11 @@ fn solve_internal(
+         )?;
+         proof_ledger.begin_node(node_count)?;
+         let mut parallel_outputs = BTreeMap::new();
++        let mut overflow_outputs = BTreeMap::new();
+         let mut parallel_started = false;
++        let overflow_enabled = options.parallelism.overflow_next_link_group
++            && options.worker_count > 1
++            && !options.parallelism.work_stealing;
+         for (group_index, group) in groups.iter().enumerate() {
+             if cancel.load(Ordering::Relaxed) {
+                 return Ok(incomplete(IncompleteReason::Cancelled, best_known, proof));
+@@ -435,7 +444,8 @@ fn solve_internal(
+ 
+             let total_profiles = u32::try_from(group.profiles.len())
+                 .map_err(|_| SolverError::ProofAccountingOverflow)?;
+-            let has_parallel_output = parallel_outputs.contains_key(&group.link_count);
++            let has_parallel_output = parallel_outputs.contains_key(&group.link_count)
++                || overflow_outputs.contains_key(&group.link_count);
+ 
+             // A concrete validated witness in the first satisfiable structural group
+             // is already a complete minimum-node certificate: the proven
+@@ -555,8 +565,18 @@ fn solve_internal(
+             );
+             let profile_tasks = if let Some(outputs) = parallel_outputs.remove(&group.link_count) {
+                 outputs
++            } else if let Some(outputs) = overflow_outputs.remove(&group.link_count) {
++                outputs
+             } else {
+-                ProfileGroupRun {
++                let next = overflow_enabled
++                    .then(|| groups.get(group_index + 1))
++                    .flatten()
++                    .filter(|next| {
++                        !parallel_started
++                            && !parallel_outputs.contains_key(&next.link_count)
++                            && !overflow_outputs.contains_key(&next.link_count)
++                    });
++                let runner = ProfileGroupRun {
+                     problem: &normalized,
+                     node_count,
+                     link_count: group.link_count,
+@@ -566,25 +586,37 @@ fn solve_internal(
+                     collect_all_witnesses: enumerate_layouts,
+                     #[cfg(test)]
+                     panic_next_root_worker,
++                };
++                let outcome = runner.run_group(
++                    group.profiles.clone(),
++                    &mut proof_ledger,
++                    &|live| {
++                        let mut snapshot = instrumentation.clone();
++                        merge_instrumentation(&mut snapshot, live);
++                        emit_progress(
++                            observer,
++                            SolvePhase::Searching,
++                            Some(ProofObligation {
++                                node_count,
++                                link_count: Some(group.link_count),
++                                profile: None,
++                                root_partition: None,
++                            }),
++                            0,
++                            Some(total_profiles),
++                            &snapshot,
++                            solve_started,
++                        );
++                    },
++                    next.map(|group| OverflowSpec {
++                        group,
++                        abort_if_current_sat: !enumerate_all_link_counts,
++                    }),
++                )?;
++                if let Some((link_count, outputs)) = outcome.overflow {
++                    overflow_outputs.insert(link_count, outputs);
+                 }
+-                .run(group.profiles.clone(), &mut proof_ledger, &|live| {
+-                    let mut snapshot = instrumentation.clone();
+-                    merge_instrumentation(&mut snapshot, live);
+-                    emit_progress(
+-                        observer,
+-                        SolvePhase::Searching,
+-                        Some(ProofObligation {
+-                            node_count,
+-                            link_count: Some(group.link_count),
+-                            profile: None,
+-                            root_partition: None,
+-                        }),
+-                        0,
+-                        Some(total_profiles),
+-                        &snapshot,
+-                        solve_started,
+-                    );
+-                })?
++                outcome.current
+             };
+             // Live counters already include unfinished roots. Fold all final counters
+             // before replaying ordered proof events so telemetry never moves backwards.
+@@ -912,6 +944,41 @@ enum RootTaskResult {
+     WorkerPanicked,
+ }
+ 
++#[derive(Clone, Copy)]
++struct OverflowSpec<'a> {
++    group: &'a AccountedProfileGroup,
++    abort_if_current_sat: bool,
++}
++
++struct OverflowSearch {
++    tasks: Vec<RootTask>,
++    shared: Option<SharedStateCache>,
++}
++
++struct OverflowMeta {
++    link_count: u32,
++    profiles: Vec<AccountedProfile>,
++    immediate: Vec<RootTaskOutput>,
++    ledger: ProofLedger,
++}
++
++enum OverflowExecuteResult {
++    Skipped,
++    Abandoned,
++    Completed {
++        link_count: u32,
++        profiles: Vec<AccountedProfile>,
++        root_outputs: Vec<RootTaskOutput>,
++        shared: Option<SharedStateCache>,
++        ledger: ProofLedger,
++    },
++}
++
++struct RunGroupOutcome {
++    current: Vec<ProfileTaskOutput>,
++    overflow: Option<(u32, Vec<ProfileTaskOutput>)>,
++}
++
+ #[derive(Clone, Copy)]
+ struct ProfileGroupRun<'a> {
+     problem: &'a NormalizedProblem,
+@@ -1011,6 +1078,16 @@ impl ProfileGroupRun<'_> {
+         ledger: &mut ProofLedger,
+         progress: &(dyn Fn(&SearchInstrumentation) + Sync),
+     ) -> Result<Vec<ProfileTaskOutput>, SolverError> {
++        Ok(self.run_group(profiles, ledger, progress, None)?.current)
++    }
++
++    fn run_group(
++        &self,
++        profiles: Vec<AccountedProfile>,
++        ledger: &mut ProofLedger,
++        progress: &(dyn Fn(&SearchInstrumentation) + Sync),
++        overflow: Option<OverflowSpec<'_>>,
++    ) -> Result<RunGroupOutcome, SolverError> {
+         let _activity = crate::diagnostics::ActivitySpan::start(
+             "group",
+             self.node_count,
+@@ -1035,15 +1112,121 @@ impl ProfileGroupRun<'_> {
+             .parallelism
+             .shared_state_cache
+             .then(SharedStateCache::default);
+-        root_outputs.extend(self.execute_roots(&root_tasks, shared.as_ref(), &|live| {
+-            let mut snapshot = immediate.clone();
+-            merge_instrumentation(&mut snapshot, live);
+-            progress(&snapshot);
+-        }));
++        let start_overflow = overflow.is_some_and(|spec| {
++            self.overflow_can_start(&root_tasks, &root_outputs, spec.abort_if_current_sat)
++        });
++        let overflow_result = if start_overflow {
++            let spec = overflow.expect("start_overflow requires an overflow spec");
++            let (current, overflow_exec) =
++                self.execute_roots_with_overflow(&root_tasks, shared.as_ref(), spec, &|live| {
++                    let mut snapshot = immediate.clone();
++                    merge_instrumentation(&mut snapshot, live);
++                    progress(&snapshot);
++                })?;
++            root_outputs.extend(current);
++            overflow_exec
++        } else {
++            root_outputs.extend(self.execute_roots(&root_tasks, shared.as_ref(), &|live| {
++                let mut snapshot = immediate.clone();
++                merge_instrumentation(&mut snapshot, live);
++                progress(&snapshot);
++            }));
++            OverflowExecuteResult::Skipped
++        };
++        let current = self.finish_group_outputs(profiles, root_outputs, ledger, shared.as_ref())?;
++        Ok(RunGroupOutcome {
++            current,
++            overflow: self.import_overflow_result(ledger, overflow_result)?,
++        })
++    }
++
++    fn overflow_can_start(
++        &self,
++        root_tasks: &[RootTask],
++        immediate: &[RootTaskOutput],
++        abort_if_current_sat: bool,
++    ) -> bool {
++        if root_tasks.is_empty() || self.requested_workers <= 1 || self.parallelism.work_stealing {
++            return false;
++        }
++        if abort_if_current_sat && immediate.iter().any(root_output_has_witness) {
++            return false;
++        }
++        true
++    }
++
++    fn import_overflow_result(
++        &self,
++        ledger: &mut ProofLedger,
++        overflow_result: OverflowExecuteResult,
++    ) -> Result<Option<(u32, Vec<ProfileTaskOutput>)>, SolverError> {
++        let OverflowExecuteResult::Completed {
++            link_count,
++            profiles,
++            mut root_outputs,
++            shared,
++            ledger: mut overflow_ledger,
++        } = overflow_result
++        else {
++            return Ok(None);
++        };
++        let profile_ids = profiles
++            .iter()
++            .map(|accounted| accounted.profile)
++            .collect::<Vec<_>>();
++        let outputs = self.with_link_count(link_count).finish_group_outputs(
++            profiles,
++            std::mem::take(&mut root_outputs),
++            &mut overflow_ledger,
++            shared.as_ref(),
++        )?;
++        if let Some(index) = outputs.iter().find_map(|output| {
++            matches!(output.result, ProfileTaskResult::WorkerPanicked).then_some(output.index)
++        }) {
++            return Err(SolverError::ProfileWorkerPanicked {
++                profile_index: index,
++            });
++        }
++        if let Some(error) = outputs.iter().find_map(|output| match &output.result {
++            ProfileTaskResult::Search(result) => match result.as_ref() {
++                ProfileSearchResult::Failed { error, .. } => Some(error.clone()),
++                _ => None,
++            },
++            ProfileTaskResult::WorkerPanicked => None,
++        }) {
++            return Err(SolverError::ProfileSearch(error));
++        }
++        let keep = outputs.iter().all(|output| {
++            matches!(
++                &output.result,
++                ProfileTaskResult::Search(result)
++                    if matches!(result.as_ref(), ProfileSearchResult::Exhausted { .. })
++            )
++        });
++        if keep {
++            ledger.register_link_group(self.node_count, link_count, profile_ids)?;
++            ledger.import_group(self.node_count, link_count, overflow_ledger)?;
++            Ok(Some((link_count, outputs)))
++        } else {
++            Ok(None)
++        }
++    }
++
++    fn with_link_count(self, link_count: u32) -> Self {
++        Self { link_count, ..self }
++    }
++
++    fn finish_group_outputs(
++        &self,
++        profiles: Vec<AccountedProfile>,
++        mut root_outputs: Vec<RootTaskOutput>,
++        ledger: &mut ProofLedger,
++        shared: Option<&SharedStateCache>,
++    ) -> Result<Vec<ProfileTaskOutput>, SolverError> {
+         root_outputs.sort_unstable_by_key(|task| (task.profile_index, task.partition));
+         let mut completions = self.record_roots(&profiles, root_outputs, ledger)?;
+         let mut outputs = self.fold_profiles(profiles, &mut completions, ledger)?;
+-        if let Some(shared) = &shared {
++        if let Some(shared) = shared {
+             for output in &mut outputs {
+                 if self.collect_all_witnesses {
+                     output.witnesses = shared.witnesses(output.accounted.profile);
+@@ -1219,6 +1402,7 @@ impl ProfileGroupRun<'_> {
+                                     .lock()
+                                     .unwrap_or_else(std::sync::PoisonError::into_inner) = snapshot;
+                             },
++                            self.cancel,
+                         );
+                         if let RootTaskResult::Search(result) = &output.result {
+                             merge_instrumentation(&mut totals, &profile_result_metadata(result).1);
+@@ -1242,17 +1426,340 @@ impl ProfileGroupRun<'_> {
+         })
+     }
+ 
++    #[allow(clippy::too_many_lines)]
++    fn execute_roots_with_overflow(
++        &self,
++        current_tasks: &[RootTask],
++        current_shared: Option<&SharedStateCache>,
++        overflow: OverflowSpec<'_>,
++        progress: &(dyn Fn(&SearchInstrumentation) + Sync),
++    ) -> Result<(Vec<RootTaskOutput>, OverflowExecuteResult), SolverError> {
++        let overflow_search = OnceLock::new();
++        let overflow_skip = AtomicBool::new(false);
++        let overflow_abort = AtomicBool::new(false);
++        let overflow_cancel = AtomicBool::new(false);
++        let overflow_meta = Mutex::new(None);
++        let plan_error = Mutex::new(None);
++        let current_finished = AtomicUsize::new(0);
++        let current_in_flight = AtomicUsize::new(0);
++        let overflow_in_flight = AtomicUsize::new(0);
++        let current_next = AtomicUsize::new(0);
++        let overflow_next = AtomicUsize::new(0);
++        let watch_done = AtomicBool::new(false);
++        let worker_count = self.requested_workers;
++        if worker_count == 0 {
++            return Ok((Vec::new(), OverflowExecuteResult::Skipped));
++        }
++        let live = (0..worker_count)
++            .map(|_| Mutex::new(SearchInstrumentation::default()))
++            .collect::<Vec<_>>();
++
++        let (current_outputs, overflow_outputs) = thread::scope(|scope| {
++            let overflow_search = &overflow_search;
++            let overflow_skip = &overflow_skip;
++            let overflow_abort = &overflow_abort;
++            let overflow_cancel = &overflow_cancel;
++            let overflow_meta = &overflow_meta;
++            let plan_error = &plan_error;
++            let current_finished = &current_finished;
++            let current_in_flight = &current_in_flight;
++            let overflow_in_flight = &overflow_in_flight;
++            let current_next = &current_next;
++            let overflow_next = &overflow_next;
++            let watch_done = &watch_done;
++            let planner = scope.spawn(move || {
++                if self.cancel.load(Ordering::Relaxed) || overflow_abort.load(Ordering::Relaxed) {
++                    overflow_skip.store(true, Ordering::Relaxed);
++                    return;
++                }
++                let runner = self.with_link_count(overflow.group.link_count);
++                let mut ledger = ProofLedger::default();
++                if let Err(error) = ledger.begin_node(self.node_count).and_then(|()| {
++                    ledger.register_link_group(
++                        self.node_count,
++                        overflow.group.link_count,
++                        overflow.group.profiles.iter().map(|p| p.profile),
++                    )
++                }) {
++                    *plan_error
++                        .lock()
++                        .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(error.into());
++                    overflow_skip.store(true, Ordering::Relaxed);
++                    return;
++                }
++                match runner.plan_roots(&overflow.group.profiles, &mut ledger) {
++                    Err(error) => {
++                        *plan_error
++                            .lock()
++                            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(error);
++                        overflow_skip.store(true, Ordering::Relaxed);
++                    }
++                    Ok((tasks, immediate)) => {
++                        if self.cancel.load(Ordering::Relaxed)
++                            || overflow_abort.load(Ordering::Relaxed)
++                        {
++                            overflow_skip.store(true, Ordering::Relaxed);
++                            return;
++                        }
++                        let shared = runner
++                            .parallelism
++                            .shared_state_cache
++                            .then(SharedStateCache::default);
++                        let _ = overflow_search.set(OverflowSearch { tasks, shared });
++                        *overflow_meta
++                            .lock()
++                            .unwrap_or_else(std::sync::PoisonError::into_inner) =
++                            Some(OverflowMeta {
++                                link_count: overflow.group.link_count,
++                                profiles: overflow.group.profiles.clone(),
++                                immediate,
++                                ledger,
++                            });
++                    }
++                }
++            });
++
++            let watcher = scope.spawn(move || {
++                while !watch_done.load(Ordering::Relaxed) {
++                    if self.cancel.load(Ordering::Relaxed) || overflow_abort.load(Ordering::Relaxed)
++                    {
++                        overflow_cancel.store(true, Ordering::Relaxed);
++                    }
++                    thread::park_timeout(Duration::from_millis(1));
++                }
++                if self.cancel.load(Ordering::Relaxed) || overflow_abort.load(Ordering::Relaxed) {
++                    overflow_cancel.store(true, Ordering::Relaxed);
++                }
++            });
++
++            let (stop, stopped) = mpsc::channel::<()>();
++            let live = &live;
++            let reporter = scope.spawn(move || {
++                while matches!(
++                    stopped.recv_timeout(PROGRESS_INTERVAL),
++                    Err(mpsc::RecvTimeoutError::Timeout)
++                ) {
++                    let mut snapshot = SearchInstrumentation::default();
++                    for worker in live {
++                        let worker = worker
++                            .lock()
++                            .unwrap_or_else(std::sync::PoisonError::into_inner);
++                        merge_instrumentation(&mut snapshot, &worker);
++                    }
++                    progress(&snapshot);
++                }
++            });
++
++            let mut handles = Vec::with_capacity(worker_count);
++            for telemetry in live {
++                let handle = scope.spawn(move || {
++                    let mut current_completed = Vec::new();
++                    let mut overflow_completed = Vec::new();
++                    let mut totals = SearchInstrumentation::default();
++                    let mut current_exhausted = false;
++                    loop {
++                        if self.cancel.load(Ordering::Relaxed) {
++                            overflow_cancel.store(true, Ordering::Relaxed);
++                            break;
++                        }
++                        if !current_exhausted {
++                            let index = current_next.fetch_add(1, Ordering::Relaxed);
++                            if let Some(task) = current_tasks.get(index) {
++                                current_in_flight.fetch_add(1, Ordering::Relaxed);
++                                let output = self.execute_root(
++                                    task,
++                                    SearchExecution {
++                                        shared: current_shared,
++                                        donations: None,
++                                    },
++                                    &|current| {
++                                        let mut snapshot = totals.clone();
++                                        merge_instrumentation(&mut snapshot, current);
++                                        *telemetry
++                                            .lock()
++                                            .unwrap_or_else(std::sync::PoisonError::into_inner) =
++                                            snapshot;
++                                    },
++                                    self.cancel,
++                                );
++                                if let RootTaskResult::Search(result) = &output.result {
++                                    merge_instrumentation(
++                                        &mut totals,
++                                        &profile_result_metadata(result).1,
++                                    );
++                                }
++                                *telemetry
++                                    .lock()
++                                    .unwrap_or_else(std::sync::PoisonError::into_inner) =
++                                    totals.clone();
++                                if overflow.abort_if_current_sat && root_output_has_witness(&output)
++                                {
++                                    overflow_abort.store(true, Ordering::Relaxed);
++                                    overflow_cancel.store(true, Ordering::Relaxed);
++                                }
++                                current_completed.push(output);
++                                current_in_flight.fetch_sub(1, Ordering::Release);
++                                current_finished.fetch_add(1, Ordering::Release);
++                                continue;
++                            }
++                            current_exhausted = true;
++                        }
++                        if overflow_cancel.load(Ordering::Relaxed)
++                            || overflow_skip.load(Ordering::Relaxed)
++                        {
++                            if current_in_flight.load(Ordering::Acquire) == 0 {
++                                break;
++                            }
++                            thread::park_timeout(Duration::from_millis(1));
++                            continue;
++                        }
++                        let Some(search) = overflow_search.get() else {
++                            thread::park_timeout(Duration::from_millis(1));
++                            continue;
++                        };
++                        if !try_reserve_overflow_slot(
++                            self.requested_workers,
++                            current_tasks.len(),
++                            current_finished,
++                            overflow_in_flight,
++                        ) {
++                            if current_in_flight.load(Ordering::Acquire) == 0
++                                && overflow_in_flight.load(Ordering::Acquire) == 0
++                                && overflow_next.load(Ordering::Relaxed) >= search.tasks.len()
++                            {
++                                break;
++                            }
++                            thread::park_timeout(Duration::from_millis(1));
++                            continue;
++                        }
++                        let overflow_index = overflow_next.fetch_add(1, Ordering::Relaxed);
++                        let Some(task) = search.tasks.get(overflow_index) else {
++                            overflow_in_flight.fetch_sub(1, Ordering::Release);
++                            if current_in_flight.load(Ordering::Acquire) == 0
++                                && overflow_in_flight.load(Ordering::Acquire) == 0
++                            {
++                                break;
++                            }
++                            thread::park_timeout(Duration::from_millis(1));
++                            continue;
++                        };
++                        let output = self.execute_root(
++                            task,
++                            SearchExecution {
++                                shared: search.shared.as_ref(),
++                                donations: None,
++                            },
++                            &|current| {
++                                let mut snapshot = totals.clone();
++                                merge_instrumentation(&mut snapshot, current);
++                                *telemetry
++                                    .lock()
++                                    .unwrap_or_else(std::sync::PoisonError::into_inner) = snapshot;
++                            },
++                            overflow_cancel,
++                        );
++                        if let RootTaskResult::Search(result) = &output.result {
++                            merge_instrumentation(&mut totals, &profile_result_metadata(result).1);
++                        }
++                        *telemetry
++                            .lock()
++                            .unwrap_or_else(std::sync::PoisonError::into_inner) = totals.clone();
++                        overflow_completed.push(output);
++                        overflow_in_flight.fetch_sub(1, Ordering::Release);
++                    }
++                    (current_completed, overflow_completed)
++                });
++                handles.push(handle);
++            }
++
++            let mut current_outputs = Vec::with_capacity(current_tasks.len());
++            let mut overflow_outputs = Vec::new();
++            for handle in handles {
++                if let Ok((mut current, mut overflow)) = handle.join() {
++                    current_outputs.append(&mut current);
++                    overflow_outputs.append(&mut overflow);
++                }
++            }
++            watch_done.store(true, Ordering::Relaxed);
++            drop(stop);
++            let _ = reporter.join();
++            if planner.join().is_err() {
++                *plan_error
++                    .lock()
++                    .unwrap_or_else(std::sync::PoisonError::into_inner) =
++                    Some(SolverError::ProfileWorkerPanicked { profile_index: 0 });
++            }
++            let _ = watcher.join();
++            (current_outputs, overflow_outputs)
++        });
++
++        if let Some(error) = plan_error
++            .lock()
++            .unwrap_or_else(std::sync::PoisonError::into_inner)
++            .take()
++        {
++            return Err(error);
++        }
++
++        let cancelled = self.cancel.load(Ordering::Relaxed)
++            || overflow_cancel.load(Ordering::Relaxed)
++            || current_outputs.iter().any(|output| {
++                matches!(
++                    &output.result,
++                    RootTaskResult::Search(result)
++                        if matches!(
++                            result.as_ref(),
++                            ProfileSearchResult::Incomplete {
++                                reason: IncompleteReason::Cancelled,
++                                ..
++                            }
++                        )
++                )
++            });
++        let current_outputs = fill_missing_roots(current_outputs, current_tasks, cancelled);
++
++        let result = if overflow_skip.load(Ordering::Relaxed)
++            || overflow_abort.load(Ordering::Relaxed)
++            || self.cancel.load(Ordering::Relaxed)
++        {
++            OverflowExecuteResult::Abandoned
++        } else if let (Some(search), Some(meta)) = (
++            overflow_search.into_inner(),
++            overflow_meta
++                .into_inner()
++                .unwrap_or_else(std::sync::PoisonError::into_inner),
++        ) {
++            let mut root_outputs = meta.immediate;
++            root_outputs.extend(fill_missing_roots(
++                overflow_outputs,
++                &search.tasks,
++                overflow_cancel.load(Ordering::Relaxed),
++            ));
++            OverflowExecuteResult::Completed {
++                link_count: meta.link_count,
++                profiles: meta.profiles,
++                root_outputs,
++                shared: search.shared,
++                ledger: meta.ledger,
++            }
++        } else {
++            OverflowExecuteResult::Skipped
++        };
++        Ok((current_outputs, result))
++    }
++
+     fn execute_root(
+         &self,
+         task: &RootTask,
+         execution: SearchExecution<'_>,
+         progress: &(dyn Fn(&SearchInstrumentation) + Sync),
++        cancel: &AtomicBool,
+     ) -> RootTaskOutput {
+         let partition = task.partition.id().ordinal();
+         let _activity = crate::diagnostics::ActivitySpan::start(
+             "root",
+             self.node_count,
+-            Some(self.link_count),
++            Some(task.accounted.accounting.link_count),
+             Some(task.accounted.profile),
+             Some(partition),
+             self.requested_workers,
+@@ -1268,7 +1775,7 @@ impl ProfileGroupRun<'_> {
+             let mut result = search_profile_root_partition_with_execution(
+                 self.problem,
+                 task.accounted.profile,
+-                self.cancel,
++                cancel,
+                 Some(task.accounted.accounting),
+                 &task.partition,
+                 self.collect_all_witnesses,
+@@ -1322,27 +1829,7 @@ impl ProfileGroupRun<'_> {
+                         )
+                 )
+             });
+-        let completed_keys = completed
+-            .iter()
+-            .map(|output| (output.profile_index, output.partition))
+-            .collect::<std::collections::BTreeSet<_>>();
+-        completed.extend(tasks.iter().filter_map(|task| {
+-            let partition = task.partition.id().ordinal();
+-            let key = (task.profile_index, partition);
+-            if completed_keys.contains(&key) {
+-                return None;
+-            }
+-            Some(if cancelled {
+-                cancelled_root_output(task.profile_index, partition)
+-            } else {
+-                RootTaskOutput {
+-                    profile_index: task.profile_index,
+-                    partition,
+-                    result: RootTaskResult::WorkerPanicked,
+-                }
+-            })
+-        }));
+-        completed
++        fill_missing_roots(completed, tasks, cancelled)
+     }
+ 
+     fn record_roots(
+@@ -1406,6 +1893,82 @@ impl ProfileGroupRun<'_> {
+     }
+ }
+ 
++fn overflow_slots(idle_workers: usize) -> usize {
++    idle_workers.saturating_sub(1)
++}
++
++fn try_reserve_overflow_slot(
++    requested_workers: usize,
++    current_task_count: usize,
++    current_finished: &AtomicUsize,
++    overflow_in_flight: &AtomicUsize,
++) -> bool {
++    loop {
++        let current_busy = current_task_count
++            .saturating_sub(current_finished.load(Ordering::Acquire))
++            .min(requested_workers);
++        let idle = requested_workers.saturating_sub(current_busy);
++        let cap = overflow_slots(idle);
++        let in_flight = overflow_in_flight.load(Ordering::Acquire);
++        if in_flight >= cap {
++            return false;
++        }
++        if overflow_in_flight
++            .compare_exchange_weak(in_flight, in_flight + 1, Ordering::AcqRel, Ordering::Acquire)
++            .is_ok()
++        {
++            return true;
++        }
++    }
++}
++
++fn root_output_has_witness(output: &RootTaskOutput) -> bool {
++    match &output.result {
++        RootTaskResult::Search(result) => match result.as_ref() {
++            ProfileSearchResult::Exhausted {
++                best_witness,
++                witnesses,
++                ..
++            }
++            | ProfileSearchResult::Incomplete {
++                best_witness,
++                witnesses,
++                ..
++            } => best_witness.is_some() || !witnesses.is_empty(),
++            ProfileSearchResult::Failed { .. } => false,
++        },
++        RootTaskResult::WorkerPanicked => false,
++    }
++}
++
++fn fill_missing_roots(
++    mut completed: Vec<RootTaskOutput>,
++    tasks: &[RootTask],
++    cancelled: bool,
++) -> Vec<RootTaskOutput> {
++    let completed_keys = completed
++        .iter()
++        .map(|output| (output.profile_index, output.partition))
++        .collect::<std::collections::BTreeSet<_>>();
++    completed.extend(tasks.iter().filter_map(|task| {
++        let partition = task.partition.id().ordinal();
++        let key = (task.profile_index, partition);
++        if completed_keys.contains(&key) {
++            return None;
++        }
++        Some(if cancelled {
++            cancelled_root_output(task.profile_index, partition)
++        } else {
++            RootTaskOutput {
++                profile_index: task.profile_index,
++                partition,
++                result: RootTaskResult::WorkerPanicked,
++            }
++        })
++    }));
++    completed
++}
++
+ fn cancelled_root_output(profile_index: usize, partition: u32) -> RootTaskOutput {
+     RootTaskOutput {
+         profile_index,
+@@ -2429,6 +2992,91 @@ mod tests {
+         assert_eq!((solution.node_count, solution.link_count), (1, 0));
+     }
+ 
++    #[test]
++    fn overflow_slots_keep_one_worker_in_standby() {
++        assert_eq!(overflow_slots(0), 0);
++        assert_eq!(overflow_slots(1), 0);
++        assert_eq!(overflow_slots(15), 14);
++        assert_eq!(overflow_slots(16), 15);
++        assert_eq!(overflow_slots(11), 10);
++    }
++
++    #[test]
++    fn overflow_next_link_group_matches_serial_group_search() {
++        let problem = problem(&[2, 3], &[1, 4], 5);
++        let serial = solve(
++            &problem,
++            &SolveOptions {
++                max_nodes: Some(2),
++                worker_count: 4,
++                ..SolveOptions::default()
++            },
++            &AtomicBool::new(false),
++        )
++        .unwrap();
++        let overflow = solve(
++            &problem,
++            &SolveOptions {
++                max_nodes: Some(2),
++                worker_count: 4,
++                parallelism: ParallelismOptions {
++                    deep_partitions: true,
++                    overflow_next_link_group: true,
++                    ..ParallelismOptions::default()
++                },
++            },
++            &AtomicBool::new(false),
++        )
++        .unwrap();
++        assert_eq!(serial, overflow);
++        let layouts = Mutex::new(BTreeMap::new());
++        let enumerated = enumerate_with_observer(
++            &problem,
++            &SolveOptions {
++                max_nodes: Some(2),
++                worker_count: 4,
++                parallelism: ParallelismOptions {
++                    overflow_next_link_group: true,
++                    ..ParallelismOptions::default()
++                },
++            },
++            &AtomicBool::new(false),
++            &|event| {
++                if let SolverEvent::SolutionFound(solution) = event {
++                    layouts
++                        .lock()
++                        .unwrap()
++                        .insert(solution.canonical_graph_key.clone(), solution);
++                }
++            },
++        )
++        .unwrap();
++        let baseline = Mutex::new(BTreeMap::new());
++        let serial_enum = enumerate_with_observer(
++            &problem,
++            &SolveOptions {
++                max_nodes: Some(2),
++                worker_count: 4,
++                ..SolveOptions::default()
++            },
++            &AtomicBool::new(false),
++            &|event| {
++                if let SolverEvent::SolutionFound(solution) = event {
++                    baseline
++                        .lock()
++                        .unwrap()
++                        .insert(solution.canonical_graph_key.clone(), solution);
++                }
++            },
++        )
++        .unwrap();
++        assert_eq!(serial_enum, enumerated);
++        assert_eq!(
++            baseline.into_inner().unwrap(),
++            layouts.into_inner().unwrap()
++        );
++    }
++
+     #[test]
+     fn progress_identifies_root_obligations_and_incumbents_are_validated() {
+         let problem = problem(&[6], &[6], 6);
+diff --git a/crates/solver-core/src/solver/benchmark/root.rs b/crates/solver-core/src/solver/benchmark/root.rs
+index c1d048d..97e39aa 100644
+--- a/crates/solver-core/src/solver/benchmark/root.rs
++++ b/crates/solver-core/src/solver/benchmark/root.rs
+@@ -46,6 +46,7 @@ pub fn prepare_root(
+         || workload.parallelism.shared_state_cache
+         || workload.parallelism.work_stealing
+         || workload.parallelism.parallel_remaining_groups
++        || workload.parallelism.overflow_next_link_group
+     {
+         return Err(BenchmarkError::Invalid(
+             "root replay needs one profile and the p1 policy",
+diff --git a/crates/solver-core/tests/parallelism.rs b/crates/solver-core/tests/parallelism.rs
+index 2d356f1..7fd9fe2 100644
+--- a/crates/solver-core/tests/parallelism.rs
++++ b/crates/solver-core/tests/parallelism.rs
+@@ -18,6 +18,7 @@ fn stages() -> Vec<ParallelismOptions> {
+             shared_state_cache: true,
+             work_stealing: true,
+             parallel_remaining_groups: true,
++            overflow_next_link_group: true,
+         },
+         ParallelismOptions {
+             parallel_remaining_groups: true,
+@@ -39,12 +40,18 @@ fn stages() -> Vec<ParallelismOptions> {
+             shared_state_cache: true,
+             work_stealing: true,
+             parallel_remaining_groups: false,
++            ..ParallelismOptions::default()
+         },
+         ParallelismOptions::default(),
+         ParallelismOptions {
+             deep_partitions: true,
+             ..ParallelismOptions::default()
+         },
++        ParallelismOptions {
++            deep_partitions: true,
++            overflow_next_link_group: true,
++            ..ParallelismOptions::default()
++        },
+         ParallelismOptions {
+             deep_partitions: true,
+             shared_state_cache: true,

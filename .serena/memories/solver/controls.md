@@ -1,10 +1,10 @@
 # Controls and code map
 
 All `ParallelismOptions` flags default to false. The shared production Custom
-adapter enables deep partitions without an N limit. Native options retain baseline
-scheduling unless a caller selects a stage; no UI switch was added. Native
-`SolveOptions` defaults to one worker, but callers and benchmarks may request another
-count.
+adapter enables deep partitions without an N limit. Native
+options retain baseline scheduling unless a caller selects a stage; no UI switch
+was added. Native `SolveOptions` defaults to one worker, but callers and benchmarks
+may request another count. Benchmark stage `p1` remains partitions-only.
 
 ## Stage names
 
@@ -46,8 +46,8 @@ experiment 29. Donation helpers still take exact keys. Donation `join` keeps onl
 against production p1: 115 identity held (49 layouts), but wall speedup was
 concentrated on 258 while peak working set rose 28–45% even on cells with zero
 shared hits. The candidate was rejected and its solver source fully restored to
-experiment 54. Production p1 stays partitions only. Public `work_stealing` remains
-off. The frozen A/B for deferred canonicalization passed and the implementation is
+experiment 54. Benchmark `p1` stays partitions only. Public `work_stealing` remains
+off. Overflow-next-L is absent from production source after experiment 63. The frozen A/B for deferred canonicalization passed and the implementation is
 permanent.
 [Experiment 30](experiments/30-no-state-cache-ablation.md) removed this local cache in
 a validated fail-fast trial. Structural work rose enough to make 238 optimal 3.00x
@@ -57,6 +57,9 @@ Remaining groups have a bounded number of slots. Their worker budgets sum to the
 requested search workers; reporter/coordinator threads are additional. Allocations
 do not move between groups after a group finishes. A common coarse pool is only a
 proposal. Release builds use `panic = "abort"`; a panic can terminate the process.
+
+Overflow-next-L is absent from production. 20/20 at `target/parallelism-ladder/overflow-next-l-ab-20260905` held public keys/solutions, but 36 wall +20.0% / CPU +31.9% and 115 first-valid 4.7× later. Solver-core restored. Candidate remains `benchmarks/custom/variants/overflow-next-link-group.patch`. No new public flag.
+`mem:solver/experiments/63-overflow-next-link-group`.
 
 ## Where to work
 
@@ -164,3 +167,5 @@ Experiment60 permanently prunes applied children in `evaluate_applied_child` whe
 Experiment62 remaining-port L-bound A/B/C is absent from production. 60/60 at `target/parallelism-ladder/l-bound-abc-20260905` held identity but both candidates failed the wall bar (places 238 CCD32 +1.26%; forced 115 CCD96 +0.91% wall / +0.34% CPU). Production source remains `6bb0763`. Candidates remain `benchmarks/custom/variants/under-l-places.patch` and `benchmarks/custom/variants/forced-remaining-l.patch`. No new public flag. `mem:solver/experiments/62-l-bound-abc`.
 
 Experiment61 isolated SCC deferral is absent from production. 30/30 at `target/parallelism-ladder/scc-deferral-ab-20260905` held identity but 36 wall +4.93% with CI excluding 0. Solver-core restored to `6bb0763`. Candidate remains `benchmarks/custom/variants/scc-deferral.patch`. Production SCC cache is still exact-first. No new public flag. `mem:solver/experiments/61-scc-deferral`.
+
+Experiment63 overflow-next-L is absent from production. 20/20 at `target/parallelism-ladder/overflow-next-l-ab-20260905` held public identity, but 36 wall +20.0% CI excludes 0 and 115 first-valid 4.7× later. Solver-core restored. Candidate remains `benchmarks/custom/variants/overflow-next-link-group.patch`. No new public flag. `mem:solver/experiments/63-overflow-next-link-group`.
