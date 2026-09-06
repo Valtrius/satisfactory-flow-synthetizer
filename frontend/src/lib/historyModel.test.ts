@@ -212,6 +212,68 @@ describe('entryHistoryMetrics', () => {
       nodes: { value: 'N=5', tip: 'Node count N = 5' },
       layouts: { value: '2', tip: '2 layouts found' },
     });
+    expect(entryStatusCaption(entry)).toBe('Completed');
+  });
+
+  it('labels a finished All Min L search Completed even when layouts stay best_known', () => {
+    const layout = {
+      engine: 'custom' as const,
+      status: 'best_known' as const,
+      modelVersion: 1,
+      stats: {
+        nodeCount: 4,
+        splitters: 1,
+        mergers: 1,
+        feedbackLoops: 0,
+        linkCount: 3,
+        checkedThrough: 4,
+      },
+      totalInput: { exact: '120', decimal: '120' },
+      totalOutput: { exact: '120', decimal: '120' },
+      discardRate: { exact: '0', decimal: '0' },
+      beltRate: { exact: '1200', decimal: '1200' },
+      nodes: [],
+      edges: [],
+      buildSteps: [],
+    };
+    const entry = completed({
+      id: 'min-l',
+      request: { ...request, solveMode: 'all_at_minimum_nodes_and_minimum_links' },
+      form: { ...form, solveMode: 'all_at_minimum_nodes_and_minimum_links' },
+      enumerationComplete: true,
+      result: layout,
+      results: [layout, { ...layout, stats: { ...layout.stats, feedbackLoops: 1 } }],
+    });
+    expect(entryStatusCaption(entry)).toBe('Completed');
+  });
+
+  it('keeps Best known for a single-layout Opt that never proved optimality', () => {
+    const entry = completed({
+      id: 'opt-best',
+      request: { ...request, solveMode: 'optimal' },
+      form: { ...form, solveMode: 'optimal' },
+      enumerationComplete: false,
+      result: {
+        engine: 'custom',
+        status: 'best_known',
+        modelVersion: 1,
+        stats: {
+          nodeCount: 4,
+          splitters: 1,
+          mergers: 1,
+          feedbackLoops: 0,
+          linkCount: 3,
+          checkedThrough: 4,
+        },
+        totalInput: { exact: '60', decimal: '60' },
+        totalOutput: { exact: '60', decimal: '60' },
+        discardRate: { exact: '0', decimal: '0' },
+        beltRate: { exact: '1200', decimal: '1200' },
+        nodes: [],
+        edges: [],
+        buildSteps: [],
+      },
+    });
     expect(entryStatusCaption(entry)).toBe('Best known');
   });
 

@@ -300,6 +300,11 @@ export function entryStatusCaption(entry: HistoryEntry): string {
     case 'cancelled':
       return 'Cancelled';
     case 'completed': {
+      // Enumeration stores every extra layout as `best_known`. Job completion is
+      // independent of that: once the requested scope is exhausted, the entry is done.
+      if (entry.enumerationComplete || enumeratesLayouts(entry.request.solveMode)) {
+        return 'Completed';
+      }
       const solutionStatus = entry.result?.status ?? entry.results[0]?.status;
       return solutionStatus === 'best_known' ? 'Best known' : 'Completed';
     }
