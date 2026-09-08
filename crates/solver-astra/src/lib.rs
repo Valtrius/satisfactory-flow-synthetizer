@@ -1,10 +1,12 @@
 //! Astra: exact compact topology synthesis with a local incremental cvc5 backend.
+mod cardinality;
 mod diagnostics;
 mod encoding;
 use diagnostics::RootStats;
+mod portfolio;
 mod process;
 
-use encoding::Encoding;
+use encoding::{Counts, Encoding};
 use process::{Failure, Session};
 use solver_api::{
     BestKnownSolution, CanonicalGraphKey, ConsumerPortRef, Diagnostic, IncompleteReason,
@@ -52,7 +54,7 @@ pub fn solve_problem(
         ));
     }
     let collector = SolutionCollector::new(problem, observer);
-    let result = run(problem, options, cancel, &collector)?;
+    let result = portfolio::run(problem, options, cancel, &collector)?;
     let outcome = collector.finish(result, options.mode);
     // Public identity normalization is part of the run, too. A cancellation during
     // that final work must not escape as a completed result.
@@ -205,6 +207,7 @@ impl RootLedger {
 }
 
 struct Search<'a> {
+    counts: Counts,
     original: &'a Problem,
     normalized: NormalizedProblem,
     problem: Problem,
@@ -224,6 +227,7 @@ fn run(
     options: &RunOptions,
     cancel: &AtomicBool,
     observer: &dyn SolveObserver,
+    counts: Counts,
 ) -> Result<SolveResult, SolverError> {
     let started = Instant::now();
     let preparation = solver_core::prepare_problem(problem)
@@ -240,6 +244,7 @@ fn run(
         Preparation::Prepared(value) => value,
     };
     let mut search = Search {
+        counts,
         original: problem,
         problem: Problem {
             inputs: normalized.inputs.as_slice().to_vec(),
@@ -401,6 +406,7 @@ impl Search<'_> {
         let original = self.original;
         let cancel = self.cancel;
         let mode = self.options.mode;
+        let counts = self.counts;
         let diagnostics = std::env::var_os("ASTRA_DIAGNOSTICS").is_some_and(|v| v == "1");
         let origin = self.started;
         let workers = self.options.worker_count.min(roots.len());
@@ -433,6 +439,7 @@ impl Search<'_> {
                                 tasks[root.profile],
                                 root.source,
                                 mode,
+                                counts,
                                 cancel,
                                 stop,
                                 &send,
@@ -662,12 +669,13 @@ fn profile(
     task: AccountedProfile,
     source: Option<usize>,
     mode: SolveMode,
+    counts: Counts,
     cancel: &AtomicBool,
     stop: &AtomicBool,
     send: &mpsc::Sender<Message>,
     stats: &mut Option<RootStats>,
 ) -> Result<Completion, Failure> {
-    let encoding = Encoding::new(problem, task);
+    let encoding = Encoding::new(problem, task, counts);
     let mut session = Session::new()?;
     session.write(&encoding.script)?;
     if let Some(source) = source {

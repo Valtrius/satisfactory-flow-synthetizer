@@ -399,3 +399,140 @@ These are overlapping worker wall times, not process CPU or total solve time.
 The verified first-optimum runner and sources are preserved at
 `target/astra-before-cardinality-20260908`. Its runner SHA-256 is
 `d344ead5543dbe41db799233c355d9a9a867486a047c42f33f81773ddb9b2b26`.
+
+## Exact count constraint experiment (2026-09-08)
+
+Two successive candidates address the observed SMT cost and are measured
+separately. Their performance is not yet established.
+
+First, replace the dense internal-link count by the equivalent sparse terminal
+count. Let P be the total number of operator input ports, I the external input
+count, X the belts from external inputs to operators, and D the belts from
+external inputs directly to requested outputs or discards. The complete port
+constraints give P=L+X and I=X+D, hence L=P-I+D. We assert D=L+I-P using only
+the direct terminal edges. A negative required count is impossible. This proof
+allows cycles, multiple inputs, parallel belts and discards; it assumes no rate
+pattern or benchmark identity. The candidate is frozen at
+`target/astra-sparse-links-candidate-20260908` after all 10 Astra tests passed.
+
+Second, express exact edge counts in rows, columns and the direct-terminal set
+with Boolean prefix thresholds. Each auxiliary q(i,j) is equivalent to at least
+j selected edges among the first i edges, using both directions of
+q(i,j) = q(i-1,j) OR (q(i-1,j-1) AND edge(i)). The final prefix requires threshold
+k and forbids k+1. Complementing all literals for k > n/2 reduces counter width.
+Zero, full and impossible counts are handled explicitly. Every edge assignment
+with exactly k selected edges extends to the auxiliary variables, and every
+satisfying auxiliary assignment implies exactly k edges. Flow equalities remain
+exact rational arithmetic. No dependency or cvc5 option changes are involved.
+
+A truth-table test queries cvc5 for every edge assignment up to six literals
+and all requested counts through n+1. The solver contract suite also compares
+full Reference enumeration with cycles, surplus, rational rates and scaling,
+and exercises first-optimum stopping, cancellation and root proof accounting.
+
+`benchmarks/astra/cardinality.json` prepares 132 sequential release runs:
+60 first-optimum/sparse-count comparisons, 60 sparse-count/Boolean comparisons,
+and 12 separate diagnostic observations. The timeouts plus cleanup allowances
+total 19,080 seconds (5h18), below the authorized eight hours. This screen keeps
+all eight corpus cases and all three scopes, with 300-second limits for 10,
+180 seconds for 258-minimum_links and matched AB/BA pairs. Sources, binaries,
+backend and harness are frozen. The result policy remains `any_optimum`; full
+enumeration identity and saved-object comparisons remain mandatory.
+
+## Verified count-constraint screen (2026-09-08)
+
+`target/astra-cardinality-screen-20260908` verified all 132 records with no
+failures. 128 solves completed. The four explicit timeouts were Boolean 10
+optimal (two main timing runs and two diagnostic runs), all capped at 300
+seconds. Diagnostic runs produced no 10 models before the cap.
+
+Matched 32-worker medians, two runs per variant (seconds):
+
+| Scope             | First-optimum | Sparse links | Sparse control |      Boolean counts |
+| ----------------- | ------------: | -----------: | -------------: | ------------------: |
+| 10 optimal        |       121.187 |       22.731 |         20.655 | incomplete at 300 s |
+| 36 optimal        |         8.249 |        8.645 |          8.652 |               2.659 |
+| 36 all            |        22.819 |       19.432 |         18.185 |               4.276 |
+| 115 all           |        11.551 |       16.580 |         16.547 |               5.936 |
+| 238 all           |         2.007 |        2.281 |          2.193 |               0.633 |
+| 258 optimal       |         7.110 |       38.921 |         40.682 |               2.043 |
+| 258 minimum_links |        50.268 |       68.810 |         61.699 |              49.198 |
+
+The first two timing columns are one paired comparison; the last two are
+another. Both sparse columns use the same binary in separate pairs. This
+experiment improved important cases but found adverse results for both single
+formulations. In particular, Boolean counters cannot replace sparse counts
+unconditionally on the evidence for 10. Full canonical enumeration objects
+and objective/validation checks passed. Neither Custom nor Z3 was rerun here.
+
+## Independent formulation portfolio experiment (2026-09-08)
+
+The next candidate races complete sparse-count and Boolean-count searches.
+Their worker allocations sum to the requested count: at 32 workers, each gets
+16; the sparse search gets the extra worker for odd totals. A one-worker request
+runs Boolean counts alone. Both searches use the same objective ordering,
+exact validation and complete enumeration contracts. No rates, case names or
+corpus labels select the formulation.
+
+Each search owns an independent proof ledger. The first completed search can
+supply the terminal proof only after both searches and their workers have been
+joined. Internal cancellation stops the loser; explicit user cancellation
+always produces incomplete and retains validated witnesses. Proof counters
+are copied from the returned proof owner, never summed across formulations.
+A failure or incomplete outcome in one search does not discharge any obligation
+in the other; only an independently completed proof can win.
+
+Incumbents are globally improved in N/L order, retaining the first equal tie.
+The shared collector deduplicates enumeration by exact layout identity. Each
+search independently proves the same minimum N before delivering enumeration;
+therefore their delivered layouts belong to the same required scope. A
+completed enumeration from the winner covers any layouts delivered by the
+loser. An equal-optimum witness from the other search may be returned with the
+winner's objective proof, since that proof concerns N/L, not representative
+ordering.
+
+Diagnostics attach a `branch` field to root records (0 sparse, 1 Boolean) and
+publish `astra.portfolio_proof_owner` after joins. Interpret root identities as
+(branch, N, L, root); only the returned owner's exhaustion records correspond
+to terminal proof counters. Progress retains the current branch's valid
+obligation and labels its source; the outer collector supplies global incumbent
+and enumeration counts.
+
+All 11 Astra tests passed with diagnostics, including full cyclic Reference
+enumeration, rational/scaling fixtures, explicit cancellation, first optimum
+and proof-owner root accounting. Strict workspace/all-target Clippy passed.
+The new screen `benchmarks/astra/portfolio.json` has 130 sequential jobs:
+60 sparse/portfolio runs, 60 Boolean/portfolio runs and ten separate diagnostic
+observations. With cleanup, the maximum allowance is 18,240 seconds (5h04).
+All timed jobs request the same total of 32 workers. The previous single
+formulations remain frozen for matched comparisons. Portfolio speed is
+unmeasured until this screen completes; resource competition may outweigh its
+benefit and must be measured rather than assumed away.
+
+## Verified portfolio screen (2026-09-08)
+
+`target/astra-portfolio-screen-20260908` verified all 130 records with no
+failures. All portfolio runs completed. The only two timeouts were the Boolean
+10-optimal controls, capped at 300 seconds. All ten diagnostic runs were also
+checked separately: the returned proof owner's exhausted-root records exactly
+match its terminal root exhaustion counter.
+
+Two-repeat matched medians at 32 total workers (seconds):
+
+| Scope             | Sparse | Portfolio paired with sparse |             Boolean | Portfolio paired with Boolean |
+| ----------------- | -----: | ---------------------------: | ------------------: | ----------------------------: |
+| 10 optimal        | 20.133 |                       24.221 | incomplete at 300 s |                        24.522 |
+| 36 optimal        |  8.427 |                        3.186 |               2.603 |                         3.124 |
+| 36 all            | 18.153 |                        5.241 |               4.216 |                         5.170 |
+| 115 all           | 15.745 |                        6.333 |               5.872 |                         6.180 |
+| 238 all           |  2.166 |                        0.700 |               0.627 |                         0.693 |
+| 258 optimal       | 35.108 |                        2.493 |               1.995 |                         2.555 |
+| 258 minimum_links | 64.331 |                       59.582 |              49.474 |                        58.779 |
+
+The portfolio combines completion on 10 with most Boolean gains elsewhere,
+but sharing resources adds overhead relative to the best standalone form.
+For example 36-all was about 23% slower and 258-minimum_links about 19% slower
+than Boolean in their matched pairs. Tiny runs grew from about 0.03 to 0.04
+seconds. These adverse results remain preserved. Full canonical enumeration
+sets, saved objects, exact objectives and independent validation passed.
+Custom and Z3 were not rerun; their earlier measurements remain historical.

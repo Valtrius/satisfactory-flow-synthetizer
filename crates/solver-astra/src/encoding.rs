@@ -1,5 +1,5 @@
 //! Port quotient: unary belt multiplicities, one exact output rate per operator.
-use crate::process::Failure;
+use crate::{cardinality::exactly, process::Failure};
 use solver_api::{
     ConsumerPortRef, DiscardTerminalIndex, InputTerminalIndex, NodeId, NodeType,
     OutputTerminalIndex, PhysicalGraph, PhysicalLink, PhysicalNode, Problem, ProducerPortRef,
@@ -7,6 +7,27 @@ use solver_api::{
 };
 use solver_core::profile::AccountedProfile;
 use std::{collections::BTreeMap, fmt::Write};
+
+#[derive(Clone, Copy)]
+pub(crate) enum Counts {
+    Sparse,
+    Boolean,
+}
+
+impl Counts {
+    fn exactly(self, script: &mut String, prefix: &str, literals: &[String], count: usize) {
+        match self {
+            Self::Boolean => exactly(script, prefix, literals, count),
+            Self::Sparse => {
+                let terms = literals
+                    .iter()
+                    .map(|s| format!("(ite {s} 1 0)"))
+                    .collect::<Vec<_>>();
+                writeln!(script, "(assert (= {} {count}))", sum(&terms)).unwrap();
+            }
+        }
+    }
+}
 
 struct Edge {
     source: usize,
@@ -42,7 +63,7 @@ fn rate(value: &Rational) -> String {
 
 impl Encoding {
     #[allow(clippy::too_many_lines)]
-    pub fn new(problem: &Problem, task: AccountedProfile) -> Self {
+    pub fn new(problem: &Problem, task: AccountedProfile, counts_encoding: Counts) -> Self {
         let p = task.profile;
         let mut nodes = Vec::new();
         for (kind, count) in [
@@ -114,7 +135,7 @@ impl Encoding {
             .collect();
         let mut predecessors = vec![Vec::new(); nodes.len()];
         let mut successors = vec![Vec::new(); nodes.len()];
-        let mut operator_links = Vec::new();
+        let mut terminal_links = Vec::new();
         for source in 0..sources {
             let arity = if source < inputs {
                 1
@@ -138,9 +159,8 @@ impl Encoding {
                     if copy > 0 {
                         writeln!(script, "(assert (=> {name} e{}))", edges.len() - 1).unwrap();
                     }
-                    let count = format!("(ite {name} 1 0)");
-                    rows[source].push(count.clone());
-                    columns[target].push(count.clone());
+                    rows[source].push(name.clone());
+                    columns[target].push(name.clone());
                     if counts[target] == 1 {
                         // Exactly one edge is active in this column. Its source
                         // rate equals the required flow; a conditional sum adds
@@ -155,8 +175,8 @@ impl Encoding {
                     } else {
                         incoming[target].push(format!("(ite {name} {} 0)", flows[source]));
                     }
-                    if source >= inputs && target >= outputs && target < discard {
-                        operator_links.push(count);
+                    if source < inputs && (target < outputs || target == discard) {
+                        terminal_links.push(name.clone());
                     }
                     if copy == 0 {
                         if target >= outputs && target < discard {
@@ -183,11 +203,21 @@ impl Encoding {
                     });
                 }
             }
-            writeln!(script, "(assert (= {} {arity}))", sum(&rows[source])).unwrap();
+            counts_encoding.exactly(
+                &mut script,
+                &format!("r{source}"),
+                &rows[source],
+                usize::from(arity),
+            );
         }
         for target in 0..targets {
             let count = counts[target];
-            writeln!(script, "(assert (= {} {count}))", sum(&columns[target])).unwrap();
+            counts_encoding.exactly(
+                &mut script,
+                &format!("c{target}"),
+                &columns[target],
+                usize::try_from(count).unwrap(),
+            );
             if count != 1 {
                 writeln!(
                     script,
@@ -207,13 +237,26 @@ impl Encoding {
             )
             .unwrap();
         }
-        writeln!(
-            script,
-            "(assert (= {} {}))",
-            sum(&operator_links),
-            task.accounting.link_count
-        )
-        .unwrap();
+        // Every operator input is fed by an operator or an external input.
+        // Every external input feeds an operator, requested output or discard.
+        // Thus L = operator input ports - external inputs + direct terminal belts.
+        // Counting the last (usually much smaller) set is exactly equivalent to
+        // counting all operator-to-operator belts, given the row/column equations.
+        let direct = i128::from(task.accounting.link_count) + i128::try_from(inputs).unwrap()
+            - nodes
+                .iter()
+                .map(|kind| i128::from(kind.input_port_count()))
+                .sum::<i128>();
+        if direct < 0 {
+            writeln!(script, "(assert false)").unwrap();
+        } else {
+            counts_encoding.exactly(
+                &mut script,
+                "d",
+                &terminal_links,
+                usize::try_from(direct).unwrap(),
+            );
+        }
         Self {
             script,
             edges,

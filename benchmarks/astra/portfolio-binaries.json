@@ -1,0 +1,8 @@
+{
+  "sparse": "../../target/astra-sparse-links-candidate-20260908/bin",
+  "boolean": "../../target/astra-before-portfolio-20260908/bin",
+  "portfolio-sparse": "../../target/release/examples",
+  "portfolio-boolean": "../../target/release/examples",
+  "portfolio-trace-a": "../../target/release/examples",
+  "portfolio-trace-b": "../../target/release/examples"
+}

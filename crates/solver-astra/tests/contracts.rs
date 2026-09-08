@@ -343,6 +343,7 @@ fn optimal_returns_first_incumbent_without_claiming_equal_link_exhaustion() {
     let p = problem(&["2", "3"], &["1", "4"], "5");
     let first = Mutex::new(None);
     let records = Mutex::new(Vec::<serde_json::Value>::new());
+    let proof_owner = Mutex::new(None::<usize>);
     let actual = solver_astra::solve_problem(
         &p,
         &options(SolveMode::Optimal, 2, 4),
@@ -350,6 +351,11 @@ fn optimal_returns_first_incumbent_without_claiming_equal_link_exhaustion() {
         &|event| {
             if let SolverEvent::Progress(progress) = &event {
                 for diagnostic in &progress.custom {
+                    if diagnostic.name == "astra.portfolio_proof_owner"
+                        && let solver_api::DiagnosticValue::Text(value) = &diagnostic.value
+                    {
+                        *proof_owner.lock().unwrap() = Some(value.parse().unwrap());
+                    }
                     if diagnostic.name == "astra.root"
                         && let solver_api::DiagnosticValue::Text(value) = &diagnostic.value
                     {
@@ -386,11 +392,15 @@ fn optimal_returns_first_incumbent_without_claiming_equal_link_exhaustion() {
     assert!(actual.solutions.is_empty());
     if std::env::var_os("ASTRA_DIAGNOSTICS").is_some_and(|value| value == "1") {
         let records = records.into_inner().unwrap();
+        let owner = proof_owner
+            .into_inner()
+            .unwrap()
+            .expect("independent proof owner");
         assert!(records.iter().any(|root| root["state"] == "optimum"));
         assert_eq!(
             records
                 .iter()
-                .filter(|root| root["state"] == "exhausted")
+                .filter(|root| root["state"] == "exhausted" && root["branch"] == owner)
                 .count() as u64,
             a.proof.root_partitions_exhausted
         );
