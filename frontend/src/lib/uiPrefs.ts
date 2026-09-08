@@ -1,3 +1,4 @@
+import { parseSolverEngine } from './solverEngines';
 import type { EndpointRow, SolveMode, SolverEngine } from '../types';
 
 export const UI_PREFS_STORAGE_KEY = 'sfs.ui-prefs.v2';
@@ -6,7 +7,7 @@ const LEGACY_UI_PREFS_STORAGE_KEY = 'sfs.ui-prefs.v1';
 
 export type HistoryStatusFilter = 'completed' | 'failed' | 'cancelled' | 'incomplete' | 'unsat';
 
-export type HistoryEngineFilter = 'custom' | 'z3';
+export type HistoryEngineFilter = SolverEngine;
 export type HistorySearchFilter = SolveMode;
 
 export type HistorySortPref = 'manual' | 'newest' | 'oldest' | 'name-asc' | 'name-desc' | 'layouts-desc' | 'nodes-asc';
@@ -36,7 +37,7 @@ export type UiPrefs = {
 
 const STATUS_FILTERS = new Set<HistoryStatusFilter>(['completed', 'failed', 'cancelled', 'incomplete', 'unsat']);
 
-const ENGINE_FILTERS = new Set<HistoryEngineFilter>(['custom', 'z3']);
+const ENGINE_FILTERS = new Set<HistoryEngineFilter>(['custom', 'z3', 'astra']);
 const SEARCH_FILTERS = new Set<HistorySearchFilter>([
   'optimal',
   'all_at_minimum_nodes_and_minimum_links',
@@ -153,7 +154,7 @@ export function parseFormDraftPrefs(raw: unknown): FormDraftPrefs {
   }
   const inputs = parseEndpointRows(raw.inputs) ?? [];
   const outputs = parseEndpointRows(raw.outputs) ?? DEFAULT_FORM_DRAFT_PREFS.outputs.map((row) => ({ ...row }));
-  const engine: SolverEngine = raw.engine === 'z3' ? 'z3' : 'custom';
+  const engine: SolverEngine = parseSolverEngine(raw.engine);
   const nextEndpointId =
     typeof raw.nextEndpointId === 'number' && Number.isFinite(raw.nextEndpointId) && raw.nextEndpointId >= 1
       ? Math.floor(raw.nextEndpointId)

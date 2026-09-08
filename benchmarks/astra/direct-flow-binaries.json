@@ -1,0 +1,6 @@
+{
+  "astra-partitions": "../../target/astra-before-direct-flow-20260908/bin",
+  "astra-flow": "../../target/release/examples",
+  "custom": "../../target/release/examples",
+  "astra-flow-custom": "../../target/release/examples"
+}

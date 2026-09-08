@@ -108,3 +108,13 @@ describe('parseUiPrefs', () => {
     expect(localStorage.getItem('sfs.ui-prefs.v1')).toBeNull();
   });
 });
+
+it('preserves Astra in saved forms and history filters', () => {
+  expect(parseFormDraftPrefs({ engine: 'astra' }).engine).toBe('astra');
+  expect(parseHistoryToolbarPrefs({ engineFilters: ['astra', 'custom', 'z3'] }).engineFilters).toEqual([
+    'astra',
+    'custom',
+    'z3',
+  ]);
+  expect(parseFormDraftPrefs({ engine: 'unknown' }).engine).toBe('custom');
+});

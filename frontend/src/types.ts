@@ -1,4 +1,4 @@
-export type SolverEngine = 'custom' | 'z3';
+export type SolverEngine = 'custom' | 'z3' | 'astra';
 export type SolveMode = 'optimal' | 'all_at_minimum_nodes_and_minimum_links' | 'all_at_minimum_nodes';
 
 export interface EndpointInput {

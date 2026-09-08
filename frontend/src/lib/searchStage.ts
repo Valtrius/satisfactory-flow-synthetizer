@@ -1,4 +1,4 @@
-import type { Diagnostic, JobSnapshot, SolverProgress } from '../types';
+import type { Diagnostic, JobSnapshot, SolverProgress, SolverEngine } from '../types';
 
 export type SearchStageView = {
   phase: string | null;
@@ -16,7 +16,7 @@ export type SearchCopyContext = {
   solutionsLength: number;
   searchEnumerate: boolean;
   firstNodeCount: number | null;
-  engine?: 'custom' | 'z3';
+  engine?: SolverEngine;
 };
 
 export function formatElapsed(milliseconds: number): string {

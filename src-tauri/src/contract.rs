@@ -38,7 +38,7 @@ mod tests {
 
     #[test]
     fn both_job_engines_reject_automatic_supply_above_one_belt() {
-        for engine in ["custom", "z3"] {
+        for engine in ["custom", "z3", "astra"] {
             let request: SolveRequest = serde_json::from_value(serde_json::json!({
                 "engine": engine, "inputs": [], "outputs": [
                     {"id": "a", "name": "A", "rate": "60"},

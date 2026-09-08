@@ -60,13 +60,13 @@ describe('SolutionSummary', () => {
     expect(html).not.toMatch(/rounded-tl-|rounded-br-/);
   });
 
-  it.each<SolverEngine>(['z3', 'custom'])(
+  it.each<SolverEngine>(['z3', 'custom', 'astra'])(
     'shows one optimal status pill with the %s engine after the node count',
     (engine) => {
       const html = renderSummary({ engine });
 
       expect(html.match(/rounded-full/g)).toHaveLength(1);
-      expect(html).toContain(`Proven optimal · ${engine === 'z3' ? 'Z3' : 'Custom'}`);
+      expect(html).toContain(`Proven optimal · ${engine === 'z3' ? 'Z3' : engine === 'astra' ? 'Astra' : 'Custom'}`);
       expect(html.indexOf('rounded-full')).toBeGreaterThan(html.indexOf('</h2>'));
       expect(html).toContain('text-[#8bdeb8]');
       expect(html).not.toContain('Verified optimal');
@@ -74,11 +74,11 @@ describe('SolutionSummary', () => {
     },
   );
 
-  it.each<SolverEngine>(['z3', 'custom'])('keeps best-known results distinct for the %s engine', (engine) => {
+  it.each<SolverEngine>(['z3', 'custom', 'astra'])('keeps best-known results distinct for the %s engine', (engine) => {
     const html = renderSummary({ engine, status: 'best_known' });
 
     expect(html.match(/rounded-full/g)).toHaveLength(1);
-    expect(html).toContain(`Best known · ${engine === 'z3' ? 'Z3' : 'Custom'}`);
+    expect(html).toContain(`Best known · ${engine === 'z3' ? 'Z3' : engine === 'astra' ? 'Astra' : 'Custom'}`);
     expect(html).toContain('title="Not proven optimal"');
     expect(html).toContain('text-[#e6c27a]');
     expect(html).not.toContain('Proven optimal');

@@ -6,6 +6,7 @@ license.workspace = true
 autobins = false
 
 [dependencies]
+solver-astra = { path = "../solver-astra" }
 solver-core = { path = "../solver-core" }
 solver-z3 = { path = "../solver-z3" }
 solver-validation = { path = "../solver-validation" }

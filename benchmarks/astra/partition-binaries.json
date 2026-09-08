@@ -1,0 +1,6 @@
+{
+  "custom": "../../target/release/examples",
+  "astra-partitions": "../../target/release/examples",
+  "astra-before": "../../target/astra-before-partitions-20260908/bin",
+  "astra-after": "../../target/release/examples"
+}

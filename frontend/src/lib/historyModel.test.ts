@@ -149,12 +149,12 @@ describe('entryOutcomeLine', () => {
     expect(entryOutcomeLine(cancelled)).toBe('Cancelled · 1 layout · N=4');
   });
 
-  it('persists engine on queued entries', () => {
-    const z3Form = { ...form, engine: 'z3' as const };
-    const z3Request = { ...request, engine: 'z3' as const };
+  it.each(['custom', 'z3', 'astra'] as const)('persists %s on queued entries', (engine) => {
+    const z3Form = { ...form, engine };
+    const z3Request = { ...request, engine };
     const entry = createQueuedEntry(z3Form, z3Request);
-    expect(entry.form.engine).toBe('z3');
-    expect(entry.request.engine).toBe('z3');
+    expect(entry.form.engine).toBe(engine);
+    expect(entry.request.engine).toBe(engine);
   });
 });
 

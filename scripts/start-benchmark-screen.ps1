@@ -20,7 +20,9 @@ $suite = Join-Path $runRoot 'results'
 $status = Join-Path $runRoot 'BENCHMARK-STATUS.txt'
 if (-not $Run) {
     if (Test-Path -LiteralPath $runRoot) { throw "Output already exists: $runRoot" }
-    $binary = Join-Path $repoRoot 'target/release/examples/profile_case.exe'
+    $engineJobs = @((Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json).jobs | Where-Object { $_.Engine })
+    $profileName = if ($engineJobs.Count) { 'profile_engines.exe' } else { 'profile_case.exe' }
+    $binary = Join-Path $repoRoot ('target/release/examples/' + $profileName)
     if (-not $VariantBinaryMap -and -not (Test-Path -LiteralPath $binary -PathType Leaf)) { throw 'Build profile_case in release mode first.' }
     if ($VariantBinaryMap -and $ReferenceBinaryDirectory) { throw 'Use either VariantBinaryMap or ReferenceBinaryDirectory, not both.' }
     if ($ReferenceBinaryDirectory) {
@@ -50,10 +52,10 @@ if (-not $Run) {
         foreach ($entry in $variantMapData.GetEnumerator()) {
             if ($entry.Key -notmatch '^[a-zA-Z0-9_-]+$' -or -not $entry.Value) { throw 'Invalid binary variant map' }
             $sourceDirectory = [IO.Path]::GetFullPath([string]$entry.Value, (Split-Path $variantMapPath -Parent))
-            $sourceBinary = Join-Path $sourceDirectory 'profile_case.exe'
+            $sourceBinary = Join-Path $sourceDirectory $profileName
             if (-not (Test-Path -LiteralPath $sourceBinary -PathType Leaf)) { throw "Variant binary is missing: $($entry.Key)" }
             $frozenDirectory = New-Item -ItemType Directory -Path (Join-Path $runRoot "variant-bin/$($entry.Key)")
-            Copy-Item -LiteralPath $sourceBinary -Destination $frozenDirectory.FullName
+            Copy-Item -LiteralPath $sourceBinary -Destination (Join-Path $frozenDirectory.FullName 'profile_case.exe')
             $frozenVariantData[$entry.Key] = $frozenDirectory.FullName
 
             $variantRoot = Split-Path $sourceDirectory -Parent
@@ -71,7 +73,18 @@ if (-not $Run) {
         $frozenVariantMap = Join-Path $runRoot 'variant-binaries.json'
         $frozenVariantData | ConvertTo-Json | Set-Content -LiteralPath $frozenVariantMap
     } else {
-        Copy-Item -LiteralPath $binary -Destination $bin.FullName
+        Copy-Item -LiteralPath $binary -Destination (Join-Path $bin.FullName 'profile_case.exe')
+    }
+    if (@($engineJobs | Where-Object { $_.Engine -eq 'astra' }).Count) {
+        $backend = if ($env:ASTRA_CVC5) { $env:ASTRA_CVC5 } else { (Get-Command cvc5 -ErrorAction SilentlyContinue).Source }
+        if (-not $backend) { $backend = Join-Path $env:LOCALAPPDATA 'Programs/cvc5/bin/cvc5.exe' }
+        if (-not (Test-Path -LiteralPath $backend -PathType Leaf)) { throw 'cvc5 is required for Astra screening' }
+        $destinations = if ($frozenVariantMap) { @($frozenVariantData.Values) } else { @($bin.FullName) }
+        foreach ($destination in $destinations) {
+            Copy-Item -LiteralPath $backend -Destination (Join-Path $destination 'cvc5.exe')
+            Get-ChildItem -LiteralPath (Split-Path $backend -Parent) -Filter '*.dll' | Copy-Item -Destination $destination
+        }
+        & $backend --version | Set-Content -LiteralPath (Join-Path $runRoot 'cvc5-version.txt')
     }
     if ($ReferenceBinaryDirectory) {
         $referenceBin = New-Item -ItemType Directory -Path (Join-Path $runRoot 'reference-bin')
@@ -102,6 +115,12 @@ if (-not $Run) {
     $source = New-Item -ItemType Directory -Path (Join-Path $runRoot 'solver-source')
     Copy-Item -LiteralPath (Join-Path $repoRoot 'crates/solver-core/src') -Destination $source.FullName -Recurse
     Copy-Item -LiteralPath (Join-Path $repoRoot 'crates/solver-core/examples') -Destination $source.FullName -Recurse
+    if ($engineJobs.Count) {
+        foreach ($crate in @('solver-astra','solver-api','solver-validation','solver-z3','synthetizer-app')) {
+            Copy-Item -LiteralPath (Join-Path $repoRoot "crates/$crate") -Destination (Join-Path $source.FullName $crate) -Recurse
+        }
+        Copy-Item -LiteralPath (Join-Path $repoRoot 'Cargo.lock'),(Join-Path $repoRoot 'Cargo.toml') -Destination $source.FullName
+    }
     git -C $repoRoot diff --binary | Set-Content -LiteralPath (Join-Path $runRoot 'working-tree.diff')
     $frozenHashes = [ordered]@{}
     foreach ($file in (Get-ChildItem -LiteralPath $runRoot -Recurse -File | Sort-Object FullName)) {
@@ -174,13 +193,13 @@ try {
     $message | Set-Content -LiteralPath (Join-Path $runRoot 'BENCHMARK-FINISHED.txt')
     $message | Set-Content -LiteralPath $status
     $message | Set-Content -LiteralPath (Join-Path $suite 'BENCHMARK-STATUS.txt')
-    $title = 'Custom benchmark screening finished'
+    $title = 'Solver benchmark screening finished'
 } catch {
     $headline = if ($allJobsAttempted) { 'FINISHED WITH FAILURES: all solver jobs attempted; verification did not pass.' } else { 'FAILED OR INTERRUPTED' }
     $message = @($headline, $_.Exception.Message, "Updated: $(Get-Date -Format o)", 'Message the Codex task with this status file.')
     $message | Set-Content -LiteralPath (Join-Path $runRoot 'BENCHMARK-FAILED.txt')
     $message | Set-Content -LiteralPath $status
-    $title = 'Custom benchmark screening needs attention'
+    $title = 'Solver benchmark screening needs attention'
 }
 # Status files are authoritative even if Windows cannot display the dialog.
 try {

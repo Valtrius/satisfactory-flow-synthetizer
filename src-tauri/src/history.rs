@@ -1,4 +1,4 @@
-//! Persistent job history in SQLite under the app local data directory.
+//! Persistent job history in `SQLite` under the app local data directory.
 
 use std::{
     collections::HashMap,
@@ -301,14 +301,15 @@ fn apply_op(tx: &Transaction<'_>, op: &HistoryOp) -> Result<(), String> {
             }
             Ok(())
         }
-        HistoryOp::SetSelected { id } => match id {
-            Some(id) => meta_set(tx, "selected_entry_id", id),
-            None => {
+        HistoryOp::SetSelected { id } => {
+            if let Some(id) = id {
+                meta_set(tx, "selected_entry_id", id)
+            } else {
                 tx.execute("DELETE FROM meta WHERE key = 'selected_entry_id'", [])
                     .map_err(|error| format!("clear selected history id: {error}"))?;
                 Ok(())
             }
-        },
+        }
     }
 }
 
@@ -610,6 +611,15 @@ fn insert_solution(
     )
     .map_err(|error| format!("insert history solution: {error}"))?;
 
+    insert_solution_graph(tx, entry_id, source_index, solution)
+}
+
+fn insert_solution_graph(
+    tx: &Transaction<'_>,
+    entry_id: &str,
+    source_index: i64,
+    solution: &Value,
+) -> Result<(), String> {
     if let Some(nodes) = solution.get("nodes").and_then(Value::as_array) {
         for node in nodes {
             tx.execute(
@@ -1052,31 +1062,7 @@ fn load_all_solutions(conn: &Connection) -> Result<HashMap<String, Vec<Value>>, 
     for row in rows {
         let row = row.map_err(|error| format!("read history solution: {error}"))?;
         let key = (row.entry_id.clone(), row.source_index);
-        let mut stats = json!({
-            "nodeCount": row.node_count,
-            "splitters": row.splitters,
-            "mergers": row.mergers,
-            "feedbackLoops": row.feedback_loops,
-            "linkCount": row.link_count,
-        });
-        if let Some(value) = row.checked_through {
-            stats["checkedThrough"] = json!(value);
-        }
-        if let Some(value) = row.belt_count {
-            stats["beltCount"] = json!(value);
-        }
-        if let (Some(exact), Some(decimal)) = (
-            row.internal_max_throughput_exact.as_ref(),
-            row.internal_max_throughput_decimal.as_ref(),
-        ) {
-            stats["internalMaxThroughput"] = json!({ "exact": exact, "decimal": decimal });
-        }
-        if let Some(value) = row.stats_physical_link_count {
-            stats["physicalLinkCount"] = json!(value);
-        }
-        if let Some(value) = row.stats_discard_link_count {
-            stats["discardLinkCount"] = json!(value);
-        }
+        let stats = solution_stats_json(&row);
         let mut object = json!({
             "engine": row.engine,
             "status": row.status,
@@ -1107,6 +1093,35 @@ fn load_all_solutions(conn: &Connection) -> Result<HashMap<String, Vec<Value>>, 
             (id, rows.into_iter().map(|(_, value)| value).collect())
         })
         .collect())
+}
+
+fn solution_stats_json(row: &LoadedSolution) -> Value {
+    let mut stats = json!({
+        "nodeCount": row.node_count,
+        "splitters": row.splitters,
+        "mergers": row.mergers,
+        "feedbackLoops": row.feedback_loops,
+        "linkCount": row.link_count,
+    });
+    if let Some(value) = row.checked_through {
+        stats["checkedThrough"] = json!(value);
+    }
+    if let Some(value) = row.belt_count {
+        stats["beltCount"] = json!(value);
+    }
+    if let (Some(exact), Some(decimal)) = (
+        row.internal_max_throughput_exact.as_ref(),
+        row.internal_max_throughput_decimal.as_ref(),
+    ) {
+        stats["internalMaxThroughput"] = json!({ "exact": exact, "decimal": decimal });
+    }
+    if let Some(value) = row.stats_physical_link_count {
+        stats["physicalLinkCount"] = json!(value);
+    }
+    if let Some(value) = row.stats_discard_link_count {
+        stats["discardLinkCount"] = json!(value);
+    }
+    stats
 }
 
 struct LoadedSolution {
@@ -1366,6 +1381,7 @@ fn solve_mode(value: &Value) -> String {
 fn engine(value: &Value) -> String {
     match value.get("engine").and_then(Value::as_str) {
         Some("z3") => "z3".to_owned(),
+        Some("astra") => "astra".to_owned(),
         _ => "custom".to_owned(),
     }
 }
@@ -1554,6 +1570,26 @@ mod tests {
 
     fn count(conn: &Connection, sql: &str) -> i64 {
         conn.query_row(sql, [], |row| row.get(0)).unwrap()
+    }
+
+    #[test]
+    fn astra_round_trips_every_saved_engine_field() {
+        let directory = tempfile::tempdir().unwrap();
+        let store = HistoryStore::open(directory.path()).unwrap();
+        let mut entry = sample_entry();
+        entry["form"]["engine"] = json!("astra");
+        entry["request"]["engine"] = json!("astra");
+        entry["result"]["engine"] = json!("astra");
+        entry["results"][0]["engine"] = json!("astra");
+        store
+            .apply_ops(&[HistoryOp::UpsertEntry { entry }])
+            .unwrap();
+        let loaded = store.load_document().unwrap();
+        let entry = &loaded["entries"][0];
+        for field in ["form", "request", "result"] {
+            assert_eq!(entry[field]["engine"], "astra", "{field}");
+        }
+        assert_eq!(entry["results"][0]["engine"], "astra");
     }
 
     #[test]

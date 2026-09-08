@@ -142,6 +142,8 @@ for directory in args.directories:
                 return ([Fraction(v) for v in problem["inputs"]], [Fraction(v) for v in problem["outputs"]], Fraction(problem["maxLinkRate"]))
             if exact_problem(result["problem"]) != exact_problem(expected["problem"]):
                 failures.append(f"Wrong exact problem: {row['result_file']}")
+            if job.get("Engine") and (result.get("engine") != job["Engine"] or row.get("engine") != job["Engine"]):
+                failures.append(f"Wrong solver engine: {row['result_file']}")
             for field, source in [("max_nodes", "MaxNodes"), ("timeout_s", "TimeoutSeconds")]:
                 if str(result.get(field)) != str(job[source]) or str(row.get(field)) != str(job[source]):
                     failures.append(f"Wrong {field}: {row['result_file']}")
@@ -188,7 +190,7 @@ for row in rows:
     # Timing ratios below still require their own matching stage/settings.
     if (row["stage"] == "baseline" or row["variant"] == "before" or row.get("pair_role") == "reference") and row["completion"] == "optimal":
         key = case_key(row)
-        if key not in baselines or row["variant"] == "before":
+        if key not in baselines or row["variant"] == "before" or row["result"].get("engine") == "custom":
             baselines[key] = row["result"]
 # A stress baseline may time out while another configuration completes.
 for row in rows:

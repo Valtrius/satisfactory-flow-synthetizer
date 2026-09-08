@@ -1,3 +1,4 @@
+import { SOLVER_LABELS, parseSolverEngine } from './solverEngines';
 import type { Edge, Node } from '@xyflow/svelte';
 import type {
   EndpointRow,
@@ -253,7 +254,7 @@ export type HistoryMetrics = {
 /** Compact icon-grid metrics for history cards. */
 export function entryHistoryMetrics(entry: HistoryEntry): HistoryMetrics {
   const mode = entry.request.solveMode;
-  const engine = entry.request.engine === 'z3' ? 'Z3' : 'Custom';
+  const engine = SOLVER_LABELS[parseSolverEngine(entry.request.engine)];
   const nodeCount = entryNodeCount(entry);
   const layoutCount = entryLayoutCount(entry);
 
@@ -349,7 +350,7 @@ export function entryOutcomeLine(entry: HistoryEntry): string {
     }`;
   }
   // completed
-  const engineLabel = entry.request.engine === 'z3' ? 'Z3' : 'Custom';
+  const engineLabel = SOLVER_LABELS[parseSolverEngine(entry.request.engine)];
   if (entry.enumerationComplete && (enumeratesLayouts(entry.request.solveMode) || layoutCount > 1)) {
     const scope = entry.request.solveMode === 'all_at_minimum_nodes_and_minimum_links' ? 'All at min L' : 'All layouts';
     return `${scope}${nodeCount != null ? ` · N=${nodeCount}` : ''} · ${layoutCount} · ${engineLabel}`;

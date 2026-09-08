@@ -32,6 +32,7 @@ fn all_solvers(problem: &Problem, mode: SolveMode, max_nodes: u32) -> Vec<SolveO
         .map(|engine| solve(engine, problem, &options, &cancel, &|_| {}).unwrap())
         .collect::<Vec<_>>();
     outcomes.push(solver_reference::solve_problem(problem, &options, &cancel).unwrap());
+    outcomes.push(solve(SolverEngine::Astra, problem, &options, &cancel, &|_| {}).unwrap());
     outcomes
 }
 
@@ -93,6 +94,7 @@ fn complete_enumeration_matches_the_independent_reference_layout_set() {
             .collect::<Vec<_>>();
         assert_eq!(sets[0], sets[2], "Custom versus Reference: {problem:?}");
         assert_eq!(sets[1], sets[2], "Z3 versus Reference: {problem:?}");
+        assert_eq!(sets[3], sets[2], "Astra versus Reference: {problem:?}");
     }
 }
 
@@ -129,6 +131,7 @@ fn minimum_link_enumeration_matches_the_independent_reference_layout_set() {
             .collect::<Vec<_>>();
         assert_eq!(sets[0], sets[2], "Custom versus Reference: {problem:?}");
         assert_eq!(sets[1], sets[2], "Z3 versus Reference: {problem:?}");
+        assert_eq!(sets[3], sets[2], "Astra versus Reference: {problem:?}");
     }
 }
 
@@ -150,7 +153,7 @@ fn bounded_search_is_incomplete_but_finite_contradictions_are_unsat() {
 #[test]
 fn cancellation_keeps_an_incumbent_without_claiming_link_optimality_or_enumeration() {
     let problem = problem(&["3"], &["1", "2"], "3");
-    for engine in [SolverEngine::Custom, SolverEngine::Z3] {
+    for engine in [SolverEngine::Custom, SolverEngine::Z3, SolverEngine::Astra] {
         let cancel = AtomicBool::new(false);
         let saw_enumeration = AtomicBool::new(false);
         let outcome = solve(
@@ -183,7 +186,7 @@ fn cancellation_keeps_an_incumbent_without_claiming_link_optimality_or_enumerati
 #[test]
 fn interrupted_enumeration_retains_delivered_layouts_in_the_return_value() {
     let problem = problem(&["3"], &["1", "2"], "3");
-    for engine in [SolverEngine::Custom, SolverEngine::Z3] {
+    for engine in [SolverEngine::Custom, SolverEngine::Z3, SolverEngine::Astra] {
         let cancel = AtomicBool::new(false);
         let delivered = Mutex::new(Vec::new());
         let options = RunOptions {
@@ -217,7 +220,7 @@ fn interrupted_enumeration_retains_delivered_layouts_in_the_return_value() {
 #[test]
 fn progress_distinguishes_exact_link_obligations_from_z3_caps() {
     let problem = problem(&["3"], &["1", "2"], "3");
-    for engine in [SolverEngine::Custom, SolverEngine::Z3] {
+    for engine in [SolverEngine::Custom, SolverEngine::Z3, SolverEngine::Astra] {
         let events = Mutex::new(Vec::new());
         solve(
             engine,
@@ -244,8 +247,10 @@ fn progress_distinguishes_exact_link_obligations_from_z3_caps() {
         assert!(!constraints.is_empty());
         assert!(constraints.iter().all(|c| matches!(
             (engine, c),
-            (SolverEngine::Custom, LinkConstraint::Exact(_))
-                | (SolverEngine::Z3, LinkConstraint::AtMost(_))
+            (
+                SolverEngine::Custom | SolverEngine::Astra,
+                LinkConstraint::Exact(_)
+            ) | (SolverEngine::Z3, LinkConstraint::AtMost(_))
         )));
     }
 }
@@ -320,7 +325,7 @@ fn presentation_payloads_omit_layout_keys_but_live_deduplication_keeps_them() {
     }
     .prepare()
     .unwrap();
-    for engine in [SolverEngine::Custom, SolverEngine::Z3] {
+    for engine in [SolverEngine::Custom, SolverEngine::Z3, SolverEngine::Astra] {
         let outcome = solve(
             engine,
             &prepared.problem,
@@ -439,7 +444,7 @@ fn the_shared_presenter_preserves_names_capacity_discard_and_feedback_for_both_e
         }
         .prepare()
         .unwrap();
-        for engine in [SolverEngine::Custom, SolverEngine::Z3] {
+        for engine in [SolverEngine::Custom, SolverEngine::Z3, SolverEngine::Astra] {
             let outcome = solve(
                 engine,
                 &prepared.problem,

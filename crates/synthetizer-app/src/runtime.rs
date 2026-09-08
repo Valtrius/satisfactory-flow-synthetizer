@@ -13,6 +13,7 @@ pub enum SolverEngine {
     #[default]
     Custom,
     Z3,
+    Astra,
 }
 
 /// # Errors
@@ -27,6 +28,7 @@ pub fn solve(
     match engine {
         SolverEngine::Custom => solver_core::solve_problem(problem, options, cancel, observer),
         SolverEngine::Z3 => solver_z3::solve_problem(problem, options, cancel, observer),
+        SolverEngine::Astra => solver_astra::solve_problem(problem, options, cancel, observer),
     }
 }
 

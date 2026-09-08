@@ -50,6 +50,7 @@
   const engineOptions: { value: SolverEngine; label: string }[] = [
     { value: 'custom', label: 'Custom' },
     { value: 'z3', label: 'Z3' },
+    { value: 'astra', label: 'Astra' },
   ];
   const solveModeOptions: { value: SolveMode; label: string }[] = [
     { value: 'optimal', label: 'One' },

@@ -135,6 +135,10 @@ fn run_problem(
     default_timeout_seconds: u64,
     default_max_nodes: u32,
 ) {
+    if argument(4).as_deref() == Some("astra") {
+        run_astra_profile(name, problem, default_timeout_seconds, default_max_nodes);
+        return;
+    }
     let seconds = argument(1)
         .and_then(|value| value.parse().ok())
         .unwrap_or(default_timeout_seconds);
@@ -232,6 +236,61 @@ fn run_problem(
     if let (Some(custom), Some(z3)) = (&custom, &cross_z3) {
         print_comparison(problem, custom, z3);
     }
+}
+
+// Benchmark plumbing only: the common runner uses Astra's production API.
+// Existing Custom and Z3 measurements continue through their original paths.
+fn run_astra_profile(name: &str, problem: &Problem, seconds: u64, max_nodes: u32) {
+    let runner = std::env::current_exe()
+        .expect("current profiler path")
+        .with_file_name(if cfg!(windows) {
+            "profile_engines.exe"
+        } else {
+            "profile_engines"
+        });
+    assert!(
+        runner.is_file(),
+        "Build synthetizer-app --release --example profile_engines first"
+    );
+    let unique = format!(
+        "astra-profile-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    );
+    let case = std::env::temp_dir().join(format!("{unique}.case.json"));
+    let output = argument(6).map_or_else(
+        || std::env::temp_dir().join(format!("{unique}.result.json")),
+        std::path::PathBuf::from,
+    );
+    std::fs::write(
+        &case,
+        serde_json::to_vec(&serde_json::json!({"name":name,"problem":problem})).unwrap(),
+    )
+    .unwrap();
+    let status = std::process::Command::new(runner)
+        .args([
+            argument(1).unwrap_or_else(|| seconds.to_string()),
+            argument(2).unwrap_or_else(|| available_workers().to_string()),
+            argument(3).unwrap_or_else(|| max_nodes.to_string()),
+            "astra".into(),
+            argument(5).unwrap_or_else(|| "baseline".into()),
+            output.to_string_lossy().into_owned(),
+            argument(7).unwrap_or_else(|| "all".into()),
+            argument(8).unwrap_or_else(|| "off".into()),
+            case.to_string_lossy().into_owned(),
+        ])
+        .status();
+    let _ = std::fs::remove_file(case);
+    if argument(6).is_none() {
+        let _ = std::fs::remove_file(output);
+    }
+    assert!(
+        status.expect("launch Astra profiler").success(),
+        "Astra profiler failed"
+    );
 }
 
 pub(super) fn parallelism_stage(stage: Option<&str>) -> ParallelismOptions {

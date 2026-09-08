@@ -1,0 +1,6 @@
+{
+  "custom-astra": "../../target/release/examples",
+  "astra": "../../target/release/examples",
+  "custom-z3": "../../target/release/examples",
+  "z3": "../../target/release/examples"
+}

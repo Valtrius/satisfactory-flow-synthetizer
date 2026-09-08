@@ -1,4 +1,3 @@
 - Use conventional commits for commit messages and pull requests titles.
 - Use `npm run format` to format code before committing.
 - When running benchmarks, launch them with a way for the user to know when they are done, then end your turn.
-- Custom solver / parallelism / benchmark knowledge lives only in Serena memories. Read `mem:critical_info` first, then only the memories it points to. Do not bulk-read `solver/experiments/*`. Record each meaningful experiment, implementation change, result, failure, and decision as Serena memories (`mem:solver/experiments/NN-…`, `mem:solver/experiments/index`, `mem:solver/status`, `mem:solver/core`, `mem:solver/active`) per `mem:solver/workflow`. Distinguish measured results from hypotheses, pending runs, and commit status. Never infer performance or completion from a running benchmark. Serena is required for this project's agent handoff.

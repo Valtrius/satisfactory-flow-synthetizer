@@ -80,7 +80,9 @@ if ($JobManifest) {
         }
         $casePath = [IO.Path]::GetFullPath($job.CaseFile, $manifestRoot)
         $caseData = Get-Content -LiteralPath $casePath -Raw | ConvertFrom-Json
-        if ($caseData.problem.maxLinkRate -ne '1200') { throw 'File benchmark cases must use maxLinkRate 1200' }
+        if (-not $caseData.problem.maxLinkRate) { throw 'Case requires exact belt capacity' }
+        if ($null -ne $job.Engine -and $job.Engine -notin @('custom','z3','astra')) { throw 'Invalid solver engine' }
+        if ($job.Engine -and ($job.Stage -ne 'baseline' -or $job.Hotspots -ne 'off')) { throw 'Engine comparisons require baseline stage and hotspots off' }
         if ($null -eq $job.Variant) { $job | Add-Member NoteProperty Variant 'after' }
         $matchedVariant = @($variants | Where-Object { $_.Name -eq $job.Variant })
         if ($matchedVariant.Count -ne 1) {
@@ -152,12 +154,17 @@ foreach ($job in $jobs) {
     $maxNodes = if ($JobManifest) { $job.MaxNodes } else { switch ($job.Case) { 'profile_40_25' { 6 } 'profile_tiny' { 2 } default { 12 } } }
     $timeout = if ($JobManifest) { $job.TimeoutSeconds } else { $TimeoutSeconds }
     $jobHotspots = if ($JobManifest -and $null -ne $job.Hotspots) { $job.Hotspots } else { $Hotspots }
-    $arguments = @([string]$timeout, [string]$job.Workers, [string]$maxNodes, 'custom', $job.Stage, $json, $job.Mode, $jobHotspots)
+    $arguments = @([string]$timeout, [string]$job.Workers, [string]$maxNodes, $(if ($job.Engine) { $job.Engine } else { 'custom' }), $job.Stage, $json, $job.Mode, $jobHotspots)
     if ($JobManifest) { $arguments += $job.CasePath }
     Write-Output "Starting $index/$($jobs.Count) $name"
     @("RUNNING: $index / $($jobs.Count)", "Current: $name", "Time cap: $timeout seconds; N <= $maxNodes; hotspots $jobHotspots", "Cancellation cleanup watchdog: $CancellationGraceSeconds additional seconds", "Updated: $(Get-Date -Format o)") | Set-Content -LiteralPath (Join-Path $outputRoot 'BENCHMARK-STATUS.txt')
     $watch = [Diagnostics.Stopwatch]::StartNew()
+    $originalAstraBackend = $env:ASTRA_CVC5
+    try {
+        if ($job.Engine -eq 'astra') { $env:ASTRA_CVC5 = Join-Path (Split-Path $exe -Parent) 'cvc5.exe' }
     $launch = Start-BenchmarkProcess -Executable $exe -Arguments $arguments -WorkingDirectory $repoRoot -StandardOutput (Join-Path $outputRoot "$name.log") -StandardError (Join-Path $outputRoot "$name.stderr.log") -Affinity $job.ProcessorAffinity
+    } finally { $env:ASTRA_CVC5 = $originalAstraBackend }
+
     $process = $launch.Process
     $null = $process.Handle
     $cpu = 0.0
@@ -183,7 +190,7 @@ foreach ($job in $jobs) {
             $nextProcessSample += 1.0
         }
         if ($watch.Elapsed.TotalSeconds -gt ($timeout + $CancellationGraceSeconds)) {
-            $process.Kill()
+            $process.Kill($true)
             $process.WaitForExit()
             $watchdogKilled = $true
             break
@@ -215,6 +222,7 @@ foreach ($job in $jobs) {
     $processSamples | Export-Csv -LiteralPath (Join-Path $outputRoot "$name.process-samples.csv") -NoTypeInformation
     if ($process.ExitCode -ne 0 -or -not (Test-Path -LiteralPath $json)) { throw "Benchmark failed: $name" }
     $data = Get-Content -LiteralPath $json -Raw | ConvertFrom-Json
+    if ($job.Engine -and $data.engine -ne $job.Engine) { throw "Executable ignored engine: $name" }
     if ($data.mode -ne $job.Mode -or $data.stage -ne $job.Stage -or $data.workers -ne $job.Workers) { throw "Executable ignored benchmark settings: $name" }
     if ($data.max_nodes -ne $maxNodes -or $data.timeout_s -ne $timeout) { throw "Executable ignored benchmark budgets: $name" }
     if ($data.hotspot_recording -ne ($jobHotspots -eq 'on')) { throw "Executable ignored hotspot recording setting: $name" }
@@ -225,7 +233,7 @@ foreach ($job in $jobs) {
     }
     $row = [pscustomobject]@{
         case=$job.Case; mode=$job.Mode; variant=$job.Variant; stage=$job.Stage; workers=$job.Workers; repeat=$job.Repeat
-        status=$data.status; layouts=$data.layouts; wall_s=$data.wall_s
+        engine=$(if ($job.Engine) { $job.Engine } else { 'custom' }); status=$data.status; layouts=$data.layouts; wall_s=$data.wall_s
         max_nodes=$maxNodes; timeout_s=$timeout; cohort=$(if ($JobManifest) { $job.Cohort } else { 'reference' })
         first_valid_s=$data.first_valid_s; hotspot_recording=$data.hotspot_recording
         process_cpu_s=$cpu; cpu_utilization=($cpu / $watch.Elapsed.TotalSeconds / $job.Workers)

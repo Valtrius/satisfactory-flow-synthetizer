@@ -3146,6 +3146,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "solver-astra"
+version = "0.2.0"
+dependencies = [
+ "serde_json",
+ "solver-api",
+ "solver-core",
+ "solver-reference",
+ "solver-validation",
+]
+
+[[package]]
 name = "solver-core"
 version = "0.2.0"
 dependencies = [
@@ -3337,6 +3348,7 @@ dependencies = [
  "serde",
  "serde_json",
  "solver-api",
+ "solver-astra",
  "solver-core",
  "solver-reference",
  "solver-validation",

@@ -2,6 +2,7 @@
 resolver = "3"
 members = [
     "crates/solver-api",
+    "crates/solver-astra",
     "crates/solver-core",
     "crates/solver-reference",
     "crates/solver-z3",

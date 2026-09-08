@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { SOLVER_LABELS, parseSolverEngine } from './solverEngines';
   import History from '@lucide/svelte/icons/history';
   import Download from '@lucide/svelte/icons/download';
   import Upload from '@lucide/svelte/icons/upload';
@@ -137,6 +138,7 @@
   const engineOptions: { value: EngineFilter; label: string }[] = [
     { value: 'custom', label: 'Custom' },
     { value: 'z3', label: 'Z3' },
+    { value: 'astra', label: 'Astra' },
   ];
 
   const searchOptions: { value: SearchFilter; label: string }[] = [
@@ -251,7 +253,7 @@
   }
 
   function entryEngine(entry: HistoryEntry): EngineFilter {
-    return entry.request.engine === 'z3' ? 'z3' : 'custom';
+    return parseSolverEngine(entry.request.engine);
   }
 
   function entrySearch(entry: HistoryEntry): SearchFilter {
@@ -934,7 +936,7 @@
   {@const selected = entry.id === selectedEntryId}
   {@const metrics = entryHistoryMetrics(entry)}
   {@const allLayouts = enumeratesLayouts(entry.request.solveMode)}
-  {@const engineZ3 = entry.request.engine === 'z3'}
+  {@const engineLabel = SOLVER_LABELS[parseSolverEngine(entry.request.engine)]}
   <div
     role="option"
     tabindex={floating ? -1 : 0}
@@ -1141,7 +1143,7 @@
         title={metrics.engine.tip}
         aria-label={metrics.engine.tip}
       >
-        {#if engineZ3}
+        {#if engineLabel !== 'Custom'}
           <Zap class="text-flow size-3 shrink-0" strokeWidth={2.2} aria-hidden="true" />
         {:else}
           <Cpu class="text-flow size-3 shrink-0" strokeWidth={2.2} aria-hidden="true" />

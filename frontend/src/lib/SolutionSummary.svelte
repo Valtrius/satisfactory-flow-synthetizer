@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { SOLVER_LABELS, parseSolverEngine } from './solverEngines';
   import type { Solution } from '../types';
   import { nodeCountLabel } from './searchStage';
 
@@ -11,7 +12,7 @@
 
   const isOptimal = $derived(solution.status === 'proven_optimal');
   const isBestKnown = $derived(solution.status === 'best_known');
-  const engineLabel = $derived(solution.engine === 'z3' ? 'Z3' : 'Custom');
+  const engineLabel = $derived(SOLVER_LABELS[parseSolverEngine(solution.engine)]);
   const statusLabel = $derived(isOptimal ? 'Proven optimal' : isBestKnown ? 'Best known' : solution.status);
 </script>
 
