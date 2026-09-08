@@ -7,7 +7,7 @@ from collections import Counter, defaultdict
 from fractions import Fraction
 from pathlib import Path
 from statistics import median
-from benchmark_policy import paired_summary, validate_pairs, validate_placement
+from benchmark_policy import paired_summary, validate_pairs, validate_placement, result_comparison_errors
 
 
 def activity_summary(trace, wall_s):
@@ -68,6 +68,10 @@ rows = []
 failures = []
 for directory in args.directories:
     directory_rows = []
+    manifest_file = directory / "job-manifest.json"
+    result_policy = json.loads(manifest_file.read_text(encoding="utf-8-sig")).get("ResultPolicy", "ordered") if manifest_file.exists() else "ordered"
+    if result_policy not in ("ordered", "any_optimum"):
+        raise ValueError(f"Unknown result policy: {result_policy}")
     frozen_hashes_path = directory.parent / "frozen-hashes.json"
     if frozen_hashes_path.exists():
         frozen_hashes = json.loads(frozen_hashes_path.read_text(encoding="utf-8-sig"))
@@ -90,6 +94,7 @@ for directory in args.directories:
                 row.setdefault("mode", "all")
                 row.setdefault("variant", "after")
                 row["run_directory"] = str(directory.resolve())
+                row["result_policy"] = result_policy
                 rows.append(row)
                 directory_rows.append(row)
     else:
@@ -142,6 +147,8 @@ for directory in args.directories:
                 return ([Fraction(v) for v in problem["inputs"]], [Fraction(v) for v in problem["outputs"]], Fraction(problem["maxLinkRate"]))
             if exact_problem(result["problem"]) != exact_problem(expected["problem"]):
                 failures.append(f"Wrong exact problem: {row['result_file']}")
+            if bool(job.get("AstraDiagnostics", False)) != bool(result.get("astra_diagnostics", False)):
+                failures.append(f"Wrong Astra diagnostics setting: {row['result_file']}")
             if job.get("Engine") and (result.get("engine") != job["Engine"] or row.get("engine") != job["Engine"]):
                 failures.append(f"Wrong solver engine: {row['result_file']}")
             for field, source in [("max_nodes", "MaxNodes"), ("timeout_s", "TimeoutSeconds")]:
@@ -232,10 +239,16 @@ for row in rows:
         if previous != problem:
             failures.append(f"Mixed exact problems: {row['case']}")
     if row["completion"] == "optimal":
-        if baseline and any(result.get(k) != baseline.get(k) for k in ("status", "layout_keys", "preferred_key")):
-            failures.append(f"Optimum or full layout-set/preferred witness mismatch: {row['result_file']}")
-        if baseline and "solutions" in baseline and result.get("solutions") != baseline["solutions"]:
-            failures.append(f"Saved solution objects differ: {row['result_file']}")
+        if result.get("preferred_key") not in result["layout_keys"]:
+            failures.append(f"Terminal witness missing from result set: {row['result_file']}")
+        if "native_outcome" in result:
+            terminal = result["outcome"]["result"]
+            saved = next((s for s in result["solutions"] if bytes(s["canonicalGraphKey"]).hex() == result["preferred_key"]), None)
+            if saved is None or any(terminal.get(k) != v for k, v in saved.items()):
+                failures.append(f"Terminal witness differs from saved full object: {row['result_file']}")
+        if baseline:
+            for error in result_comparison_errors(result, baseline, row["mode"], row["result_policy"]):
+                failures.append(f"{error}: {row['result_file']}")
         if row["mode"] == "optimal" and (result["layouts"] != 1 or result["layout_keys"] != [result["preferred_key"]]):
             failures.append(f"Find-optimal did not return exactly its terminal witness: {row['result_file']}")
         exhaustive = baselines.get((row["case"], "all", row.get("max_nodes", "legacy")))
@@ -268,7 +281,7 @@ def comparable_optimal_wall(samples, reference):
     """Only compare completed timings with identical instrumentation settings."""
     if not samples or not reference or not all(row["completion"] == "optimal" for row in samples + reference):
         return None
-    if len({row.get("hotspot_recording", "legacy") for row in samples + reference}) != 1:
+    if len({(row.get("hotspot_recording", "legacy"), row["result"].get("astra_diagnostics", False)) for row in samples + reference}) != 1:
         return None
     return median(float(row["wall_s"]) for row in reference)
 
@@ -312,6 +325,8 @@ for (case, mode, variant, stage, workers, max_nodes, timeout_s, affinity), sampl
         "median_cpu_utilization": median(float(row["cpu_utilization"]) for row in samples),
         "max_sampled_peak_working_set_bytes": max(int(row["sampled_peak_working_set_bytes"]) for row in samples),
         "layouts": samples[0]["result"]["layouts"],
+        "result_policy": samples[0]["result_policy"],
+        "astra_diagnostics": samples[0]["result"].get("astra_diagnostics", False),
         "median_root_partitions": median(item.get("custom.root_partitions", 0) for item in diagnostics),
         "median_donated_tasks": median(item.get("custom.donated_tasks", 0) for item in diagnostics),
         "median_shared_cache_hits": median(item.get("custom.shared_cache_hits", 0) for item in diagnostics),

@@ -47,11 +47,10 @@ fn compare(problem: &Problem, mode: SolveMode, cap: u32) -> SolveOutcome {
     assert_eq!(actual.proof, reference.proof, "{problem:?}");
     assert_eq!(actual.enumeration, reference.enumeration, "{problem:?}");
     match (&actual.result, &reference.result) {
-        (SolveResult::Optimal(_), SolveResult::Optimal(_)) => assert_eq!(
-            preferred(&actual),
-            preferred(&reference),
-            "full preferred witness for {problem:?}"
-        ),
+        (SolveResult::Optimal(a), SolveResult::Optimal(b)) => {
+            assert_eq!((a.node_count, a.link_count), (b.node_count, b.link_count));
+            assert_eq!(validate_solution(problem, &a.graph).unwrap(), a.validation);
+        }
         (SolveResult::Incomplete(a), SolveResult::Incomplete(b)) => {
             assert_eq!(a.best_known, b.best_known);
         }
@@ -66,7 +65,10 @@ fn compare(problem: &Problem, mode: SolveMode, cap: u32) -> SolveOutcome {
             .iter()
             .map(|s| {
                 assert_eq!(validate_solution(problem, &s.graph).unwrap(), s.validation);
-                (s.canonical_graph_key.clone(), s.clone())
+                {
+                    let canonical = solver_reference::canonicalize_graph(problem, &s.graph);
+                    (canonical.key, (canonical.graph, s.validation.clone()))
+                }
             })
             .collect::<BTreeMap<_, _>>()
     };
@@ -208,8 +210,24 @@ fn completed_results_do_not_depend_on_worker_count() {
         outcomes.push(outcome);
     }
     for pair in outcomes.windows(2) {
-        assert_eq!(preferred(&pair[0]), preferred(&pair[1]));
-        assert_eq!(pair[0].solutions, pair[1].solutions);
+        assert_eq!(
+            preferred(&pair[0]).node_count,
+            preferred(&pair[1]).node_count
+        );
+        let objects = |outcome: &SolveOutcome| {
+            outcome
+                .solutions
+                .iter()
+                .map(|solution| {
+                    let canonical = solver_reference::canonicalize_graph(&p, &solution.graph);
+                    (
+                        canonical.key,
+                        (canonical.graph, solution.validation.clone()),
+                    )
+                })
+                .collect::<BTreeMap<_, _>>()
+        };
+        assert_eq!(objects(&pair[0]), objects(&pair[1]));
         assert_eq!(pair[0].proof, pair[1].proof);
         assert_eq!(pair[0].enumeration, pair[1].enumeration);
         let (SolveResult::Optimal(a), SolveResult::Optimal(b)) = (&pair[0].result, &pair[1].result)
@@ -227,7 +245,7 @@ fn completed_results_do_not_depend_on_worker_count() {
 }
 
 #[test]
-fn preferred_witness_uses_reference_byte_order_when_the_optimum_has_several_layouts() {
+fn optimal_returns_a_valid_minimum_without_requiring_a_particular_tie() {
     use solver_api::{ConsumerPortRef, PhysicalGraph, ProducerPortRef};
     let fixture: serde_json::Value =
         serde_json::from_str(include_str!("fixtures/preferred-order.json")).unwrap();
@@ -308,5 +326,81 @@ fn preferred_witness_uses_reference_byte_order_when_the_optimum_has_several_layo
         deadline.join().unwrap();
         result
     });
-    assert_eq!(preferred(&actual).graph, expected);
+    let best = preferred(&actual);
+    assert_eq!((best.node_count, best.link_count), (7, 8));
+    validate_solution(&problem, &best.graph).unwrap();
+    let key = solver_validation::layout_key(&problem, &best.graph);
+    assert!(
+        ordered
+            .iter()
+            .filter(|row| row.1 == 8)
+            .any(|row| solver_validation::layout_key(&problem, &row.3) == key)
+    );
+}
+
+#[test]
+fn optimal_returns_first_incumbent_without_claiming_equal_link_exhaustion() {
+    let p = problem(&["2", "3"], &["1", "4"], "5");
+    let first = Mutex::new(None);
+    let records = Mutex::new(Vec::<serde_json::Value>::new());
+    let actual = solver_astra::solve_problem(
+        &p,
+        &options(SolveMode::Optimal, 2, 4),
+        &AtomicBool::new(false),
+        &|event| {
+            if let SolverEvent::Progress(progress) = &event {
+                for diagnostic in &progress.custom {
+                    if diagnostic.name == "astra.root"
+                        && let solver_api::DiagnosticValue::Text(value) = &diagnostic.value
+                    {
+                        records
+                            .lock()
+                            .unwrap()
+                            .push(serde_json::from_str(value).unwrap());
+                    }
+                }
+            }
+            if let SolverEvent::Incumbent(solution) = event {
+                first.lock().unwrap().get_or_insert(solution);
+            }
+        },
+    )
+    .unwrap();
+    assert_eq!(preferred(&actual), first.into_inner().unwrap().unwrap());
+    let all = solver_astra::solve_problem(
+        &p,
+        &options(SolveMode::AllAtMinimumNodesAndMinimumLinks, 2, 4),
+        &AtomicBool::new(false),
+        &|_| {},
+    )
+    .unwrap();
+    let (SolveResult::Optimal(a), SolveResult::Optimal(b)) = (&actual.result, &all.result) else {
+        panic!("both requests must finish")
+    };
+    assert_eq!((a.node_count, a.link_count), (b.node_count, b.link_count));
+    assert_eq!(
+        a.proof.link_groups_exhausted + 1,
+        b.proof.link_groups_exhausted
+    );
+    assert_eq!(actual.enumeration, EnumerationStatus::NotRequested);
+    assert!(actual.solutions.is_empty());
+    if std::env::var_os("ASTRA_DIAGNOSTICS").is_some_and(|value| value == "1") {
+        let records = records.into_inner().unwrap();
+        assert!(records.iter().any(|root| root["state"] == "optimum"));
+        assert_eq!(
+            records
+                .iter()
+                .filter(|root| root["state"] == "exhausted")
+                .count() as u64,
+            a.proof.root_partitions_exhausted
+        );
+        for root in records {
+            let phases = ["check_s", "validation_s", "identity_s"]
+                .iter()
+                .map(|k| root[k].as_f64().unwrap())
+                .sum::<f64>();
+            assert!(phases <= root["wall_s"].as_f64().unwrap());
+            assert!(root["duplicates"].as_u64().unwrap() <= root["models"].as_u64().unwrap());
+        }
+    }
 }

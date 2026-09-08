@@ -78,9 +78,12 @@ contradictions are recognized: deficient supply and external rates above capacit
 ## Enumeration, preferred witness, and interruption
 
 Search N from the justified lower bound. At each N search exact L groups in
-increasing order. `optimal` internally exhausts the first SAT group to settle the
-canonical preferred-witness tie; `minimum_links` also delivers that group's full
-set; `all` continues through every feasible L group at that minimum N.
+increasing order. `optimal` returns the first independently validated witness in
+the first SAT group, after all smaller N/L obligations have finished. Same-group
+roots are stopped and joined without marking them exhausted. `minimum_links`
+exhausts that group and delivers its full set; `all` continues through every
+feasible L group at that minimum N. This follows the user's updated requirement
+that solution order and the choice between optimal ties do not matter.
 
 Each worker owns one cvc5 session and uses incremental model blocking. With
 multiple workers, each feasible profile is partitioned by the source feeding the
@@ -98,12 +101,11 @@ sibling roots retain their proof accounting. A group completes only when all
 its profiles have completed successfully. Worker counts may change diagnostic
 root counts, but cannot change completed mathematical results.
 
-Validator-accepted incumbents are sent before full-witness canonicalization.
-Canonical witnesses use Custom's cancellable implementation of the exhaustive
-Reference byte protocol. This is an unchanged subroutine, not a new identity.
-Canonicalization cancellation retains the already published upper bound. The
-shared `SolutionCollector` continues to use the existing `layout-v1` topology
-identity for public deduplication and serialization, as it does for other engines.
+Astra sends independently validated witnesses with the existing exact `layout-v1`
+identity. It no longer computes a second exhaustive byte-minimal witness merely
+to select an optimal tie. The shared `SolutionCollector` retains its public
+identity and deduplication behavior. Enumeration retains every required physical
+layout up to isomorphism; delivery order and chosen representatives may vary.
 
 Cancellation interrupts the polling reader, kills and waits for each owned cvc5
 process, joins reader and worker threads, and returns incomplete with retained
@@ -315,3 +317,85 @@ specified in Setup.
 
 No additional benchmark is running. No installer was applied. The measured implementation is preserved on the
 `codex/astra-exact-solver` branch.
+
+## First optimum experiment (authorized 2026-09-08)
+
+The user explicitly relaxed preferred-witness ordering and authorized further
+optimization with screens up to eight hours. The first candidate implements
+first-witness completion for optimal mode, removes preferred-order-only witness
+canonicalization from Astra, and adds optional root diagnostics for the next
+optimization decisions. It does not change Custom or Z3 search behavior.
+
+A root can report `Optimum` after a validated witness or `Exhausted` after UNSAT.
+Only the latter increments root/profile exhaustion. The coordinator returns an
+optimum only after joining workers and checking user cancellation and worker
+failures. Internal success stops do not become user cancellations; a user cancel
+still returns incomplete with retained witnesses. Enumeration never uses the
+early optimum path and still exhausts its complete required groups.
+
+`ASTRA_DIAGNOSTICS=1` records root/profile IDs, objective, source partition, start
+and wall times, time in cvc5 checks, independent validation and exact layout
+identity, plus model/duplicate/validated counts and completion state. Diagnostics
+are disabled by default. The production runner records these as `astra_roots`.
+A manifest's `AstraDiagnostics` flag is checked and paired settings must agree.
+Diagnostic-repeat pairs are evidence collection, not optimization speed claims.
+
+The benchmark manifest's explicit `ResultPolicy: any_optimum` permits different
+validated optimal ties. Optimal runs must agree on N/L and return their validated
+terminal object; when a completed full enumeration exists, that witness must be
+in it. Enumeration comparisons still require complete canonical key sets and
+full saved objects; only the preferred tie is flexible. Existing manifests retain
+the default strict ordered policy and frozen earlier screens remain unchanged.
+
+`benchmarks/astra/first-optimum.json` has 94 sequential jobs: 60 old/new Astra
+comparisons, 24 Custom/new comparisons and 10 separate diagnostic runs, with two
+runs per diagnostic scope. It covers all eight corpus cases and all three scopes.
+10 gets 900-second deadlines; the Custom/258 controls and diagnostic/258 runs get
+600 seconds. The maximum total allowance is 24,900 seconds (6h55), including
+cleanup, within the authorized eight hours. The committed baseline runner and
+source are preserved at `target/astra-before-first-optimal-20260908`.
+
+The next steps remain measurement-driven: reduce repeated isomorphic models,
+split long roots more effectively, test Boolean belt-count encodings, and derive
+stronger proven arithmetic cuts. None is assumed faster before a matched screen.
+
+## Verified first-optimum screen (2026-09-08)
+
+`target/astra-first-optimum-screen-20260908` finished verification with 94 records
+and no failures: 90 completed and four explicitly timed out. The four timeouts
+were the previous Astra and Custom, each twice on 10-optimal at 900 seconds.
+The candidate completed that problem with validated N=11, L=18 witnesses: median
+112.719 seconds in the prior/current pairs and 117.117 in the Custom pairs.
+No finite completed-time speed ratio is assigned to those timed-out controls.
+
+Matched 32-worker, two-repeat medians (seconds):
+
+| Scope             | Previous Astra | First-optimum Astra | Result                     |
+| ----------------- | -------------: | ------------------: | -------------------------- |
+| 36 optimal        |          9.598 |               7.641 | about 20.4% less wall time |
+| 258 optimal       |         50.327 |               6.807 | about 7.4 times faster     |
+| 238 optimal       |          1.811 |               1.227 | about 32.2% less wall time |
+| 36 all            |         20.445 |              20.639 | about 0.9% more wall time  |
+| 115 all           |         11.009 |              11.025 | about 0.1% more wall time  |
+| 238 all           |          1.904 |               1.958 | about 2.8% more wall time  |
+| 258 minimum_links |         50.454 |              50.531 | about 0.2% more wall time  |
+
+Separately paired Custom/Astra medians were 9.290/7.719 on 36-optimal,
+61.986/20.346 on 36-all, 15.861/10.790 on 115-all, 5.207/1.867 on 238-all,
+and 205.593/50.929 on 258-minimum_links. Completed enumeration sets and full
+canonical objects matched available references, with 12, 49, 1, and 2 layouts
+respectively for the latter four enumeration scopes. Two repeats establish
+screening evidence, not a universal performance guarantee. Z3 was not rerun;
+its prior results remain historical.
+
+Root diagnostics point at cvc5 checking, rather than identity/validation or
+repeated models: each run of 36, 238, 258 and optimal 10 had zero within-root
+duplicate models; 115 had one duplicate among 50 models. On 258, summed root
+check time was 201.961–204.751 seconds versus 202.137–204.918 root wall seconds.
+The longest 258 root took 50–51 seconds and returned UNSAT with no models.
+The 10-optimal roots spent essentially all their wall time awaiting cvc5.
+These are overlapping worker wall times, not process CPU or total solve time.
+
+The verified first-optimum runner and sources are preserved at
+`target/astra-before-cardinality-20260908`. Its runner SHA-256 is
+`d344ead5543dbe41db799233c355d9a9a867486a047c42f33f81773ddb9b2b26`.

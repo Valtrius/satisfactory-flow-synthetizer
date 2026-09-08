@@ -82,6 +82,8 @@ if ($JobManifest) {
         $caseData = Get-Content -LiteralPath $casePath -Raw | ConvertFrom-Json
         if (-not $caseData.problem.maxLinkRate) { throw 'Case requires exact belt capacity' }
         if ($null -ne $job.Engine -and $job.Engine -notin @('custom','z3','astra')) { throw 'Invalid solver engine' }
+        if ($null -ne $job.AstraDiagnostics -and $job.AstraDiagnostics -isnot [bool]) { throw 'Invalid AstraDiagnostics flag' }
+        if ($job.AstraDiagnostics -and $job.Engine -ne 'astra') { throw 'Astra diagnostics require Astra' }
         if ($job.Engine -and ($job.Stage -ne 'baseline' -or $job.Hotspots -ne 'off')) { throw 'Engine comparisons require baseline stage and hotspots off' }
         if ($null -eq $job.Variant) { $job | Add-Member NoteProperty Variant 'after' }
         $matchedVariant = @($variants | Where-Object { $_.Name -eq $job.Variant })
@@ -116,7 +118,7 @@ if ($pairedJobs.Count) {
     foreach ($pair in $pairs) {
         $members = @($pair.Group)
         if ($members.Count -ne 2 -or @($members.PairRole | Sort-Object -Unique).Count -ne 2 -or 'reference' -notin $members.PairRole -or 'candidate' -notin $members.PairRole -or $members[0].Variant -eq $members[1].Variant) { throw 'Invalid reference/candidate pair' }
-        foreach ($field in @('Case','Mode','Stage','Workers','Repeat','MaxNodes','TimeoutSeconds','Hotspots','ProcessorAffinity','CacheBytes','Comparison','Cohort','CaseFile')) {
+        foreach ($field in @('Case','Mode','Stage','Workers','Repeat','MaxNodes','TimeoutSeconds','Hotspots','ProcessorAffinity','CacheBytes','Comparison','Cohort','CaseFile','AstraDiagnostics')) {
             if ($members[0].$field -ne $members[1].$field) { throw "Unmatched pair setting: $field" }
         }
     }
@@ -160,10 +162,12 @@ foreach ($job in $jobs) {
     @("RUNNING: $index / $($jobs.Count)", "Current: $name", "Time cap: $timeout seconds; N <= $maxNodes; hotspots $jobHotspots", "Cancellation cleanup watchdog: $CancellationGraceSeconds additional seconds", "Updated: $(Get-Date -Format o)") | Set-Content -LiteralPath (Join-Path $outputRoot 'BENCHMARK-STATUS.txt')
     $watch = [Diagnostics.Stopwatch]::StartNew()
     $originalAstraBackend = $env:ASTRA_CVC5
+    $originalAstraDiagnostics = $env:ASTRA_DIAGNOSTICS
     try {
+        $env:ASTRA_DIAGNOSTICS = if ($job.AstraDiagnostics -eq $true) { '1' } else { $null }
         if ($job.Engine -eq 'astra') { $env:ASTRA_CVC5 = Join-Path (Split-Path $exe -Parent) 'cvc5.exe' }
     $launch = Start-BenchmarkProcess -Executable $exe -Arguments $arguments -WorkingDirectory $repoRoot -StandardOutput (Join-Path $outputRoot "$name.log") -StandardError (Join-Path $outputRoot "$name.stderr.log") -Affinity $job.ProcessorAffinity
-    } finally { $env:ASTRA_CVC5 = $originalAstraBackend }
+    } finally { $env:ASTRA_CVC5 = $originalAstraBackend; $env:ASTRA_DIAGNOSTICS = $originalAstraDiagnostics }
 
     $process = $launch.Process
     $null = $process.Handle
@@ -225,6 +229,7 @@ foreach ($job in $jobs) {
     if ($job.Engine -and $data.engine -ne $job.Engine) { throw "Executable ignored engine: $name" }
     if ($data.mode -ne $job.Mode -or $data.stage -ne $job.Stage -or $data.workers -ne $job.Workers) { throw "Executable ignored benchmark settings: $name" }
     if ($data.max_nodes -ne $maxNodes -or $data.timeout_s -ne $timeout) { throw "Executable ignored benchmark budgets: $name" }
+    if ($job.AstraDiagnostics -and $data.astra_diagnostics -ne $true) { throw "Executable ignored Astra diagnostics: $name" }
     if ($data.hotspot_recording -ne ($jobHotspots -eq 'on')) { throw "Executable ignored hotspot recording setting: $name" }
     if ($JobManifest) {
         $expected = Get-Content -LiteralPath $job.CasePath -Raw | ConvertFrom-Json

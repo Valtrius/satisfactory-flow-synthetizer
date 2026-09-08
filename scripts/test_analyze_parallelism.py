@@ -15,6 +15,20 @@ from benchmark_policy import paired_summary, validate_pairs, validate_placement
 
 
 class AnalyzerTests(unittest.TestCase):
+    def test_any_optimum_policy_retains_objective_and_full_enumeration_checks(self):
+        from benchmark_policy import result_comparison_errors
+        a = dict(status="Optimal(N=7, L=8)", layout_keys=["a"], preferred_key="a", solutions=[{"graph": "a"}])
+        b = dict(status="Optimal(N=7, L=8)", layout_keys=["b"], preferred_key="b", solutions=[{"graph": "b"}])
+        self.assertTrue(result_comparison_errors(a, b, "optimal"))
+        self.assertEqual(result_comparison_errors(a, b, "optimal", "any_optimum"), [])
+        self.assertTrue(result_comparison_errors(a, dict(b, status="Optimal(N=7, L=9)"), "optimal", "any_optimum"))
+        for mode in ["all", "minimum_links"]:
+            self.assertTrue(result_comparison_errors(a, b, mode, "any_optimum"))
+            self.assertEqual(result_comparison_errors(a, dict(a, preferred_key="b"), mode, "any_optimum"), [])
+            self.assertTrue(result_comparison_errors(a, dict(a, solutions=[{"graph": "changed"}]), mode, "any_optimum"))
+        with self.assertRaises(ValueError):
+            result_comparison_errors(a, b, "optimal", "unknown")
+
     def test_pair_policy_rejects_unmatched_settings_and_separated_members(self):
         jobs = [dict(Case="fixture", Mode="optimal", Stage="p1", Workers=16, Repeat=1,
                      MaxNodes=2, TimeoutSeconds=5, Hotspots="off", ProcessorAffinity="ffff",

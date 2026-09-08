@@ -6,7 +6,7 @@ from statistics import median
 
 
 PAIR_FIELDS = ("Case", "Mode", "Stage", "Workers", "Repeat", "MaxNodes", "TimeoutSeconds",
-               "Hotspots", "ProcessorAffinity", "CacheBytes", "Comparison", "Cohort", "CaseFile")
+               "Hotspots", "AstraDiagnostics", "ProcessorAffinity", "CacheBytes", "Comparison", "Cohort", "CaseFile")
 
 
 def validate_pairs(schedule):
@@ -95,3 +95,20 @@ def paired_summary(rows):
                 bootstrap_95_pct=[100 * (boot[125] - 1), 100 * (boot[4874] - 1)])
         output.append(item)
     return output
+
+
+def result_comparison_errors(result, baseline, mode, policy="ordered"):
+    """Ordering freedom never removes full enumeration or objective checks."""
+    if policy not in ("ordered", "any_optimum"):
+        raise ValueError(f"Unknown result policy: {policy}")
+    errors = []
+    if result.get("status") != baseline.get("status"):
+        errors.append("Optimum differs")
+    if policy == "ordered" or mode != "optimal":
+        if result.get("layout_keys") != baseline.get("layout_keys"):
+            errors.append("Full layout set differs")
+        if "solutions" in baseline and result.get("solutions") != baseline["solutions"]:
+            errors.append("Saved solution objects differ")
+    if policy == "ordered" and result.get("preferred_key") != baseline.get("preferred_key"):
+        errors.append("Preferred witness differs")
+    return errors

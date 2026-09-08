@@ -1,5 +1,7 @@
 //! Astra: exact compact topology synthesis with a local incremental cvc5 backend.
+mod diagnostics;
 mod encoding;
+use diagnostics::RootStats;
 mod process;
 
 use encoding::Encoding;
@@ -12,7 +14,6 @@ use solver_api::{
 };
 use solver_core::{
     NormalizedProblem, Preparation,
-    canonical::canonicalize_witness_cancellable,
     lower_bound::{baseline_lower_bounds, profile_impossibility},
     profile::{AccountedProfile, enumerate_accounted_profile_groups},
 };
@@ -85,7 +86,7 @@ pub fn solve_problem(
     Ok(outcome)
 }
 
-/// Prove the lexicographic optimum and select the preferred witness.
+/// Return the first validated witness at the proved minimum node and link counts.
 /// # Errors
 /// Returns invalid problems or options.
 pub fn solve_with_observer(
@@ -145,8 +146,13 @@ pub fn enumerate_with_observer(
 
 enum Message {
     Valid(BestKnownSolution),
-    Canonical(BestKnownSolution),
-    Done(usize, Result<(), Failure>),
+    Done(usize, Result<Completion, Failure>, Option<String>),
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Completion {
+    Exhausted,
+    Optimum,
 }
 
 #[derive(Clone, Copy)]
@@ -208,11 +214,11 @@ struct Search<'a> {
     started: Instant,
     proof: ProofSummary,
     best: Option<BestKnownSolution>,
-    preferred: Option<BestKnownSolution>,
     layouts: BTreeMap<CanonicalGraphKey, BestKnownSolution>,
     minimum_links_ms: Option<u64>,
 }
 
+#[allow(clippy::too_many_lines)]
 fn run(
     problem: &Problem,
     options: &RunOptions,
@@ -250,7 +256,6 @@ fn run(
             ..ProofSummary::default()
         },
         best: None,
-        preferred: None,
         layouts: BTreeMap::new(),
         minimum_links_ms: None,
     };
@@ -289,18 +294,22 @@ fn run(
         };
         for group in groups {
             search.progress(nodes, Some(group.link_count), SolvePhase::Searching);
-            if let Err(failure) = search.group(nodes, group.link_count, &group.profiles) {
-                let reason = match failure {
-                    Failure::Cancelled => IncompleteReason::Cancelled,
-                    Failure::Worker(detail) => IncompleteReason::WorkerFailed { detail },
-                };
-                return Ok(search.incomplete(reason));
+            match search.group(nodes, group.link_count, &group.profiles) {
+                Ok(Completion::Optimum) => return Ok(search.complete()),
+                Ok(Completion::Exhausted) => {}
+                Err(failure) => {
+                    let reason = match failure {
+                        Failure::Cancelled => IncompleteReason::Cancelled,
+                        Failure::Worker(detail) => IncompleteReason::WorkerFailed { detail },
+                    };
+                    return Ok(search.incomplete(reason));
+                }
             }
             if cancel.load(Ordering::Relaxed) {
                 return Ok(search.incomplete(IncompleteReason::Cancelled));
             }
             search.proof.link_groups_exhausted += 1;
-            if search.preferred.is_some() {
+            if search.best.is_some() {
                 if search.minimum_links_ms.is_none() {
                     search.minimum_links_ms = Some(search.elapsed());
                 }
@@ -310,7 +319,7 @@ fn run(
                 }
             }
         }
-        if search.preferred.is_some() {
+        if search.best.is_some() {
             return Ok(search.complete());
         }
         search.proof.node_counts_exhausted_through = Some(nodes);
@@ -353,7 +362,12 @@ impl Search<'_> {
     }
 
     #[allow(clippy::too_many_lines)]
-    fn group(&mut self, nodes: u32, links: u32, tasks: &[AccountedProfile]) -> Result<(), Failure> {
+    fn group(
+        &mut self,
+        nodes: u32,
+        links: u32,
+        tasks: &[AccountedProfile],
+    ) -> Result<Completion, Failure> {
         let completed_before = self.proof.profiles_exhausted;
         let mut roots = Vec::new();
         for (profile, task) in tasks.iter().enumerate() {
@@ -386,8 +400,12 @@ impl Search<'_> {
         let problem = &self.problem;
         let original = self.original;
         let cancel = self.cancel;
+        let mode = self.options.mode;
+        let diagnostics = std::env::var_os("ASTRA_DIAGNOSTICS").is_some_and(|v| v == "1");
+        let origin = self.started;
         let workers = self.options.worker_count.min(roots.len());
         let mut messages = Vec::new();
+        let mut optimum = false;
         // Borrow only immutable inputs into workers, allowing coordinator-owned event delivery.
         thread::scope(|scope| {
             let mut handles = Vec::new();
@@ -404,8 +422,9 @@ impl Search<'_> {
                         let Some(&root) = roots.get(index) else {
                             break;
                         };
+                        let mut stats = diagnostics.then(RootStats::default);
                         let result = if root.impossible {
-                            Ok(())
+                            Ok(Completion::Exhausted)
                         } else {
                             profile(
                                 problem,
@@ -413,14 +432,25 @@ impl Search<'_> {
                                 normalized,
                                 tasks[root.profile],
                                 root.source,
+                                mode,
                                 cancel,
                                 stop,
                                 &send,
+                                &mut stats,
                             )
                         };
-                        let failed = result.is_err();
-                        let _ = send.send(Message::Done(index, result));
-                        if failed {
+                        let stopped = result.is_err() || matches!(result, Ok(Completion::Optimum));
+                        let trace = stats.map(|stats| {
+                            let verdict = match &result {
+                                Ok(Completion::Exhausted) => "exhausted",
+                                Ok(Completion::Optimum) => "optimum",
+                                Err(Failure::Cancelled) => "cancelled",
+                                Err(Failure::Worker(_)) => "failed",
+                            };
+                            stats.record(index, nodes, links, &root, verdict, origin)
+                        });
+                        let _ = send.send(Message::Done(index, result, trace));
+                        if stopped {
                             stop.store(true, Ordering::Relaxed);
                             break;
                         }
@@ -433,17 +463,20 @@ impl Search<'_> {
             // state is handled in a separate mutable view below.
             let mut state = GroupState {
                 best: &mut self.best,
-                preferred: &mut self.preferred,
                 layouts: &mut self.layouts,
                 proof: &mut self.proof,
                 observer: self.observer,
                 mode: self.options.mode,
                 ledger: &mut ledger,
+                optimum: &mut optimum,
             };
             let mut last = Instant::now();
             loop {
                 match receive.recv_timeout(Duration::from_millis(50)) {
                     Ok(message) => {
+                        if let Message::Done(_, _, Some(trace)) = &message {
+                            state.progress(nodes, links, self.started, Some(trace.clone()));
+                        }
                         if let Err(error) = state.accept(message) {
                             messages.push(error);
                             stop.store(true, Ordering::Relaxed);
@@ -453,7 +486,7 @@ impl Search<'_> {
                     Err(mpsc::RecvTimeoutError::Timeout) => {}
                 }
                 if last.elapsed() >= Duration::from_millis(250) {
-                    state.progress(nodes, links, self.started);
+                    state.progress(nodes, links, self.started, None);
                     last = Instant::now();
                 }
             }
@@ -469,7 +502,17 @@ impl Search<'_> {
         {
             return Err(messages.swap_remove(index));
         }
-        if self.cancel.load(Ordering::Relaxed) || !messages.is_empty() {
+        if self.cancel.load(Ordering::Relaxed) {
+            return Err(Failure::Cancelled);
+        }
+        // All lower N/L obligations finished before this group started. A
+        // validated current-group witness establishes the optimum; equal-L
+        // exhaustion is required only for enumeration. Internal sibling stops
+        // do not become user cancellation or fabricated completion records.
+        if optimum && self.best.is_some() {
+            return Ok(Completion::Optimum);
+        }
+        if !messages.is_empty() {
             return Err(Failure::Cancelled);
         }
         if !ledger.complete()
@@ -477,7 +520,7 @@ impl Search<'_> {
         {
             return Err(Failure::Worker("unfinished Astra profile group".into()));
         }
-        Ok(())
+        Ok(Completion::Exhausted)
     }
 
     fn incomplete(&self, reason: IncompleteReason) -> SolveResult {
@@ -492,9 +535,9 @@ impl Search<'_> {
             return self.incomplete(IncompleteReason::Cancelled);
         }
         let best = self
-            .preferred
+            .best
             .as_ref()
-            .expect("completed SAT group has a canonical witness");
+            .expect("completed SAT result has a validated witness");
         SolveResult::Optimal(OptimalSolution {
             node_count: best.node_count,
             link_count: best.link_count,
@@ -510,15 +553,23 @@ impl Search<'_> {
 
 struct GroupState<'a> {
     best: &'a mut Option<BestKnownSolution>,
-    preferred: &'a mut Option<BestKnownSolution>,
     layouts: &'a mut BTreeMap<CanonicalGraphKey, BestKnownSolution>,
     proof: &'a mut ProofSummary,
     observer: &'a dyn SolveObserver,
     mode: SolveMode,
     ledger: &'a mut RootLedger,
+    optimum: &'a mut bool,
 }
 impl GroupState<'_> {
-    fn progress(&self, nodes: u32, links: u32, started: Instant) {
+    fn progress(&self, nodes: u32, links: u32, started: Instant, trace: Option<String>) {
+        let mut custom = vec![Diagnostic::counter(
+            "astra.profiles_exhausted",
+            "Completed Astra profiles",
+            self.proof.profiles_exhausted,
+        )];
+        if let Some(trace) = trace {
+            custom.push(Diagnostic::text("astra.root", "Astra root evidence", trace));
+        }
         self.observer
             .on_event(SolverEvent::Progress(SolverProgress {
                 phase: SolvePhase::Searching,
@@ -529,11 +580,7 @@ impl GroupState<'_> {
                 best_node_count: self.best.as_ref().map(|b| b.node_count),
                 best_link_count: self.best.as_ref().map(|b| b.link_count),
                 solutions_found: self.layouts.len() as u64,
-                custom: vec![Diagnostic::counter(
-                    "astra.profiles_exhausted",
-                    "Completed Astra profiles",
-                    self.proof.profiles_exhausted,
-                )],
+                custom,
             }));
     }
 
@@ -543,19 +590,6 @@ impl GroupState<'_> {
                 if self.best.as_ref().is_none_or(|b| {
                     (solution.node_count, solution.link_count) < (b.node_count, b.link_count)
                 }) {
-                    *self.best = Some(solution.clone());
-                    self.observer.on_event(SolverEvent::Incumbent(solution));
-                }
-            }
-            Message::Canonical(solution) => {
-                if self.preferred.as_ref().is_none_or(|b| {
-                    (
-                        solution.node_count,
-                        solution.link_count,
-                        &solution.canonical_graph_key,
-                    ) < (b.node_count, b.link_count, &b.canonical_graph_key)
-                }) {
-                    *self.preferred = Some(solution.clone());
                     *self.best = Some(solution.clone());
                     self.observer
                         .on_event(SolverEvent::Incumbent(solution.clone()));
@@ -568,10 +602,13 @@ impl GroupState<'_> {
                     self.observer.on_event(SolverEvent::SolutionFound(solution));
                 }
             }
-            Message::Done(root, result) => {
-                result?;
-                self.ledger.finish(root, self.proof)?;
-            }
+            Message::Done(root, result, _) => match result? {
+                Completion::Exhausted => self.ledger.finish(root, self.proof)?,
+                Completion::Optimum if self.mode == SolveMode::Optimal => *self.optimum = true,
+                Completion::Optimum => {
+                    return Err(Failure::Worker("early stop in enumeration".into()));
+                }
+            },
         }
         Ok(())
     }
@@ -624,10 +661,12 @@ fn profile(
     normalized: &NormalizedProblem,
     task: AccountedProfile,
     source: Option<usize>,
+    mode: SolveMode,
     cancel: &AtomicBool,
     stop: &AtomicBool,
     send: &mpsc::Sender<Message>,
-) -> Result<(), Failure> {
+    stats: &mut Option<RootStats>,
+) -> Result<Completion, Failure> {
     let encoding = Encoding::new(problem, task);
     let mut session = Session::new()?;
     session.write(&encoding.script)?;
@@ -640,8 +679,13 @@ fn profile(
             return Err(Failure::Cancelled);
         }
         session.write("(check-sat)\n")?;
-        match session.response(cancel, stop)?.as_str() {
-            "unsat" => return Ok(()),
+        let check = stats.as_ref().map(|_| Instant::now());
+        let response = session.response(cancel, stop);
+        if let (Some(stats), Some(start)) = (stats.as_mut(), check) {
+            stats.check += start.elapsed();
+        }
+        match response?.as_str() {
+            "unsat" => return Ok(Completion::Exhausted),
             "sat" => {}
             response => {
                 return Err(Failure::Worker(format!(
@@ -652,7 +696,13 @@ fn profile(
         session.write(&encoding.query())?;
         let (graph, block) = encoding.model(&session.response(cancel, stop)?)?;
         session.write(&block)?;
-        let solved = match solve_topology(problem, &graph) {
+        let validation = stats.as_ref().map(|_| Instant::now());
+        let solved = solve_topology(problem, &graph);
+        if let (Some(stats), Some(start)) = (stats.as_mut(), validation) {
+            stats.models += 1;
+            stats.validation += start.elapsed();
+        }
+        let solved = match solved {
             Ok(graph) => graph,
             Err(
                 ValidationError::NonUniqueSteadyState { .. }
@@ -665,26 +715,42 @@ fn profile(
                 )));
             }
         };
-        let validation =
-            validate_solution(problem, &solved).map_err(|e| Failure::Worker(e.to_string()))?;
+        let start = stats.as_ref().map(|_| Instant::now());
+        let validation = validate_solution(problem, &solved);
+        if let (Some(stats), Some(start)) = (stats.as_mut(), start) {
+            stats.validation += start.elapsed();
+        }
+        let validation = validation.map_err(|e| Failure::Worker(e.to_string()))?;
         if validation.node_count != task.profile.node_count()
             || validation.link_count != task.accounting.link_count
         {
             return Err(Failure::Worker("Astra model objective mismatch".into()));
         }
+        let start = stats.as_ref().map(|_| Instant::now());
         let identity = layout_key(problem, &solved);
+        if let (Some(stats), Some(start)) = (stats.as_mut(), start) {
+            stats.identity += start.elapsed();
+        }
         if !seen.insert(identity.clone()) {
+            if let Some(stats) = stats {
+                stats.duplicates += 1;
+            }
             continue;
         }
-        // Preserve and stream a validator-accepted upper bound before expensive canonical ordering.
-        let raw = restore(original, normalized, solved.clone(), identity)?;
+        // Exact layout identity preserves deduplication without imposing a
+        // lexicographic preferred representative on independently valid graphs.
+        let start = stats.as_ref().map(|_| Instant::now());
+        let raw = restore(original, normalized, solved, identity);
+        if let (Some(stats), Some(start)) = (stats.as_mut(), start) {
+            stats.validation += start.elapsed();
+            stats.valid += u64::from(raw.is_ok());
+        }
+        let raw = raw?;
         send.send(Message::Valid(raw))
             .map_err(|e| Failure::Worker(e.to_string()))?;
-        let canonical =
-            canonicalize_witness_cancellable(problem, &solved, cancel).ok_or(Failure::Cancelled)?;
-        let best = restore(original, normalized, canonical.graph, canonical.key)?;
-        send.send(Message::Canonical(best))
-            .map_err(|e| Failure::Worker(e.to_string()))?;
+        if mode == SolveMode::Optimal {
+            return Ok(Completion::Optimum);
+        }
     }
 }
 
