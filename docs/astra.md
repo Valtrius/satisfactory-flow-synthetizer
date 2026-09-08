@@ -536,3 +536,29 @@ than Boolean in their matched pairs. Tiny runs grew from about 0.03 to 0.04
 seconds. These adverse results remain preserved. Full canonical enumeration
 sets, saved objects, exact objectives and independent validation passed.
 Custom and Z3 were not rerun; their earlier measurements remain historical.
+
+## Rejected eager second-output partitions (2026-09-08)
+
+The exact candidate split underfilled first-output roots by every producer of
+the second requested output. Production is restored to the verified portfolio.
+The rejected patch, manifest, binary map and summary are in output-pairs*.
+All 100 records verified: 95 completed; five candidate 10-optimal runs timed
+out at 300 seconds (three timing, two diagnostics). Of 15 timed scopes, two
+improved, 12 regressed and one lost completion. Three-repeat paired medians
+at 32 workers, seconds:
+
+| Scope             | Portfolio |       Eager |
+| ----------------- | --------: | ----------: |
+| 10 optimal        |    25.179 | timeout 300 |
+| 258 minimum_links |    39.902 |      16.876 |
+| 238 optimal       |     0.534 |       0.304 |
+| 36 all            |     5.317 |       8.114 |
+| 36 optimal        |     3.087 |       5.467 |
+| 115 all           |     6.327 |       7.389 |
+| 238 all           |     0.703 |       1.377 |
+| 258 optimal       |     2.593 |       8.598 |
+
+The 258 improvement is a within-screen comparison; older controls differ.
+Checks dominate. On 36 the proof owner grew from 484 to 1052 roots and 39 to
+65 checks; some 10 children spent their entire deadline checking without a
+model. Consider delayed bounded splitting that preserves parent progress next.
