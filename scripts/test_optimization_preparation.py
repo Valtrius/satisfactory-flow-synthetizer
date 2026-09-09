@@ -20,6 +20,7 @@ def module(name, filename):
 
 auditor = module("root_audit", "audit-optimization-results.py")
 matrix = module("optimization_matrix", "make-optimization-campaign.py")
+preparer = module("optimization_preparer", "prepare-optimization.py")
 
 
 def diagnostic_result():
@@ -32,6 +33,35 @@ def diagnostic_result():
 
 
 class OptimizationPreparationTests(unittest.TestCase):
+    def test_reproduction_allows_only_windows_line_endings(self):
+        with tempfile.TemporaryDirectory() as directory:
+            a, b = Path(directory)/"a.rs", Path(directory)/"b.rs"
+            a.write_bytes(b"fn main() {\r\n    run(1);\r\n}\r\n")
+            b.write_bytes(b"fn main() {\n    run(1);\n}\n")
+            self.assertTrue(preparer.same_source(a,b))
+            b.write_bytes(b"fn main() {\n    run(2);\n}\n")
+            self.assertFalse(preparer.same_source(a,b))
+
+    def test_adaptive_cover_selects_parent_or_every_child_without_double_counting(self):
+        result = diagnostic_result()
+        common = dict(branch=1, nodes=2, links=1, profile=0, source=0, parent_root=0,
+                      child_count=2, state="exhausted", wall_s=1.0, check_s=0.9, start_s=2.0)
+        result["roots"] = [dict(common, root=0, second_source=None, proof_committed=False),
+                           dict(common, root=1, second_source=0, proof_committed=True, refinement_trigger_s=1.0),
+                           dict(common, root=2, second_source=1, proof_committed=True, refinement_trigger_s=1.0)]
+        self.assertEqual(auditor.audit(result)[0], [])
+        result["roots"][0]["proof_committed"] = True
+        self.assertIn("Parent and children both counted in the proof", auditor.audit(result)[0])
+        result["roots"][0]["proof_committed"] = False
+        result["roots"][2]["proof_committed"] = False
+        self.assertIn("Incomplete children counted as a full parent cover", auditor.audit(result)[0])
+        result["roots"][1]["proof_committed"] = False
+        result["roots"][0]["state"] = "cancelled"
+        result["outcome"]["result"]["proof"]["rootPartitionsExhausted"] = 0
+        self.assertEqual(auditor.audit(result)[0], [])
+        result["roots"][1]["refinement_trigger_s"] = 3.0
+        self.assertIn("Child started before its optimum trigger", auditor.audit(result)[0])
+
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is required")
     def test_campaign_runs_sequentially_and_preserves_a_failed_suite(self):
         # Stub suites exercise orchestration without running any solver or benchmark.
@@ -140,6 +170,24 @@ if ($label -eq 'failed') { exit 1 }
             self.assertEqual(result["suites"][1]["repeats"], 4)
             with self.assertRaises(ValueError):
                 matrix.generate(Path(directory) / "invalid", ["not-a-variant"])
+
+    def test_followup_targets_the_worker_cliff_and_keeps_long_roots_separate(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "followup"
+            campaign = matrix.generate(root, followup=True)
+            candidates = {s["candidate"] for s in campaign["suites"]}
+            self.assertEqual(candidates, {"order-outside-in", "order-reverse", "adaptive-boolean", "pairs-boolean", "delay-sparse250"})
+            for suite in campaign["suites"]:
+                jobs = json.loads((root / suite["manifest"]).read_text())["jobs"]
+                self.assertEqual(len(validate_pairs(jobs)), len(jobs) // 2)
+                self.assertEqual(suite["max_scheduled_seconds"], sum(j["TimeoutSeconds"] + 15 for j in jobs))
+                self.assertTrue(all(j["Diagnostics"] == suite["diagnostics"] for j in jobs))
+                if suite["name"].startswith("confirm16-"):
+                    self.assertEqual(suite["repeats"], 6)
+                    self.assertEqual({j["Workers"] for j in jobs}, {16})
+                if "long-enumeration" in suite["name"]:
+                    self.assertEqual({j["TimeoutSeconds"] for j in jobs}, {600})
+                    self.assertEqual({j["Mode"] for j in jobs}, {"all_min_nl"})
 
 
 if __name__ == "__main__":

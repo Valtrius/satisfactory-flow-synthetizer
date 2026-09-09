@@ -8,5 +8,8 @@
   "delay-sparse250": { "delay_branch": 0, "delay_ms": 250 },
   "delay-boolean250": { "delay_branch": 1, "delay_ms": 250 },
   "sparse-only": { "solo": 0 },
-  "boolean-only": { "solo": 1 }
+  "boolean-only": { "solo": 1 },
+  "order-reverse": { "root_order": "reverse" },
+  "order-outside-in": { "root_order": "outside-in" },
+  "adaptive-boolean": { "adaptive": true }
 }

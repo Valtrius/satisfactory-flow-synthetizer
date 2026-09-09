@@ -1,7 +1,8 @@
 param(
     [Parameter(Mandatory)][string]$MatrixDirectory,
     [Parameter(Mandatory)][string]$VariantBinaryMap,
-    [Parameter(Mandatory)][string]$OutputDirectory
+    [Parameter(Mandatory)][string]$OutputDirectory,
+    [string]$ValidationEvidence
 )
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path $PSScriptRoot -Parent
@@ -10,6 +11,15 @@ $binaryMap = Get-Content -LiteralPath $VariantBinaryMap -Raw | ConvertFrom-Json 
 $campaign = Get-Content -LiteralPath (Join-Path $matrix 'campaign.json') -Raw | ConvertFrom-Json
 $backend = Join-Path $repoRoot 'src-tauri/binaries/cvc5-x86_64-pc-windows-msvc.exe'
 $backendHash = (Get-FileHash -LiteralPath $backend -Algorithm SHA256).Hash.ToLowerInvariant()
+if ($ValidationEvidence) {
+    $evidenceRoot = (Resolve-Path -LiteralPath $ValidationEvidence).Path
+    $qualification = Get-Content -LiteralPath (Join-Path $evidenceRoot 'qualification.json') -Raw | ConvertFrom-Json
+    if (-not $qualification.passed -or $qualification.benchmark -or $qualification.backend_sha256 -ne $backendHash) { throw 'Release evidence qualification is missing, failed, or uses another backend' }
+    foreach ($variant in $binaryMap.Keys) {
+        $actualHash = (Get-FileHash -LiteralPath (Join-Path $binaryMap[$variant] 'profile_solver.exe') -Algorithm SHA256).Hash.ToLowerInvariant()
+        if ($qualification.runner_hashes.$variant -ne $actualHash) { throw "Release evidence uses another binary: $variant" }
+    }
+}
 $output = [IO.Path]::GetFullPath($OutputDirectory, $repoRoot)
 if (Test-Path -LiteralPath $output) { throw 'Frozen campaign output already exists' }
 New-Item -ItemType Directory -Path $output | Out-Null
@@ -46,9 +56,16 @@ foreach ($suite in $campaign.suites) {
 }
 $campaign | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath (Join-Path $output 'campaign.json')
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'start-optimization-campaign.ps1') -Destination $output
+if ($ValidationEvidence) { Copy-Item -LiteralPath $evidenceRoot -Destination (Join-Path $output 'qualification') -Recurse }
 $campaignHashes = [ordered]@{}
 foreach ($relative in @('campaign.json','start-optimization-campaign.ps1') + @($campaign.suites | ForEach-Object { "$($_.name)/frozen-hashes.json" })) {
     $campaignHashes[$relative] = (Get-FileHash -LiteralPath (Join-Path $output $relative) -Algorithm SHA256).Hash.ToLowerInvariant()
+}
+if ($ValidationEvidence) {
+    foreach ($file in (Get-ChildItem -LiteralPath (Join-Path $output 'qualification') -Recurse -File)) {
+        $relative = [IO.Path]::GetRelativePath($output, $file.FullName).Replace('\','/')
+        $campaignHashes[$relative] = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+    }
 }
 $campaignHashes | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $output 'campaign-hashes.json')
 'PREPARED ONLY: no timing suite launched. Start one suite at a time with scripts/start-optimization-suite.ps1.' | Set-Content -LiteralPath (Join-Path $output 'CAMPAIGN-STATUS.txt')

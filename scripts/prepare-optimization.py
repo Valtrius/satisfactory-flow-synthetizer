@@ -19,6 +19,13 @@ def digest(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def same_source(first, second):
+    # rustfmt may leave a preformatted Windows file's CRLF intact, but rewrite
+    # another to LF. Frozen artifact hashes remain exact; reproduction permits
+    # only this source line-ending difference.
+    return first.read_bytes().replace(b"\r\n", b"\n") == second.read_bytes().replace(b"\r\n", b"\n")
+
+
 def replace_once(text, before, after):
     if text.count(before) != 1:
         raise ValueError(f"Source anchor changed: {before[:100]!r}")
@@ -28,16 +35,24 @@ def replace_once(text, before, after):
 def transform(sources, config):
     """Exact changes are compiled into each variant; no runtime or case-name dispatch."""
     sources = dict(sources)
-    if "refine" in config:
+    if "refine" in config or config.get("adaptive"):
         lib = sources["lib.rs"]
         lib = replace_once(lib, "    source: Option<usize>,\n    impossible: bool,", "    source: Option<usize>,\n    second_source: Option<usize>,\n    impossible: bool,")
         # Every Root constructor has its source immediately before impossible.
         lib, count = re.subn(r"(?m)^(\s+)source: (Some\([^\n]+\)|None),\n\1impossible", r"\1source: \2,\n\1second_source: None,\n\1impossible", lib)
         if count != 5:
             raise ValueError(f"Expected five Root constructors, got {count}")
-        lib = replace_once(lib, "struct RootLedger {", (SPEC / "refine.rs").read_text() + "\nstruct RootLedger {")
-        gate = "" if config["refine"] == "both" else f" && matches!(self.counts, Counts::{config['refine'].title()})"
-        lib = replace_once(lib, "        let mut ledger = RootLedger::new(&roots, tasks.len());", f"""        let roots = if self.options.mode == SolveMode::AllMinNL{gate} {{
+        helper = "adaptive.rs" if config.get("adaptive") else "refine.rs"
+        lib = replace_once(lib, "struct RootLedger {", (SPEC / helper).read_text() + "\nstruct RootLedger {")
+        if config.get("adaptive"):
+            lib = replace_once(lib, "        let mut ledger = RootLedger::new(&roots, tasks.len());", """        if self.options.mode == SolveMode::AllMinNL && matches!(self.counts, Counts::Boolean)
+            && self.options.worker_count > 1 && self.problem.outputs.len() >= 2 {
+            return self.adaptive_group(nodes, links, tasks, &roots);
+        }
+        let mut ledger = RootLedger::new(&roots, tasks.len());""")
+        else:
+            gate = "" if config["refine"] == "both" else f" && matches!(self.counts, Counts::{config['refine'].title()})"
+            lib = replace_once(lib, "        let mut ledger = RootLedger::new(&roots, tasks.len());", f"""        let roots = if self.options.mode == SolveMode::AllMinNL{gate} {{
             refine_roots(roots, tasks, self.problem.inputs.len(), self.problem.outputs.len(), self.options.worker_count)
         }} else {{ roots }};
         let mut ledger = RootLedger::new(&roots, tasks.len());""")
@@ -76,6 +91,10 @@ def transform(sources, config):
                 }}
                 let result = crate::run(problem, &options, stop, &bridge, counts);""")
     sources["portfolio.rs"] = portfolio
+    if "root_order" in config:
+        lib = replace_once(sources["lib.rs"], "struct RootLedger {", (SPEC / "order.rs").read_text() + "\nstruct RootLedger {")
+        outside = "true" if config["root_order"] == "outside-in" else "false"
+        sources["lib.rs"] = replace_once(lib, "        let mut ledger = RootLedger::new(&roots, tasks.len());", f"        order_roots(&mut roots, {outside});\n        let mut ledger = RootLedger::new(&roots, tasks.len());")
     return sources
 
 
@@ -106,7 +125,7 @@ def main():
     root.mkdir(parents=True, exist_ok=True)
     status = root / "PREPARATION-STATUS.txt"
     workspace = root / "workspace"
-    recipe_files = [Path(__file__), SPEC / "variants.json", SPEC / "refine.rs", SPEC / "contracts.rs"]
+    recipe_files = [Path(__file__), SPEC / "variants.json", SPEC / "refine.rs", SPEC / "contracts.rs", SPEC / "order.rs", SPEC / "adaptive.rs", SPEC / "adaptive-contract.rs"]
     recipe = {str(p.relative_to(REPO)): digest(p) for p in recipe_files}
     preparation = {"revision": revision, "recipe": recipe}
     marker = root / "preparation.json"
@@ -125,7 +144,7 @@ def main():
     contracts = subprocess.check_output(["git", "show", f"{revision}:{contract_path}"], cwd=REPO).decode()
     contracts = replace_once(contracts, "    let opts = options(mode, cap, 2);", "    let opts = options(mode, cap, workers);")
     contracts = replace_once(contracts, "fn compare(problem: &Problem, mode: SolveMode, cap: u32) -> SolveOutcome {", "fn compare(problem: &Problem, mode: SolveMode, cap: u32) -> SolveOutcome {\n    compare_workers(problem, mode, cap, 2)\n}\nfn compare_workers(problem: &Problem, mode: SolveMode, cap: u32, workers: usize) -> SolveOutcome {")
-    (workspace / contract_path).write_text(contracts + "\n" + (SPEC / "contracts.rs").read_text(), encoding="utf-8")
+    contracts += "\n" + (SPEC / "contracts.rs").read_text()
     backend = REPO / "src-tauri/binaries/cvc5-x86_64-pc-windows-msvc.exe"
     if not backend.is_file():
         raise ValueError("Run npm run prepare:cvc5 first")
@@ -134,6 +153,8 @@ def main():
     try:
         for index, name in enumerate(selected, 1):
             config = variants[name]
+            extra_contracts = "\n" + (SPEC / "adaptive-contract.rs").read_text() if config.get("adaptive") else ""
+            (workspace / contract_path).write_text(contracts + extra_contracts, encoding="utf-8")
             destination = root / "variants" / name
             metadata_path = destination / "metadata.json"
             if metadata_path.exists():
@@ -151,7 +172,7 @@ def main():
                 run(["cargo", "fmt", "--all"], workspace, root / f"{name}-resume-format.log", env)
                 compared = [f"src/{source}" for source in names] + ["tests/contracts.rs"]
                 for relative in compared:
-                    if digest(workspace / "crates/solver-core" / relative) != digest(destination / "solver-source/solver-core" / relative):
+                    if not same_source(workspace / "crates/solver-core" / relative, destination / "solver-source/solver-core" / relative):
                         raise ValueError(f"Recipe changes verified source: {name}/{relative}; use a new output directory")
                 binary_map[name] = str(destination / "bin")
                 continue
@@ -161,8 +182,8 @@ def main():
             for source, text in transform(originals, config).items():
                 (workspace / "crates/solver-core/src" / source).write_text(text, encoding="utf-8")
             run(["cargo", "fmt", "--all"], workspace, destination / "format.log", env)
-            run(["cargo", "test", "-p", "solver-core", "-p", "synthetizer-app", "--locked", "--", "--test-threads=1"], workspace, destination / "tests.log", env)
             run(["cargo", "clippy", "-p", "solver-core", "-p", "synthetizer-app", "-p", "solver-api", "-p", "solver-reference", "-p", "solver-validation", "--all-targets", "--locked", "--", "-D", "warnings"], workspace, destination / "clippy.log", env)
+            run(["cargo", "test", "-p", "solver-core", "-p", "synthetizer-app", "--locked", "--", "--test-threads=1"], workspace, destination / "tests.log", env)
             run(["cargo", "build", "--release", "-p", "synthetizer-app", "--example", "profile_solver", "--locked"], workspace, destination / "build.log", env)
             bin_dir = destination / "bin"
             bin_dir.mkdir(exist_ok=True)

@@ -1,5 +1,8 @@
 # Prepared optimization screens
 
+The completed discovery findings and the next implementation are recorded in
+[Scheduling and adaptive partitioning follow-up](followup.md).
+
 Baseline: merged revision `2d4e0d6` on `develop`. Production defaults are unchanged.
 The preparation scripts generate source variants outside the checkout, run exactness
 and cancellation tests, run strict Clippy, build release runners, and freeze their
