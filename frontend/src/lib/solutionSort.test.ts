@@ -19,7 +19,7 @@ describe('solutionSort', () => {
     expect(sorted[1]?.stats.internalMaxThroughput?.exact).toBe('480');
   });
 
-  it('sorts Custom layouts by linkCount when peak is absent', () => {
+  it('sorts layouts by linkCount when peak is absent', () => {
     const custom = (links: number, feedbacks: number) => ({
       stats: { linkCount: links, feedbackLoops: feedbacks },
     });

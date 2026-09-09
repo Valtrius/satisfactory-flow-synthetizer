@@ -1,5 +1,5 @@
 # Benchmark-only Windows launch and topology helpers. Never changes host policy.
-if (-not ('CustomBenchmarkProcess' -as [type])) {
+if (-not ('SolverBenchmarkProcess' -as [type])) {
     Add-Type -TypeDefinition @'
 using System;
 using System.Collections.Generic;
@@ -8,14 +8,14 @@ using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
 
-public sealed class CustomBenchmarkChild {
+public sealed class SolverBenchmarkChild {
     public Process Process;
     public string RequestedMask;
     public string ObservedMask;
     public bool BeforeResume;
     public double AppliedSeconds;
 }
-public static class CustomBenchmarkProcess {
+public static class SolverBenchmarkProcess {
     [StructLayout(LayoutKind.Sequential)] struct Security {
         public int Length; public IntPtr Descriptor; public int Inherit;
     }
@@ -58,7 +58,7 @@ public static class CustomBenchmarkProcess {
         if (handle == new IntPtr(-1)) throw new Win32Exception(Marshal.GetLastWin32Error());
         return handle;
     }
-    public static CustomBenchmarkChild Start(string exe, string[] args, string cwd,
+    public static SolverBenchmarkChild Start(string exe, string[] args, string cwd,
         string stdout, string stderr, string requested) {
         var timer = Stopwatch.StartNew(); var handles = new List<IntPtr>();
         var info = new Info(); Process process = null; bool resumed = false;
@@ -84,7 +84,7 @@ public static class CustomBenchmarkProcess {
             double applied = timer.Elapsed.TotalSeconds;
             if (ResumeThread(info.Thread) != 1) throw new Win32Exception(Marshal.GetLastWin32Error());
             resumed = true;
-            return new CustomBenchmarkChild {Process=process, RequestedMask=requested,
+            return new SolverBenchmarkChild {Process=process, RequestedMask=requested,
                 ObservedMask=mask, BeforeResume=true, AppliedSeconds=applied};
         } finally {
             if (!resumed && info.Process != IntPtr.Zero) {
@@ -147,7 +147,7 @@ function Start-BenchmarkProcess {
     param([string]$Executable, [string[]]$Arguments, [string]$WorkingDirectory,
         [string]$StandardOutput, [string]$StandardError, [string]$Affinity = '')
     $mask = ConvertTo-BenchmarkAffinityMask $Affinity
-    [CustomBenchmarkProcess]::Start($Executable, $Arguments, $WorkingDirectory,
+    [SolverBenchmarkProcess]::Start($Executable, $Arguments, $WorkingDirectory,
         $StandardOutput, $StandardError, $mask)
 }
 
@@ -155,7 +155,7 @@ function Save-BenchmarkTopology([string]$Path) {
     [ordered]@{
         schema_version = 1
         available_mask = [Diagnostics.Process]::GetCurrentProcess().ProcessorAffinity.ToInt64().ToString('x')
-        relationships = [CustomBenchmarkProcess]::Topology()
+        relationships = [SolverBenchmarkProcess]::Topology()
         power_scheme = ((& powercfg.exe /getactivescheme) -join ' ')
         recorded_at = (Get-Date -Format o)
     } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $Path

@@ -3,13 +3,6 @@ use std::collections::BTreeMap;
 use solver_api::{NodeProfile, Rational};
 use thiserror::Error;
 
-/// Profiles with one exact operator-to-operator link count, ordered deterministically.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ProfileGroup {
-    pub link_count: u32,
-    pub profiles: Vec<NodeProfile>,
-}
-
 /// Exact operator-link and physical-link accounting for one fixed node profile.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ProfileLinkAccounting {
@@ -200,80 +193,6 @@ pub fn profile_link_accounting(
     )
 }
 
-/// Enumerates every port-balanced profile for one fixed physical node count.
-///
-/// The returned groups use ascending exact link count. Profiles within a group use the stable
-/// [`NodeProfile`] field order. No topology or arithmetic pruning occurs here.
-///
-/// # Errors
-///
-/// Returns [`ProfileArithmeticError`] if a public `u32` physical count cannot represent an exact
-/// derived count.
-pub fn enumerate_profile_groups(
-    node_count: u32,
-    input_count: u32,
-    output_count: u32,
-) -> Result<Vec<ProfileGroup>, ProfileArithmeticError> {
-    let mut groups = BTreeMap::<u32, Vec<NodeProfile>>::new();
-    for splitter2 in 0..=node_count {
-        let non_splitter2 = node_count - splitter2;
-        for splitter3 in 0..=non_splitter2 {
-            let merger_total = non_splitter2 - splitter3;
-            for merger2 in 0..=merger_total {
-                let profile = NodeProfile {
-                    splitter2,
-                    splitter3,
-                    merger2,
-                    merger3: merger_total - merger2,
-                };
-                for accounting in profile_link_accountings(
-                    profile,
-                    input_count,
-                    output_count,
-                    &Rational::zero(),
-                    &Rational::one(),
-                )? {
-                    groups
-                        .entry(accounting.link_count)
-                        .or_default()
-                        .push(profile);
-                }
-            }
-        }
-    }
-
-    Ok(groups
-        .into_iter()
-        .map(|(link_count, mut profiles)| {
-            profiles.sort_unstable();
-            ProfileGroup {
-                link_count,
-                profiles,
-            }
-        })
-        .collect())
-}
-
-/// Returns the smallest exact operator-link count for a balanced profile.
-///
-/// # Errors
-///
-/// Returns [`ProfileArithmeticError`] if a derived public count overflows `u32`.
-pub fn balanced_link_count(
-    profile: NodeProfile,
-    input_count: u32,
-    output_count: u32,
-) -> Result<Option<u32>, ProfileArithmeticError> {
-    Ok(profile_link_accounting(
-        profile,
-        input_count,
-        output_count,
-        &Rational::zero(),
-        &Rational::one(),
-    )?
-    .map(|accounting| accounting.link_count))
-}
-
 fn checked_node_count(profile: NodeProfile) -> Result<u32, ProfileArithmeticError> {
     profile
         .splitter2
@@ -331,51 +250,34 @@ mod tests {
     }
 
     #[test]
-    fn balanced_profiles_are_grouped_by_ascending_exact_link_count() {
-        assert_eq!(
-            enumerate_profile_groups(3, 1, 2).unwrap(),
-            vec![
-                ProfileGroup {
-                    link_count: 3,
-                    profiles: vec![profile(2, 0, 1, 0)],
-                },
-                ProfileGroup {
-                    link_count: 4,
-                    profiles: vec![profile(1, 1, 0, 1), profile(2, 0, 1, 0)],
-                },
-                ProfileGroup {
-                    link_count: 5,
-                    profiles: vec![profile(1, 1, 0, 1)],
-                },
-            ]
-        );
-        assert_eq!(
-            enumerate_profile_groups(0, 1, 1).unwrap(),
-            vec![ProfileGroup {
-                link_count: 0,
-                profiles: vec![NodeProfile::default()],
-            }]
-        );
-        assert!(enumerate_profile_groups(0, 1, 2).unwrap().is_empty());
-    }
-
-    #[test]
     fn derived_counts_never_wrap() {
         let oversized = profile(u32::MAX, 1, 0, 0);
         assert_eq!(
-            balanced_link_count(oversized, 1, 1),
+            profile_link_accounting(oversized, 1, 1, &Rational::zero(), &Rational::one()),
             Err(ProfileArithmeticError::NodeCountOverflow)
         );
 
         let too_many_splitter_ports = profile(0, u32::MAX, 0, 0);
         assert_eq!(
-            balanced_link_count(too_many_splitter_ports, 0, 0),
+            profile_link_accounting(
+                too_many_splitter_ports,
+                0,
+                0,
+                &Rational::zero(),
+                &Rational::one()
+            ),
             Err(ProfileArithmeticError::ProducerPortCountOverflow)
         );
 
         let link_overflow = profile(0, 0, 1, 0);
         assert_eq!(
-            balanced_link_count(link_overflow, u32::MAX, u32::MAX),
+            profile_link_accounting(
+                link_overflow,
+                u32::MAX,
+                u32::MAX,
+                &Rational::zero(),
+                &Rational::one()
+            ),
             Err(ProfileArithmeticError::LinkCountOverflow)
         );
     }

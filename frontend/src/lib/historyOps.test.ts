@@ -7,16 +7,14 @@ const form: FormSnapshot = {
   inputs: [],
   outputs: [{ id: 'o1', name: '', rate: '60', multiplier: '1' }],
   beltRate: '1200',
-  solveMode: 'optimal',
-  engine: 'custom',
+  solveMode: 'one_min_nl',
 };
 
 const request: SolveRequest = {
   inputs: [],
   outputs: [{ id: 'o1', name: '', rate: '60' }],
   beltRate: '1200',
-  solveMode: 'optimal',
-  engine: 'custom',
+  solveMode: 'one_min_nl',
 };
 
 function completed(partial: Partial<HistoryEntry> & Pick<HistoryEntry, 'id'>): HistoryEntry {

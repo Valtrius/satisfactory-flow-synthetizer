@@ -58,27 +58,17 @@ describe('endpoints', () => {
     expect(capped[0]?.id).toBe('big-1');
   });
 
-  it('serializes the selected engine into the solve request', () => {
-    const custom = buildSolveRequest(
-      [],
-      [{ id: 'o', name: '', rate: '60', multiplier: '1' }],
-      '1200',
-      'all_at_minimum_nodes',
-    );
-    expect(custom.engine).toBe('custom');
-    expect(custom.solveMode).toBe('all_at_minimum_nodes');
-    const z3 = buildSolveRequest([], [{ id: 'o', name: '', rate: '60', multiplier: '1' }], '1200', 'optimal', 'z3');
-    expect(z3.engine).toBe('z3');
-    expect(z3.solveMode).toBe('optimal');
+  it('serializes scope without a solver type', () => {
+    const custom = buildSolveRequest([], [{ id: 'o', name: '', rate: '60', multiplier: '1' }], '1200', 'all_min_n');
+    expect(custom).not.toHaveProperty('engine');
+    expect(custom.solveMode).toBe('all_min_n');
+    const request = buildSolveRequest([], [{ id: 'o', name: '', rate: '60', multiplier: '1' }], '1200', 'one_min_nl');
+    expect(request).not.toHaveProperty('engine');
+    expect(request.solveMode).toBe('one_min_nl');
   });
 
   it('serializes minimum-link enumeration as a distinct mode', () => {
-    const request = buildSolveRequest(
-      [],
-      [{ id: 'o', name: '', rate: '60', multiplier: '1' }],
-      '1200',
-      'all_at_minimum_nodes_and_minimum_links',
-    );
-    expect(request.solveMode).toBe('all_at_minimum_nodes_and_minimum_links');
+    const request = buildSolveRequest([], [{ id: 'o', name: '', rate: '60', multiplier: '1' }], '1200', 'all_min_nl');
+    expect(request.solveMode).toBe('all_min_nl');
   });
 });

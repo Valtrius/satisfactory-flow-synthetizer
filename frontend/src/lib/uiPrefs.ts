@@ -1,5 +1,5 @@
-import { parseSolverEngine } from './solverEngines';
-import type { EndpointRow, SolveMode, SolverEngine } from '../types';
+import { parseSolveMode } from '../types';
+import type { EndpointRow, SolveMode } from '../types';
 
 export const UI_PREFS_STORAGE_KEY = 'sfs.ui-prefs.v2';
 export const UI_PREFS_VERSION = 2 as const;
@@ -7,7 +7,6 @@ const LEGACY_UI_PREFS_STORAGE_KEY = 'sfs.ui-prefs.v1';
 
 export type HistoryStatusFilter = 'completed' | 'failed' | 'cancelled' | 'incomplete' | 'unsat';
 
-export type HistoryEngineFilter = SolverEngine;
 export type HistorySearchFilter = SolveMode;
 
 export type HistorySortPref = 'manual' | 'newest' | 'oldest' | 'name-asc' | 'name-desc' | 'layouts-desc' | 'nodes-asc';
@@ -16,7 +15,6 @@ export type HistoryToolbarPrefs = {
   query: string;
   sort: HistorySortPref;
   statusFilters: HistoryStatusFilter[];
-  engineFilters: HistoryEngineFilter[];
   searchFilters: HistorySearchFilter[];
 };
 
@@ -25,7 +23,7 @@ export type FormDraftPrefs = {
   outputs: EndpointRow[];
   beltRate: string;
   solveMode: SolveMode;
-  engine: SolverEngine;
+
   nextEndpointId: number;
 };
 
@@ -37,12 +35,7 @@ export type UiPrefs = {
 
 const STATUS_FILTERS = new Set<HistoryStatusFilter>(['completed', 'failed', 'cancelled', 'incomplete', 'unsat']);
 
-const ENGINE_FILTERS = new Set<HistoryEngineFilter>(['custom', 'z3', 'astra']);
-const SEARCH_FILTERS = new Set<HistorySearchFilter>([
-  'optimal',
-  'all_at_minimum_nodes_and_minimum_links',
-  'all_at_minimum_nodes',
-]);
+const SEARCH_FILTERS = new Set<HistorySearchFilter>(['one_min_nl', 'all_min_nl', 'all_min_n']);
 const SORT_PREFS = new Set<HistorySortPref>([
   'manual',
   'newest',
@@ -57,7 +50,6 @@ export const DEFAULT_HISTORY_TOOLBAR_PREFS: HistoryToolbarPrefs = {
   query: '',
   sort: 'manual',
   statusFilters: [],
-  engineFilters: [],
   searchFilters: [],
 };
 
@@ -68,8 +60,8 @@ export const DEFAULT_FORM_DRAFT_PREFS: FormDraftPrefs = {
     { id: 'output-2', name: '', rate: '60', multiplier: '1' },
   ],
   beltRate: '1200',
-  solveMode: 'all_at_minimum_nodes_and_minimum_links',
-  engine: 'custom',
+  solveMode: 'all_min_nl',
+
   nextEndpointId: 3,
 };
 
@@ -79,7 +71,6 @@ export function defaultUiPrefs(): UiPrefs {
     history: {
       ...DEFAULT_HISTORY_TOOLBAR_PREFS,
       statusFilters: [],
-      engineFilters: [],
       searchFilters: [],
     },
     form: {
@@ -126,10 +117,6 @@ function filterKnown<T extends string>(raw: unknown, allowed: Set<T>): T[] {
   return next;
 }
 
-function parseSolveMode(raw: unknown, fallback = DEFAULT_FORM_DRAFT_PREFS.solveMode): SolveMode {
-  return typeof raw === 'string' && SEARCH_FILTERS.has(raw as SolveMode) ? (raw as SolveMode) : fallback;
-}
-
 export function parseHistoryToolbarPrefs(raw: unknown): HistoryToolbarPrefs {
   if (!isRecord(raw)) return { ...DEFAULT_HISTORY_TOOLBAR_PREFS };
   const sort =
@@ -140,8 +127,23 @@ export function parseHistoryToolbarPrefs(raw: unknown): HistoryToolbarPrefs {
     query: typeof raw.query === 'string' ? raw.query : '',
     sort,
     statusFilters: filterKnown(raw.statusFilters, STATUS_FILTERS),
-    engineFilters: filterKnown(raw.engineFilters, ENGINE_FILTERS),
-    searchFilters: filterKnown(raw.searchFilters, SEARCH_FILTERS),
+    searchFilters: Array.isArray(raw.searchFilters)
+      ? [
+          ...new Set(
+            raw.searchFilters.flatMap((mode) => {
+              const parsed = parseSolveMode(mode);
+              return [
+                'optimal',
+                'all_at_minimum_nodes_and_minimum_links',
+                'all_at_minimum_nodes',
+                ...SEARCH_FILTERS,
+              ].includes(mode)
+                ? [parsed]
+                : [];
+            }),
+          ),
+        ]
+      : [],
   };
 }
 
@@ -154,7 +156,7 @@ export function parseFormDraftPrefs(raw: unknown): FormDraftPrefs {
   }
   const inputs = parseEndpointRows(raw.inputs) ?? [];
   const outputs = parseEndpointRows(raw.outputs) ?? DEFAULT_FORM_DRAFT_PREFS.outputs.map((row) => ({ ...row }));
-  const engine: SolverEngine = parseSolverEngine(raw.engine);
+
   const nextEndpointId =
     typeof raw.nextEndpointId === 'number' && Number.isFinite(raw.nextEndpointId) && raw.nextEndpointId >= 1
       ? Math.floor(raw.nextEndpointId)
@@ -163,8 +165,8 @@ export function parseFormDraftPrefs(raw: unknown): FormDraftPrefs {
     inputs,
     outputs,
     beltRate: typeof raw.beltRate === 'string' ? raw.beltRate : DEFAULT_FORM_DRAFT_PREFS.beltRate,
-    solveMode: parseSolveMode(raw.solveMode),
-    engine,
+    solveMode: parseSolveMode(raw.solveMode, DEFAULT_FORM_DRAFT_PREFS.solveMode),
+
     nextEndpointId,
   };
 }
@@ -172,8 +174,8 @@ export function parseFormDraftPrefs(raw: unknown): FormDraftPrefs {
 function migrateLegacySearchFilters(raw: unknown): SolveMode[] {
   if (!Array.isArray(raw)) return [];
   const migrated = raw.flatMap((value): SolveMode[] => {
-    if (value === 'opt') return ['optimal'];
-    if (value === 'all') return ['all_at_minimum_nodes'];
+    if (value === 'opt') return ['one_min_nl'];
+    if (value === 'all') return ['all_min_n'];
     return SEARCH_FILTERS.has(value as SolveMode) ? [value as SolveMode] : [];
   });
   return [...new Set(migrated)];
@@ -185,7 +187,7 @@ function migrateLegacyUiPrefs(raw: unknown): UiPrefs {
   const form = isRecord(raw.form) ? raw.form : {};
   const solveMode = parseSolveMode(
     form.solveMode,
-    form.enumerateAllAtN === false ? 'optimal' : DEFAULT_FORM_DRAFT_PREFS.solveMode,
+    form.enumerateAllAtN === false ? 'one_min_nl' : DEFAULT_FORM_DRAFT_PREFS.solveMode,
   );
   return parseUiPrefs({
     history: { ...history, searchFilters: migrateLegacySearchFilters(history.searchFilters) },
@@ -220,7 +222,6 @@ export function readUiPrefs(): UiPrefs {
       history: {
         ...cachedPrefs.history,
         statusFilters: [...cachedPrefs.history.statusFilters],
-        engineFilters: [...cachedPrefs.history.engineFilters],
         searchFilters: [...cachedPrefs.history.searchFilters],
       },
       form: {
@@ -253,20 +254,7 @@ export function readUiPrefs(): UiPrefs {
 }
 
 export function writeUiPrefs(prefs: UiPrefs): void {
-  cachedPrefs = {
-    version: UI_PREFS_VERSION,
-    history: {
-      ...prefs.history,
-      statusFilters: [...prefs.history.statusFilters],
-      engineFilters: [...prefs.history.engineFilters],
-      searchFilters: [...prefs.history.searchFilters],
-    },
-    form: {
-      ...prefs.form,
-      inputs: prefs.form.inputs.map((row) => ({ ...row })),
-      outputs: prefs.form.outputs.map((row) => ({ ...row })),
-    },
-  };
+  cachedPrefs = parseUiPrefs(prefs);
   if (!storageAvailable()) return;
   try {
     localStorage.setItem(UI_PREFS_STORAGE_KEY, JSON.stringify(cachedPrefs));
@@ -284,7 +272,6 @@ export function updateUiPrefs(patch: { history?: HistoryToolbarPrefs; form?: For
       ? {
           ...patch.history,
           statusFilters: [...patch.history.statusFilters],
-          engineFilters: [...patch.history.engineFilters],
           searchFilters: [...patch.history.searchFilters],
         }
       : current.history,

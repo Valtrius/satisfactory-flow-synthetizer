@@ -51,7 +51,6 @@ export interface FlowGraph {
 /** Stable key for layout cache invalidation when the solution topology changes. */
 export function solutionLayoutKey(next: Solution): string {
   return [
-    next.engine,
     next.stats.nodeCount,
     next.stats.linkCount ?? next.stats.beltCount ?? 0,
     next.stats.feedbackLoops,

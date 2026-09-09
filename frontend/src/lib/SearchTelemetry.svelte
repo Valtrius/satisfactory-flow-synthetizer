@@ -1,6 +1,6 @@
 <script lang="ts">
   import ChevronDown from '@lucide/svelte/icons/chevron-down';
-  import { diagnosticProgress, diagnosticText, formatTelemetryNumber, type SearchStageView } from './searchStage';
+  import { diagnosticText, formatTelemetryNumber, type SearchStageView } from './searchStage';
   import Button from './ui/Button.svelte';
 
   type Props = {
@@ -38,7 +38,6 @@
   }: Props = $props();
   const detailsId = $props.id();
   const detailsVisible = $derived(showDetails && (!collapsible || detailsExpanded));
-  const profiles = $derived(diagnosticProgress(searchView.custom));
 </script>
 
 <div
@@ -103,7 +102,7 @@
     <div class="md:pr-5">
       <h3 class="text-dim m-0 mb-3 text-[0.68rem] font-bold tracking-wider uppercase">Exact search</h3>
       <div class="flex flex-wrap gap-2">
-        {#each [{ label: 'N bound', value: searchView.lowerBound }, { label: 'N current', value: searchView.nodeCount }, { label: searchView.linkKind === 'at_most' ? 'L cap' : 'L exact', value: searchView.linkCount }, { label: 'Best L', value: searchView.bestLinkCount }] as metric}
+        {#each [{ label: 'N bound', value: searchView.lowerBound }, { label: 'N current', value: searchView.nodeCount }, { label: 'L exact', value: searchView.linkCount }, { label: 'Best L', value: searchView.bestLinkCount }] as metric}
           <div class="min-w-18 rounded-lg border border-[#253a45] bg-[#050f15]/55 px-2.5 py-2">
             <strong class="block text-lg text-[#dfe9ed] tabular-nums">
               {formatTelemetryNumber(metric.value)}
@@ -126,27 +125,6 @@
     <div class="bg-line hidden w-px self-stretch md:block" aria-hidden="true"></div>
     <div class="border-line border-t pt-5 md:border-t-0 md:pt-0 md:pl-5">
       <h3 class="text-dim m-0 mb-3 text-[0.68rem] font-bold tracking-wider uppercase">Solver diagnostics</h3>
-      {#if profiles}
-        <div class="mb-3">
-          <div class="text-muted mb-1.5 flex justify-between gap-3 text-xs">
-            <span>{profiles.label}</span>
-            <strong class="text-[#dfe9ed] tabular-nums">
-              {formatTelemetryNumber(profiles.closed)} / {formatTelemetryNumber(profiles.total)}
-            </strong>
-          </div>
-          <div
-            role="progressbar"
-            aria-label={profiles.label}
-            aria-valuemin={0}
-            aria-valuemax={100}
-            aria-valuenow={profiles.percent}
-            aria-valuetext={`${profiles.closed} of ${profiles.total} profiles`}
-            class="bg-line h-1.5 overflow-hidden rounded-full"
-          >
-            <div class="bg-accent h-full" style:width={`${profiles.percent}%`}></div>
-          </div>
-        </div>
-      {/if}
       <div class="text-muted grid gap-1.5 text-xs">
         {#each searchView.custom as entry (entry.name)}
           <div class="flex justify-between gap-3">

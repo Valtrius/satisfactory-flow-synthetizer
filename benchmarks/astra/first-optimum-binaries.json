@@ -1,8 +1,0 @@
-{
-  "astra-first": "../../target/release/examples",
-  "custom": "../../target/release/examples",
-  "astra-custom": "../../target/release/examples",
-  "astra-trace-a": "../../target/release/examples",
-  "astra-trace-b": "../../target/release/examples",
-  "astra-before": "../../target/astra-before-first-optimal-20260908/bin"
-}

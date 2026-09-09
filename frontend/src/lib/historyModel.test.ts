@@ -24,8 +24,7 @@ const form: FormSnapshot = {
     { id: 'out-3', name: '', rate: '40', multiplier: '1' },
   ],
   beltRate: '1200',
-  solveMode: 'all_at_minimum_nodes',
-  engine: 'custom',
+  solveMode: 'all_min_n',
 };
 
 const request: SolveRequest = {
@@ -39,8 +38,7 @@ const request: SolveRequest = {
     { id: 'out-3', name: '', rate: '40' },
   ],
   beltRate: '1200',
-  solveMode: 'all_at_minimum_nodes',
-  engine: 'custom',
+  solveMode: 'all_min_n',
 };
 
 function completed(partial: Partial<HistoryEntry> & Pick<HistoryEntry, 'id'>): HistoryEntry {
@@ -68,7 +66,6 @@ describe('entryOutcomeLine', () => {
       enumerationComplete: true,
       results: [
         {
-          engine: 'custom',
           status: 'best_known',
           modelVersion: 1,
           stats: {
@@ -88,7 +85,6 @@ describe('entryOutcomeLine', () => {
           buildSteps: [],
         },
         {
-          engine: 'custom',
           status: 'best_known',
           modelVersion: 1,
           stats: {
@@ -109,16 +105,15 @@ describe('entryOutcomeLine', () => {
         },
       ],
     });
-    expect(entryOutcomeLine(entry)).toBe('All layouts · N=5 · 2 · Custom');
+    expect(entryOutcomeLine(entry)).toBe('All layouts · N=5 · 2');
   });
 
   it('labels single layout and cancelled', () => {
     const single = completed({
       id: 'b',
       enumerationComplete: true,
-      request: { ...request, solveMode: 'optimal' },
+      request: { ...request, solveMode: 'one_min_nl' },
       result: {
-        engine: 'custom',
         status: 'proven_optimal',
         modelVersion: 1,
         stats: {
@@ -138,7 +133,7 @@ describe('entryOutcomeLine', () => {
         buildSteps: [],
       },
     });
-    expect(entryOutcomeLine(single)).toBe('Optimal · N=4 · Custom');
+    expect(entryOutcomeLine(single)).toBe('Optimal · N=4');
 
     const cancelled = completed({
       id: 'c',
@@ -147,14 +142,6 @@ describe('entryOutcomeLine', () => {
       results: [single.result!],
     });
     expect(entryOutcomeLine(cancelled)).toBe('Cancelled · 1 layout · N=4');
-  });
-
-  it.each(['custom', 'z3', 'astra'] as const)('persists %s on queued entries', (engine) => {
-    const z3Form = { ...form, engine };
-    const z3Request = { ...request, engine };
-    const entry = createQueuedEntry(z3Form, z3Request);
-    expect(entry.form.engine).toBe(engine);
-    expect(entry.request.engine).toBe(engine);
   });
 });
 
@@ -165,7 +152,6 @@ describe('entryHistoryMetrics', () => {
       enumerationComplete: true,
       results: [
         {
-          engine: 'custom',
           status: 'best_known',
           modelVersion: 1,
           stats: {
@@ -185,7 +171,6 @@ describe('entryHistoryMetrics', () => {
           buildSteps: [],
         },
         {
-          engine: 'custom',
           status: 'best_known',
           modelVersion: 1,
           stats: {
@@ -207,15 +192,15 @@ describe('entryHistoryMetrics', () => {
       ],
     });
     expect(entryHistoryMetrics(entry)).toEqual({
-      search: { value: 'All L', tip: 'Search: Find all layouts at minimum N across all L' },
-      engine: { value: 'Custom', tip: 'Engine: Custom' },
+      search: { value: 'All min N', tip: 'Search: All min N' },
+      belts: { value: 'L=—', tip: 'Minimum operator belt count not yet proved' },
       nodes: { value: 'N=5', tip: 'Node count N = 5' },
       layouts: { value: '2', tip: '2 layouts found' },
     });
     expect(entryStatusCaption(entry)).toBe('Completed');
   });
 
-  it('labels a finished All Min L search Completed even when layouts stay best_known', () => {
+  it('labels a finished All min N/L search Completed even when layouts stay best_known', () => {
     const layout = {
       engine: 'custom' as const,
       status: 'best_known' as const,
@@ -238,8 +223,8 @@ describe('entryHistoryMetrics', () => {
     };
     const entry = completed({
       id: 'min-l',
-      request: { ...request, solveMode: 'all_at_minimum_nodes_and_minimum_links' },
-      form: { ...form, solveMode: 'all_at_minimum_nodes_and_minimum_links' },
+      request: { ...request, solveMode: 'all_min_nl' },
+      form: { ...form, solveMode: 'all_min_nl' },
       enumerationComplete: true,
       result: layout,
       results: [layout, { ...layout, stats: { ...layout.stats, feedbackLoops: 1 } }],
@@ -250,11 +235,10 @@ describe('entryHistoryMetrics', () => {
   it('keeps Best known for a single-layout Opt that never proved optimality', () => {
     const entry = completed({
       id: 'opt-best',
-      request: { ...request, solveMode: 'optimal' },
-      form: { ...form, solveMode: 'optimal' },
+      request: { ...request, solveMode: 'one_min_nl' },
+      form: { ...form, solveMode: 'one_min_nl' },
       enumerationComplete: false,
       result: {
-        engine: 'custom',
         status: 'best_known',
         modelVersion: 1,
         stats: {
@@ -278,13 +262,10 @@ describe('entryHistoryMetrics', () => {
   });
 
   it('uses placeholders for queued jobs', () => {
-    const entry = createQueuedEntry(
-      { ...form, solveMode: 'optimal', engine: 'z3' },
-      { ...request, solveMode: 'optimal', engine: 'z3' },
-    );
+    const entry = createQueuedEntry({ ...form, solveMode: 'one_min_nl' }, { ...request, solveMode: 'one_min_nl' });
     expect(entryHistoryMetrics(entry)).toEqual({
-      search: { value: 'Opt', tip: 'Search: Find one optimal layout' },
-      engine: { value: 'Z3', tip: 'Engine: Z3' },
+      search: { value: 'One min N/L', tip: 'Search: One min N/L' },
+      belts: { value: 'L=—', tip: 'Minimum operator belt count not yet proved' },
       nodes: { value: 'N=—', tip: 'Node count unknown until solved' },
       layouts: { value: '0', tip: 'No layouts yet' },
     });
@@ -346,17 +327,17 @@ describe('entryElapsedMs', () => {
 
 describe('saved common progress', () => {
   const progress: SolverProgress = {
-    phase: 'optimizing_links',
+    phase: 'searching',
     elapsedMs: 100,
     nodeCount: 2,
-    linkConstraint: { kind: 'at_most', value: 1 },
+    linkConstraint: { kind: 'exact', value: 1 },
     nodeLowerBound: 2,
     bestNodeCount: 2,
     bestLinkCount: 2,
     solutionsFound: 0,
     custom: [
       {
-        name: 'z3.profiles_total',
+        name: 'astra.profiles_exhausted',
         label: 'Profiles',
         value: { type: 'integer', value: '18446744073709551615' },
         unit: null,
@@ -386,7 +367,6 @@ describe('saved common progress', () => {
   });
   it('ignores old or incomplete telemetry without discarding the saved graph', () => {
     const graph = {
-      engine: 'z3',
       status: 'best_known',
       nodes: [{ id: 'kept' }],
       edges: [],
@@ -404,4 +384,34 @@ describe('saved common progress', () => {
       expect(loaded.result).toEqual(graph);
     }
   });
+});
+
+it('migrates old result scopes and solver fields while preserving edited graph positions', () => {
+  for (const [oldMode, mode] of [
+    ['optimal', 'one_min_nl'],
+    ['all_at_minimum_nodes_and_minimum_links', 'all_min_nl'],
+    ['all_at_minimum_nodes', 'all_min_n'],
+  ]) {
+    const original = completed({ id: 'legacy' });
+    const legacy = {
+      ...original,
+      request: { ...original.request, solveMode: oldMode, engine: 'z3' },
+      form: { ...original.form, solveMode: oldMode, engine: 'custom' },
+      layouts: {
+        '0': { layoutKey: 'z3::2::1', nodes: [{ id: 'node', position: { x: 144, y: 72 }, data: {} }], edges: [] },
+      },
+    };
+    const [loaded] = parseHistoryDocument({ version: 2, entries: [legacy] }).entries;
+    expect(loaded.request.solveMode).toBe(mode);
+    expect(loaded.form.solveMode).toBe(mode);
+    expect(JSON.stringify(loaded)).not.toContain('"engine"');
+    expect(loaded.layouts['0'].layoutKey).toBe('2::1');
+    expect(loaded.layouts['0'].nodes[0].position).toEqual({ x: 144, y: 72 });
+  }
+});
+
+it('shows a minimum belt count only when proved', () => {
+  const entry = completed({ id: 'proved', proof: { minimumNodeCount: 4, minimumLinkCount: 3 } });
+  expect(entryHistoryMetrics(entry).belts.value).toBe('L=3');
+  expect(entryHistoryMetrics({ ...entry, proof: null, result: null, results: [] }).belts.value).toBe('L=—');
 });

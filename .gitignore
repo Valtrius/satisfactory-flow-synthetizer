@@ -7,8 +7,6 @@
 /.idea/
 /.vscode/
 *.log
-**/.z3-trace
-/.z3-trace
 /tmp
 /.tmp
 /.cargo/config.toml

@@ -8,6 +8,7 @@ import {
   readUiPrefs,
   resetUiPrefsCache,
   UI_PREFS_STORAGE_KEY,
+  writeUiPrefs,
 } from './uiPrefs';
 
 beforeEach(() => {
@@ -22,15 +23,13 @@ describe('parseHistoryToolbarPrefs', () => {
         query: '60',
         sort: 'newest',
         statusFilters: ['completed', 'bogus', 'failed', 'completed'],
-        engineFilters: ['z3'],
-        searchFilters: ['all_at_minimum_nodes_and_minimum_links'],
+        searchFilters: ['all_min_nl'],
       }),
     ).toEqual({
       query: '60',
       sort: 'newest',
       statusFilters: ['completed', 'failed'],
-      engineFilters: ['z3'],
-      searchFilters: ['all_at_minimum_nodes_and_minimum_links'],
+      searchFilters: ['all_min_nl'],
     });
   });
 
@@ -47,16 +46,16 @@ describe('parseFormDraftPrefs', () => {
         inputs: [{ id: 'input-1', name: '', rate: '120', multiplier: '2' }],
         outputs: [{ id: 'output-1', name: '', rate: '40', multiplier: '1' }],
         beltRate: '780',
-        solveMode: 'optimal',
-        engine: 'z3',
+        solveMode: 'one_min_nl',
+
         nextEndpointId: 9,
       }),
     ).toEqual({
       inputs: [{ id: 'input-1', name: '', rate: '120', multiplier: '2' }],
       outputs: [{ id: 'output-1', name: '', rate: '40', multiplier: '1' }],
       beltRate: '780',
-      solveMode: 'optimal',
-      engine: 'z3',
+      solveMode: 'one_min_nl',
+
       nextEndpointId: 9,
     });
   });
@@ -64,15 +63,14 @@ describe('parseFormDraftPrefs', () => {
   it('falls back for invalid drafts', () => {
     const parsed = parseFormDraftPrefs({ inputs: 'nope', engine: 'mystery' });
     expect(parsed.inputs).toEqual([]);
-    expect(parsed.engine).toBe('custom');
     expect(parsed.outputs).toEqual(DEFAULT_FORM_DRAFT_PREFS.outputs);
   });
 
   it('restores minimum-link enumeration', () => {
     const parsed = parseFormDraftPrefs({
-      solveMode: 'all_at_minimum_nodes_and_minimum_links',
+      solveMode: 'all_min_nl',
     });
-    expect(parsed.solveMode).toBe('all_at_minimum_nodes_and_minimum_links');
+    expect(parsed.solveMode).toBe('all_min_nl');
   });
 });
 
@@ -81,12 +79,11 @@ describe('parseUiPrefs', () => {
     const parsed = parseUiPrefs({
       version: 2,
       history: { query: 'x', sort: 'oldest' },
-      form: { beltRate: '600', engine: 'z3', solveMode: 'optimal' },
+      form: { beltRate: '600', solveMode: 'one_min_nl' },
     });
     expect(parsed.history.query).toBe('x');
     expect(parsed.history.sort).toBe('oldest');
     expect(parsed.form.beltRate).toBe('600');
-    expect(parsed.form.engine).toBe('z3');
   });
 
   it('migrates version 1 preferences and removes the old storage entry', () => {
@@ -102,19 +99,26 @@ describe('parseUiPrefs', () => {
     const parsed = readUiPrefs();
 
     expect(parsed.version).toBe(2);
-    expect(parsed.form.solveMode).toBe('optimal');
-    expect(parsed.history.searchFilters).toEqual(['optimal', 'all_at_minimum_nodes']);
+    expect(parsed.form.solveMode).toBe('one_min_nl');
+    expect(parsed.history.searchFilters).toEqual(['one_min_nl', 'all_min_n']);
     expect(JSON.parse(localStorage.getItem(UI_PREFS_STORAGE_KEY) ?? '{}')).not.toHaveProperty('form.enumerateAllAtN');
     expect(localStorage.getItem('sfs.ui-prefs.v1')).toBeNull();
   });
 });
 
-it('preserves Astra in saved forms and history filters', () => {
-  expect(parseFormDraftPrefs({ engine: 'astra' }).engine).toBe('astra');
-  expect(parseHistoryToolbarPrefs({ engineFilters: ['astra', 'custom', 'z3'] }).engineFilters).toEqual([
-    'astra',
-    'custom',
-    'z3',
-  ]);
-  expect(parseFormDraftPrefs({ engine: 'unknown' }).engine).toBe('custom');
+it('drops obsolete solver preferences', () => {
+  expect(parseFormDraftPrefs({ engine: 'astra' })).not.toHaveProperty('engine');
+  expect(parseHistoryToolbarPrefs({ engineFilters: ['astra', 'custom', 'z3'] })).not.toHaveProperty('engineFilters');
+});
+
+it('does not write legacy solver fields back to storage', () => {
+  const current = readUiPrefs();
+  writeUiPrefs({
+    ...current,
+    form: Object.assign(current.form, { engine: 'astra' }),
+    history: Object.assign(current.history, { engineFilters: ['astra'] }),
+  });
+  const saved = JSON.parse(localStorage.getItem(UI_PREFS_STORAGE_KEY) ?? '{}');
+  expect(saved.form).not.toHaveProperty('engine');
+  expect(saved.history).not.toHaveProperty('engineFilters');
 });

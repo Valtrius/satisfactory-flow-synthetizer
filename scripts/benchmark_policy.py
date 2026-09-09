@@ -104,7 +104,7 @@ def result_comparison_errors(result, baseline, mode, policy="ordered"):
     errors = []
     if result.get("status") != baseline.get("status"):
         errors.append("Optimum differs")
-    if policy == "ordered" or mode != "optimal":
+    if policy == "ordered" or mode not in ("optimal", "one_min_nl"):
         if result.get("layout_keys") != baseline.get("layout_keys"):
             errors.append("Full layout set differs")
         if "solutions" in baseline and result.get("solutions") != baseline["solutions"]:

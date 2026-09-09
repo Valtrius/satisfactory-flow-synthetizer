@@ -1,5 +1,4 @@
-export type SolverEngine = 'custom' | 'z3' | 'astra';
-export type SolveMode = 'optimal' | 'all_at_minimum_nodes_and_minimum_links' | 'all_at_minimum_nodes';
+export type SolveMode = 'one_min_nl' | 'all_min_nl' | 'all_min_n';
 
 export interface EndpointInput {
   id: string;
@@ -18,11 +17,10 @@ export interface SolveRequest {
   beltRate: string;
   solveMode: SolveMode;
   /** Defaults to `custom` when omitted. */
-  engine?: SolverEngine;
 }
 
 export function enumeratesLayouts(mode: SolveMode): boolean {
-  return mode !== 'optimal';
+  return mode !== 'one_min_nl';
 }
 
 export interface DisplayRate {
@@ -77,16 +75,15 @@ export interface SolutionStats {
   checkedThrough?: number | null;
   /** Legacy history alias of linkCount. */
   beltCount?: number | null;
-  /** Peak throughput across operator-to-operator belts, supplied by both engines. */
+  /** Peak throughput across operator-to-operator belts, supplied by the solver. */
   internalMaxThroughput?: DisplayRate | null;
-  /** Physical accounting supplied by both engines; optional in old history. */
+  /** Physical accounting supplied by the solver; optional in old history. */
   physicalLinkCount?: number | null;
-  /** Physical accounting supplied by both engines; optional in old history. */
+  /** Physical accounting supplied by the solver; optional in old history. */
   discardLinkCount?: number | null;
 }
 
 export interface Solution {
-  engine: SolverEngine;
   status: string;
   modelVersion: number;
   proof?: ProofSummary | null;
@@ -101,15 +98,7 @@ export interface Solution {
   buildSteps: string[];
 }
 
-export type SolvePhase =
-  | 'normalizing'
-  | 'global_checks'
-  | 'computing_lower_bound'
-  | 'constructing_incumbent'
-  | 'searching'
-  | 'validating_witness'
-  | 'optimizing_links'
-  | 'enumerating';
+export type SolvePhase = 'computing_lower_bound' | 'searching' | 'enumerating';
 
 export type DiagnosticValue =
   { type: 'integer' | 'text' | 'rate'; value: string } | { type: 'boolean'; value: boolean };
@@ -125,7 +114,7 @@ export interface SolverProgress {
   phase: SolvePhase;
   elapsedMs: number;
   nodeCount: number | null;
-  linkConstraint: { kind: 'exact' | 'at_most'; value: number } | null;
+  linkConstraint: { kind: 'exact'; value: number } | null;
   nodeLowerBound: number | null;
   bestNodeCount: number | null;
   bestLinkCount: number | null;
@@ -168,4 +157,29 @@ export interface JobSnapshot {
 /** Belt/link count used by tables and sort. */
 export function solutionLinkCount(solution: Solution): number {
   return solution.stats.linkCount ?? solution.stats.beltCount ?? 0;
+}
+
+export const SOLVE_MODE_LABELS: Record<SolveMode, string> = {
+  one_min_nl: 'One min N/L',
+  all_min_nl: 'All min N/L',
+  all_min_n: 'All min N',
+};
+
+/** Old history and preferences remain readable; writes use the current names. */
+export function parseSolveMode(value: unknown, fallback: SolveMode = 'one_min_nl'): SolveMode {
+  switch (value) {
+    case 'one_min_nl':
+    case 'optimal':
+      return 'one_min_nl';
+    case 'all_min_nl':
+    case 'all_at_minimum_nodes_and_minimum_links':
+    case 'minimum_links':
+      return 'all_min_nl';
+    case 'all_min_n':
+    case 'all_at_minimum_nodes':
+    case 'all':
+      return 'all_min_n';
+    default:
+      return fallback;
+  }
 }

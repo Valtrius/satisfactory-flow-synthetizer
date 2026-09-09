@@ -1,0 +1,10 @@
+{
+  "first-optimum": "../target/astra-before-cardinality-20260908/bin",
+  "sparse-links": "../target/astra-sparse-links-candidate-20260908/bin",
+  "sparse-control": "../target/astra-sparse-links-candidate-20260908/bin",
+  "boolean-counts": "../target/release/examples",
+  "sparse-trace-a": "../target/astra-sparse-links-candidate-20260908/bin",
+  "boolean-trace-a": "../target/release/examples",
+  "sparse-trace-b": "../target/astra-sparse-links-candidate-20260908/bin",
+  "boolean-trace-b": "../target/release/examples"
+}

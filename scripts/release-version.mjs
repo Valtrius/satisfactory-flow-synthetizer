@@ -8,11 +8,9 @@ const version = process.argv[2];
 const CARGO_PACKAGE_NAMES = [
   'satisfactory-flow-synthetizer',
   'solver-api',
-  'solver-astra',
   'solver-core',
   'solver-reference',
   'solver-validation',
-  'solver-z3',
   'synthetizer-app',
 ];
 

@@ -1,6 +1,6 @@
 mod contract;
-mod engines;
 mod history;
+mod jobs;
 
 use std::{
     collections::HashMap,
@@ -16,8 +16,8 @@ use tauri::{AppHandle, Emitter, Manager, State};
 use uuid::Uuid;
 
 use contract::{Solution, SolveRequest, SolverProgress, UnsatProof};
-use engines::run_job;
 use history::{apply_history_ops, load_history};
+use jobs::run_job;
 
 const JOB_SNAPSHOT_EVENT: &str = "job-snapshot";
 
@@ -53,7 +53,7 @@ pub(crate) struct JobSnapshot {
     #[serde(default)]
     results_len: usize,
     error: Option<String>,
-    /// Present for a finite global contradiction from either engine.
+    /// Present for a finite global contradiction from the solver.
     #[serde(skip_serializing_if = "Option::is_none")]
     unsat: Option<UnsatProof>,
 }

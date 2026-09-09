@@ -1,79 +1,20 @@
-# Correctness and interpretation contracts
+# Solver contracts and code map
 
-These rules apply to every experiment. Performance changes must not weaken them.
-See controls (`mem:solver/controls`) for the current implementation boundaries.
+- crates/solver-core: Astra cvc5 search; problem.rs normalization, lower_bound.rs sound arithmetic certificates, profile.rs exact port accounting, encoding.rs QF_LRA, cardinality.rs Boolean counters, process.rs owned backend sessions, portfolio.rs independent proof races, diagnostics.rs root traces.
+- solver-api: rational problems, three scopes, proof/result/progress contracts.
+- solver-validation: independent full topology equations, capacity/positive flow/reachability/global and SCC uniqueness; exact layout-v1 identity and deterministic benchmark witness.
+- solver-reference: independent exhaustive small-case oracle, retained for full result comparisons.
+- synthetizer-app: production runner and graph presentation. src-tauri: jobs, IPC, history. frontend: queue, graphs and UI.
 
-## Objective and result states
+History schema 4 removes solver-type columns. Original JSON schemas and relational schema 3 migrate transactionally, preserving entries, selection and graph edits. Strip old engine prefixes from layout cache keys. Unknown or corrupt schemas fail without deleting user data. Legacy scope tags are accepted when reading; new writes use one_min_nl, all_min_nl and all_min_n. UI history shows proved minimum L with a route icon.
 
-- Find one uses `solve_with_observer` and returns one layout after proving minimum
-  N and minimum L. Record both first validated witness and terminal result time.
-- Find all at minimum L uses `enumerate_minimum_links_with_observer`. It exhausts
-  the first satisfiable equal-L group at minimum N, then stops before larger L.
-- Find all L uses `enumerate_with_observer` and exhausts every required group at
-  minimum N. A SAT group does not establish full-N enumeration.
-- A validated incumbent is an upper bound and may remain `bestKnown` in an
-  incomplete result. It is not a proof of optimality or a full enumeration event.
-- Finite node-bound exhaustion is not global UNSAT. A timeout, helper miss,
-  incomplete child or killed process does not discharge a proof obligation.
-- Compare canonical layout-key sets, preferred witnesses, objective and full saved
-  solutions. Equal layout counts alone cannot establish equivalence.
-- Compare results within each mode. Optimal mode's witness must belong to a
-  completed enumeration with the same scope and optimum, but need not equal its
-  preferred witness.
+Exact search normalizes every rate and capacity with one positive scale, preserving terminal mappings. Enumerate N then exact L then all feasible profiles. Unary belt multiplicities, sorted same-type operator flow, source/destination port counts, direct one-input flow equalities and decreasing selected reachability paths preserve all physical graphs, including cycles. Reject nonunique steady states; unexpected validation/extraction failures stop the worker.
 
-## Information available to the solver
+With multiple workers, first-output producer choices partition each profile completely. Exhausted roots alone discharge the ledger. First optimum stops/joins siblings without claiming same-group exhaustion. Enumeration exhausts the entire requested scope.
 
-Benchmark names such as `acyclic36` and user-supplied cyclic/acyclic descriptions
-are labels, never scheduler or mathematical inputs. Use only normalized rates,
-capacity, current N/L/profile and facts established by the solver at that point.
+Portfolio races independent sparse arithmetic and Boolean count formulations, each with its own ledger. Total workers are split; sparse gets the odd extra, one worker uses Boolean. Join both searches and processes before terminal events. Return one proof owner, never sum ledgers. User cancellation remains incomplete even if internal success races it.
 
-The optional acyclic constructor uses a necessary denominator condition:
-the exact required source denominator must divide `2^S2 * 3^S3`. It uses the GCD
-of all input rates and exact scaling, not a hard-coded case or single-input assumption.
-Failure skips the helper only; passing does not prove acyclic feasibility.
-General exact search still covers cyclic and acyclic possibilities.
+Keep full canonical graph-set equality, independent exact witnesses, objective/proof/completion and worker invariance tests. Counts alone are insufficient. Benchmark canonicalization runs after solve timing; never select an optimal tie just to compare bytes.
 
-All new benchmark cases use max rate 1200 at the user's request. Capacity is still
-part of the exact problem identity; do not generalize that it never affects solvability.
-Decimal rates are rational strings. Uniform scaling can normalize to the same problem.
-
-## Canonicalization and constructor
-
-- Public full-witness labeling exhaustively minimizes the same encoded bytes.
-  Removing color refinement changed branch order, not the set of permutations.
-- Partial-state Canonaut labeling is a separate path. Its process-wide kill flag
-  is not used, because unrelated concurrent solves could be interrupted.
-- Compact internal state/SCC encodings must be injective and compared in full.
-  Sparse exact rows and arbitrary-size rationals are not approximate fingerprints.
-  Internal sort order can change while public witness identity stays fixed.
-- Completed constructor hits/misses may be reused for one N within one solve.
-  The helper does not take L, so later groups may reuse its result. Neither a
-  cached miss nor an expired attempt proves exhaustive-search UNSAT.
-- Cancellation does not retain a completed outcome. Changing N clears the helper
-  cache. The five-second deadline is currently removed; its preserved experimental
-  patch stores expiries in a separate deferred set, never as completed misses.
-
-## Parallel proof and cancellation
-
-- Static root leaves remain proof-ledger boundaries. Legal frontier refinement
-  retains complete leaves and requires a proof for rejected children.
-- Shared caches contain completed states only, scoped by exact L and canonical
-  state. An in-flight owner is not proof and is not waited on as a cache result.
-- Publish a validated witness before a terminal SAT entry. Borrowers and donated
-  tasks must preserve witness identity and the complete group enumeration set.
-- Donation joins all children before caching a parent result. Failure or
-  incompleteness prevents exhaustion. Queue emptiness alone never proves completion.
-- Register every required group and fold group/profile/root results consistently.
-  Global enumeration success checks all required groups, not a diagnostic counter.
-- Join workers and release owned caches before reporting completion. Do not leak
-  caches, detach cleanup or relabel unfinished work to shorten reported time.
-- A watchdog kill is a failed measurement with no returned solver proof. Keep
-  diagnostic sidecars distinct from final solver JSON.
-
-## Measurement claims
-
-Overlapping/nested phase timers are summed elapsed time, not process CPU. Open root
-intervals can include waiting and teardown. Last coordinator N/L is not a map of
-all concurrent groups. More states, roots or CPU use does not establish faster search.
-Report caps, actual return time and cancellation tail separately. See the
-benchmark guide (`mem:solver/benchmarking`) before comparing any timings.
+cvc5 lookup: ASTRA_CVC5 override, beside executable, PATH, Windows user installation. Tested 1.3.4, separate installation required. No fallback search or downloads at solve time.
+ASTRA_DIAGNOSTICS=1 emits astra.root records. Identity=(branch,N,L,root), branch 0 sparse/1 Boolean; astra.portfolio_proof_owner identifies the final ledger. Keep incumbents separate from enumeration counts.

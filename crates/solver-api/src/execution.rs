@@ -9,9 +9,15 @@ use crate::{BestKnownSolution, SolveResult, SolverEvent};
 #[serde(rename_all = "snake_case")]
 pub enum SolveMode {
     #[default]
-    Optimal,
-    AllAtMinimumNodesAndMinimumLinks,
-    AllAtMinimumNodes,
+    #[serde(rename = "one_min_nl", alias = "optimal")]
+    OneMinNL,
+    #[serde(
+        rename = "all_min_nl",
+        alias = "all_at_minimum_nodes_and_minimum_links"
+    )]
+    AllMinNL,
+    #[serde(rename = "all_min_n", alias = "all_at_minimum_nodes")]
+    AllMinN,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -26,7 +32,7 @@ pub struct RunOptions {
 impl Default for RunOptions {
     fn default() -> Self {
         Self {
-            mode: SolveMode::Optimal,
+            mode: SolveMode::OneMinNL,
             max_nodes: None,
             worker_count: 1,
         }
@@ -49,12 +55,17 @@ pub struct OptimalityProof {
 )]
 pub enum EnumerationStatus {
     NotRequested,
-    AllAtMinimumNodesAndMinimumLinks {
+    #[serde(
+        rename = "all_min_nl",
+        alias = "all_at_minimum_nodes_and_minimum_links"
+    )]
+    AllMinNL {
         node_count: Option<u32>,
         link_count: Option<u32>,
         complete: bool,
     },
-    AllAtMinimumNodes {
+    #[serde(rename = "all_min_n", alias = "all_at_minimum_nodes")]
+    AllMinN {
         node_count: Option<u32>,
         complete: bool,
     },
@@ -95,22 +106,20 @@ impl SolveOutcome {
         let complete = !matches!(result, SolveResult::Incomplete(_));
         Self {
             result,
-            solutions: if mode == SolveMode::Optimal {
+            solutions: if mode == SolveMode::OneMinNL {
                 Vec::new()
             } else {
                 solutions
             },
             proof,
             enumeration: match mode {
-                SolveMode::Optimal => EnumerationStatus::NotRequested,
-                SolveMode::AllAtMinimumNodesAndMinimumLinks => {
-                    EnumerationStatus::AllAtMinimumNodesAndMinimumLinks {
-                        node_count: proof.minimum_node_count,
-                        link_count: proof.minimum_link_count,
-                        complete,
-                    }
-                }
-                SolveMode::AllAtMinimumNodes => EnumerationStatus::AllAtMinimumNodes {
+                SolveMode::OneMinNL => EnumerationStatus::NotRequested,
+                SolveMode::AllMinNL => EnumerationStatus::AllMinNL {
+                    node_count: proof.minimum_node_count,
+                    link_count: proof.minimum_link_count,
+                    complete,
+                },
+                SolveMode::AllMinN => EnumerationStatus::AllMinN {
                     node_count: proof.minimum_node_count,
                     complete,
                 },

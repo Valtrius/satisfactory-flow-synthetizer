@@ -6,19 +6,10 @@ use crate::BestKnownSolution;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SolvePhase {
-    /// Parsing and exact global normalization.
-    Normalizing,
-    /// Finite global validity, conservation, and capacity proofs.
-    GlobalChecks,
     /// Computing the proven starting node lower bound.
     ComputingLowerBound,
-    /// Trying the optional serial acyclic incumbent constructor before exact search.
-    ConstructingIncumbent,
     /// Exhausting profiles in node-count and structural-link-group order.
     Searching,
-    /// Flattening and independently validating a candidate witness.
-    ValidatingWitness,
-    OptimizingLinks,
     Enumerating,
 }
 
@@ -66,7 +57,6 @@ impl Diagnostic {
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 pub enum LinkConstraint {
     Exact(u32),
-    AtMost(u32),
 }
 
 /// Common facts only. Diagnostics are a complete replacement on each snapshot.

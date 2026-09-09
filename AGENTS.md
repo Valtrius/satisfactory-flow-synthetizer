@@ -1,3 +1,5 @@
 - Use conventional commits for commit messages and pull requests titles.
 - Use `npm run format` to format code before committing.
 - When running benchmarks, launch them with a way for the user to know when they are done, then end your turn.
+
+- Project knowledge: [Serena memory index](.serena/memories/index.md). Read only relevant linked memories.
