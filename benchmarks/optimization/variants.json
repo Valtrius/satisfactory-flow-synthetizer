@@ -1,0 +1,12 @@
+{
+  "baseline": {},
+  "pairs-both": { "refine": "both" },
+  "pairs-sparse": { "refine": "sparse" },
+  "pairs-boolean": { "refine": "boolean" },
+  "sparse25": { "sparse_quarters": 1 },
+  "sparse75": { "sparse_quarters": 3 },
+  "delay-sparse250": { "delay_branch": 0, "delay_ms": 250 },
+  "delay-boolean250": { "delay_branch": 1, "delay_ms": 250 },
+  "sparse-only": { "solo": 0 },
+  "boolean-only": { "solo": 1 }
+}

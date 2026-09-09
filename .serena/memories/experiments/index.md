@@ -15,4 +15,6 @@ All experiments below ran on 2026-09-08 (initial screen started 2026-09-07). Tim
 | `mem:experiments/07-portfolio`           | Keep general default; commit 02ae07b                 |
 | `mem:experiments/08-eager-second-output` | Rejected/restored; archive commit a9c114d            |
 
-Next hypotheses, unimplemented/unmeasured: delayed bounded splitting that preserves parent progress; finer worker allocation between formulations; incremental reuse across L groups. Measure hardest completion and retain adverse samples. SMT checks dominate, so canonicalization/duplicate suppression are lower priorities.
+Prepared campaign: `mem:experiments/09-optimization-campaign` covers scope-limited second-output partitions, worker allocations, delayed starts, standalone controls and separate root audits. No candidate is promoted by preparation.
+
+Next unimplemented hypotheses: delayed bounded splitting that preserves parent progress, proven profile/rate cuts and incremental reuse across L groups. Measure hardest completion and retain adverse samples. SMT checks dominate, so canonicalization/duplicate suppression are lower priorities.
