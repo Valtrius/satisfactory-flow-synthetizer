@@ -29,7 +29,7 @@ describe('SearchTelemetry', () => {
       ...searchStageView(null),
       lowerBound: 1234,
       nodeCount: 5678,
-      custom: ['astra.profiles_exhausted'].map((name, index) => ({
+      custom: ['solver.profiles_exhausted'].map((name, index) => ({
         name,
         label: name,
         value: { type: 'integer' as const, value: index ? '20000' : '10000' },

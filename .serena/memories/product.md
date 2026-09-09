@@ -13,4 +13,4 @@ N = physical splitter/merger count. L = operator-to-operator belts, excluding ex
 Solution order and the choice between equal optimal witnesses do not matter.
 best_known = independently validated incumbent, an upper bound. proven_optimal = completed objective proof. Enumeration completion is separate from individual witness status. Cancellation keeps delivered layouts/incumbents; cap, timeout and failure are incomplete, never global UNSAT.
 
-History and preferences accept old scope values and ignore obsolete solver fields. New data has no solver type. History shows minimum proved L with a route icon; unknown L remains unknown. Keep current diagnostics and exact integer formatting.
+History and preferences accept equivalent scope values. Saved data has no solver type. History shows minimum proved L with a route icon; unknown L remains unknown. Keep current diagnostics and exact integer formatting.

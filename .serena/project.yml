@@ -150,7 +150,7 @@ added_modes:
 # (contrary to the memories, which are loaded on demand).
 initial_prompt: |
   Read `mem:index` for the project knowledge map, then only the relevant memory.
-  Production uses solver-core (Astra); solver-reference is the independent test oracle.
+  Production uses solver-core; solver-reference is the independent test oracle.
 
 # time budget (seconds) per tool call for the retrieval of additional symbol information
 # such as docstrings or parameter information.

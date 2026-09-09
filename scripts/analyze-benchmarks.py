@@ -7,7 +7,7 @@ from collections import Counter, defaultdict
 from fractions import Fraction
 from pathlib import Path
 from statistics import median
-from benchmark_policy import paired_summary, validate_pairs, validate_placement, result_comparison_errors
+from benchmark_policy import paired_summary, validate_pairs, validate_placement, result_comparison_errors, diagnostics_enabled
 
 
 parser = argparse.ArgumentParser(description=__doc__)
@@ -98,8 +98,8 @@ for directory in args.directories:
                 return ([Fraction(v) for v in problem["inputs"]], [Fraction(v) for v in problem["outputs"]], Fraction(problem["maxLinkRate"]))
             if exact_problem(result["problem"]) != exact_problem(expected["problem"]):
                 failures.append(f"Wrong exact problem: {row['result_file']}")
-            if bool(job.get("AstraDiagnostics", False)) != bool(result.get("astra_diagnostics", False)):
-                failures.append(f"Wrong Astra diagnostics setting: {row['result_file']}")
+            if diagnostics_enabled(job) != diagnostics_enabled(result):
+                failures.append(f"Wrong solver diagnostics setting: {row['result_file']}")
             if job.get("Engine") and (result.get("engine") != job["Engine"] or row.get("engine") != job["Engine"]):
                 failures.append(f"Wrong solver engine: {row['result_file']}")
             for field, source in [("max_nodes", "MaxNodes"), ("timeout_s", "TimeoutSeconds")]:
@@ -114,7 +114,7 @@ for directory in args.directories:
         failures.append(f"Duplicate benchmark identities: {directory}")
 
 def case_key(row):
-    return row["case"], row["mode"], row.get("max_nodes", "legacy")
+    return row["case"], row["mode"], row.get("max_nodes", "unspecified")
 
 
 def classify(row):
@@ -202,7 +202,7 @@ for row in rows:
                 failures.append(f"{error}: {row['result_file']}")
         if row["mode"] in ("optimal", "one_min_nl") and (result["layouts"] != 1 or result["layout_keys"] != [result["preferred_key"]]):
             failures.append(f"Find-optimal did not return exactly its terminal witness: {row['result_file']}")
-        exhaustive = baselines.get((row["case"], "all_min_n", row.get("max_nodes", "legacy"))) or baselines.get((row["case"], "all", row.get("max_nodes", "legacy")))
+        exhaustive = baselines.get((row["case"], "all_min_n", row.get("max_nodes", "unspecified"))) or baselines.get((row["case"], "all", row.get("max_nodes", "unspecified")))
         if row["mode"] in ("optimal", "one_min_nl") and exhaustive and (result["status"] != exhaustive["status"] or result["preferred_key"] not in exhaustive["layout_keys"]):
             failures.append(f"Optimal witness/optimum disagrees with full enumeration: {row['result_file']}")
     elif result.get("preferred_key") is not None:
@@ -225,20 +225,20 @@ for row in rows:
                 failures.append(f"Incomplete optimal run lost its best-known witness: {row['result_file']}")
         if row["completion"] in ("globally_unsat", "bounded_exhausted") and result["layouts"]:
             failures.append(f"UNSAT proof has layouts: {row['result_file']}")
-    groups[row["case"], row["mode"], row["variant"], row["stage"], int(row["workers"]), row.get("max_nodes", "legacy"), row.get("timeout_s", "legacy"), row.get("processor_affinity", "")].append(row)
+    groups[row["case"], row["mode"], row["variant"], row["stage"], int(row["workers"]), row.get("max_nodes", "unspecified"), row.get("timeout_s", "unspecified"), row.get("processor_affinity", "")].append(row)
 
 summary = []
 def comparable_optimal_wall(samples, reference):
     """Only compare completed timings with identical instrumentation settings."""
     if not samples or not reference or not all(row["completion"] == "optimal" for row in samples + reference):
         return None
-    if len({(row.get("hotspot_recording", "legacy"), row["result"].get("astra_diagnostics", False)) for row in samples + reference}) != 1:
+    if len({(row.get("hotspot_recording", "unspecified"), diagnostics_enabled(row["result"])) for row in samples + reference}) != 1:
         return None
     return median(float(row["wall_s"]) for row in reference)
 
 
 for (case, mode, variant, stage, workers, max_nodes, timeout_s, affinity), samples in sorted(groups.items()):
-    if len({row.get("hotspot_recording", "legacy") for row in samples}) != 1:
+    if len({row.get("hotspot_recording", "unspecified") for row in samples}) != 1:
         failures.append(f"Mixed profiling settings: {case} {mode} {variant} {stage} w{workers}")
     observed_wall = [float(row["wall_s"]) for row in samples]
     all_optimal = all(row["completion"] == "optimal" for row in samples)
@@ -269,7 +269,7 @@ for (case, mode, variant, stage, workers, max_nodes, timeout_s, affinity), sampl
         "max_sampled_peak_working_set_bytes": max(int(row["sampled_peak_working_set_bytes"]) for row in samples),
         "layouts": samples[0]["result"]["layouts"],
         "result_policy": samples[0]["result_policy"],
-        "astra_diagnostics": samples[0]["result"].get("astra_diagnostics", False),
+        "diagnostics_enabled": diagnostics_enabled(samples[0]["result"]),
     })
 args.output.parent.mkdir(parents=True, exist_ok=True)
 paired = []

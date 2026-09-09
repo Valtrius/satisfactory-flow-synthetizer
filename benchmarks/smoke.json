@@ -15,7 +15,7 @@
       "TimeoutSeconds": 30,
       "Hotspots": "off",
       "Cohort": "reference",
-      "AstraDiagnostics": false
+      "Diagnostics": false
     }
   ]
 }

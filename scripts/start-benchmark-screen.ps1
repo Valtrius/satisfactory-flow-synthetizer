@@ -53,9 +53,9 @@ if (-not $Run) {
         Copy-Item -LiteralPath $binary -Destination (Join-Path $bin.FullName 'profile_solver.exe')
     }
     & {
-        $backend = if ($env:ASTRA_CVC5) { $env:ASTRA_CVC5 } else { (Get-Command cvc5 -ErrorAction SilentlyContinue).Source }
+        $backend = if ($env:SOLVER_CVC5) { $env:SOLVER_CVC5 } else { (Get-Command cvc5 -ErrorAction SilentlyContinue).Source }
         if (-not $backend) { $backend = Join-Path $env:LOCALAPPDATA 'Programs/cvc5/bin/cvc5.exe' }
-        if (-not (Test-Path -LiteralPath $backend -PathType Leaf)) { throw 'cvc5 is required for Astra screening' }
+        if (-not (Test-Path -LiteralPath $backend -PathType Leaf)) { throw 'cvc5 is required for solver screening' }
         $destinations = if ($frozenVariantMap) { @($frozenVariantData.Values) } else { @($bin.FullName) }
         foreach ($destination in $destinations) {
             Copy-Item -LiteralPath $backend -Destination (Join-Path $destination 'cvc5.exe')

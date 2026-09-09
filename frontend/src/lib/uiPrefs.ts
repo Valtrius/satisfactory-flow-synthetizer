@@ -3,7 +3,7 @@ import type { EndpointRow, SolveMode } from '../types';
 
 export const UI_PREFS_STORAGE_KEY = 'sfs.ui-prefs.v2';
 export const UI_PREFS_VERSION = 2 as const;
-const LEGACY_UI_PREFS_STORAGE_KEY = 'sfs.ui-prefs.v1';
+const V1_UI_PREFS_STORAGE_KEY = 'sfs.ui-prefs.v1';
 
 export type HistoryStatusFilter = 'completed' | 'failed' | 'cancelled' | 'incomplete' | 'unsat';
 
@@ -171,7 +171,7 @@ export function parseFormDraftPrefs(raw: unknown): FormDraftPrefs {
   };
 }
 
-function migrateLegacySearchFilters(raw: unknown): SolveMode[] {
+function migrateV1SearchFilters(raw: unknown): SolveMode[] {
   if (!Array.isArray(raw)) return [];
   const migrated = raw.flatMap((value): SolveMode[] => {
     if (value === 'opt') return ['one_min_nl'];
@@ -181,7 +181,7 @@ function migrateLegacySearchFilters(raw: unknown): SolveMode[] {
   return [...new Set(migrated)];
 }
 
-function migrateLegacyUiPrefs(raw: unknown): UiPrefs {
+function migrateV1UiPrefs(raw: unknown): UiPrefs {
   if (!isRecord(raw)) return defaultUiPrefs();
   const history = isRecord(raw.history) ? raw.history : {};
   const form = isRecord(raw.form) ? raw.form : {};
@@ -190,7 +190,7 @@ function migrateLegacyUiPrefs(raw: unknown): UiPrefs {
     form.enumerateAllAtN === false ? 'one_min_nl' : DEFAULT_FORM_DRAFT_PREFS.solveMode,
   );
   return parseUiPrefs({
-    history: { ...history, searchFilters: migrateLegacySearchFilters(history.searchFilters) },
+    history: { ...history, searchFilters: migrateV1SearchFilters(history.searchFilters) },
     form: { ...form, solveMode },
   });
 }
@@ -240,11 +240,11 @@ export function readUiPrefs(): UiPrefs {
     if (raw) {
       cachedPrefs = parseUiPrefs(JSON.parse(raw) as unknown);
     } else {
-      const legacy = localStorage.getItem(LEGACY_UI_PREFS_STORAGE_KEY);
-      cachedPrefs = legacy ? migrateLegacyUiPrefs(JSON.parse(legacy) as unknown) : defaultUiPrefs();
-      if (legacy) {
+      const versionOne = localStorage.getItem(V1_UI_PREFS_STORAGE_KEY);
+      cachedPrefs = versionOne ? migrateV1UiPrefs(JSON.parse(versionOne) as unknown) : defaultUiPrefs();
+      if (versionOne) {
         localStorage.setItem(UI_PREFS_STORAGE_KEY, JSON.stringify(cachedPrefs));
-        localStorage.removeItem(LEGACY_UI_PREFS_STORAGE_KEY);
+        localStorage.removeItem(V1_UI_PREFS_STORAGE_KEY);
       }
     }
   } catch {
@@ -258,7 +258,7 @@ export function writeUiPrefs(prefs: UiPrefs): void {
   if (!storageAvailable()) return;
   try {
     localStorage.setItem(UI_PREFS_STORAGE_KEY, JSON.stringify(cachedPrefs));
-    localStorage.removeItem(LEGACY_UI_PREFS_STORAGE_KEY);
+    localStorage.removeItem(V1_UI_PREFS_STORAGE_KEY);
   } catch {
     /* quota / private mode */
   }

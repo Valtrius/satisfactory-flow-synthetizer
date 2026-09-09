@@ -1,10 +1,10 @@
 # Project memory index
 
-Read only the relevant item. Production uses solver-core (Astra); solver-reference remains the small exhaustive test oracle. Custom and Z3 search are removed.
+The current solver-core code is the baseline: exact cvc5 search with first-optimum stopping and the sparse/Boolean portfolio. solver-reference is the independent exhaustive test oracle.
 
 - Product, exact scopes and terminology: `mem:product`.
 - Code map, mathematical proof and cancellation rules: `mem:solver/contracts`.
 - Frozen benchmarks and interpretation: `mem:solver/benchmarking`.
-- Experiments and retained decisions: `mem:experiments/index`.
+- Experiments and decisions: `mem:experiments/index`.
 
-Conventional commits; run npm run format before committing. Launch benchmarks with durable completion status and notification, then end the turn. Never infer permission for a new long experiment from an old allowance.
+Conventional commits; run npm run format before committing. Launch benchmarks with durable completion status and notification, then end the turn. Experiment time allowances apply only to their authorized scope.

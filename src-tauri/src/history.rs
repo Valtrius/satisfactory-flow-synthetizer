@@ -246,9 +246,9 @@ fn open_connection(db_path: &Path) -> Result<Connection, String> {
         return Ok(conn);
     }
     if version <= 2 && has_entries {
-        let legacy_json: bool = conn.query_row("SELECT EXISTS(SELECT 1 FROM pragma_table_info('entries') WHERE name='request_json')", [], |r| r.get(0))
-            .map_err(|e| format!("inspect legacy history: {e}"))?;
-        if legacy_json {
+        let json_schema: bool = conn.query_row("SELECT EXISTS(SELECT 1 FROM pragma_table_info('entries') WHERE name='request_json')", [], |r| r.get(0))
+            .map_err(|e| format!("inspect JSON history: {e}"))?;
+        if json_schema {
             migrate_json_history(&mut conn)?;
             return Ok(conn);
         }
@@ -282,17 +282,17 @@ fn open_connection(db_path: &Path) -> Result<Connection, String> {
 fn migrate_json_history(conn: &mut Connection) -> Result<(), String> {
     let tx = conn
         .transaction()
-        .map_err(|e| format!("begin legacy history migration: {e}"))?;
+        .map_err(|e| format!("begin JSON history migration: {e}"))?;
     let has_state: bool = tx
         .query_row(
             "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='solver_state')",
             [],
             |r| r.get(0),
         )
-        .map_err(|e| format!("inspect legacy solver state: {e}"))?;
-    let mut entries = legacy_rows(&tx, "SELECT * FROM entries ORDER BY sort_order")?;
+        .map_err(|e| format!("inspect JSON solver state: {e}"))?;
+    let mut entries = json_schema_rows(&tx, "SELECT * FROM entries ORDER BY sort_order")?;
     if has_state {
-        let states = legacy_rows(&tx, "SELECT * FROM solver_state")?;
+        let states = json_schema_rows(&tx, "SELECT * FROM solver_state")?;
         for entry in &mut entries {
             if let Some(state) = states
                 .iter()
@@ -308,7 +308,7 @@ fn migrate_json_history(conn: &mut Connection) -> Result<(), String> {
     }
     let selected = meta_get(&tx, "selected_entry_id")?;
     tx.execute_batch("DROP TABLE IF EXISTS solver_state; DROP TABLE entries; DROP TABLE meta;")
-        .map_err(|e| format!("replace legacy history schema: {e}"))?;
+        .map_err(|e| format!("replace JSON history schema: {e}"))?;
     let schema = SCHEMA_SQL
         .replace("PRAGMA journal_mode = WAL;", "")
         .replace("PRAGMA foreign_keys = ON;", "");
@@ -321,14 +321,14 @@ fn migrate_json_history(conn: &mut Connection) -> Result<(), String> {
         meta_set(&tx, "selected_entry_id", &id)?;
     }
     tx.commit()
-        .map_err(|e| format!("commit legacy history migration: {e}"))
+        .map_err(|e| format!("commit JSON history migration: {e}"))
 }
 
-fn legacy_rows(conn: &Connection, query: &str) -> Result<Vec<Value>, String> {
+fn json_schema_rows(conn: &Connection, query: &str) -> Result<Vec<Value>, String> {
     use rusqlite::types::ValueRef;
     let mut statement = conn
         .prepare(query)
-        .map_err(|e| format!("read legacy history: {e}"))?;
+        .map_err(|e| format!("read JSON history: {e}"))?;
     let columns = statement
         .column_names()
         .into_iter()
@@ -336,9 +336,12 @@ fn legacy_rows(conn: &Connection, query: &str) -> Result<Vec<Value>, String> {
         .collect::<Vec<_>>();
     let mut rows = statement
         .query([])
-        .map_err(|e| format!("query legacy history: {e}"))?;
+        .map_err(|e| format!("query JSON history: {e}"))?;
     let mut result = Vec::new();
-    while let Some(row) = rows.next().map_err(|e| format!("read legacy row: {e}"))? {
+    while let Some(row) = rows
+        .next()
+        .map_err(|e| format!("read JSON schema row: {e}"))?
+    {
         let mut record = Map::new();
         for (index, name) in columns.iter().enumerate() {
             if name == "sort_order" {
@@ -355,14 +358,14 @@ fn legacy_rows(conn: &Connection, query: &str) -> Result<Vec<Value>, String> {
             }
             let value = match row
                 .get_ref(index)
-                .map_err(|e| format!("read legacy value: {e}"))?
+                .map_err(|e| format!("read JSON schema value: {e}"))?
             {
                 ValueRef::Null => Value::Null,
                 ValueRef::Integer(value) if name == "enumeration_complete" => json!(value != 0),
                 ValueRef::Integer(value) => json!(value),
                 ValueRef::Text(bytes) => {
                     let text = std::str::from_utf8(bytes)
-                        .map_err(|e| format!("legacy history text: {e}"))?;
+                        .map_err(|e| format!("JSON history text: {e}"))?;
                     if name.ends_with("_json") {
                         parse_json(text, name)?
                     } else {
@@ -371,7 +374,7 @@ fn legacy_rows(conn: &Connection, query: &str) -> Result<Vec<Value>, String> {
                 }
                 _ => {
                     return Err(format!(
-                        "Unsupported legacy column {name}; migration rolled back."
+                        "Unsupported JSON schema column {name}; migration rolled back."
                     ));
                 }
             };
@@ -1680,7 +1683,7 @@ mod tests {
     }
 
     #[test]
-    fn old_solver_fields_are_accepted_and_never_persisted() {
+    fn solver_type_fields_are_accepted_and_never_persisted() {
         let directory = tempfile::tempdir().unwrap();
         let store = HistoryStore::open(directory.path()).unwrap();
         let mut entry = sample_entry();
@@ -1892,7 +1895,7 @@ mod tests {
         );
     }
     #[test]
-    fn legacy_json_history_migrates_without_losing_graphs_or_selection() {
+    fn json_schema_history_migrates_without_losing_graphs_or_selection() {
         let directory = tempfile::tempdir().unwrap();
         let current = HistoryStore::open(directory.path()).unwrap();
         current
@@ -1907,9 +1910,9 @@ mod tests {
             .unwrap();
         let expected = current.load_document().unwrap();
         drop(current);
-        // Construct the actual old JSON-column schema in a separate database.
-        let legacy_directory = tempfile::tempdir().unwrap();
-        let conn = Connection::open(legacy_directory.path().join(DB_FILE)).unwrap();
+        // Construct the version 2 JSON-column schema in a separate database.
+        let json_directory = tempfile::tempdir().unwrap();
+        let conn = Connection::open(json_directory.path().join(DB_FILE)).unwrap();
         conn.execute_batch(include_str!("history-fixtures/v2.sql"))
             .unwrap();
         let entry = sample_entry();
@@ -1932,10 +1935,10 @@ mod tests {
             [],
         )
         .unwrap();
-        // A failed migration must leave the old data and schema intact.
+        // A failed migration must leave the source data and schema intact.
         conn.execute("UPDATE entries SET request_json = 'malformed'", [])
             .unwrap();
-        assert!(HistoryStore::open(legacy_directory.path()).is_err());
+        assert!(HistoryStore::open(json_directory.path()).is_err());
         assert_eq!(count(&conn, "SELECT COUNT(*) FROM entries"), 1);
         conn.execute(
             "UPDATE entries SET request_json = ?1",
@@ -1943,7 +1946,7 @@ mod tests {
         )
         .unwrap();
         drop(conn);
-        let migrated = HistoryStore::open(legacy_directory.path()).unwrap();
+        let migrated = HistoryStore::open(json_directory.path()).unwrap();
         assert_eq!(migrated.load_document().unwrap(), expected);
     }
 }

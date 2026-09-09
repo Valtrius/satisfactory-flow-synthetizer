@@ -11,7 +11,7 @@ import sys
 import tempfile
 import unittest
 from unittest.mock import patch
-from benchmark_policy import paired_summary, validate_pairs, validate_placement
+from benchmark_policy import paired_summary, validate_pairs, validate_placement, diagnostics_enabled
 
 
 class AnalyzerTests(unittest.TestCase):
@@ -36,7 +36,8 @@ class AnalyzerTests(unittest.TestCase):
                 for role, variant in [("reference", "before"), ("candidate", "variables")]]
         self.assertEqual(len(validate_pairs(jobs)), 1)
         for field, value in [("ProcessorAffinity", "ffff0000"), ("Workers", 32),
-                             ("Hotspots", "on"), ("PairRole", "reference")]:
+                             ("Hotspots", "on"), ("PairRole", "reference"),
+                             ("Diagnostics", True), ("AstraDiagnostics", True)]:
             changed = [dict(j) for j in jobs]
             changed[1][field] = value
             with self.subTest(field=field), self.assertRaises(ValueError):
@@ -44,6 +45,13 @@ class AnalyzerTests(unittest.TestCase):
         second = [dict(j, PairId="two") for j in jobs]
         with self.assertRaisesRegex(ValueError, "adjacent"):
             validate_pairs([jobs[0], second[0], jobs[1], second[1]])
+
+    def test_recorded_and_current_diagnostics_keep_matching_instrumentation(self):
+        for key in ("Diagnostics", "diagnostics_enabled", "AstraDiagnostics", "astra_diagnostics"):
+            with self.subTest(key=key):
+                self.assertTrue(diagnostics_enabled({key: True}))
+                self.assertFalse(diagnostics_enabled({key: False}))
+        self.assertFalse(diagnostics_enabled({}))
 
     def test_placement_policy_checks_startup_mask_topology_and_worker_count(self):
         job = dict(ProcessorAffinity="ffff", Workers=16, PairId="one", PairRole="reference",

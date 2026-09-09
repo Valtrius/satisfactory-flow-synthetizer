@@ -3,7 +3,7 @@
 Decision: retain as a portfolio branch; unsuitable as the sole default.
 Let P be operator input ports, I external input belts, X input-to-operator belts, D input-to-terminal belts and L operator-to-operator belts. Exact port equations P=L+X and I=X+D imply L=P-I+D. Assert D=L+I-P using sparse terminal edges. This holds with cycles, surplus, parallel belts and multiple inputs.
 
-Evidence: target/astra-cardinality-screen-20260908; benchmarks/cardinality.json and cardinality-binaries.json. The shared screen has 132 verified records, 128 completed; four timeouts belong to Boolean case 10.
+Evidence: `cardinality-screen` in benchmarks/evidence.json; benchmarks/cardinality.json and cardinality-binaries.json. The shared screen has 132 verified records, 128 completed; four timeouts belong to Boolean case 10.
 
 First-optimum / sparse paired medians in seconds:
 
@@ -18,4 +18,4 @@ First-optimum / sparse paired medians in seconds:
 | 258 All min N/L | 50.268 / 68.810        |
 
 Full exact result comparisons passed. Retain the regression evidence.
-Snapshot: target/astra-sparse-links-candidate-20260908. Runner SHA256: bb7bb2da257aafbb456d09f0e353cfc07f4150a7e9a1b3ed79be520393a3b0ff.
+Snapshot: `sparse-links-candidate` in benchmarks/evidence.json. Runner SHA256: bb7bb2da257aafbb456d09f0e353cfc07f4150a7e9a1b3ed79be520393a3b0ff.

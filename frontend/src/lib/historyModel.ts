@@ -356,7 +356,7 @@ export function emptyDocument(): HistoryDocument {
   };
 }
 
-/** Old engine-specific telemetry is not compatible with the common snapshot. */
+/** Restore compatible telemetry and normalize its diagnostic names. */
 function savedProgress(progress: SolverProgress | null | undefined): SolverProgress | null {
   return progress &&
     typeof progress.phase === 'string' &&
@@ -378,7 +378,12 @@ function savedProgress(progress: SolverProgress | null | undefined): SolverProgr
           ? progress.phase
           : 'searching',
         linkConstraint: progress.linkConstraint?.kind === 'exact' ? progress.linkConstraint : null,
-        custom: progress.custom.filter((d) => d.name.startsWith('astra.')),
+        custom: progress.custom.flatMap((diagnostic) => {
+          const name = diagnostic.name.replace(/^astra\./, 'solver.');
+          return name.startsWith('solver.')
+            ? [{ ...diagnostic, name, label: diagnostic.label.replace(/\bAstra\b/g, 'Solver') }]
+            : [];
+        }),
       }
     : null;
 }

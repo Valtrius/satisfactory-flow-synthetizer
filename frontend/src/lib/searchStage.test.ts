@@ -53,7 +53,7 @@ describe('shared search progress', () => {
     expect(nodeCountLabel(4)).toBe('4 nodes');
   });
   it('maps the same common facts regardless of diagnostic names', () => {
-    for (const name of ['astra.profiles_exhausted', 'astra.branch', 'future.metric']) {
+    for (const name of ['solver.profiles_exhausted', 'solver.branch', 'future.metric']) {
       const view = searchStageView(
         progress({
           nodeCount: 3,

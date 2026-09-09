@@ -273,7 +273,7 @@ impl Encoding {
             .edges
             .iter()
             .find(|edge| edge.target == 0 && edge.source == source)
-            .ok_or_else(|| Failure::Worker("missing Astra output partition edge".into()))?;
+            .ok_or_else(|| Failure::Worker("missing Solver output partition edge".into()))?;
         Ok(format!("(assert {})\n", edge.name))
     }
 

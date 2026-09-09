@@ -3,7 +3,7 @@
 Decision: retain as a portfolio branch; do not promote alone on current hard-case evidence.
 Encode exact row, column and direct-terminal counts with bidirectional prefix thresholds q(i,j)=q(i-1,j) OR (q(i-1,j-1) AND edge(i)). Require k and forbid k+1. Complement literals above n/2; handle zero, full and impossible counts. Exhaustive cvc5 truth tables through six literals and Reference full witness tests passed.
 
-Evidence: target/astra-cardinality-screen-20260908, the same 132-record screen as sparse, but a distinct paired cohort.
+Evidence: `cardinality-screen` in benchmarks/evidence.json, the same 132-record screen as sparse, but a distinct paired cohort.
 
 Sparse / Boolean medians in seconds:
 
@@ -18,4 +18,4 @@ Sparse / Boolean medians in seconds:
 | 258 All min N/L | 61.699 / 49.198            |
 
 Four case-10 timeouts: two main and two diagnostic. Diagnostic case 10 produced no models. Full canonical objects and objectives matched completed controls.
-Snapshot: target/astra-before-portfolio-20260908. Runner SHA256: f56f09dc4aba3f1f85739fbb5016706b6556d573b83d5d61fd26923562bf6023.
+Snapshot: `before-portfolio` in benchmarks/evidence.json. Runner SHA256: f56f09dc4aba3f1f85739fbb5016706b6556d573b83d5d61fd26923562bf6023.

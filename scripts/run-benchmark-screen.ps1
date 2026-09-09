@@ -34,7 +34,7 @@ if ($JobManifest) {
     $manifestPath = [IO.Path]::GetFullPath($JobManifest, $repoRoot)
     $manifestRoot = Split-Path $manifestPath -Parent
     $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
-    if ($manifest.RunnerProtocol -ne 'layout-v1') { throw 'Historical manifest: use its frozen harness; current manifests require RunnerProtocol layout-v1.' }
+    if ($manifest.RunnerProtocol -ne 'layout-v1') { throw 'RunnerProtocol layout-v1 is required; recorded manifests must use their matching frozen harness.' }
     $jobs = @($manifest.jobs)
     if (-not $jobs.Count) { throw 'Empty job manifest' }
     foreach ($job in $jobs) {
@@ -53,7 +53,7 @@ if ($JobManifest) {
         $casePath = [IO.Path]::GetFullPath($job.CaseFile, $manifestRoot)
         $caseData = Get-Content -LiteralPath $casePath -Raw | ConvertFrom-Json
         if (-not $caseData.problem.maxLinkRate) { throw 'Case requires exact belt capacity' }
-        if ($null -ne $job.AstraDiagnostics -and $job.AstraDiagnostics -isnot [bool]) { throw 'Invalid AstraDiagnostics flag' }
+        if ($null -ne $job.Diagnostics -and $job.Diagnostics -isnot [bool]) { throw 'Invalid Diagnostics flag' }
         if ($null -eq $job.Variant) { $job | Add-Member NoteProperty Variant 'after' }
         $matchedVariant = @($variants | Where-Object { $_.Name -eq $job.Variant })
         if ($matchedVariant.Count -ne 1) {
@@ -86,7 +86,7 @@ if ($pairedJobs.Count) {
     foreach ($pair in $pairs) {
         $members = @($pair.Group)
         if ($members.Count -ne 2 -or @($members.PairRole | Sort-Object -Unique).Count -ne 2 -or 'reference' -notin $members.PairRole -or 'candidate' -notin $members.PairRole -or $members[0].Variant -eq $members[1].Variant) { throw 'Invalid reference/candidate pair' }
-        foreach ($field in @('Case','Mode','Stage','Workers','Repeat','MaxNodes','TimeoutSeconds','Hotspots','ProcessorAffinity','CacheBytes','Comparison','Cohort','CaseFile','AstraDiagnostics')) {
+        foreach ($field in @('Case','Mode','Stage','Workers','Repeat','MaxNodes','TimeoutSeconds','Hotspots','ProcessorAffinity','CacheBytes','Comparison','Cohort','CaseFile','Diagnostics')) {
             if ($members[0].$field -ne $members[1].$field) { throw "Unmatched pair setting: $field" }
         }
     }
@@ -128,13 +128,13 @@ foreach ($job in $jobs) {
     Write-Output "Starting $index/$($jobs.Count) $name"
     @("RUNNING: $index / $($jobs.Count)", "Current: $name", "Time cap: $timeout seconds; N <= $maxNodes; hotspots $jobHotspots", "Cancellation cleanup watchdog: $CancellationGraceSeconds additional seconds", "Updated: $(Get-Date -Format o)") | Set-Content -LiteralPath (Join-Path $outputRoot 'BENCHMARK-STATUS.txt')
     $watch = [Diagnostics.Stopwatch]::StartNew()
-    $originalAstraBackend = $env:ASTRA_CVC5
-    $originalAstraDiagnostics = $env:ASTRA_DIAGNOSTICS
+    $originalBackend = $env:SOLVER_CVC5
+    $originalDiagnostics = $env:SOLVER_DIAGNOSTICS
     try {
-        $env:ASTRA_DIAGNOSTICS = if ($job.AstraDiagnostics -eq $true) { '1' } else { $null }
-        $env:ASTRA_CVC5 = Join-Path (Split-Path $exe -Parent) 'cvc5.exe'
+        $env:SOLVER_DIAGNOSTICS = if ($job.Diagnostics -eq $true) { '1' } else { $null }
+        $env:SOLVER_CVC5 = Join-Path (Split-Path $exe -Parent) 'cvc5.exe'
     $launch = Start-BenchmarkProcess -Executable $exe -Arguments $arguments -WorkingDirectory $repoRoot -StandardOutput (Join-Path $outputRoot "$name.log") -StandardError (Join-Path $outputRoot "$name.stderr.log") -Affinity $job.ProcessorAffinity
-    } finally { $env:ASTRA_CVC5 = $originalAstraBackend; $env:ASTRA_DIAGNOSTICS = $originalAstraDiagnostics }
+    } finally { $env:SOLVER_CVC5 = $originalBackend; $env:SOLVER_DIAGNOSTICS = $originalDiagnostics }
 
     $process = $launch.Process
     $null = $process.Handle
@@ -195,7 +195,7 @@ foreach ($job in $jobs) {
     $data = Get-Content -LiteralPath $json -Raw | ConvertFrom-Json
     if ($data.mode -ne $job.Mode -or $data.stage -ne $job.Stage -or $data.workers -ne $job.Workers) { throw "Executable ignored benchmark settings: $name" }
     if ($data.max_nodes -ne $maxNodes -or $data.timeout_s -ne $timeout) { throw "Executable ignored benchmark budgets: $name" }
-    if ($job.AstraDiagnostics -and $data.astra_diagnostics -ne $true) { throw "Executable ignored Astra diagnostics: $name" }
+    if ($job.Diagnostics -and $data.diagnostics_enabled -ne $true) { throw "Executable ignored solver diagnostics: $name" }
     if ($data.hotspot_recording -ne ($jobHotspots -eq 'on')) { throw "Executable ignored hotspot recording setting: $name" }
     if ($JobManifest) {
         $expected = Get-Content -LiteralPath $job.CasePath -Raw | ConvertFrom-Json

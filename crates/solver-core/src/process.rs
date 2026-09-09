@@ -25,7 +25,7 @@ impl From<std::io::Error> for Failure {
 
 /// An explicit override is authoritative: a bad override must fail, never select another solver.
 pub fn executable() -> PathBuf {
-    if let Some(path) = std::env::var_os("ASTRA_CVC5") {
+    if let Some(path) = std::env::var_os("SOLVER_CVC5") {
         return path.into();
     }
     if let Ok(current) = std::env::current_exe() {
@@ -75,7 +75,7 @@ impl Session {
         }
         let mut child = command.spawn().map_err(|e| {
             Failure::Worker(format!(
-                "Cannot start cvc5 at {}: {e}. Install cvc5 or set ASTRA_CVC5 to its executable.",
+                "Cannot start cvc5 at {}: {e}. Install cvc5 or set SOLVER_CVC5 to its executable.",
                 path.display()
             ))
         })?;

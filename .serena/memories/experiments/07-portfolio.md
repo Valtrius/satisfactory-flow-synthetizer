@@ -3,7 +3,7 @@
 Decision: retain the current default; commit 02ae07b.
 Two complete searches share the total worker budget: 16 each at 32 workers. Sparse gets the odd extra; one worker uses Boolean only. Each owns an independent ledger. The first complete proof wins after both branches are joined. User cancellation stays incomplete; failure of one branch cannot prove the other's work. Copy one proof owner, retain the first equal incumbent, and deduplicate the requested scope. See `mem:solver/contracts`.
 
-Evidence: target/astra-portfolio-screen-20260908; benchmarks/portfolio.json and portfolio-binaries.json. 130 records verified, 128 completed. Only two Boolean case-10 controls remained incomplete at 300 seconds. All portfolio jobs completed. Ten root-diagnostic proof-owner audits matched terminal exhaustion.
+Evidence: `portfolio-screen` in benchmarks/evidence.json; benchmarks/portfolio.json and portfolio-binaries.json. 130 records verified, 128 completed. Only two Boolean case-10 controls remained incomplete at 300 seconds. All portfolio jobs completed. Ten root-diagnostic proof-owner audits matched terminal exhaustion.
 
 Separate paired cohorts; medians in seconds:
 
@@ -18,4 +18,4 @@ Separate paired cohorts; medians in seconds:
 | 258 All min N/L | 64.331 / 59.582    | 49.474 / 58.779         |
 
 Overhead against the best standalone formulation: about 23% on 36 All min N and 19% on 258 All min N/L; tiny cases moved from roughly 0.03 to 0.04 seconds. This improves hard-case coverage, with some speed tradeoffs. Full exact sets, objects and objectives passed.
-Snapshot: target/astra-before-output-pairs-20260908. Runner SHA256: d820f13c0453316c0cd278d91342a06161c5c3d011ac8cb6b32fa85e1897744b.
+Snapshot: `before-output-pairs` in benchmarks/evidence.json. Runner SHA256: d820f13c0453316c0cd278d91342a06161c5c3d011ac8cb6b32fa85e1897744b.

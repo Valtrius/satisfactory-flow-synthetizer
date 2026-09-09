@@ -337,7 +337,7 @@ describe('saved common progress', () => {
     solutionsFound: 0,
     custom: [
       {
-        name: 'astra.profiles_exhausted',
+        name: 'solver.profiles_exhausted',
         label: 'Profiles',
         value: { type: 'integer', value: '18446744073709551615' },
         unit: null,
@@ -345,6 +345,18 @@ describe('saved common progress', () => {
     ],
   };
   const proof = { minimumNodeCount: 2, minimumLinkCount: null };
+  it('normalizes persisted diagnostic names without losing their exact values', () => {
+    const entry = completed({
+      id: 'diagnostic-import',
+      progress: {
+        ...progress,
+        custom: [{ ...progress.custom[0], name: 'astra.profiles_exhausted', label: 'Completed Astra profiles' }],
+      },
+    });
+    const [loaded] = parseHistoryDocument({ entries: [entry] }).entries;
+    expect(loaded.progress?.custom[0]).toEqual({ ...progress.custom[0], label: 'Completed Solver profiles' });
+    expect(JSON.stringify(persistableEntries([loaded]))).not.toMatch(/astra/i);
+  });
   it('retains progress, proof, and sequence across save/load and import', () => {
     const entry = completed({
       id: 'entry',
@@ -365,20 +377,20 @@ describe('saved common progress', () => {
     expect(imported.progress).toEqual(progress);
     expect(imported.proof).toEqual(proof);
   });
-  it('ignores old or incomplete telemetry without discarding the saved graph', () => {
+  it('ignores unsupported or incomplete telemetry without discarding the saved graph', () => {
     const graph = {
       status: 'best_known',
       nodes: [{ id: 'kept' }],
       edges: [],
     };
-    for (const oldProgress of [
+    for (const unsupportedProgress of [
       { engine: 'custom', phase: 'searching', instrumentation: {} },
       { engine: 'z3', kind: 'checking', nodeCount: 2 },
       { phase: 'searching', custom: [] },
       { ...progress, custom: [{ name: 'broken', label: 'Missing value' }] },
     ]) {
       const [loaded] = parseHistoryDocument({
-        entries: [{ ...completed({ id: 'old' }), progress: oldProgress, result: graph }],
+        entries: [{ ...completed({ id: 'unsupported' }), progress: unsupportedProgress, result: graph }],
       }).entries;
       expect(loaded.progress).toBeNull();
       expect(loaded.result).toEqual(graph);
@@ -386,22 +398,22 @@ describe('saved common progress', () => {
   });
 });
 
-it('migrates old result scopes and solver fields while preserving edited graph positions', () => {
-  for (const [oldMode, mode] of [
+it('migrates version 2 result scopes and solver fields while preserving edited graph positions', () => {
+  for (const [storedMode, mode] of [
     ['optimal', 'one_min_nl'],
     ['all_at_minimum_nodes_and_minimum_links', 'all_min_nl'],
     ['all_at_minimum_nodes', 'all_min_n'],
   ]) {
-    const original = completed({ id: 'legacy' });
-    const legacy = {
+    const original = completed({ id: 'stored' });
+    const stored = {
       ...original,
-      request: { ...original.request, solveMode: oldMode, engine: 'z3' },
-      form: { ...original.form, solveMode: oldMode, engine: 'custom' },
+      request: { ...original.request, solveMode: storedMode, engine: 'z3' },
+      form: { ...original.form, solveMode: storedMode, engine: 'custom' },
       layouts: {
         '0': { layoutKey: 'z3::2::1', nodes: [{ id: 'node', position: { x: 144, y: 72 }, data: {} }], edges: [] },
       },
     };
-    const [loaded] = parseHistoryDocument({ version: 2, entries: [legacy] }).entries;
+    const [loaded] = parseHistoryDocument({ version: 2, entries: [stored] }).entries;
     expect(loaded.request.solveMode).toBe(mode);
     expect(loaded.form.solveMode).toBe(mode);
     expect(JSON.stringify(loaded)).not.toContain('"engine"');

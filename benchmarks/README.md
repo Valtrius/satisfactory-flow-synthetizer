@@ -20,15 +20,19 @@ For paired experiments use `VariantBinaryMap`, a JSON object mapping variant
 names to directories containing `profile_solver.exe`, with adjacent frozen
 `solver-source` and metadata. Add two jobs per PairId with reference/candidate
 roles, equal settings, distinct variants and balanced repeats. Worker count,
-capacity, scope and instrumentation must match. Root traces use AstraDiagnostics;
+capacity, scope and instrumentation must match. Root traces use Diagnostics;
 keep them separate from ordinary timing pairs. Retained fields Stage=baseline and
 Hotspots=off are fixed protocol metadata, not selectable search controls.
 
-Current manifests require RunnerProtocol=layout-v1. `smoke.json` is a small
-example. Earlier manifests and binary maps in this directory are historical
-Astra experiments: they preserve original engine labels, scope names and binaries.
-Use their original frozen harness under target to replay them; do not feed them
-to the new runner. The rejected output-pairs patch uses historical crate paths.
+The current solver-core code is the baseline. Manifests require
+RunnerProtocol=layout-v1; `smoke.json` is a small example. The runner emits
+`diagnostics_enabled` and `roots`; `SOLVER_DIAGNOSTICS` enables root traces and
+`SOLVER_CVC5` selects the backend executable.
+
+Recorded manifests, binary maps and the rejected patch are experiment evidence.
+They preserve exact schema keys, engine labels and source paths for reproducibility.
+Use their matching frozen harness to replay them. [Evidence locations](evidence.json)
+maps the IDs used in memories to frozen run and source directories.
 
 Experiments and results: [memory index](../.serena/memories/experiments/index.md).
 Full canonical objects and exact result sets must agree for enumeration. Optimal

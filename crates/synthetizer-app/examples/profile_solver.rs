@@ -133,7 +133,7 @@ fn main() {
                 }
                 SolverEvent::Progress(p) => {
                     for d in &p.custom {
-                        if d.name == "astra.root"
+                        if d.name == "solver.root"
                             && let solver_api::DiagnosticValue::Text(value) = &d.value
                         {
                             roots
@@ -141,7 +141,7 @@ fn main() {
                                 .unwrap()
                                 .push(serde_json::from_str(value).unwrap());
                         }
-                        if d.name == "astra.minimum_links_complete_ms"
+                        if d.name == "solver.minimum_links_complete_ms"
                             && let solver_api::DiagnosticValue::Integer(ms) = &d.value
                         {
                             *min_links.lock().unwrap() = Some(ms.parse::<f64>().unwrap() / 1000.0);
@@ -204,8 +204,8 @@ fn main() {
         "first_valid_s":first.into_inner().unwrap(),"optimal_complete_s":(complete&&mode==SolveMode::OneMinNL).then_some(wall),
         "minimum_links_complete_s":if mode==SolveMode::AllMinNL&&complete {Some(wall)} else {min_links.into_inner().unwrap()},
         "all_complete_s":(complete&&mode==SolveMode::AllMinN).then_some(wall),
-        "astra_diagnostics":std::env::var_os("ASTRA_DIAGNOSTICS").is_some_and(|v|v=="1"),
-        "astra_roots":roots.into_inner().unwrap(),
+        "diagnostics_enabled":std::env::var_os("SOLVER_DIAGNOSTICS").is_some_and(|v|v=="1"),
+        "roots":roots.into_inner().unwrap(),
         "native_outcome":native,"outcome":outcome,"deadline_fired":deadline.load(Ordering::Relaxed),
         "validated":true,"layout_keys":keys,"layouts":layouts.len(),"preferred_key":preferred_key,
         "solutions":layouts.values().collect::<Vec<_>>(),"diagnostics":last.as_ref().map(|p|&p.custom),"last_progress":last,

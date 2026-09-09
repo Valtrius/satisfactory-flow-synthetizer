@@ -58,7 +58,7 @@ jobs:
           Expand-Archive -LiteralPath $archive -DestinationPath $destination
           $backend = @(Get-ChildItem -LiteralPath $destination -Recurse -Filter cvc5.exe)
           if ($backend.Count -ne 1) { throw 'Expected one cvc5 executable' }
-          "ASTRA_CVC5=$($backend[0].FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "SOLVER_CVC5=$($backend[0].FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           & $backend[0].FullName --version
           if ($LASTEXITCODE -ne 0) { throw 'cvc5 cannot start' }
 

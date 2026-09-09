@@ -86,7 +86,7 @@ describe('parseUiPrefs', () => {
     expect(parsed.form.beltRate).toBe('600');
   });
 
-  it('migrates version 1 preferences and removes the old storage entry', () => {
+  it('migrates version 1 preferences and removes the version 1 storage entry', () => {
     localStorage.setItem(
       'sfs.ui-prefs.v1',
       JSON.stringify({
@@ -106,17 +106,17 @@ describe('parseUiPrefs', () => {
   });
 });
 
-it('drops obsolete solver preferences', () => {
-  expect(parseFormDraftPrefs({ engine: 'astra' })).not.toHaveProperty('engine');
-  expect(parseHistoryToolbarPrefs({ engineFilters: ['astra', 'custom', 'z3'] })).not.toHaveProperty('engineFilters');
+it('drops solver-type preferences', () => {
+  expect(parseFormDraftPrefs({ engine: 'saved-engine' })).not.toHaveProperty('engine');
+  expect(parseHistoryToolbarPrefs({ engineFilters: ['saved-engine'] })).not.toHaveProperty('engineFilters');
 });
 
-it('does not write legacy solver fields back to storage', () => {
+it('does not write solver-type fields back to storage', () => {
   const current = readUiPrefs();
   writeUiPrefs({
     ...current,
-    form: Object.assign(current.form, { engine: 'astra' }),
-    history: Object.assign(current.history, { engineFilters: ['astra'] }),
+    form: Object.assign(current.form, { engine: 'saved-engine' }),
+    history: Object.assign(current.history, { engineFilters: ['saved-engine'] }),
   });
   const saved = JSON.parse(localStorage.getItem(UI_PREFS_STORAGE_KEY) ?? '{}');
   expect(saved.form).not.toHaveProperty('engine');

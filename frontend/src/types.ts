@@ -73,13 +73,13 @@ export interface SolutionStats {
   /** Shared operator-to-operator belt count; excludes input/output stubs and discard lines. */
   linkCount: number;
   checkedThrough?: number | null;
-  /** Legacy history alias of linkCount. */
+  /** History import alias of linkCount. */
   beltCount?: number | null;
   /** Peak throughput across operator-to-operator belts, supplied by the solver. */
   internalMaxThroughput?: DisplayRate | null;
-  /** Physical accounting supplied by the solver; optional in old history. */
+  /** Physical accounting supplied by the solver; optional in imported history. */
   physicalLinkCount?: number | null;
-  /** Physical accounting supplied by the solver; optional in old history. */
+  /** Physical accounting supplied by the solver; optional in imported history. */
   discardLinkCount?: number | null;
 }
 
@@ -165,7 +165,7 @@ export const SOLVE_MODE_LABELS: Record<SolveMode, string> = {
   all_min_n: 'All min N',
 };
 
-/** Old history and preferences remain readable; writes use the current names. */
+/** History and preference imports accept equivalent scope names. */
 export function parseSolveMode(value: unknown, fallback: SolveMode = 'one_min_nl'): SolveMode {
   switch (value) {
     case 'one_min_nl':

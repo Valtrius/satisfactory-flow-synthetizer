@@ -1,4 +1,4 @@
-//! Astra: exact compact topology synthesis with a local incremental cvc5 backend.
+//! Exact compact topology synthesis with a local incremental cvc5 backend.
 pub mod lower_bound;
 pub mod problem;
 pub mod profile;
@@ -190,9 +190,9 @@ impl RootLedger {
         let completed = self
             .completed
             .get_mut(root)
-            .ok_or_else(|| Failure::Worker("unknown Astra root completion".into()))?;
+            .ok_or_else(|| Failure::Worker("unknown Solver root completion".into()))?;
         if *completed {
-            return Err(Failure::Worker("duplicate Astra root completion".into()));
+            return Err(Failure::Worker("duplicate Solver root completion".into()));
         }
         *completed = true;
         proof.root_partitions_exhausted += 1;
@@ -345,13 +345,13 @@ impl Search<'_> {
 
     fn progress(&self, nodes: Option<u32>, links: Option<u32>, phase: SolvePhase) {
         let mut custom = vec![Diagnostic::counter(
-            "astra.profiles_exhausted",
-            "Completed Astra profiles",
+            "solver.profiles_exhausted",
+            "Completed Solver profiles",
             self.proof.profiles_exhausted,
         )];
         if let Some(ms) = self.minimum_links_ms {
             custom.push(Diagnostic::counter(
-                "astra.minimum_links_complete_ms",
+                "solver.minimum_links_complete_ms",
                 "Minimum-link enumeration completed",
                 ms,
             ));
@@ -413,7 +413,7 @@ impl Search<'_> {
         let cancel = self.cancel;
         let mode = self.options.mode;
         let counts = self.counts;
-        let diagnostics = std::env::var_os("ASTRA_DIAGNOSTICS").is_some_and(|v| v == "1");
+        let diagnostics = std::env::var_os("SOLVER_DIAGNOSTICS").is_some_and(|v| v == "1");
         let origin = self.started;
         let workers = self.options.worker_count.min(roots.len());
         let mut messages = Vec::new();
@@ -505,7 +505,7 @@ impl Search<'_> {
             }
             for handle in handles {
                 if handle.join().is_err() {
-                    messages.push(Failure::Worker("Astra worker panicked".into()));
+                    messages.push(Failure::Worker("Solver worker panicked".into()));
                 }
             }
         });
@@ -531,7 +531,7 @@ impl Search<'_> {
         if !ledger.complete()
             || self.proof.profiles_exhausted - completed_before != tasks.len() as u64
         {
-            return Err(Failure::Worker("unfinished Astra profile group".into()));
+            return Err(Failure::Worker("unfinished Solver profile group".into()));
         }
         Ok(Completion::Exhausted)
     }
@@ -576,12 +576,16 @@ struct GroupState<'a> {
 impl GroupState<'_> {
     fn progress(&self, nodes: u32, links: u32, started: Instant, trace: Option<String>) {
         let mut custom = vec![Diagnostic::counter(
-            "astra.profiles_exhausted",
-            "Completed Astra profiles",
+            "solver.profiles_exhausted",
+            "Completed Solver profiles",
             self.proof.profiles_exhausted,
         )];
         if let Some(trace) = trace {
-            custom.push(Diagnostic::text("astra.root", "Astra root evidence", trace));
+            custom.push(Diagnostic::text(
+                "solver.root",
+                "Solver root evidence",
+                trace,
+            ));
         }
         self.observer
             .on_event(SolverEvent::Progress(SolverProgress {
@@ -655,7 +659,7 @@ fn restore(
         link.flow = &link.flow * &normalized.original_scale;
     }
     let validation = validate_solution(original, &graph)
-        .map_err(|e| Failure::Worker(format!("Astra witness restoration failed: {e}")))?;
+        .map_err(|e| Failure::Worker(format!("Solver witness restoration failed: {e}")))?;
     Ok(BestKnownSolution {
         node_count: validation.node_count,
         link_count: validation.link_count,
@@ -725,7 +729,7 @@ fn profile(
             ) => continue,
             Err(error) => {
                 return Err(Failure::Worker(format!(
-                    "Astra model failed independent reconstruction: {error}"
+                    "Solver model failed independent reconstruction: {error}"
                 )));
             }
         };
@@ -738,7 +742,7 @@ fn profile(
         if validation.node_count != task.profile.node_count()
             || validation.link_count != task.accounting.link_count
         {
-            return Err(Failure::Worker("Astra model objective mismatch".into()));
+            return Err(Failure::Worker("Solver model objective mismatch".into()));
         }
         let start = stats.as_ref().map(|_| Instant::now());
         let identity = layout_key(problem, &solved);

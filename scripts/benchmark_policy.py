@@ -6,7 +6,13 @@ from statistics import median
 
 
 PAIR_FIELDS = ("Case", "Mode", "Stage", "Workers", "Repeat", "MaxNodes", "TimeoutSeconds",
-               "Hotspots", "AstraDiagnostics", "ProcessorAffinity", "CacheBytes", "Comparison", "Cohort", "CaseFile")
+               "Hotspots", "Diagnostics", "ProcessorAffinity", "CacheBytes", "Comparison", "Cohort", "CaseFile")
+
+
+def diagnostics_enabled(record):
+    """Read diagnostic settings from current or recorded benchmark schemas."""
+    return bool(record.get("Diagnostics", record.get("diagnostics_enabled",
+                record.get("AstraDiagnostics", record.get("astra_diagnostics", False)))))
 
 
 def validate_pairs(schedule):
@@ -21,7 +27,9 @@ def validate_pairs(schedule):
     for pair, jobs in groups.items():
         if len(jobs) != 2 or {j.get("PairRole") for j in jobs} != {"reference", "candidate"}:
             raise ValueError(f"Pair must have one reference and one candidate: {pair}")
-        if jobs[0]["Variant"] == jobs[1]["Variant"] or any(jobs[0].get(k) != jobs[1].get(k) for k in PAIR_FIELDS):
+        if (jobs[0]["Variant"] == jobs[1]["Variant"]
+                or diagnostics_enabled(jobs[0]) != diagnostics_enabled(jobs[1])
+                or any(jobs[0].get(k) != jobs[1].get(k) for k in PAIR_FIELDS if k != "Diagnostics")):
             raise ValueError(f"Unmatched pair settings: {pair}")
     # Pair members must stay adjacent even when pair order is randomized.
     for at in range(0, len(schedule), 2):

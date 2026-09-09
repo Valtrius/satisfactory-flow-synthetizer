@@ -41,7 +41,7 @@ impl Delivery<'_> {
                 progress.elapsed_ms =
                     u64::try_from(self.started.elapsed().as_millis()).unwrap_or(u64::MAX);
                 for diagnostic in &mut progress.custom {
-                    if diagnostic.name == "astra.root"
+                    if diagnostic.name == "solver.root"
                         && let DiagnosticValue::Text(value) = &mut diagnostic.value
                     {
                         // Root records are generated internally as JSON objects.
@@ -49,8 +49,8 @@ impl Delivery<'_> {
                     }
                 }
                 progress.custom.push(Diagnostic::text(
-                    "astra.portfolio_branch",
-                    "Astra independent search",
+                    "solver.portfolio_branch",
+                    "Solver independent search",
                     branch.to_string(),
                 ));
                 self.progress[branch] = Some(progress.clone());
@@ -64,10 +64,10 @@ impl Delivery<'_> {
 
     fn result(&self, branch: usize, mut result: SolveResult) -> SolveResult {
         if let Some(mut progress) = self.progress[branch].clone() {
-            progress.custom.retain(|d| d.name != "astra.root");
+            progress.custom.retain(|d| d.name != "solver.root");
             progress.custom.push(Diagnostic::text(
-                "astra.portfolio_proof_owner",
-                "Astra returned proof owner",
+                "solver.portfolio_proof_owner",
+                "Solver returned proof owner",
                 branch.to_string(),
             ));
             self.observer.on_event(SolverEvent::Progress(progress));
@@ -170,7 +170,7 @@ pub(crate) fn run(
                     0,
                     Ok(SolveResult::Incomplete(IncompleteResult {
                         reason: IncompleteReason::WorkerFailed {
-                            detail: "Astra portfolio search panicked".into(),
+                            detail: "Solver portfolio search panicked".into(),
                         },
                         best_known: None,
                         proof: ProofSummary::default(),

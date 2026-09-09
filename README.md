@@ -11,7 +11,7 @@ Offline Windows desktop app for exact Satisfactory splitter/merger flow synthesi
 
 ## Use
 
-Install the app from GitHub Releases, or build it below. Install cvc5 1.3.4 separately and put it on PATH. The app also checks `%LOCALAPPDATA%/Programs/cvc5/bin/cvc5.exe`; `ASTRA_CVC5` can specify an explicit executable. The app runs offline and does not download a solver at solve time.
+Install the app from GitHub Releases, or build it below. Install cvc5 1.3.4 separately and put it on PATH. The app also checks `%LOCALAPPDATA%/Programs/cvc5/bin/cvc5.exe`; `SOLVER_CVC5` can specify an explicit executable. The app runs offline and does not download a solver at solve time.
 
 Enter rates as decimals or fractions and set the maximum belt rate. Automatic supply uses one belt; totals above capacity require explicit input belts. Every physical belt, including discard, has strictly positive flow within capacity.
 
@@ -25,7 +25,7 @@ N counts splitters and mergers. L counts operator-to-operator belts, excluding e
 
 `best_known` is a validated incumbent. `proven_optimal` requires a completed objective proof. Enumeration completion is separate: cancelling keeps already delivered layouts and incomplete proofs remain incomplete. Finite impossibility proofs are distinct from timeouts, resource limits and failures.
 
-History stores requests, results, proofs and graph edits without a solver type. Old solver-tagged entries migrate on load. The history card shows proved minimum L; an unknown minimum remains blank.
+History stores requests, results, proofs and graph edits without a solver type. Imported entries migrate on load. The history card shows proved minimum L; an unknown minimum is shown as L=�.
 
 ## Developers
 
@@ -45,16 +45,16 @@ cargo clippy --workspace --all-targets -- -D warnings
 npm run build
 ```
 
-- `crates/solver-core`: Astra exact cvc5 search, sparse/Boolean portfolio, proof ledger and diagnostics.
+- `crates/solver-core`: Exact cvc5 search, sparse/Boolean portfolio, proof ledger and diagnostics.
 - `crates/solver-reference`: independent exhaustive oracle for small differential tests.
 - `crates/solver-validation`: independent exact validation and layout identity.
 - `crates/solver-api`: problems, rational arithmetic, result scopes, proof and progress contracts.
 - `crates/synthetizer-app`: production solve and graph presentation.
 - `src-tauri`: desktop jobs, IPC, cancellation and SQLite history migrations.
 - `frontend`: Svelte UI, queue, graph editing and SVG export.
-- `benchmarks`: cases, retained Astra experiment artifacts and current smoke manifest.
+- `benchmarks`: cases, experiment records and current smoke manifest.
 
-Project contracts and experiments live in the [Serena memory index](.serena/memories/index.md). The [benchmark guide](benchmarks/README.md) explains the current runner and historical artifacts. Use release builds for performance comparisons.
+Project contracts and experiments live in the [Serena memory index](.serena/memories/index.md). The [benchmark guide](benchmarks/README.md) explains the current runner and recorded artifacts. Use release builds for performance comparisons.
 
 ### Contributing
 

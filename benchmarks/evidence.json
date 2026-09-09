@@ -1,0 +1,15 @@
+{
+  "screen": "../target/astra-screen-20260907",
+  "before-partitions": "../target/astra-before-partitions-20260908",
+  "partitions-screen": "../target/astra-partitions-screen-20260908",
+  "before-direct-flow": "../target/astra-before-direct-flow-20260908",
+  "direct-flow-screen": "../target/astra-direct-flow-screen-20260908",
+  "first-optimum-screen": "../target/astra-first-optimum-screen-20260908",
+  "before-cardinality": "../target/astra-before-cardinality-20260908",
+  "cardinality-screen": "../target/astra-cardinality-screen-20260908",
+  "sparse-links-candidate": "../target/astra-sparse-links-candidate-20260908",
+  "before-portfolio": "../target/astra-before-portfolio-20260908",
+  "portfolio-screen": "../target/astra-portfolio-screen-20260908",
+  "before-output-pairs": "../target/astra-before-output-pairs-20260908",
+  "output-pairs-screen": "../target/astra-output-pairs-screen-20260908"
+}
