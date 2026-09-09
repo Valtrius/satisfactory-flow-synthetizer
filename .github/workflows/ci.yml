@@ -48,5 +48,13 @@ jobs:
       - name: Frontend build
         run: npm run build -w frontend
 
+      - name: Prepare bundled cvc5 and test backend
+        shell: pwsh
+        run: |
+          npm run prepare:cvc5
+          if ($LASTEXITCODE -ne 0) { throw 'cvc5 preparation failed' }
+          $backend = Join-Path $env:GITHUB_WORKSPACE 'src-tauri/binaries/cvc5-x86_64-pc-windows-msvc.exe'
+          "SOLVER_CVC5=$backend" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
       - name: Cargo tests
         run: cargo test --workspace --locked

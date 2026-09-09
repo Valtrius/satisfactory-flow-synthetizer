@@ -4,8 +4,8 @@
   "version": "0.2.0",
   "identifier": "dev.satisfactory.flowsynthetizer",
   "build": {
-    "beforeDevCommand": "npm run dev -w frontend",
-    "beforeBuildCommand": "npm run build -w frontend",
+    "beforeDevCommand": "npm run prepare:cvc5 && npm run dev -w frontend",
+    "beforeBuildCommand": "npm run prepare:cvc5 && npm run build -w frontend",
     "devUrl": "http://localhost:5173",
     "frontendDist": "../frontend/dist"
   },
@@ -27,6 +27,11 @@
   "bundle": {
     "active": true,
     "targets": ["nsis"],
+    "externalBin": ["binaries/cvc5"],
+    "resources": {
+      "resources/cvc5/": "licenses/cvc5/",
+      "../LICENSE": "LICENSE.txt"
+    },
     "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.icns", "icons/icon.ico"],
     "windows": {
       "webviewInstallMode": {

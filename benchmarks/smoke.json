@@ -1,0 +1,21 @@
+{
+  "RunnerProtocol": "layout-v1",
+  "ResultPolicy": "any_optimum",
+  "MaxScheduledSeconds": 90,
+  "jobs": [
+    {
+      "Case": "tiny",
+      "CaseFile": "cases/tiny.json",
+      "Mode": "all_min_n",
+      "Stage": "baseline",
+      "Workers": 2,
+      "Repeat": 1,
+      "Variant": "after",
+      "MaxNodes": 2,
+      "TimeoutSeconds": 30,
+      "Hotspots": "off",
+      "Cohort": "reference",
+      "Diagnostics": false
+    }
+  ]
+}

@@ -10,7 +10,7 @@ use std::{
         atomic::{AtomicBool, Ordering},
     },
 };
-use synthetizer_app::runtime::{SolverEngine, solve};
+use synthetizer_app::runtime::solve;
 
 fn problem(inputs: &[&str], outputs: &[&str], capacity: &str) -> Problem {
     Problem {
@@ -27,18 +27,17 @@ fn all_solvers(problem: &Problem, mode: SolveMode, max_nodes: u32) -> Vec<SolveO
         worker_count: 1,
     };
     let cancel = AtomicBool::new(false);
-    let mut outcomes = [SolverEngine::Custom, SolverEngine::Z3]
-        .into_iter()
-        .map(|engine| solve(engine, problem, &options, &cancel, &|_| {}).unwrap())
-        .collect::<Vec<_>>();
-    outcomes.push(solver_reference::solve_problem(problem, &options, &cancel).unwrap());
+    let outcomes = vec![
+        solve(problem, &options, &cancel, &|_| {}).unwrap(),
+        solver_reference::solve_problem(problem, &options, &cancel).unwrap(),
+    ];
     outcomes
 }
 
 #[test]
 fn all_solvers_return_exact_optima_and_round_trip_the_same_schema() {
     let problem = problem(&["3"], &["1", "2"], "3");
-    let outcomes = all_solvers(&problem, SolveMode::Optimal, 2);
+    let outcomes = all_solvers(&problem, SolveMode::OneMinNL, 2);
     for outcome in outcomes {
         let SolveResult::Optimal(best) = &outcome.result else {
             panic!("{outcome:?}")
@@ -68,13 +67,13 @@ fn complete_enumeration_matches_the_independent_reference_layout_set() {
         problem(&["2", "1"], &["1", "1"], "3"),
         problem(&["1/3"], &["1/6", "1/6"], "1"),
     ] {
-        let outcomes = all_solvers(&problem, SolveMode::AllAtMinimumNodes, 2);
+        let outcomes = all_solvers(&problem, SolveMode::AllMinN, 2);
         let sets = outcomes
             .iter()
             .map(|outcome| {
                 assert!(matches!(
                     outcome.enumeration,
-                    EnumerationStatus::AllAtMinimumNodes { complete: true, .. }
+                    EnumerationStatus::AllMinN { complete: true, .. }
                 ));
                 assert!(!outcome.solutions.is_empty());
                 let keys = outcome
@@ -91,8 +90,8 @@ fn complete_enumeration_matches_the_independent_reference_layout_set() {
                 keys
             })
             .collect::<Vec<_>>();
-        assert_eq!(sets[0], sets[2], "Custom versus Reference: {problem:?}");
-        assert_eq!(sets[1], sets[2], "Z3 versus Reference: {problem:?}");
+
+        assert_eq!(sets[0], sets[1], "Production versus Reference: {problem:?}");
     }
 }
 
@@ -103,13 +102,13 @@ fn minimum_link_enumeration_matches_the_independent_reference_layout_set() {
         problem(&["2", "3"], &["1", "4"], "5"),
         problem(&["2", "1"], &["1", "1"], "3"),
     ] {
-        let outcomes = all_solvers(&problem, SolveMode::AllAtMinimumNodesAndMinimumLinks, 2);
+        let outcomes = all_solvers(&problem, SolveMode::AllMinNL, 2);
         let sets = outcomes
             .iter()
             .map(|outcome| {
                 assert!(matches!(
                     outcome.enumeration,
-                    EnumerationStatus::AllAtMinimumNodesAndMinimumLinks { complete: true, .. }
+                    EnumerationStatus::AllMinNL { complete: true, .. }
                 ));
                 let minimum_links = outcome.proof.minimum_link_count.unwrap();
                 assert!(!outcome.solutions.is_empty());
@@ -127,21 +126,21 @@ fn minimum_link_enumeration_matches_the_independent_reference_layout_set() {
                     .collect::<BTreeSet<_>>()
             })
             .collect::<Vec<_>>();
-        assert_eq!(sets[0], sets[2], "Custom versus Reference: {problem:?}");
-        assert_eq!(sets[1], sets[2], "Z3 versus Reference: {problem:?}");
+
+        assert_eq!(sets[0], sets[1], "Production versus Reference: {problem:?}");
     }
 }
 
 #[test]
 fn bounded_search_is_incomplete_but_finite_contradictions_are_unsat() {
-    for outcome in all_solvers(&problem(&["3"], &["1", "2"], "3"), SolveMode::Optimal, 0) {
+    for outcome in all_solvers(&problem(&["3"], &["1", "2"], "3"), SolveMode::OneMinNL, 0) {
         assert!(
             matches!(outcome.result, SolveResult::Incomplete(ref r) if matches!(r.reason, IncompleteReason::ResourceLimit { .. }))
         );
         assert_eq!(outcome.proof.minimum_node_count, None);
     }
     for problem in [problem(&["1"], &["2"], "3"), problem(&["4"], &["2"], "3")] {
-        for outcome in all_solvers(&problem, SolveMode::Optimal, 0) {
+        for outcome in all_solvers(&problem, SolveMode::OneMinNL, 0) {
             assert!(matches!(outcome.result, SolveResult::GloballyUnsat(_)));
         }
     }
@@ -150,26 +149,20 @@ fn bounded_search_is_incomplete_but_finite_contradictions_are_unsat() {
 #[test]
 fn cancellation_keeps_an_incumbent_without_claiming_link_optimality_or_enumeration() {
     let problem = problem(&["3"], &["1", "2"], "3");
-    for engine in [SolverEngine::Custom, SolverEngine::Z3] {
+    {
         let cancel = AtomicBool::new(false);
         let saw_enumeration = AtomicBool::new(false);
-        let outcome = solve(
-            engine,
-            &problem,
-            &RunOptions::default(),
-            &cancel,
-            &|event| {
-                if matches!(event, SolverEvent::Incumbent(_)) {
-                    cancel.store(true, Ordering::Relaxed);
-                }
-                if matches!(event, SolverEvent::SolutionFound(_)) {
-                    saw_enumeration.store(true, Ordering::Relaxed);
-                }
-            },
-        )
+        let outcome = solve(&problem, &RunOptions::default(), &cancel, &|event| {
+            if matches!(event, SolverEvent::Incumbent(_)) {
+                cancel.store(true, Ordering::Relaxed);
+            }
+            if matches!(event, SolverEvent::SolutionFound(_)) {
+                saw_enumeration.store(true, Ordering::Relaxed);
+            }
+        })
         .unwrap();
         let SolveResult::Incomplete(incomplete) = outcome.result else {
-            panic!("{engine:?}: {outcome:?}")
+            panic!("{outcome:?}")
         };
         assert!(!saw_enumeration.load(Ordering::Relaxed));
         assert_eq!(incomplete.reason, IncompleteReason::Cancelled);
@@ -183,14 +176,14 @@ fn cancellation_keeps_an_incumbent_without_claiming_link_optimality_or_enumerati
 #[test]
 fn interrupted_enumeration_retains_delivered_layouts_in_the_return_value() {
     let problem = problem(&["3"], &["1", "2"], "3");
-    for engine in [SolverEngine::Custom, SolverEngine::Z3] {
+    {
         let cancel = AtomicBool::new(false);
         let delivered = Mutex::new(Vec::new());
         let options = RunOptions {
-            mode: SolveMode::AllAtMinimumNodes,
+            mode: SolveMode::AllMinN,
             ..RunOptions::default()
         };
-        let outcome = solve(engine, &problem, &options, &cancel, &|event| {
+        let outcome = solve(&problem, &options, &cancel, &|event| {
             if let SolverEvent::SolutionFound(solution) = event {
                 delivered.lock().unwrap().push(solution);
                 cancel.store(true, Ordering::Relaxed);
@@ -199,11 +192,11 @@ fn interrupted_enumeration_retains_delivered_layouts_in_the_return_value() {
         .unwrap();
         assert!(
             matches!(outcome.result, SolveResult::Incomplete(_)),
-            "{engine:?}: {outcome:?}"
+            "{outcome:?}"
         );
         assert_eq!(
             outcome.enumeration,
-            EnumerationStatus::AllAtMinimumNodes {
+            EnumerationStatus::AllMinN {
                 node_count: Some(2),
                 complete: false
             }
@@ -215,12 +208,11 @@ fn interrupted_enumeration_retains_delivered_layouts_in_the_return_value() {
 }
 
 #[test]
-fn progress_distinguishes_exact_link_obligations_from_z3_caps() {
+fn progress_reports_exact_link_obligations() {
     let problem = problem(&["3"], &["1", "2"], "3");
-    for engine in [SolverEngine::Custom, SolverEngine::Z3] {
+    {
         let events = Mutex::new(Vec::new());
         solve(
-            engine,
             &problem,
             &RunOptions::default(),
             &AtomicBool::new(false),
@@ -242,20 +234,19 @@ fn progress_distinguishes_exact_link_obligations_from_z3_caps() {
             assert!(json.get("engine").is_none());
         }
         assert!(!constraints.is_empty());
-        assert!(constraints.iter().all(|c| matches!(
-            (engine, c),
-            (SolverEngine::Custom, LinkConstraint::Exact(_))
-                | (SolverEngine::Z3, LinkConstraint::AtMost(_))
-        )));
+        assert!(
+            constraints
+                .iter()
+                .all(|c| matches!(c, LinkConstraint::Exact(_)))
+        );
     }
 }
 
 #[test]
-fn custom_publishes_the_computed_bound_even_when_the_run_cannot_start_search() {
+fn solver_publishes_the_computed_bound_even_when_the_run_cannot_start_search() {
     let problem = problem(&["3"], &["1", "2"], "3");
     let events = Mutex::new(Vec::new());
     let outcome = solve(
-        SolverEngine::Custom,
         &problem,
         &RunOptions {
             max_nodes: Some(0),
@@ -320,12 +311,11 @@ fn presentation_payloads_omit_layout_keys_but_live_deduplication_keeps_them() {
     }
     .prepare()
     .unwrap();
-    for engine in [SolverEngine::Custom, SolverEngine::Z3] {
+    {
         let outcome = solve(
-            engine,
             &prepared.problem,
             &RunOptions {
-                mode: SolveMode::AllAtMinimumNodes,
+                mode: SolveMode::AllMinN,
                 max_nodes: Some(2),
                 worker_count: 1,
             },
@@ -336,7 +326,7 @@ fn presentation_payloads_omit_layout_keys_but_live_deduplication_keeps_them() {
         let solutions = outcome
             .solutions
             .iter()
-            .map(|best| Solution::from_best(engine, &prepared, best).unwrap())
+            .map(|best| Solution::from_best(&prepared, best).unwrap())
             .collect::<Vec<_>>();
         assert!(solutions.len() > 1);
         for solution in &solutions {
@@ -405,7 +395,7 @@ fn layout_identity_ignores_storage_node_ids_and_symmetric_ports() {
 }
 
 #[test]
-fn the_shared_presenter_preserves_names_capacity_discard_and_feedback_for_both_engines() {
+fn the_shared_presenter_preserves_names_capacity_discard_and_feedback_for_the_solver() {
     use solver_api::{EndpointRequest, ProblemRequest};
     use synthetizer_app::presentation::{
         GraphNodeKind, PresentedSolveOutcome, present_solve_result,
@@ -439,9 +429,8 @@ fn the_shared_presenter_preserves_names_capacity_discard_and_feedback_for_both_e
         }
         .prepare()
         .unwrap();
-        for engine in [SolverEngine::Custom, SolverEngine::Z3] {
+        {
             let outcome = solve(
-                engine,
                 &prepared.problem,
                 &RunOptions {
                     max_nodes: Some(3),
@@ -454,7 +443,7 @@ fn the_shared_presenter_preserves_names_capacity_discard_and_feedback_for_both_e
             let PresentedSolveOutcome::Optimal(display) =
                 present_solve_result(&prepared, &outcome.result).unwrap()
             else {
-                panic!("{engine:?}: {outcome:?}")
+                panic!("{outcome:?}")
             };
             assert_eq!(display.status, "proven_optimal");
             assert!(display.proof.is_some());

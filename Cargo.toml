@@ -4,7 +4,6 @@ members = [
     "crates/solver-api",
     "crates/solver-core",
     "crates/solver-reference",
-    "crates/solver-z3",
     "crates/solver-validation",
     "crates/synthetizer-app",
     "src-tauri",

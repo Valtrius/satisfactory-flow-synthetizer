@@ -7,95 +7,62 @@
 [![Rust](https://img.shields.io/badge/Rust-orange.svg?logo=rust&logoColor=white)](https://www.rust-lang.org)
 [![Svelte](https://img.shields.io/badge/Svelte_5-FF3E00.svg?logo=svelte&logoColor=white)](https://svelte.dev)
 
-Offline Tauri desktop app for exact Satisfactory splitter/merger flow synthesis. Set rates, pick a solver, and get validated belt layouts you can inspect, edit, and export as SVG.
+Offline Windows desktop app for exact Satisfactory splitter/merger flow synthesis. Set supply and demand, choose a result scope, and inspect, edit or export validated belt layouts.
 
-![Demo](docs/usage.png)
+## Use
 
-## Features
+The Windows x64 installer and portable ZIP include cvc5 1.3.4 and its license notices. Install the app, or extract the entire portable ZIP and run `satisfactory-flow-synthetizer.exe`, keeping `cvc5.exe` beside it. No separate cvc5 installation is needed. The app solves offline. Microsoft Edge WebView2 is required; the installer can install that runtime if it is missing.
 
-- Two solvers behind the same UI workflow: Custom (exact search) and Z3 (portfolio SMT)
-- Queued jobs with history, cancellation, and minimum-node enumeration
-- Problem solving history so you can revisit past jobs and results
-- Topology graph with SVG export
-- Rates as decimals or exact fractions
-- Automatic supply on one belt; totals above capacity require explicit input belts
+`SOLVER_CVC5` can override the bundled executable for development. Without an override, the app checks beside its executable first, then PATH and `%LOCALAPPDATA%/Programs/cvc5/bin/cvc5.exe`.
 
-## Usage
+Enter rates as decimals or fractions and set the maximum belt rate. Automatic supply uses one belt; totals above capacity require explicit input belts. Every physical belt, including discard, has strictly positive flow within capacity.
 
-### Installation / portable
+| Result scope | Meaning                                                                   |
+| ------------ | ------------------------------------------------------------------------- |
+| One min N/L  | One exact layout after proving minimum nodes, then minimum operator belts |
+| All min N/L  | Every distinct layout at those minimum N and L values                     |
+| All min N    | Every distinct layout at minimum N across all feasible L values           |
 
-Download a Windows build from this repository's GitHub Releases page. You can either run the installer, or use the portable executable with no install step.
+N counts splitters and mergers. L counts operator-to-operator belts, excluding external stubs and discard belts. Equal optimal ties and delivery order can vary. All scopes support queuing and cancellation.
 
-To build from source instead, see [Getting started](#getting-started) under Developers.
+`best_known` is a validated incumbent. `proven_optimal` requires a completed objective proof. Enumeration completion is separate: cancelling keeps already delivered layouts and incomplete proofs remain incomplete. Finite impossibility proofs are distinct from timeouts, resource limits and failures.
 
-### Usage
-
-1. Follow the [installation / portable](#installation--portable) steps: install via the installer, or launch the portable executable.
-2. Open the Constraints panel and choose **Custom** or **Z3** for the job.
-3. Enter supply and demand rates (decimals or fractions).
-4. Run the job. You can cancel, queue more work, and browse history.
-5. Inspect the topology graph, edit if needed, and export SVG.
-
-Every physical belt, including discard belts, must carry a positive flow that does not exceed the belt's capacity.
-
-### Solvers
-
-- **Custom** — deterministic exact topology search with proof accounting, independent validation, incremental incumbents, and complete minimum-node enumeration.
-- **Z3** — portfolio SMT solver with parallel attempts, progress telemetry, feedback verification, cancellation, and minimum-node enumeration.
-
-Both solvers optimize lexicographically by physical splitter/merger count, then by non-discard operator-to-operator link count. Custom proves that order with its link-group ledger. Z3 Opt finds any min-N layout, streams improving `best_known` incumbents under a strict belt cap, then proves nothing better exists. Returned witnesses pass an independent validator before they reach the UI.
-
-### Result semantics
-
-- `proven_optimal` — a completed Custom proof or a completed Z3 Opt run after the belt-cap improvement proof.
-- `best_known` — an independently validated layout, not an optimality claim (including live Z3 Opt incumbents before the final proof).
-- Both solvers report global UNSAT separately from incomplete/resource-limited work and internal failures.
-- Cancelling enumeration keeps every layout already delivered. On successful completion, the preferred layout becomes `proven_optimal`; other minimum-node layouts stay validated `best_known` alternatives (the proof picks the preferred lexicographic witness). Cancelling Z3 Opt mid-improve keeps the best streamed incumbent as `best_known`.
-- Common progress includes node bounds, current search size, exact-link obligations or link caps, and incumbent counts. Solver diagnostics are extensible name/value fields; unavailable common fields are null.
+History stores requests, results, proofs and graph edits without a solver type. Imported entries migrate on load. The history card shows proved minimum L; an unknown minimum is shown as L=—.
 
 ## Developers
 
-### Requirements
+Requirements: current stable Rust, Node.js 20.19+ or 22.12+, PowerShell 7, Visual Studio C++ Build Tools and WebView2. `npm run dev` and `npm run build` prepare the pinned cvc5 package automatically. The first preparation downloads the official archive; subsequent runs verify and reuse its cached copy. Binaries are generated locally, not stored in Git.
 
-- Node.js 20.19+ or 22.12+ (with a matching npm)
-- Rust 1.85+ (workspace uses edition 2024)
-- Visual Studio Build Tools 2022 with the **Desktop development with C++** workload (MSVC), plus WebView2 — required by Tauri and the bundled Z3 C++ build
-
-### Getting started
+For direct Cargo commands, first run `npm run prepare:cvc5`. Use `SOLVER_CVC5` to point standalone solver tests at the prepared binary if cvc5 is not on PATH.
 
 ```powershell
-npm install
+npm ci
 npm run dev
 ```
 
-Benchmarks from a development build are not representative. Use a release build (`npm run build`) for timing comparisons.
-
-`npm run build` creates the Tauri application bundle. The frontend alone can be built with `npm run build -w frontend`.
-
-### Project layout
-
-- `frontend` — Svelte 5 UI, queue/history model, solver telemetry, topology graph, edit history, and export tools
-- `src-tauri` — desktop lifecycle, IPC job snapshots, engine dispatch, cancellation, and SQLite history
-- `solver-z3` — Z3 implementation
-- `solver-core` — Custom exact search, proof ledger, SCC analysis, and parallel coordinator
-- `solver-api` — public problem, result, proof, validation, and progress types
-- `solver-validation` — independent exact validation firewall
-- `solver-reference` — simple exhaustive differential oracle for small cases
-- `synthetizer-app` — shared solver dispatch and graph presentation for both production engines
-
-### Development
-
 ```powershell
+npm run format
 npm test
 npm run check
-npm run build -w frontend
-cargo test --workspace
-cargo check -p satisfactory-flow-synthetizer
+cargo test --workspace --locked
+cargo clippy --workspace --all-targets -- -D warnings
+npm run build
+npm run package:release
+npm run verify:release
 ```
 
-### Local build optimization
+- `crates/solver-core`: Exact cvc5 search, sparse/Boolean portfolio, proof ledger and diagnostics.
+- `crates/solver-reference`: independent exhaustive oracle for small differential tests.
+- `crates/solver-validation`: independent exact validation and layout identity.
+- `crates/solver-api`: problems, rational arithmetic, result scopes, proof and progress contracts.
+- `crates/synthetizer-app`: production solve and graph presentation.
+- `src-tauri`: desktop jobs, IPC, cancellation and SQLite history migrations.
+- `frontend`: Svelte UI, queue, graph editing and SVG export.
+- `benchmarks`: cases, experiment records and current smoke manifest.
 
-`.cargo/config.toml.example` documents optional machine-specific Z3 compiler flags. The local `.cargo/config.toml` is gitignored; do not commit machine-specific flags for someone else's build.
+`npm run package:release` writes the installer, portable ZIP and SHA256 files to `target/release/bundle/distribution`. `npm run verify:release` uses 7-Zip to inspect both packages and checks an exact solve with external backend lookup disabled. The pin, download URL and archive checksum live in `src-tauri/cvc5-package.json`; bundled notices are under `licenses/cvc5`.
+
+Project contracts and experiments live in the [Serena memory index](.serena/memories/index.md). The [benchmark guide](benchmarks/README.md) explains the current runner and recorded artifacts. Use release builds for performance comparisons.
 
 ### Contributing
 

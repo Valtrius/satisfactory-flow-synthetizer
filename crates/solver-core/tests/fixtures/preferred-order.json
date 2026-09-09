@@ -1,0 +1,1838 @@
+{
+  "problem": {
+    "inputs": ["24"],
+    "maxLinkRate": "1200",
+    "outputs": ["7", "6", "5", "4", "2"]
+  },
+  "graphs": [
+    {
+      "links": [
+        {
+          "consumer": {
+            "owner": "node",
+            "port": {
+              "node": 0,
+              "port": 0
+            }
+          },
+          "flow": "24",
+          "producer": {
+            "owner": "input",
+            "port": 0
+          }
+        },
+        {
+          "consumer": {
+            "owner": "node",
+            "port": {
+              "node": 1,
+              "port": 0
+            }
+          },
+          "flow": "12",
+          "producer": {
+            "owner": "node",
+            "port": {
+              "node": 0,
+              "port": 0
+            }
+          }
+        },
+        {
+          "consumer": {
+            "owner": "node",
+            "port": {
+              "node": 4,
+              "port": 0
+            }
+          },
+          "flow": "12",
+          "producer": {
+            "owner": "node",
+            "port": {
+              "node": 0,
+              "port": 1
+            }
+          }
+        },
+        {
+          "consumer": {
+            "owner": "output",
+            "port": 1
+          },
+          "flow": "6",
+          "producer": {
+            "owner": "node",
+            "port": {
+              "node": 1,
+              "port": 0
+            }
+          }
+        },
+        {
+          "consumer": {
+            "owner": "node",
+            "port": {
+              "node": 2,
+              "port": 0
+            }
+          },
+          "flow": "6",
+          "producer": {
+            "owner": "node",
+            "port": {
+              "node": 1,
+              "port": 1
+            }
+          }
+        },
+        {
+          "consumer": {
+            "owner": "node",
+            "port": {
+              "node": 5,
+              "port": 0
+            }
+          },
+          "flow": "3",
+          "producer": {
+            "owner": "node",
+            "port": {
+              "node": 2,
+              "port": 0
+            }
+          }
+        },
+        {
+          "consumer": {
+            "owner": "node",
+            "port": {
+              "node": 6,
+              "port": 0
+            }
+          },
+          "flow": "3",
+          "producer": {
+            "owner": "node",
+            "port": {
+              "node": 2,
+              "port": 1
+            }
+          }
+        },
+        {
+          "consumer": {
+            "owner": "output",
+            "port": 4
+          },
+          "flow": "2",
+          "producer": {
+            "owner": "node",
+            "port": {
+              "node": 3,
+              "port": 0
+            }
+          }
+        },
+        {
+          "consumer": {
+            "owner": "node",
+            "port": {
+              "node": 5,
+              "port": 1
+            }
+          },
+          "flow": "2",
+          "producer": {
+            "owner": "node",
+            "port": {
+              "node": 3,
+              "port": 1
+            }
+          }
+        },
+        {
+          "consumer": {
+            "owner": "output",
+            "port": 3
+          },
+          "flow": "4",
+          "producer": {
+            "owner": "node",
+            "port": {
+              "node": 4,
+              "port": 0
+            }
+          }
+        },
+        {
+          "consumer": {
+            "owner": "node",
+            "port": {
+              "node": 3,
+              "port": 0
+            }
+          },
+          "flow": "4",
+          "producer": {
+            "owner": "node",
+            "port": {
+              "node": 4,
+              "port": 1
+            }
+          }
+        },
+        {
+          "consumer": {
+            "owner": "node",
+            "port": {
+              "node": 6,
+              "port": 1
+            }
+          },
+          "flow": "4",
+          "producer": {
+            "owner": "node",
+            "port": {
+              "node": 4,
+              "port": 2
+            }
+          }
+        },
+        {
+          "consumer": {
+            "owner": "output",
+            "port": 2
+          },
+          "flow": "5",
+          "producer": {
+            "owner": "node",
+            "port": {
+              "node": 5,
+              "port": 0
+            }
+          }
+        },
+        {
+          "consumer": {
+            "owner": "output",
+            "port": 0
+          },
+          "flow": "7",
+          "producer": {
+            "owner": "node",
+            "port": {
+              "node": 6,
+              "port": 0
+            }
+          }
+        }
+      ],
+      "nodes": [
+        {
+          "id": 0,
+          "nodeType": "splitter2"
+        },
+        {
+          "id": 1,
+          "nodeType": "splitter2"
+        },
+        {
+          "id": 2,
+          "nodeType": "splitter2"
+        },
+        {
+          "id": 3,
+          "nodeType": "splitter2"
+        },
+        {
+          "id": 4,
+          "nodeType": "splitter3"
+        },
+        {
+          "id": 5,
+          "nodeType": "merger2"
+        },
+        {
+          "id": 6,
+          "nodeType": "merger2"
+        }
+      ]
+    },
+    {
+      "links": [
+        {
+          "consumer": {
+            "owner": "node",
+            "port": {
+              "node": 0,
+              "port": 0
+            }
+          },
+          "flow": "24",
+          "producer": {
+            "owner": "input",
+            "port": 0
+          }
+        },
+        {
+          "consumer": {
+            "owner": "node",
+            "port": {
+              "node": 1,
+              "port": 0
+            }
+          },
+          "flow": "12",
+          "producer": {
+            "owner": "node",
+            "port": {
+              "node": 0,
+              "port": 0
+            }
+          }
+        },
+        {
+          "consumer": {
+            "owner": "node",
+            "port": {
+              "node": 4,
+              "port": 0
+            }
+          },
+          "flow": "12",
+          "producer": {
+            "owner": "node",
+            "port": {
+              "node": 0,
+              "port": 1
+            }
+          }
+        },
+        {
+          "consumer": {
+            "owner": "output",
+            "port": 1
+          },
+          "flow": "6",
+          "producer": {
+            "owner": "node",
+            "port": {
+              "node": 1,
+              "port": 0
+            }
+          }
+        },
+        {
+          "consumer": {
+            "owner": "node",
+            "port": {
+              "node": 5,
+              "port": 0
+            }
+          },
+          "flow": "6",
+          "producer": {
+            "owner": "node",
+            "port": {
+              "node": 1,
+              "port": 1
+            }
+          }
+        },
+        {
+          "consumer": {
+            "owner": "output",
+            "port": 4
+          },
+          "flow": "2",
+          "producer": {
+            "owner": "node",
+            "port": {
+              "node": 2,
+              "port": 0
+            }
+          }
+        },
+        {
+          "consumer": {
+            "owner": "node",
+            "port": {
+              "node": 3,
+              "port": 0
+            }
+          },
+          "flow": "2",
+          "producer": {
+            "owner": "node",
+            "port": {
+              "node": 2,
+              "port": 1
+            }
+          }
+        },
+        {
+          "consumer": {
+            "owner": "node",
+            "port": {
+              "node": 5,
+              "port": 1
+            }
+          },
+          "flow": "1",
+          "producer": {
+            "owner": "node",
+            "port": {
+              "node": 3,
+              "port": 0
+            }
+          }
+        },
+        {
+          "consumer": {
+            "owner": "node",
+            "port": {
+              "node": 6,
+              "port": 0
+            }
+          },
+          "flow": "1",
+          "producer": {
+            "owner": "node",
+            "port": {
+              "node": 3,
+              "port": 1
+            }
+          }
+        },
+        {
+          "consumer": {
+            "owner": "output",
+            "port": 3
+          },
+          "flow": "4",
+          "producer": {
+            "owner": "node",
+            "port": {
+              "node": 4,
+              "port": 0
+            }
+          }
+        },
+        {
+          "consumer": {
+            "owner": "node",
+            "port": {
+              "node": 2,
+              "port": 0
+            }
+          },
+          "flow": "4",
+          "producer": {
+            "owner": "node",
+            "port": {
+              "node": 4,
+              "port": 1
+            }
+          }
+        },
+        {
+          "consumer": {
+            "owner": "node",
+            "port": {
+              "node": 6,
+              "port": 1
+            }
+          },
+          "flow": "4",
+          "producer": {
+            "owner": "node",
+            "port": {
+              "node": 4,
+              "port": 2
+            }
+          }
+        },
+        {
+          "consumer": {
+            "owner": "output",
+            "port": 0
+          },
+          "flow": "7",
+          "producer": {
+            "owner": "node",
+            "port": {
+              "node": 5,
+              "port": 0
+            }
+          }
+        },
+        {
+          "consumer": {
+            "owner": "output",
+            "port": 2
+          },
+          "flow": "5",
+          "producer": {
+            "owner": "node",
+            "port": {
+              "node": 6,
+              "port": 0
+            }
+          }
+        }
+      ],
+      "nodes": [
+        {
+          "id": 0,
+          "nodeType": "splitter2"
+        },
+        {
+          "id": 1,
+          "nodeType": "splitter2"
+        },
+        {
+          "id": 2,
+          "nodeType": "splitter2"
+        },
+        {
+          "id": 3,
+          "nodeType": "splitter2"
+        },
+        {
+          "id": 4,
+          "nodeType": "splitter3"
+        },
+        {
+          "id": 5,
+          "nodeType": "merger2"
+        },
+        {
+          "id": 6,
+          "nodeType": "merger2"
+        }
+      ]
+    },
+    {
+      "links": [
+        {
+          "consumer": {
+            "owner": "node",
+            "port": {
+              "node": 0,
+              "port": 0
+            }
+          },
+          "flow": "24",
+          "producer": {
+            "owner": "input",
+            "port": 0
+          }
+        },
+        {
+          "consumer": {
+            "owner": "node",
+            "port": {
+              "node": 1,
+              "port": 0
+            }
+          },
+          "flow": "12",
+          "producer": {
+            "owner": "node",
+            "port": {
+              "node": 0,
+              "port": 0
+            }
+          }
+        },
+        {
+          "consumer": {
+            "owner": "node",
+            "port": {
+              "node": 4,
+              "port": 0
+            }
+          },
+          "flow": "12",
+          "producer": {
+            "owner": "node",
+            "port": {
+              "node": 0,
+              "port": 1
+            }
+          }
+        },
+        {
+          "consumer": {
+            "owner": "output",
+            "port": 1
+          },
+          "flow": "6",
+          "producer": {
+            "owner": "node",
+            "port": {
+              "node": 1,
+              "port": 0
+            }
+          }
+        },
+        {
+          "consumer": {
+            "owner": "node",
+            "port": {
+              "node": 5,
+              "port": 0
+            }
+          },
+          "flow": "6",
+          "producer": {
+            "owner": "node",
+            "port": {
+              "node": 1,
+              "port": 1
+            }
+          }
+        },
+        {
+          "consumer": {
+            "owner": "output",
+            "port": 4
+          },
+          "flow": "2",
+          "producer": {
+            "owner": "node",
+            "port": {
+              "node": 2,
+              "port": 0
+            }
+          }
+        },
+        {
+          "consumer": {
+            "owner": "node",
+            "port": {
+              "node": 6,
+              "port": 0
+            }
+          },
+          "flow": "2",
+          "producer": {
+            "owner": "node",
+            "port": {
+              "node": 2,
+              "port": 1
+            }
+          }
+        },
+        {
+          "consumer": {
+            "owner": "output",
+            "port": 2
+          },
+          "flow": "5",
+          "producer": {
+            "owner": "node",
+            "port": {
+              "node": 3,
+              "port": 0
+            }
+          }
+        },
+        {
+          "consumer": {
+            "owner": "node",
+            "port": {
+              "node": 6,
+              "port": 1
+            }
+          },
+          "flow": "5",
+          "producer": {
+            "owner": "node",
+            "port": {
+              "node": 3,
+              "port": 1
+            }
+          }
+        },
+        {
+          "consumer": {
+            "owner": "output",
+            "port": 3
+          },
+          "flow": "4",
+          "producer": {
+            "owner": "node",
+            "port": {
+              "node": 4,
+              "port": 0
+            }
+          }
+        },
+        {
+          "consumer": {
+            "owner": "node",
+            "port": {
+              "node": 2,
+              "port": 0
+            }
+          },
+          "flow": "4",
+          "producer": {
+            "owner": "node",
+            "port": {
+              "node": 4,
+              "port": 1
+            }
+          }
+        },
+        {
+          "consumer": {
+            "owner": "node",
+            "port": {
+              "node": 5,
+              "port": 1
+            }
+          },
+          "flow": "4",
+          "producer": {
+            "owner": "node",
+            "port": {
+              "node": 4,
+              "port": 2
+            }
+          }
+        },
+        {
+          "consumer": {
+            "owner": "node",
+            "port": {
+              "node": 3,
+              "port": 0
+            }
+          },
+          "flow": "10",
+          "producer": {
+            "owner": "node",
+            "port": {
+              "node": 5,
+              "port": 0
+            }
+          }
+        },
+        {
+          "consumer": {
+            "owner": "output",
+            "port": 0
+          },
+          "flow": "7",
+          "producer": {
+            "owner": "node",
+            "port": {
+              "node": 6,
+              "port": 0
+            }
+          }
+        }
+      ],
+      "nodes": [
+        {
+          "id": 0,
+          "nodeType": "splitter2"
+        },
+        {
+          "id": 1,
+          "nodeType": "splitter2"
+        },
+        {
+          "id": 2,
+          "nodeType": "splitter2"
+        },
+        {
+          "id": 3,
+          "nodeType": "splitter2"
+        },
+        {
+          "id": 4,
+          "nodeType": "splitter3"
+        },
+        {
+          "id": 5,
+          "nodeType": "merger2"
+        },
+        {
+          "id": 6,
+          "nodeType": "merger2"
+        }
+      ]
+    },
+    {
+      "links": [
+        {
+          "consumer": {
+            "owner": "node",
+            "port": {
+              "node": 0,
+              "port": 0
+            }
+          },
+          "flow": "24",
+          "producer": {
+            "owner": "input",
+            "port": 0
+          }
+        },
+        {
+          "consumer": {
+            "owner": "node",
+            "port": {
+              "node": 1,
+              "port": 0
+            }
+          },
+          "flow": "12",
+          "producer": {
+            "owner": "node",
+            "port": {
+              "node": 0,
+              "port": 0
+            }
+          }
+        },
+        {
+          "consumer": {
+            "owner": "node",
+            "port": {
+              "node": 3,
+              "port": 0
+            }
+          },
+          "flow": "12",
+          "producer": {
+            "owner": "node",
+            "port": {
+              "node": 0,
+              "port": 1
+            }
+          }
+        },
+        {
+          "consumer": {
+            "owner": "output",
+            "port": 1
+          },
+          "flow": "6",
+          "producer": {
+            "owner": "node",
+            "port": {
+              "node": 1,
+              "port": 0
+            }
+          }
+        },
+        {
+          "consumer": {
+            "owner": "node",
+            "port": {
+              "node": 4,
+              "port": 0
+            }
+          },
+          "flow": "6",
+          "producer": {
+            "owner": "node",
+            "port": {
+              "node": 1,
+              "port": 1
+            }
+          }
+        },
+        {
+          "consumer": {
+            "owner": "output",
+            "port": 2
+          },
+          "flow": "5",
+          "producer": {
+            "owner": "node",
+            "port": {
+              "node": 2,
+              "port": 0
+            }
+          }
+        },
+        {
+          "consumer": {
+            "owner": "node",
+            "port": {
+              "node": 5,
+              "port": 0
+            }
+          },
+          "flow": "5",
+          "producer": {
+            "owner": "node",
+            "port": {
+              "node": 2,
+              "port": 1
+            }
+          }
+        },
+        {
+          "consumer": {
+            "owner": "output",
+            "port": 3
+          },
+          "flow": "4",
+          "producer": {
+            "owner": "node",
+            "port": {
+              "node": 3,
+              "port": 0
+            }
+          }
+        },
+        {
+          "consumer": {
+            "owner": "node",
+            "port": {
+              "node": 6,
+              "port": 0
+            }
+          },
+          "flow": "4",
+          "producer": {
+            "owner": "node",
+            "port": {
+              "node": 3,
+              "port": 1
+            }
+          }
+        },
+        {
+          "consumer": {
+            "owner": "node",
+            "port": {
+              "node": 6,
+              "port": 1
+            }
+          },
+          "flow": "4",
+          "producer": {
+            "owner": "node",
+            "port": {
+              "node": 3,
+              "port": 2
+            }
+          }
+        },
+        {
+          "consumer": {
+            "owner": "output",
+            "port": 4
+          },
+          "flow": "2",
+          "producer": {
+            "owner": "node",
+            "port": {
+              "node": 4,
+              "port": 0
+            }
+          }
+        },
+        {
+          "consumer": {
+            "owner": "node",
+            "port": {
+              "node": 5,
+              "port": 1
+            }
+          },
+          "flow": "2",
+          "producer": {
+            "owner": "node",
+            "port": {
+              "node": 4,
+              "port": 1
+            }
+          }
+        },
+        {
+          "consumer": {
+            "owner": "node",
+            "port": {
+              "node": 6,
+              "port": 2
+            }
+          },
+          "flow": "2",
+          "producer": {
+            "owner": "node",
+            "port": {
+              "node": 4,
+              "port": 2
+            }
+          }
+        },
+        {
+          "consumer": {
+            "owner": "output",
+            "port": 0
+          },
+          "flow": "7",
+          "producer": {
+            "owner": "node",
+            "port": {
+              "node": 5,
+              "port": 0
+            }
+          }
+        },
+        {
+          "consumer": {
+            "owner": "node",
+            "port": {
+              "node": 2,
+              "port": 0
+            }
+          },
+          "flow": "10",
+          "producer": {
+            "owner": "node",
+            "port": {
+              "node": 6,
+              "port": 0
+            }
+          }
+        }
+      ],
+      "nodes": [
+        {
+          "id": 0,
+          "nodeType": "splitter2"
+        },
+        {
+          "id": 1,
+          "nodeType": "splitter2"
+        },
+        {
+          "id": 2,
+          "nodeType": "splitter2"
+        },
+        {
+          "id": 3,
+          "nodeType": "splitter3"
+        },
+        {
+          "id": 4,
+          "nodeType": "splitter3"
+        },
+        {
+          "id": 5,
+          "nodeType": "merger2"
+        },
+        {
+          "id": 6,
+          "nodeType": "merger3"
+        }
+      ]
+    },
+    {
+      "links": [
+        {
+          "consumer": {
+            "owner": "node",
+            "port": {
+              "node": 0,
+              "port": 0
+            }
+          },
+          "flow": "24",
+          "producer": {
+            "owner": "input",
+            "port": 0
+          }
+        },
+        {
+          "consumer": {
+            "owner": "node",
+            "port": {
+              "node": 1,
+              "port": 0
+            }
+          },
+          "flow": "12",
+          "producer": {
+            "owner": "node",
+            "port": {
+              "node": 0,
+              "port": 0
+            }
+          }
+        },
+        {
+          "consumer": {
+            "owner": "node",
+            "port": {
+              "node": 3,
+              "port": 0
+            }
+          },
+          "flow": "12",
+          "producer": {
+            "owner": "node",
+            "port": {
+              "node": 0,
+              "port": 1
+            }
+          }
+        },
+        {
+          "consumer": {
+            "owner": "output",
+            "port": 1
+          },
+          "flow": "6",
+          "producer": {
+            "owner": "node",
+            "port": {
+              "node": 1,
+              "port": 0
+            }
+          }
+        },
+        {
+          "consumer": {
+            "owner": "node",
+            "port": {
+              "node": 4,
+              "port": 0
+            }
+          },
+          "flow": "6",
+          "producer": {
+            "owner": "node",
+            "port": {
+              "node": 1,
+              "port": 1
+            }
+          }
+        },
+        {
+          "consumer": {
+            "owner": "node",
+            "port": {
+              "node": 5,
+              "port": 0
+            }
+          },
+          "flow": "1",
+          "producer": {
+            "owner": "node",
+            "port": {
+              "node": 2,
+              "port": 0
+            }
+          }
+        },
+        {
+          "consumer": {
+            "owner": "node",
+            "port": {
+              "node": 6,
+              "port": 0
+            }
+          },
+          "flow": "1",
+          "producer": {
+            "owner": "node",
+            "port": {
+              "node": 2,
+              "port": 1
+            }
+          }
+        },
+        {
+          "consumer": {
+            "owner": "output",
+            "port": 3
+          },
+          "flow": "4",
+          "producer": {
+            "owner": "node",
+            "port": {
+              "node": 3,
+              "port": 0
+            }
+          }
+        },
+        {
+          "consumer": {
+            "owner": "node",
+            "port": {
+              "node": 5,
+              "port": 1
+            }
+          },
+          "flow": "4",
+          "producer": {
+            "owner": "node",
+            "port": {
+              "node": 3,
+              "port": 1
+            }
+          }
+        },
+        {
+          "consumer": {
+            "owner": "node",
+            "port": {
+              "node": 6,
+              "port": 1
+            }
+          },
+          "flow": "4",
+          "producer": {
+            "owner": "node",
+            "port": {
+              "node": 3,
+              "port": 2
+            }
+          }
+        },
+        {
+          "consumer": {
+            "owner": "output",
+            "port": 4
+          },
+          "flow": "2",
+          "producer": {
+            "owner": "node",
+            "port": {
+              "node": 4,
+              "port": 0
+            }
+          }
+        },
+        {
+          "consumer": {
+            "owner": "node",
+            "port": {
+              "node": 2,
+              "port": 0
+            }
+          },
+          "flow": "2",
+          "producer": {
+            "owner": "node",
+            "port": {
+              "node": 4,
+              "port": 1
+            }
+          }
+        },
+        {
+          "consumer": {
+            "owner": "node",
+            "port": {
+              "node": 6,
+              "port": 2
+            }
+          },
+          "flow": "2",
+          "producer": {
+            "owner": "node",
+            "port": {
+              "node": 4,
+              "port": 2
+            }
+          }
+        },
+        {
+          "consumer": {
+            "owner": "output",
+            "port": 2
+          },
+          "flow": "5",
+          "producer": {
+            "owner": "node",
+            "port": {
+              "node": 5,
+              "port": 0
+            }
+          }
+        },
+        {
+          "consumer": {
+            "owner": "output",
+            "port": 0
+          },
+          "flow": "7",
+          "producer": {
+            "owner": "node",
+            "port": {
+              "node": 6,
+              "port": 0
+            }
+          }
+        }
+      ],
+      "nodes": [
+        {
+          "id": 0,
+          "nodeType": "splitter2"
+        },
+        {
+          "id": 1,
+          "nodeType": "splitter2"
+        },
+        {
+          "id": 2,
+          "nodeType": "splitter2"
+        },
+        {
+          "id": 3,
+          "nodeType": "splitter3"
+        },
+        {
+          "id": 4,
+          "nodeType": "splitter3"
+        },
+        {
+          "id": 5,
+          "nodeType": "merger2"
+        },
+        {
+          "id": 6,
+          "nodeType": "merger3"
+        }
+      ]
+    },
+    {
+      "links": [
+        {
+          "consumer": {
+            "owner": "node",
+            "port": {
+              "node": 0,
+              "port": 0
+            }
+          },
+          "flow": "24",
+          "producer": {
+            "owner": "input",
+            "port": 0
+          }
+        },
+        {
+          "consumer": {
+            "owner": "node",
+            "port": {
+              "node": 1,
+              "port": 0
+            }
+          },
+          "flow": "12",
+          "producer": {
+            "owner": "node",
+            "port": {
+              "node": 0,
+              "port": 0
+            }
+          }
+        },
+        {
+          "consumer": {
+            "owner": "node",
+            "port": {
+              "node": 3,
+              "port": 0
+            }
+          },
+          "flow": "12",
+          "producer": {
+            "owner": "node",
+            "port": {
+              "node": 0,
+              "port": 1
+            }
+          }
+        },
+        {
+          "consumer": {
+            "owner": "output",
+            "port": 1
+          },
+          "flow": "6",
+          "producer": {
+            "owner": "node",
+            "port": {
+              "node": 1,
+              "port": 0
+            }
+          }
+        },
+        {
+          "consumer": {
+            "owner": "node",
+            "port": {
+              "node": 6,
+              "port": 0
+            }
+          },
+          "flow": "6",
+          "producer": {
+            "owner": "node",
+            "port": {
+              "node": 1,
+              "port": 1
+            }
+          }
+        },
+        {
+          "consumer": {
+            "owner": "output",
+            "port": 4
+          },
+          "flow": "2",
+          "producer": {
+            "owner": "node",
+            "port": {
+              "node": 2,
+              "port": 0
+            }
+          }
+        },
+        {
+          "consumer": {
+            "owner": "node",
+            "port": {
+              "node": 5,
+              "port": 0
+            }
+          },
+          "flow": "2",
+          "producer": {
+            "owner": "node",
+            "port": {
+              "node": 2,
+              "port": 1
+            }
+          }
+        },
+        {
+          "consumer": {
+            "owner": "output",
+            "port": 3
+          },
+          "flow": "4",
+          "producer": {
+            "owner": "node",
+            "port": {
+              "node": 3,
+              "port": 0
+            }
+          }
+        },
+        {
+          "consumer": {
+            "owner": "node",
+            "port": {
+              "node": 2,
+              "port": 0
+            }
+          },
+          "flow": "4",
+          "producer": {
+            "owner": "node",
+            "port": {
+              "node": 3,
+              "port": 1
+            }
+          }
+        },
+        {
+          "consumer": {
+            "owner": "node",
+            "port": {
+              "node": 6,
+              "port": 1
+            }
+          },
+          "flow": "4",
+          "producer": {
+            "owner": "node",
+            "port": {
+              "node": 3,
+              "port": 2
+            }
+          }
+        },
+        {
+          "consumer": {
+            "owner": "output",
+            "port": 2
+          },
+          "flow": "5",
+          "producer": {
+            "owner": "node",
+            "port": {
+              "node": 4,
+              "port": 0
+            }
+          }
+        },
+        {
+          "consumer": {
+            "owner": "node",
+            "port": {
+              "node": 5,
+              "port": 1
+            }
+          },
+          "flow": "5",
+          "producer": {
+            "owner": "node",
+            "port": {
+              "node": 4,
+              "port": 1
+            }
+          }
+        },
+        {
+          "consumer": {
+            "owner": "node",
+            "port": {
+              "node": 6,
+              "port": 2
+            }
+          },
+          "flow": "5",
+          "producer": {
+            "owner": "node",
+            "port": {
+              "node": 4,
+              "port": 2
+            }
+          }
+        },
+        {
+          "consumer": {
+            "owner": "output",
+            "port": 0
+          },
+          "flow": "7",
+          "producer": {
+            "owner": "node",
+            "port": {
+              "node": 5,
+              "port": 0
+            }
+          }
+        },
+        {
+          "consumer": {
+            "owner": "node",
+            "port": {
+              "node": 4,
+              "port": 0
+            }
+          },
+          "flow": "15",
+          "producer": {
+            "owner": "node",
+            "port": {
+              "node": 6,
+              "port": 0
+            }
+          }
+        }
+      ],
+      "nodes": [
+        {
+          "id": 0,
+          "nodeType": "splitter2"
+        },
+        {
+          "id": 1,
+          "nodeType": "splitter2"
+        },
+        {
+          "id": 2,
+          "nodeType": "splitter2"
+        },
+        {
+          "id": 3,
+          "nodeType": "splitter3"
+        },
+        {
+          "id": 4,
+          "nodeType": "splitter3"
+        },
+        {
+          "id": 5,
+          "nodeType": "merger2"
+        },
+        {
+          "id": 6,
+          "nodeType": "merger3"
+        }
+      ]
+    }
+  ],
+  "preferredGraph": {
+    "links": [
+      {
+        "consumer": {
+          "owner": "node",
+          "port": {
+            "node": 0,
+            "port": 0
+          }
+        },
+        "flow": "24",
+        "producer": {
+          "owner": "input",
+          "port": 0
+        }
+      },
+      {
+        "consumer": {
+          "owner": "node",
+          "port": {
+            "node": 1,
+            "port": 0
+          }
+        },
+        "flow": "12",
+        "producer": {
+          "owner": "node",
+          "port": {
+            "node": 0,
+            "port": 0
+          }
+        }
+      },
+      {
+        "consumer": {
+          "owner": "node",
+          "port": {
+            "node": 4,
+            "port": 0
+          }
+        },
+        "flow": "12",
+        "producer": {
+          "owner": "node",
+          "port": {
+            "node": 0,
+            "port": 1
+          }
+        }
+      },
+      {
+        "consumer": {
+          "owner": "output",
+          "port": 1
+        },
+        "flow": "6",
+        "producer": {
+          "owner": "node",
+          "port": {
+            "node": 1,
+            "port": 0
+          }
+        }
+      },
+      {
+        "consumer": {
+          "owner": "node",
+          "port": {
+            "node": 2,
+            "port": 0
+          }
+        },
+        "flow": "6",
+        "producer": {
+          "owner": "node",
+          "port": {
+            "node": 1,
+            "port": 1
+          }
+        }
+      },
+      {
+        "consumer": {
+          "owner": "node",
+          "port": {
+            "node": 5,
+            "port": 0
+          }
+        },
+        "flow": "3",
+        "producer": {
+          "owner": "node",
+          "port": {
+            "node": 2,
+            "port": 0
+          }
+        }
+      },
+      {
+        "consumer": {
+          "owner": "node",
+          "port": {
+            "node": 6,
+            "port": 0
+          }
+        },
+        "flow": "3",
+        "producer": {
+          "owner": "node",
+          "port": {
+            "node": 2,
+            "port": 1
+          }
+        }
+      },
+      {
+        "consumer": {
+          "owner": "output",
+          "port": 4
+        },
+        "flow": "2",
+        "producer": {
+          "owner": "node",
+          "port": {
+            "node": 3,
+            "port": 0
+          }
+        }
+      },
+      {
+        "consumer": {
+          "owner": "node",
+          "port": {
+            "node": 5,
+            "port": 1
+          }
+        },
+        "flow": "2",
+        "producer": {
+          "owner": "node",
+          "port": {
+            "node": 3,
+            "port": 1
+          }
+        }
+      },
+      {
+        "consumer": {
+          "owner": "output",
+          "port": 3
+        },
+        "flow": "4",
+        "producer": {
+          "owner": "node",
+          "port": {
+            "node": 4,
+            "port": 0
+          }
+        }
+      },
+      {
+        "consumer": {
+          "owner": "node",
+          "port": {
+            "node": 3,
+            "port": 0
+          }
+        },
+        "flow": "4",
+        "producer": {
+          "owner": "node",
+          "port": {
+            "node": 4,
+            "port": 1
+          }
+        }
+      },
+      {
+        "consumer": {
+          "owner": "node",
+          "port": {
+            "node": 6,
+            "port": 1
+          }
+        },
+        "flow": "4",
+        "producer": {
+          "owner": "node",
+          "port": {
+            "node": 4,
+            "port": 2
+          }
+        }
+      },
+      {
+        "consumer": {
+          "owner": "output",
+          "port": 2
+        },
+        "flow": "5",
+        "producer": {
+          "owner": "node",
+          "port": {
+            "node": 5,
+            "port": 0
+          }
+        }
+      },
+      {
+        "consumer": {
+          "owner": "output",
+          "port": 0
+        },
+        "flow": "7",
+        "producer": {
+          "owner": "node",
+          "port": {
+            "node": 6,
+            "port": 0
+          }
+        }
+      }
+    ],
+    "nodes": [
+      {
+        "id": 0,
+        "nodeType": "splitter2"
+      },
+      {
+        "id": 1,
+        "nodeType": "splitter2"
+      },
+      {
+        "id": 2,
+        "nodeType": "splitter2"
+      },
+      {
+        "id": 3,
+        "nodeType": "splitter2"
+      },
+      {
+        "id": 4,
+        "nodeType": "splitter3"
+      },
+      {
+        "id": 5,
+        "nodeType": "merger2"
+      },
+      {
+        "id": 6,
+        "nodeType": "merger2"
+      }
+    ]
+  }
+}

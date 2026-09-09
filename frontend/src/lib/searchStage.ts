@@ -5,7 +5,7 @@ export type SearchStageView = {
   lowerBound: number | null;
   nodeCount: number | null;
   linkCount: number | null;
-  linkKind: 'exact' | 'at_most' | null;
+  linkKind: 'exact' | null;
   bestNodeCount: number | null;
   bestLinkCount: number | null;
   ruledOutThrough: number | null;
@@ -16,7 +16,6 @@ export type SearchCopyContext = {
   solutionsLength: number;
   searchEnumerate: boolean;
   firstNodeCount: number | null;
-  engine?: 'custom' | 'z3';
 };
 
 export function formatElapsed(milliseconds: number): string {
@@ -43,18 +42,8 @@ export function formatTelemetryNumber(value: number | string | null): string {
 
 function phaseLabel(phase: string | null): string {
   switch (phase) {
-    case 'normalizing':
-      return 'Normalizing rates';
-    case 'global_checks':
-      return 'Running global checks';
     case 'computing_lower_bound':
       return 'Computing lower bound';
-    case 'constructing_incumbent':
-      return 'Trying an acyclic incumbent';
-    case 'validating_witness':
-      return 'Validating witness';
-    case 'optimizing_links':
-      return 'Improving operator belt count';
     case 'enumerating':
       return 'Enumerating layouts';
     case 'searching':
@@ -89,34 +78,6 @@ export function diagnosticText(entry: Diagnostic): string {
   return `${value}${entry.unit ? ` ${entry.unit}` : ''}`;
 }
 
-/** A local profile count, never an estimate of overall solve completion. */
-export function diagnosticProgress(entries: Diagnostic[]): {
-  label: string;
-  closed: string;
-  total: string;
-  percent: number;
-} | null {
-  const counter = (name: string): bigint | null => {
-    const value = entries.find((entry) => entry.name === name)?.value;
-    return value?.type === 'integer' && /^\d+$/.test(value.value) ? BigInt(value.value) : null;
-  };
-  for (const [closedName, totalName, label] of [
-    ['custom.completed_profiles', 'custom.total_profiles', 'Profiles closed in this L group'],
-    ['z3.profiles_unsat', 'z3.profiles_total', 'Profiles proved UNSAT in this search'],
-  ]) {
-    const closed = counter(closedName);
-    const total = counter(totalName);
-    if (closed == null || total == null || total === 0n || closed > total) continue;
-    return {
-      label,
-      closed: closed.toString(),
-      total: total.toString(),
-      percent: Number((closed * 10_000n) / total) / 100,
-    };
-  }
-  return null;
-}
-
 export function ruledOutRangeLabel(view: SearchStageView): string {
   return view.ruledOutThrough == null ? '' : view.ruledOutThrough === 0 ? '0' : `0–${view.ruledOutThrough}`;
 }
@@ -125,7 +86,7 @@ export function sizeSearchBody(snapshot: JobSnapshot, view: SearchStageView): st
   const stopped = ['cancelled', 'failed', 'incomplete', 'unsat'].includes(snapshot.status);
   if (view.nodeCount == null)
     return `${stopped ? 'Stopped during' : ''} ${phaseLabel(view.phase).toLowerCase()}.`.trim();
-  const link = view.linkCount == null ? '' : ` · L${view.linkKind === 'at_most' ? '≤' : '='}${view.linkCount}`;
+  const link = view.linkCount == null ? '' : ` · L=${view.linkCount}`;
   return `${stopped ? 'Stopped while searching' : 'Searching'} N=${view.nodeCount}${link}.`;
 }
 
@@ -140,9 +101,6 @@ export function searchHeadline(snapshot: JobSnapshot, context: SearchCopyContext
     return firstNodeCount != null ? `All layouts at N = ${firstNodeCount}` : 'All layouts found';
   }
   const progress = snapshot.progress;
-  if (progress?.phase === 'optimizing_links' && progress.bestLinkCount != null) {
-    return `Improving below ${progress.bestLinkCount} belts at N=${progress.nodeCount}`;
-  }
   if (searchEnumerate && solutionsLength > 0)
     return `Enumerating layouts at N = ${firstNodeCount ?? progress?.nodeCount ?? '?'}`;
   if (progress?.nodeCount != null) return `Checking ${nodeCountLabel(progress.nodeCount)}`;
@@ -150,8 +108,7 @@ export function searchHeadline(snapshot: JobSnapshot, context: SearchCopyContext
 }
 
 export function searchSubline(snapshot: JobSnapshot, view: SearchStageView, context: SearchCopyContext): string {
-  if (snapshot.status === 'cancelling')
-    return `Waiting for ${context.engine === 'custom' ? 'Custom' : 'Z3'} workers to stop.`;
+  if (snapshot.status === 'cancelling') return 'Waiting for solver workers to stop.';
   if (snapshot.status === 'unsat') return 'Finite proof that no capacity-safe network satisfies these rates.';
   if (['cancelled', 'incomplete', 'failed'].includes(snapshot.status)) {
     return snapshot.proof?.minimumNodeCount != null

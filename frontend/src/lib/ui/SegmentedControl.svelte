@@ -89,7 +89,7 @@
       type="button"
       role="radio"
       aria-checked={value === option.value}
-      class={`relative z-1 flex h-full flex-1 items-center justify-center rounded-md border border-transparent font-bold transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-50 ${style.button} ${
+      class={`relative z-1 flex h-full flex-1 items-center justify-center rounded-md border border-transparent font-bold whitespace-nowrap transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-50 ${style.button} ${
         value === option.value ? 'text-on-accent cursor-default' : 'text-muted hover:text-control-fg cursor-pointer'
       }`}
       {disabled}

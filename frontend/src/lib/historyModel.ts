@@ -3,13 +3,12 @@ import type {
   EndpointRow,
   Solution,
   SolveRequest,
-  SolverEngine,
   SolverProgress,
   OptimalityProof,
   JobSnapshot,
   SolveMode,
 } from '../types';
-import { enumeratesLayouts } from '../types';
+import { enumeratesLayouts, parseSolveMode, SOLVE_MODE_LABELS } from '../types';
 import { DEFAULT_SORT_COLUMNS, type SortColumn } from './solutionSort';
 
 export const HISTORY_DOCUMENT_VERSION = 2;
@@ -24,7 +23,6 @@ export interface FormSnapshot {
   outputs: EndpointRow[];
   beltRate: string;
   solveMode: SolveMode;
-  engine: SolverEngine;
 }
 
 export interface CachedGraphLayout {
@@ -106,14 +104,12 @@ export function snapshotForm(
   outputs: EndpointRow[],
   beltRate: string,
   solveMode: SolveMode,
-  engine: SolverEngine = 'custom',
 ): FormSnapshot {
   return {
     inputs: inputs.map((row) => ({ ...row })),
     outputs: outputs.map((row) => ({ ...row })),
     beltRate,
     solveMode,
-    engine,
   };
 }
 
@@ -127,7 +123,6 @@ export function cloneForm(form: FormSnapshot): FormSnapshot {
     outputs: form.outputs.map((row) => ({ ...row })),
     beltRate: form.beltRate,
     solveMode: form.solveMode,
-    engine: form.engine ?? 'custom',
   };
 }
 
@@ -245,7 +240,7 @@ export type HistoryMetricCell = {
 
 export type HistoryMetrics = {
   search: HistoryMetricCell;
-  engine: HistoryMetricCell;
+  belts: HistoryMetricCell;
   nodes: HistoryMetricCell;
   layouts: HistoryMetricCell;
 };
@@ -253,23 +248,17 @@ export type HistoryMetrics = {
 /** Compact icon-grid metrics for history cards. */
 export function entryHistoryMetrics(entry: HistoryEntry): HistoryMetrics {
   const mode = entry.request.solveMode;
-  const engine = entry.request.engine === 'z3' ? 'Z3' : 'Custom';
   const nodeCount = entryNodeCount(entry);
   const layoutCount = entryLayoutCount(entry);
+  const proved = [entry.result, ...entry.results].find((s) => s?.status === 'proven_optimal');
+  const minimumL = entry.proof?.minimumLinkCount ?? proved?.stats.linkCount ?? null;
 
   return {
-    search: {
-      value: mode === 'optimal' ? 'Opt' : mode === 'all_at_minimum_nodes_and_minimum_links' ? 'Min L' : 'All L',
+    search: { value: SOLVE_MODE_LABELS[mode], tip: `Search: ${SOLVE_MODE_LABELS[mode]}` },
+    belts: {
+      value: minimumL != null ? `L=${minimumL}` : 'L=—',
       tip:
-        mode === 'optimal'
-          ? 'Search: Find one optimal layout'
-          : mode === 'all_at_minimum_nodes_and_minimum_links'
-            ? 'Search: Find all layouts at minimum N and minimum L'
-            : 'Search: Find all layouts at minimum N across all L',
-    },
-    engine: {
-      value: engine,
-      tip: `Engine: ${engine}`,
+        minimumL != null ? `Minimum operator belt count L = ${minimumL}` : 'Minimum operator belt count not yet proved',
     },
     nodes: {
       value: nodeCount != null ? `N=${nodeCount}` : 'N=—',
@@ -282,7 +271,7 @@ export function entryHistoryMetrics(entry: HistoryEntry): HistoryMetrics {
   };
 }
 
-/** Short status line under the title (metrics carry search/engine/N/layouts). */
+/** Short status line under the title (metrics carry scope/L/N/layouts). */
 export function entryStatusCaption(entry: HistoryEntry): string {
   switch (entry.status) {
     case 'queued':
@@ -320,11 +309,7 @@ export function entryOutcomeLine(entry: HistoryEntry): string {
 
   if (entry.status === 'queued') {
     const mode = entry.request.solveMode;
-    return mode === 'optimal'
-      ? 'Optimal'
-      : mode === 'all_at_minimum_nodes_and_minimum_links'
-        ? 'All at min L'
-        : 'All L';
+    return mode === 'one_min_nl' ? 'One min N/L' : mode === 'all_min_nl' ? 'All min N/L' : 'All min N';
   }
   if (entry.status === 'running' || entry.status === 'cancelling') {
     return entry.status === 'cancelling' ? 'Stopping…' : '';
@@ -349,19 +334,18 @@ export function entryOutcomeLine(entry: HistoryEntry): string {
     }`;
   }
   // completed
-  const engineLabel = entry.request.engine === 'z3' ? 'Z3' : 'Custom';
   if (entry.enumerationComplete && (enumeratesLayouts(entry.request.solveMode) || layoutCount > 1)) {
-    const scope = entry.request.solveMode === 'all_at_minimum_nodes_and_minimum_links' ? 'All at min L' : 'All layouts';
-    return `${scope}${nodeCount != null ? ` · N=${nodeCount}` : ''} · ${layoutCount} · ${engineLabel}`;
+    const scope = entry.request.solveMode === 'all_min_nl' ? 'All min N/L' : 'All layouts';
+    return `${scope}${nodeCount != null ? ` · N=${nodeCount}` : ''} · ${layoutCount}`;
   }
   if (layoutCount <= 1) {
     const status = entry.result?.status;
     if (status === 'best_known') {
-      return `Best known${nodeCount != null ? ` · N=${nodeCount}` : ''} · ${engineLabel}`;
+      return `Best known${nodeCount != null ? ` · N=${nodeCount}` : ''}`;
     }
-    return `Optimal${nodeCount != null ? ` · N=${nodeCount}` : ''} · ${engineLabel}`;
+    return `Optimal${nodeCount != null ? ` · N=${nodeCount}` : ''}`;
   }
-  return `${layoutCount} layouts${nodeCount != null ? ` · N=${nodeCount}` : ''} · ${engineLabel}`;
+  return `${layoutCount} layouts${nodeCount != null ? ` · N=${nodeCount}` : ''}`;
 }
 
 export function emptyDocument(): HistoryDocument {
@@ -372,7 +356,7 @@ export function emptyDocument(): HistoryDocument {
   };
 }
 
-/** Old engine-specific telemetry is not compatible with the common snapshot. */
+/** Restore compatible telemetry and normalize its diagnostic names. */
 function savedProgress(progress: SolverProgress | null | undefined): SolverProgress | null {
   return progress &&
     typeof progress.phase === 'string' &&
@@ -388,7 +372,19 @@ function savedProgress(progress: SolverProgress | null | undefined): SolverProgr
           ? typeof entry.value.value === 'boolean'
           : ['integer', 'text', 'rate'].includes(entry.value.type) && typeof entry.value.value === 'string'),
     )
-    ? progress
+    ? {
+        ...progress,
+        phase: ['computing_lower_bound', 'searching', 'enumerating'].includes(progress.phase)
+          ? progress.phase
+          : 'searching',
+        linkConstraint: progress.linkConstraint?.kind === 'exact' ? progress.linkConstraint : null,
+        custom: progress.custom.flatMap((diagnostic) => {
+          const name = diagnostic.name.replace(/^astra\./, 'solver.');
+          return name.startsWith('solver.')
+            ? [{ ...diagnostic, name, label: diagnostic.label.replace(/\bAstra\b/g, 'Solver') }]
+            : [];
+        }),
+      }
     : null;
 }
 
@@ -397,13 +393,13 @@ export function persistableEntries(entries: HistoryEntry[]): HistoryEntry[] {
   return entries
     .filter((entry) => entryBand(entry.status) === 'history')
     .map((entry) => ({
-      ...entry,
+      ...normalizeEntry(entry),
       jobId: null,
       progress: savedProgress(entry.progress),
       form: cloneForm(entry.form),
       sortColumns: entry.sortColumns.map((column) => ({ ...column })),
       // JSON round-trip: layouts must be IPC-serializable (no proxies / functions).
-      layouts: jsonClone(entry.layouts),
+      layouts: jsonClone(normalizeEntry(entry).layouts),
     }));
 }
 
@@ -429,12 +425,8 @@ export function parseHistoryDocument(raw: unknown): HistoryDocument {
 }
 
 function readSolveMode(raw: unknown): SolveMode {
-  if (!raw || typeof raw !== 'object') return 'optimal';
-  const value = (raw as Record<string, unknown>).solveMode;
-  if (value === 'optimal' || value === 'all_at_minimum_nodes_and_minimum_links' || value === 'all_at_minimum_nodes') {
-    return value;
-  }
-  return 'optimal';
+  const value = asRecord(raw);
+  return parseSolveMode(value.solveMode, value.enumerateAllAtN === true ? 'all_min_n' : 'one_min_nl');
 }
 
 function asRecord(raw: unknown): Record<string, unknown> {
@@ -445,9 +437,8 @@ function asRecord(raw: unknown): Record<string, unknown> {
 function normalizeEntry(entry: HistoryEntry): HistoryEntry {
   const requestMode = readSolveMode(entry.request);
   const formMode = entry.form ? readSolveMode(entry.form) : requestMode;
-  const { enumerateAllAtN: _ignoredRequestMode, ...request } = asRecord(entry.request);
+  const { engine: _ignoredRequestEngine, enumerateAllAtN: _ignoredRequestMode, ...request } = asRecord(entry.request);
   const { enumerateAllAtN: _ignoredFormMode, ...form } = asRecord(entry.form);
-  const engine = entry.request?.engine ?? entry.form?.engine ?? 'custom';
   return {
     id: entry.id,
     title: entry.title ?? null,
@@ -456,17 +447,16 @@ function normalizeEntry(entry: HistoryEntry): HistoryEntry {
     status: entry.status ?? 'completed',
     request: {
       ...request,
-      engine,
+
       solveMode: requestMode,
     } as SolveRequest,
     form: entry.form
-      ? cloneForm({ ...(form as unknown as FormSnapshot), solveMode: formMode, engine: entry.form.engine ?? engine })
+      ? cloneForm({ ...(form as unknown as FormSnapshot), solveMode: formMode })
       : {
           inputs: [],
           outputs: [],
           beltRate: entry.request?.beltRate ?? '1200',
           solveMode: requestMode,
-          engine,
         },
     jobId: null,
     startedAtMs: entry.startedAtMs ?? null,
@@ -478,14 +468,19 @@ function normalizeEntry(entry: HistoryEntry): HistoryEntry {
     progress: savedProgress(entry.progress),
     proof: entry.proof ?? null,
     sequence: entry.sequence,
-    result: entry.result ?? null,
-    results: Array.isArray(entry.results) ? entry.results : [],
+    result: entry.result ? stripSolverType(entry.result) : null,
+    results: Array.isArray(entry.results) ? entry.results.map(stripSolverType) : [],
     enumerationComplete: Boolean(entry.enumerationComplete),
     error: entry.error ?? null,
     selectedSourceIndex: entry.selectedSourceIndex ?? 0,
     sortColumns:
       Array.isArray(entry.sortColumns) && entry.sortColumns.length > 0 ? entry.sortColumns : [...DEFAULT_SORT_COLUMNS],
-    layouts: entry.layouts && typeof entry.layouts === 'object' ? entry.layouts : {},
+    layouts: Object.fromEntries(
+      Object.entries(entry.layouts ?? {}).map(([index, layout]) => [
+        index,
+        { ...layout, layoutKey: layout.layoutKey.replace(/^(custom|z3|astra)::/, '') },
+      ]),
+    ),
   };
 }
 
@@ -548,4 +543,9 @@ function remapEntry(entry: HistoryEntry): HistoryEntry {
     jobId: null,
     status: entryBand(entry.status) === 'history' ? entry.status : 'completed',
   };
+}
+
+function stripSolverType(solution: Solution): Solution {
+  const { engine: _ignored, ...rest } = solution as Solution & { engine?: unknown };
+  return rest;
 }

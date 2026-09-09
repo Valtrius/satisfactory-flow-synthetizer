@@ -99,8 +99,8 @@ pub fn solve_problem(
         problem,
         native,
         cancel,
-        options.mode != solver_api::SolveMode::Optimal,
-        options.mode == solver_api::SolveMode::AllAtMinimumNodes,
+        options.mode != solver_api::SolveMode::OneMinNL,
+        options.mode == solver_api::SolveMode::AllMinN,
         &mut solutions,
     )
     .map_err(|error| match error {

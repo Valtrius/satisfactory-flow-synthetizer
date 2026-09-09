@@ -5,7 +5,6 @@ import { layoutSolution } from './graph';
 import type { Solution } from '../types';
 
 const solution: Solution = {
-  engine: 'z3',
   status: 'proven_optimal',
   modelVersion: 1,
   stats: {

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Route from '@lucide/svelte/icons/route';
   import History from '@lucide/svelte/icons/history';
   import Download from '@lucide/svelte/icons/download';
   import Upload from '@lucide/svelte/icons/upload';
@@ -8,8 +9,6 @@
   import X from '@lucide/svelte/icons/x';
   import Target from '@lucide/svelte/icons/target';
   import LayoutGrid from '@lucide/svelte/icons/layout-grid';
-  import Cpu from '@lucide/svelte/icons/cpu';
-  import Zap from '@lucide/svelte/icons/zap';
   import Network from '@lucide/svelte/icons/network';
   import Table2 from '@lucide/svelte/icons/table-2';
   import ArrowUpDown from '@lucide/svelte/icons/arrow-up-down';
@@ -30,7 +29,6 @@
   import {
     readUiPrefs,
     updateUiPrefs,
-    type HistoryEngineFilter,
     type HistorySearchFilter,
     type HistorySortPref,
     type HistoryStatusFilter,
@@ -42,7 +40,6 @@
   import { insertIndexFromClient, setListDragging, visualReorderSlots } from './pointerReorder';
 
   type StatusFilter = HistoryStatusFilter;
-  type EngineFilter = HistoryEngineFilter;
   type SearchFilter = HistorySearchFilter;
   type ToolbarPanel = 'sort' | 'filter';
   type HistorySort = HistorySortPref;
@@ -108,7 +105,6 @@
   let query = $state(savedToolbar.query);
   let openPanel = $state<ToolbarPanel | null>(null);
   let statusFilters = $state<StatusFilter[]>([...savedToolbar.statusFilters]);
-  let engineFilters = $state<EngineFilter[]>([...savedToolbar.engineFilters]);
   let searchFilters = $state<SearchFilter[]>([...savedToolbar.searchFilters]);
   let sort = $state<HistorySort>(savedToolbar.sort);
 
@@ -134,15 +130,10 @@
     { value: 'unsat', label: 'Impossible' },
   ];
 
-  const engineOptions: { value: EngineFilter; label: string }[] = [
-    { value: 'custom', label: 'Custom' },
-    { value: 'z3', label: 'Z3' },
-  ];
-
   const searchOptions: { value: SearchFilter; label: string }[] = [
-    { value: 'optimal', label: 'Optimal' },
-    { value: 'all_at_minimum_nodes_and_minimum_links', label: 'All min L' },
-    { value: 'all_at_minimum_nodes', label: 'All L' },
+    { value: 'one_min_nl', label: 'One min N/L' },
+    { value: 'all_min_nl', label: 'All min N/L' },
+    { value: 'all_min_n', label: 'All min N' },
   ];
 
   const sortOptions: { value: HistorySort; label: string; tip: string }[] = [
@@ -162,7 +153,7 @@
   const listEmpty = $derived(queued.length === 0 && !running && history.length === 0);
   const historyDraggable = $derived(sort === 'manual');
   const allEntries = $derived(running ? [...queued, running, ...history] : [...queued, ...history]);
-  const filtersActive = $derived(statusFilters.length > 0 || engineFilters.length > 0 || searchFilters.length > 0);
+  const filtersActive = $derived(statusFilters.length > 0 || searchFilters.length > 0);
   const sortActive = $derived(sort !== 'manual');
 
   $effect(() => {
@@ -171,7 +162,6 @@
         query,
         sort,
         statusFilters,
-        engineFilters,
         searchFilters,
       },
     });
@@ -219,7 +209,6 @@
 
   function clearFilters(): void {
     statusFilters = [];
-    engineFilters = [];
     searchFilters = [];
   }
 
@@ -229,10 +218,6 @@
 
   function toggleStatus(value: StatusFilter): void {
     statusFilters = toggleValue(statusFilters, value);
-  }
-
-  function toggleEngine(value: EngineFilter): void {
-    engineFilters = toggleValue(engineFilters, value);
   }
 
   function toggleSearch(value: SearchFilter): void {
@@ -250,10 +235,6 @@
     return displayTitle(entry).toLowerCase().includes(needle);
   }
 
-  function entryEngine(entry: HistoryEntry): EngineFilter {
-    return entry.request.engine === 'z3' ? 'z3' : 'custom';
-  }
-
   function entrySearch(entry: HistoryEntry): SearchFilter {
     return entry.request.solveMode;
   }
@@ -262,16 +243,12 @@
     return statusFilters.length === 0 || (statusFilters as string[]).includes(entry.status);
   }
 
-  function matchesEngineFilters(entry: HistoryEntry): boolean {
-    return engineFilters.length === 0 || engineFilters.includes(entryEngine(entry));
-  }
-
   function matchesSearchFilters(entry: HistoryEntry): boolean {
     return searchFilters.length === 0 || searchFilters.includes(entrySearch(entry));
   }
 
   function matchesFilter(entry: HistoryEntry): boolean {
-    return matchesStatusFilters(entry) && matchesEngineFilters(entry) && matchesSearchFilters(entry);
+    return matchesStatusFilters(entry) && matchesSearchFilters(entry);
   }
 
   function matchesEntry(entry: HistoryEntry): boolean {
@@ -280,29 +257,13 @@
 
   /** Facet counts ignore their own dimension so other chips stay meaningful. */
   function countStatus(value: StatusFilter): number {
-    return allEntries.filter(
-      (entry) =>
-        matchesQuery(entry) && matchesEngineFilters(entry) && matchesSearchFilters(entry) && entry.status === value,
-    ).length;
-  }
-
-  function countEngine(value: EngineFilter): number {
-    return allEntries.filter(
-      (entry) =>
-        matchesQuery(entry) &&
-        matchesStatusFilters(entry) &&
-        matchesSearchFilters(entry) &&
-        entryEngine(entry) === value,
-    ).length;
+    return allEntries.filter((entry) => matchesQuery(entry) && matchesSearchFilters(entry) && entry.status === value)
+      .length;
   }
 
   function countSearch(value: SearchFilter): number {
     return allEntries.filter(
-      (entry) =>
-        matchesQuery(entry) &&
-        matchesStatusFilters(entry) &&
-        matchesEngineFilters(entry) &&
-        entrySearch(entry) === value,
+      (entry) => matchesQuery(entry) && matchesStatusFilters(entry) && entrySearch(entry) === value,
     ).length;
   }
 
@@ -799,36 +760,6 @@
           </div>
 
           <div>
-            <p class="text-muted m-0 mb-1.5 text-[0.7rem] font-semibold">Engine</p>
-            <div class="flex flex-wrap gap-1.5" role="group" aria-label="Engine filters">
-              <button
-                type="button"
-                class={chipClass(engineFilters.length === 0)}
-                aria-pressed={engineFilters.length === 0}
-                onclick={() => {
-                  engineFilters = [];
-                }}
-              >
-                Any
-              </button>
-              {#each engineOptions as option (option.value)}
-                {@const count = countEngine(option.value)}
-                <button
-                  type="button"
-                  class={chipClass(engineFilters.includes(option.value))}
-                  aria-pressed={engineFilters.includes(option.value)}
-                  onclick={() => toggleEngine(option.value)}
-                >
-                  {option.label}
-                  <span class="text-dim ml-1 font-medium tabular-nums">
-                    {count}
-                  </span>
-                </button>
-              {/each}
-            </div>
-          </div>
-
-          <div>
             <p class="text-muted m-0 mb-1.5 text-[0.7rem] font-semibold">Search</p>
             <div class="flex flex-wrap gap-1.5" role="group" aria-label="Search filters">
               <button
@@ -934,7 +865,6 @@
   {@const selected = entry.id === selectedEntryId}
   {@const metrics = entryHistoryMetrics(entry)}
   {@const allLayouts = enumeratesLayouts(entry.request.solveMode)}
-  {@const engineZ3 = entry.request.engine === 'z3'}
   <div
     role="option"
     tabindex={floating ? -1 : 0}
@@ -1138,15 +1068,11 @@
       </li>
       <li
         class="text-muted inline-flex min-w-0 items-center gap-1 text-[0.68rem] font-semibold tabular-nums"
-        title={metrics.engine.tip}
-        aria-label={metrics.engine.tip}
+        title={metrics.belts.tip}
+        aria-label={metrics.belts.tip}
       >
-        {#if engineZ3}
-          <Zap class="text-flow size-3 shrink-0" strokeWidth={2.2} aria-hidden="true" />
-        {:else}
-          <Cpu class="text-flow size-3 shrink-0" strokeWidth={2.2} aria-hidden="true" />
-        {/if}
-        <span class="truncate">{metrics.engine.value}</span>
+        <Route class="text-flow size-3 shrink-0" strokeWidth={2.2} aria-hidden="true" />
+        <span class="truncate">{metrics.belts.value}</span>
       </li>
       <li
         class="text-muted inline-flex min-w-0 items-center gap-1 text-[0.68rem] font-semibold tabular-nums"

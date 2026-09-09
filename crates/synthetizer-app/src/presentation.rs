@@ -504,7 +504,7 @@ fn operator_label(id: NodeId, node_type: NodeType) -> String {
 }
 
 /// Marks feedback belts with the same natural-loop / irreducible-cycle rules as
-/// the Z3 verifier: dominator back-edges first, then a DFS for leftover cycles.
+/// the graph structure: dominator back-edges first, then a DFS for leftover cycles.
 fn feedback_annotation(
     operators: &BTreeMap<NodeId, NodeType>,
     links: &[PhysicalLink],

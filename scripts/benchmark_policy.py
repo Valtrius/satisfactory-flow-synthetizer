@@ -6,7 +6,13 @@ from statistics import median
 
 
 PAIR_FIELDS = ("Case", "Mode", "Stage", "Workers", "Repeat", "MaxNodes", "TimeoutSeconds",
-               "Hotspots", "ProcessorAffinity", "CacheBytes", "Comparison", "Cohort", "CaseFile")
+               "Hotspots", "Diagnostics", "ProcessorAffinity", "CacheBytes", "Comparison", "Cohort", "CaseFile")
+
+
+def diagnostics_enabled(record):
+    """Read diagnostic settings from current or recorded benchmark schemas."""
+    return bool(record.get("Diagnostics", record.get("diagnostics_enabled",
+                record.get("AstraDiagnostics", record.get("astra_diagnostics", False)))))
 
 
 def validate_pairs(schedule):
@@ -21,7 +27,9 @@ def validate_pairs(schedule):
     for pair, jobs in groups.items():
         if len(jobs) != 2 or {j.get("PairRole") for j in jobs} != {"reference", "candidate"}:
             raise ValueError(f"Pair must have one reference and one candidate: {pair}")
-        if jobs[0]["Variant"] == jobs[1]["Variant"] or any(jobs[0].get(k) != jobs[1].get(k) for k in PAIR_FIELDS):
+        if (jobs[0]["Variant"] == jobs[1]["Variant"]
+                or diagnostics_enabled(jobs[0]) != diagnostics_enabled(jobs[1])
+                or any(jobs[0].get(k) != jobs[1].get(k) for k in PAIR_FIELDS if k != "Diagnostics")):
             raise ValueError(f"Unmatched pair settings: {pair}")
     # Pair members must stay adjacent even when pair order is randomized.
     for at in range(0, len(schedule), 2):
@@ -95,3 +103,20 @@ def paired_summary(rows):
                 bootstrap_95_pct=[100 * (boot[125] - 1), 100 * (boot[4874] - 1)])
         output.append(item)
     return output
+
+
+def result_comparison_errors(result, baseline, mode, policy="ordered"):
+    """Ordering freedom never removes full enumeration or objective checks."""
+    if policy not in ("ordered", "any_optimum"):
+        raise ValueError(f"Unknown result policy: {policy}")
+    errors = []
+    if result.get("status") != baseline.get("status"):
+        errors.append("Optimum differs")
+    if policy == "ordered" or mode not in ("optimal", "one_min_nl"):
+        if result.get("layout_keys") != baseline.get("layout_keys"):
+            errors.append("Full layout set differs")
+        if "solutions" in baseline and result.get("solutions") != baseline["solutions"]:
+            errors.append("Saved solution objects differ")
+    if policy == "ordered" and result.get("preferred_key") != baseline.get("preferred_key"):
+        errors.append("Preferred witness differs")
+    return errors

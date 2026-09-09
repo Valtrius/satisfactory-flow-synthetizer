@@ -1,4 +1,4 @@
-//! Persistent job history in SQLite under the app local data directory.
+//! Persistent job history in `SQLite` under the app local data directory.
 
 use std::{
     collections::HashMap,
@@ -14,12 +14,12 @@ use tauri::{AppHandle, Manager, State};
 
 const DB_FILE: &str = "history.sqlite";
 const HISTORY_DOCUMENT_VERSION: u32 = 2;
-const SCHEMA_USER_VERSION: i32 = 3;
+const SCHEMA_USER_VERSION: i32 = 4;
 
 const SCHEMA_SQL: &str = "
 PRAGMA journal_mode = WAL;
 PRAGMA foreign_keys = ON;
-PRAGMA user_version = 3;
+PRAGMA user_version = 4;
 CREATE TABLE meta (
   key TEXT PRIMARY KEY NOT NULL,
   value TEXT NOT NULL
@@ -38,10 +38,8 @@ CREATE TABLE entries (
   selected_source_index INTEGER NOT NULL DEFAULT 0,
   request_belt_rate TEXT NOT NULL,
   request_solve_mode TEXT NOT NULL,
-  request_engine TEXT NOT NULL,
   form_belt_rate TEXT NOT NULL,
-  form_solve_mode TEXT NOT NULL,
-  form_engine TEXT NOT NULL
+  form_solve_mode TEXT NOT NULL
 );
 CREATE TABLE entry_endpoints (
   entry_id TEXT NOT NULL REFERENCES entries(id) ON DELETE CASCADE,
@@ -57,7 +55,6 @@ CREATE TABLE entry_endpoints (
 CREATE TABLE solutions (
   entry_id TEXT NOT NULL REFERENCES entries(id) ON DELETE CASCADE,
   source_index INTEGER NOT NULL,
-  engine TEXT NOT NULL,
   status TEXT NOT NULL,
   model_version INTEGER NOT NULL,
   proof_version INTEGER,
@@ -227,39 +224,165 @@ impl HistoryStore {
 }
 
 fn open_connection(db_path: &Path) -> Result<Connection, String> {
-    let conn =
-        Connection::open(db_path).map_err(|error| format!("open history database: {error}"))?;
+    let mut conn = Connection::open(db_path).map_err(|e| format!("open history database: {e}"))?;
+    conn.execute_batch("PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;")
+        .map_err(|e| format!("configure history database: {e}"))?;
     let version: i32 = conn
         .pragma_query_value(None, "user_version", |row| row.get(0))
-        .map_err(|error| format!("read history schema version: {error}"))?;
+        .map_err(|e| format!("read history schema version: {e}"))?;
     if version == SCHEMA_USER_VERSION {
-        conn.execute_batch("PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;")
-            .map_err(|error| format!("configure history database: {error}"))?;
         return Ok(conn);
     }
-    drop(conn);
-    remove_db_files(db_path)?;
-    let conn =
-        Connection::open(db_path).map_err(|error| format!("open history database: {error}"))?;
-    conn.execute_batch(SCHEMA_SQL)
-        .map_err(|error| format!("init history schema: {error}"))?;
+    let has_entries: bool = conn
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='entries')",
+            [],
+            |r| r.get(0),
+        )
+        .map_err(|e| format!("inspect history schema: {e}"))?;
+    if version == 0 && !has_entries {
+        conn.execute_batch(SCHEMA_SQL)
+            .map_err(|e| format!("init history schema: {e}"))?;
+        return Ok(conn);
+    }
+    if version <= 2 && has_entries {
+        let json_schema: bool = conn.query_row("SELECT EXISTS(SELECT 1 FROM pragma_table_info('entries') WHERE name='request_json')", [], |r| r.get(0))
+            .map_err(|e| format!("inspect JSON history: {e}"))?;
+        if json_schema {
+            migrate_json_history(&mut conn)?;
+            return Ok(conn);
+        }
+    }
+    if version != 3 {
+        return Err(format!(
+            "Unsupported history schema {version}; database preserved."
+        ));
+    }
+    let tx = conn
+        .transaction()
+        .map_err(|e| format!("begin history migration: {e}"))?;
+    tx.execute_batch(
+        "ALTER TABLE entries DROP COLUMN request_engine;
+        ALTER TABLE entries DROP COLUMN form_engine;
+        ALTER TABLE solutions DROP COLUMN engine;
+        UPDATE layouts SET layout_key = CASE
+          WHEN layout_key LIKE 'custom::%' THEN substr(layout_key, 9)
+          WHEN layout_key LIKE 'astra::%' THEN substr(layout_key, 8)
+          WHEN layout_key LIKE 'z3::%' THEN substr(layout_key, 5)
+          ELSE layout_key END;
+        PRAGMA user_version = 4;",
+    )
+    .map_err(|e| format!("migrate history schema: {e}"))?;
+    tx.commit()
+        .map_err(|e| format!("commit history migration: {e}"))?;
     Ok(conn)
 }
 
-fn remove_db_files(db_path: &Path) -> Result<(), String> {
-    let name = db_path
-        .file_name()
-        .ok_or_else(|| "history database path missing file name".to_owned())?;
-    let name = name.to_string_lossy();
-    for suffix in ["", "-wal", "-shm"] {
-        let path = db_path.with_file_name(format!("{name}{suffix}"));
-        match fs::remove_file(&path) {
-            Ok(()) => {}
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-            Err(error) => return Err(format!("remove {}: {error}", path.display())),
+/// Migrate the original JSON-column schema atomically, preserving all rows and saved graph edits.
+fn migrate_json_history(conn: &mut Connection) -> Result<(), String> {
+    let tx = conn
+        .transaction()
+        .map_err(|e| format!("begin JSON history migration: {e}"))?;
+    let has_state: bool = tx
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='solver_state')",
+            [],
+            |r| r.get(0),
+        )
+        .map_err(|e| format!("inspect JSON solver state: {e}"))?;
+    let mut entries = json_schema_rows(&tx, "SELECT * FROM entries ORDER BY sort_order")?;
+    if has_state {
+        let states = json_schema_rows(&tx, "SELECT * FROM solver_state")?;
+        for entry in &mut entries {
+            if let Some(state) = states
+                .iter()
+                .find(|state| state.get("entryId") == entry.get("id"))
+            {
+                for field in ["progress", "proof", "sequence"] {
+                    if let Some(value) = state.get(field) {
+                        entry[field] = value.clone();
+                    }
+                }
+            }
         }
     }
-    Ok(())
+    let selected = meta_get(&tx, "selected_entry_id")?;
+    tx.execute_batch("DROP TABLE IF EXISTS solver_state; DROP TABLE entries; DROP TABLE meta;")
+        .map_err(|e| format!("replace JSON history schema: {e}"))?;
+    let schema = SCHEMA_SQL
+        .replace("PRAGMA journal_mode = WAL;", "")
+        .replace("PRAGMA foreign_keys = ON;", "");
+    tx.execute_batch(&schema)
+        .map_err(|e| format!("create migrated history schema: {e}"))?;
+    for entry in entries {
+        upsert_entry(&tx, &entry)?;
+    }
+    if let Some(id) = selected {
+        meta_set(&tx, "selected_entry_id", &id)?;
+    }
+    tx.commit()
+        .map_err(|e| format!("commit JSON history migration: {e}"))
+}
+
+fn json_schema_rows(conn: &Connection, query: &str) -> Result<Vec<Value>, String> {
+    use rusqlite::types::ValueRef;
+    let mut statement = conn
+        .prepare(query)
+        .map_err(|e| format!("read JSON history: {e}"))?;
+    let columns = statement
+        .column_names()
+        .into_iter()
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+    let mut rows = statement
+        .query([])
+        .map_err(|e| format!("query JSON history: {e}"))?;
+    let mut result = Vec::new();
+    while let Some(row) = rows
+        .next()
+        .map_err(|e| format!("read JSON schema row: {e}"))?
+    {
+        let mut record = Map::new();
+        for (index, name) in columns.iter().enumerate() {
+            if name == "sort_order" {
+                continue;
+            }
+            let mut parts = name.trim_end_matches("_json").split('_');
+            let mut key = parts.next().unwrap().to_owned();
+            for part in parts {
+                let mut chars = part.chars();
+                if let Some(c) = chars.next() {
+                    key.extend(c.to_uppercase());
+                }
+                key.extend(chars);
+            }
+            let value = match row
+                .get_ref(index)
+                .map_err(|e| format!("read JSON schema value: {e}"))?
+            {
+                ValueRef::Null => Value::Null,
+                ValueRef::Integer(value) if name == "enumeration_complete" => json!(value != 0),
+                ValueRef::Integer(value) => json!(value),
+                ValueRef::Text(bytes) => {
+                    let text = std::str::from_utf8(bytes)
+                        .map_err(|e| format!("JSON history text: {e}"))?;
+                    if name.ends_with("_json") {
+                        parse_json(text, name)?
+                    } else {
+                        json!(text)
+                    }
+                }
+                _ => {
+                    return Err(format!(
+                        "Unsupported JSON schema column {name}; migration rolled back."
+                    ));
+                }
+            };
+            record.insert(key, value);
+        }
+        result.push(Value::Object(record));
+    }
+    Ok(result)
 }
 
 fn apply_op(tx: &Transaction<'_>, op: &HistoryOp) -> Result<(), String> {
@@ -301,14 +424,15 @@ fn apply_op(tx: &Transaction<'_>, op: &HistoryOp) -> Result<(), String> {
             }
             Ok(())
         }
-        HistoryOp::SetSelected { id } => match id {
-            Some(id) => meta_set(tx, "selected_entry_id", id),
-            None => {
+        HistoryOp::SetSelected { id } => {
+            if let Some(id) = id {
+                meta_set(tx, "selected_entry_id", id)
+            } else {
                 tx.execute("DELETE FROM meta WHERE key = 'selected_entry_id'", [])
                     .map_err(|error| format!("clear selected history id: {error}"))?;
                 Ok(())
             }
-        },
+        }
     }
 }
 
@@ -325,13 +449,10 @@ fn upsert_entry(tx: &Transaction<'_>, entry: &Value) -> Result<(), String> {
         INSERT INTO entries (
           id, sort_order, title, status, created_at_ms, updated_at_ms, started_at_ms,
           finished_at_ms, enumeration_complete, error, selected_source_index,
-          request_belt_rate, request_solve_mode, request_engine,
-          form_belt_rate, form_solve_mode, form_engine
+          request_belt_rate, request_solve_mode,
+          form_belt_rate, form_solve_mode
         ) VALUES (
-          ?1, ?2, ?3, ?4, ?5, ?6, ?7,
-          ?8, ?9, ?10, ?11,
-          ?12, ?13, ?14,
-          ?15, ?16, ?17
+          ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15
         )
         ",
         params![
@@ -356,10 +477,8 @@ fn upsert_entry(tx: &Transaction<'_>, entry: &Value) -> Result<(), String> {
                 .unwrap_or(0),
             required_str(request, "beltRate")?,
             solve_mode(request),
-            engine(request),
             required_str(form, "beltRate")?,
             solve_mode(form),
-            engine(form),
         ],
     )
     .map_err(|error| format!("insert history entry: {error}"))?;
@@ -540,7 +659,7 @@ fn insert_solution(
     tx.execute(
         "
         INSERT INTO solutions (
-          entry_id, source_index, engine, status, model_version,
+          entry_id, source_index, status, model_version,
           proof_version, initial_node_lower_bound, node_counts_exhausted_through,
           link_groups_exhausted, profiles_exhausted, root_partitions_exhausted,
           validator_version, validation_node_count, validation_link_count,
@@ -551,22 +670,12 @@ fn insert_solution(
           total_input_exact, total_input_decimal, total_output_exact, total_output_decimal,
           discard_rate_exact, discard_rate_decimal, belt_rate_exact, belt_rate_decimal
         ) VALUES (
-          ?1, ?2, ?3, ?4, ?5,
-          ?6, ?7, ?8,
-          ?9, ?10, ?11,
-          ?12, ?13, ?14,
-          ?15, ?16, ?17,
-          ?18, ?19, ?20, ?21, ?22, ?23, ?24,
-          ?25, ?26,
-          ?27, ?28,
-          ?29, ?30, ?31, ?32,
-          ?33, ?34, ?35, ?36
+          ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30, ?31, ?32, ?33, ?34, ?35
         )
         ",
         params![
             entry_id,
             source_index,
-            engine(solution),
             required_str(solution, "status")?,
             required_i64(solution, "modelVersion")?,
             proof.and_then(|value| value.get("proofVersion").and_then(Value::as_i64)),
@@ -610,6 +719,15 @@ fn insert_solution(
     )
     .map_err(|error| format!("insert history solution: {error}"))?;
 
+    insert_solution_graph(tx, entry_id, source_index, solution)
+}
+
+fn insert_solution_graph(
+    tx: &Transaction<'_>,
+    entry_id: &str,
+    source_index: i64,
+    solution: &Value,
+) -> Result<(), String> {
     if let Some(nodes) = solution.get("nodes").and_then(Value::as_array) {
         for node in nodes {
             tx.execute(
@@ -714,6 +832,13 @@ fn replace_sort_columns(
     Ok(())
 }
 
+fn layout_cache_key(key: &str) -> &str {
+    ["custom::", "z3::", "astra::"]
+        .iter()
+        .find_map(|prefix| key.strip_prefix(prefix))
+        .unwrap_or(key)
+}
+
 fn replace_layouts(tx: &Transaction<'_>, entry_id: &str, layouts: &Value) -> Result<(), String> {
     tx.execute("DELETE FROM layouts WHERE entry_id = ?1", params![entry_id])
         .map_err(|error| format!("clear history layouts: {error}"))?;
@@ -732,7 +857,7 @@ fn replace_layouts(tx: &Transaction<'_>, entry_id: &str, layouts: &Value) -> Res
             params![
                 entry_id,
                 source_index,
-                required_str(layout, "layoutKey")?,
+                layout_cache_key(required_str(layout, "layoutKey")?),
                 compact_json(layout.get("nodes").unwrap_or(&json!([])))?,
                 compact_json(layout.get("edges").unwrap_or(&json!([])))?,
             ],
@@ -799,8 +924,8 @@ fn load_entries(conn: &Connection) -> Result<Vec<Value>, String> {
             SELECT
               id, title, status, created_at_ms, updated_at_ms, started_at_ms, finished_at_ms,
               enumeration_complete, error, selected_source_index,
-              request_belt_rate, request_solve_mode, request_engine,
-              form_belt_rate, form_solve_mode, form_engine,
+              request_belt_rate, request_solve_mode,
+              form_belt_rate, form_solve_mode,
               solver_state.progress_json, solver_state.proof_json, COALESCE(solver_state.sequence, 0)
             FROM entries
             LEFT JOIN solver_state ON entries.id = solver_state.entry_id
@@ -823,13 +948,11 @@ fn load_entries(conn: &Connection) -> Result<Vec<Value>, String> {
                 selected_source_index: row.get(9)?,
                 request_belt_rate: row.get(10)?,
                 request_solve_mode: row.get(11)?,
-                request_engine: row.get(12)?,
-                form_belt_rate: row.get(13)?,
-                form_solve_mode: row.get(14)?,
-                form_engine: row.get(15)?,
-                progress_json: row.get(16)?,
-                proof_json: row.get(17)?,
-                sequence: row.get(18)?,
+                form_belt_rate: row.get(12)?,
+                form_solve_mode: row.get(13)?,
+                progress_json: row.get(14)?,
+                proof_json: row.get(15)?,
+                sequence: row.get(16)?,
             })
         })
         .map_err(|error| format!("query history entries: {error}"))?;
@@ -872,15 +995,13 @@ fn load_entries(conn: &Connection) -> Result<Vec<Value>, String> {
                     "inputs": request_inputs,
                     "outputs": request_outputs,
                     "beltRate": entry.request_belt_rate,
-                    "solveMode": entry.request_solve_mode,
-                    "engine": entry.request_engine,
+                    "solveMode": solve_mode(&json!({"solveMode": entry.request_solve_mode})),
                 },
                 "form": {
                     "inputs": form_inputs,
                     "outputs": form_outputs,
                     "beltRate": entry.form_belt_rate,
-                    "solveMode": entry.form_solve_mode,
-                    "engine": entry.form_engine,
+                    "solveMode": solve_mode(&json!({"solveMode": entry.form_solve_mode})),
                 },
                 "result": result,
                 "results": results,
@@ -908,10 +1029,8 @@ struct LoadedEntry {
     selected_source_index: i64,
     request_belt_rate: String,
     request_solve_mode: String,
-    request_engine: String,
     form_belt_rate: String,
     form_solve_mode: String,
-    form_engine: String,
     progress_json: Option<String>,
     proof_json: Option<String>,
     sequence: i64,
@@ -992,7 +1111,7 @@ fn load_all_solutions(conn: &Connection) -> Result<HashMap<String, Vec<Value>>, 
         .prepare(
             "
             SELECT
-              entry_id, source_index, engine, status, model_version,
+              entry_id, source_index, status, model_version,
               proof_version, initial_node_lower_bound, node_counts_exhausted_through,
               link_groups_exhausted, profiles_exhausted, root_partitions_exhausted,
               validator_version, validation_node_count, validation_link_count,
@@ -1012,73 +1131,47 @@ fn load_all_solutions(conn: &Connection) -> Result<HashMap<String, Vec<Value>>, 
             Ok(LoadedSolution {
                 entry_id: row.get(0)?,
                 source_index: row.get(1)?,
-                engine: row.get(2)?,
-                status: row.get(3)?,
-                model_version: row.get(4)?,
-                proof_version: row.get(5)?,
-                initial_node_lower_bound: row.get(6)?,
-                node_counts_exhausted_through: row.get(7)?,
-                link_groups_exhausted: row.get(8)?,
-                profiles_exhausted: row.get(9)?,
-                root_partitions_exhausted: row.get(10)?,
-                validator_version: row.get(11)?,
-                validation_node_count: row.get(12)?,
-                validation_link_count: row.get(13)?,
-                validation_physical_link_count: row.get(14)?,
-                validation_discard_link_count: row.get(15)?,
-                cyclic_scc_count: row.get(16)?,
-                node_count: row.get(17)?,
-                splitters: row.get(18)?,
-                mergers: row.get(19)?,
-                feedback_loops: row.get(20)?,
-                link_count: row.get(21)?,
-                checked_through: row.get(22)?,
-                belt_count: row.get(23)?,
-                internal_max_throughput_exact: row.get(24)?,
-                internal_max_throughput_decimal: row.get(25)?,
-                stats_physical_link_count: row.get(26)?,
-                stats_discard_link_count: row.get(27)?,
-                total_input_exact: row.get(28)?,
-                total_input_decimal: row.get(29)?,
-                total_output_exact: row.get(30)?,
-                total_output_decimal: row.get(31)?,
-                discard_rate_exact: row.get(32)?,
-                discard_rate_decimal: row.get(33)?,
-                belt_rate_exact: row.get(34)?,
-                belt_rate_decimal: row.get(35)?,
+                status: row.get(2)?,
+                model_version: row.get(3)?,
+                proof_version: row.get(4)?,
+                initial_node_lower_bound: row.get(5)?,
+                node_counts_exhausted_through: row.get(6)?,
+                link_groups_exhausted: row.get(7)?,
+                profiles_exhausted: row.get(8)?,
+                root_partitions_exhausted: row.get(9)?,
+                validator_version: row.get(10)?,
+                validation_node_count: row.get(11)?,
+                validation_link_count: row.get(12)?,
+                validation_physical_link_count: row.get(13)?,
+                validation_discard_link_count: row.get(14)?,
+                cyclic_scc_count: row.get(15)?,
+                node_count: row.get(16)?,
+                splitters: row.get(17)?,
+                mergers: row.get(18)?,
+                feedback_loops: row.get(19)?,
+                link_count: row.get(20)?,
+                checked_through: row.get(21)?,
+                belt_count: row.get(22)?,
+                internal_max_throughput_exact: row.get(23)?,
+                internal_max_throughput_decimal: row.get(24)?,
+                stats_physical_link_count: row.get(25)?,
+                stats_discard_link_count: row.get(26)?,
+                total_input_exact: row.get(27)?,
+                total_input_decimal: row.get(28)?,
+                total_output_exact: row.get(29)?,
+                total_output_decimal: row.get(30)?,
+                discard_rate_exact: row.get(31)?,
+                discard_rate_decimal: row.get(32)?,
+                belt_rate_exact: row.get(33)?,
+                belt_rate_decimal: row.get(34)?,
             })
         })
         .map_err(|error| format!("query history solutions: {error}"))?;
     for row in rows {
         let row = row.map_err(|error| format!("read history solution: {error}"))?;
         let key = (row.entry_id.clone(), row.source_index);
-        let mut stats = json!({
-            "nodeCount": row.node_count,
-            "splitters": row.splitters,
-            "mergers": row.mergers,
-            "feedbackLoops": row.feedback_loops,
-            "linkCount": row.link_count,
-        });
-        if let Some(value) = row.checked_through {
-            stats["checkedThrough"] = json!(value);
-        }
-        if let Some(value) = row.belt_count {
-            stats["beltCount"] = json!(value);
-        }
-        if let (Some(exact), Some(decimal)) = (
-            row.internal_max_throughput_exact.as_ref(),
-            row.internal_max_throughput_decimal.as_ref(),
-        ) {
-            stats["internalMaxThroughput"] = json!({ "exact": exact, "decimal": decimal });
-        }
-        if let Some(value) = row.stats_physical_link_count {
-            stats["physicalLinkCount"] = json!(value);
-        }
-        if let Some(value) = row.stats_discard_link_count {
-            stats["discardLinkCount"] = json!(value);
-        }
+        let stats = solution_stats_json(&row);
         let mut object = json!({
-            "engine": row.engine,
             "status": row.status,
             "modelVersion": row.model_version,
             "stats": stats,
@@ -1109,10 +1202,38 @@ fn load_all_solutions(conn: &Connection) -> Result<HashMap<String, Vec<Value>>, 
         .collect())
 }
 
+fn solution_stats_json(row: &LoadedSolution) -> Value {
+    let mut stats = json!({
+        "nodeCount": row.node_count,
+        "splitters": row.splitters,
+        "mergers": row.mergers,
+        "feedbackLoops": row.feedback_loops,
+        "linkCount": row.link_count,
+    });
+    if let Some(value) = row.checked_through {
+        stats["checkedThrough"] = json!(value);
+    }
+    if let Some(value) = row.belt_count {
+        stats["beltCount"] = json!(value);
+    }
+    if let (Some(exact), Some(decimal)) = (
+        row.internal_max_throughput_exact.as_ref(),
+        row.internal_max_throughput_decimal.as_ref(),
+    ) {
+        stats["internalMaxThroughput"] = json!({ "exact": exact, "decimal": decimal });
+    }
+    if let Some(value) = row.stats_physical_link_count {
+        stats["physicalLinkCount"] = json!(value);
+    }
+    if let Some(value) = row.stats_discard_link_count {
+        stats["discardLinkCount"] = json!(value);
+    }
+    stats
+}
+
 struct LoadedSolution {
     entry_id: String,
     source_index: i64,
-    engine: String,
     status: String,
     model_version: i64,
     proof_version: Option<i64>,
@@ -1354,20 +1475,25 @@ fn load_all_layouts(conn: &Connection) -> Result<HashMap<String, Value>, String>
 }
 
 fn solve_mode(value: &Value) -> String {
-    match value.get("solveMode").and_then(Value::as_str) {
-        Some("all_at_minimum_nodes_and_minimum_links") => {
-            "all_at_minimum_nodes_and_minimum_links".to_owned()
-        }
-        Some("all_at_minimum_nodes") => "all_at_minimum_nodes".to_owned(),
-        _ => "optimal".to_owned(),
-    }
-}
-
-fn engine(value: &Value) -> String {
-    match value.get("engine").and_then(Value::as_str) {
-        Some("z3") => "z3".to_owned(),
-        _ => "custom".to_owned(),
-    }
+    value
+        .get("solveMode")
+        .and_then(|mode| serde_json::from_value::<solver_api::SolveMode>(mode.clone()).ok())
+        .map_or_else(
+            || {
+                if value.get("enumerateAllAtN").and_then(Value::as_bool) == Some(true) {
+                    "all_min_n".to_owned()
+                } else {
+                    "one_min_nl".to_owned()
+                }
+            },
+            |mode| {
+                serde_json::to_value(mode)
+                    .unwrap()
+                    .as_str()
+                    .unwrap()
+                    .to_owned()
+            },
+        )
 }
 
 fn display_rate(value: &Value, label: &str) -> Result<(String, String), String> {
@@ -1557,6 +1683,26 @@ mod tests {
     }
 
     #[test]
+    fn solver_type_fields_are_accepted_and_never_persisted() {
+        let directory = tempfile::tempdir().unwrap();
+        let store = HistoryStore::open(directory.path()).unwrap();
+        let mut entry = sample_entry();
+        entry["form"]["engine"] = json!("astra");
+        entry["request"]["engine"] = json!("astra");
+        entry["result"]["engine"] = json!("astra");
+        entry["results"][0]["engine"] = json!("astra");
+        store
+            .apply_ops(&[HistoryOp::UpsertEntry { entry }])
+            .unwrap();
+        let loaded = store.load_document().unwrap();
+        let entry = &loaded["entries"][0];
+        for field in ["form", "request", "result"] {
+            assert!(entry[field].get("engine").is_none(), "{field}");
+        }
+        assert!(entry["results"][0].get("engine").is_none());
+    }
+
+    #[test]
     fn upsert_round_trips_relational_entry() {
         let directory = tempfile::tempdir().unwrap();
         let store = HistoryStore::open(directory.path()).unwrap();
@@ -1587,8 +1733,8 @@ mod tests {
         let loaded = store.load_document().unwrap();
         assert_eq!(loaded["version"], HISTORY_DOCUMENT_VERSION);
         assert_eq!(loaded["selectedEntryId"], "entry-1");
-        assert_eq!(loaded["entries"][0]["request"]["solveMode"], "optimal");
-        assert_eq!(loaded["entries"][0]["request"]["engine"], "z3");
+        assert_eq!(loaded["entries"][0]["request"]["solveMode"], "one_min_nl");
+        assert!(loaded["entries"][0]["request"].get("engine").is_none());
         assert_eq!(loaded["entries"][0]["results"][0]["nodes"][0]["id"], "n1");
         assert_eq!(loaded["entries"][0]["result"]["status"], "best_known");
         assert_eq!(
@@ -1683,7 +1829,7 @@ mod tests {
     }
 
     #[test]
-    fn wrong_schema_version_replaces_the_file() {
+    fn unsupported_schema_preserves_the_file() {
         let directory = tempfile::tempdir().unwrap();
         let store = HistoryStore::open(directory.path()).unwrap();
         store
@@ -1692,16 +1838,115 @@ mod tests {
             }])
             .unwrap();
         drop(store);
+        let conn = Connection::open(directory.path().join(DB_FILE)).unwrap();
+        conn.pragma_update(None, "user_version", 99).unwrap();
+        assert!(HistoryStore::open(directory.path()).is_err());
+        assert_eq!(count(&conn, "SELECT COUNT(*) FROM entries"), 1);
+    }
 
-        {
-            let conn = Connection::open(directory.path().join(DB_FILE)).unwrap();
-            conn.pragma_update(None, "user_version", 1).unwrap();
-        }
-
-        let loaded = HistoryStore::open(directory.path())
-            .unwrap()
-            .load_document()
+    #[test]
+    fn version_three_migration_preserves_complete_document_and_drops_engine_columns() {
+        let directory = tempfile::tempdir().unwrap();
+        let store = HistoryStore::open(directory.path()).unwrap();
+        store
+            .apply_ops(&[
+                HistoryOp::UpsertEntry {
+                    entry: sample_entry(),
+                },
+                HistoryOp::SetSelected {
+                    id: Some("entry-1".to_owned()),
+                },
+            ])
             .unwrap();
-        assert_eq!(loaded["entries"].as_array().unwrap().len(), 0);
+        let expected = store.load_document().unwrap();
+        drop(store);
+        let conn = Connection::open(directory.path().join(DB_FILE)).unwrap();
+        conn.execute_batch(
+            "ALTER TABLE entries ADD COLUMN request_engine TEXT NOT NULL DEFAULT 'custom';
+          ALTER TABLE entries ADD COLUMN form_engine TEXT NOT NULL DEFAULT 'z3';
+          ALTER TABLE solutions ADD COLUMN engine TEXT NOT NULL DEFAULT 'astra';
+          UPDATE layouts SET layout_key = 'z3::' || layout_key;
+          PRAGMA user_version = 3;",
+        )
+        .unwrap();
+        drop(conn);
+        let migrated = HistoryStore::open(directory.path()).unwrap();
+        assert_eq!(migrated.load_document().unwrap(), expected);
+        let conn = migrated.conn.lock().unwrap();
+        for table in ["entries", "solutions"] {
+            let mut stmt = conn
+                .prepare(&format!("PRAGMA table_info({table})"))
+                .unwrap();
+            let names = stmt
+                .query_map([], |row| row.get::<_, String>(1))
+                .unwrap()
+                .collect::<Result<Vec<_>, _>>()
+                .unwrap();
+            assert!(names.iter().all(|name| !name.contains("engine")));
+        }
+        drop(conn);
+        drop(migrated);
+        assert_eq!(
+            HistoryStore::open(directory.path())
+                .unwrap()
+                .load_document()
+                .unwrap(),
+            expected
+        );
+    }
+    #[test]
+    fn json_schema_history_migrates_without_losing_graphs_or_selection() {
+        let directory = tempfile::tempdir().unwrap();
+        let current = HistoryStore::open(directory.path()).unwrap();
+        current
+            .apply_ops(&[
+                HistoryOp::UpsertEntry {
+                    entry: sample_entry(),
+                },
+                HistoryOp::SetSelected {
+                    id: Some("entry-1".to_owned()),
+                },
+            ])
+            .unwrap();
+        let expected = current.load_document().unwrap();
+        drop(current);
+        // Construct the version 2 JSON-column schema in a separate database.
+        let json_directory = tempfile::tempdir().unwrap();
+        let conn = Connection::open(json_directory.path().join(DB_FILE)).unwrap();
+        conn.execute_batch(include_str!("history-fixtures/v2.sql"))
+            .unwrap();
+        let entry = sample_entry();
+        conn.execute("INSERT INTO entries (id,sort_order,title,status,created_at_ms,updated_at_ms,started_at_ms,finished_at_ms,enumeration_complete,error,selected_source_index,request_json,form_json,result_json,results_json,sort_columns_json,layouts_json)
+            VALUES (?1,0,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16)", params![
+            entry["id"].as_str(), entry["title"].as_str(),entry["status"].as_str(),entry["createdAtMs"].as_i64(),entry["updatedAtMs"].as_i64(),entry["startedAtMs"].as_i64(),entry["finishedAtMs"].as_i64(),i64::from(entry["enumerationComplete"].as_bool().unwrap()),entry["error"].as_str(),entry["selectedSourceIndex"].as_i64(),
+            entry["request"].to_string(),entry["form"].to_string(),entry["result"].to_string(),entry["results"].to_string(),entry["sortColumns"].to_string(),entry["layouts"].to_string()]).unwrap();
+        conn.execute(
+            "INSERT INTO solver_state VALUES (?1,?2,?3,?4)",
+            params![
+                "entry-1",
+                entry["progress"].to_string(),
+                entry["proof"].to_string(),
+                entry["sequence"].as_i64()
+            ],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO meta VALUES ('selected_entry_id','entry-1')",
+            [],
+        )
+        .unwrap();
+        // A failed migration must leave the source data and schema intact.
+        conn.execute("UPDATE entries SET request_json = 'malformed'", [])
+            .unwrap();
+        assert!(HistoryStore::open(json_directory.path()).is_err());
+        assert_eq!(count(&conn, "SELECT COUNT(*) FROM entries"), 1);
+        conn.execute(
+            "UPDATE entries SET request_json = ?1",
+            params![entry["request"].to_string()],
+        )
+        .unwrap();
+        drop(conn);
+        let migrated = HistoryStore::open(json_directory.path()).unwrap();
+        assert_eq!(migrated.load_document().unwrap(), expected);
     }
 }

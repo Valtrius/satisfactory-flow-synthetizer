@@ -1,11 +1,10 @@
 // @vitest-environment node
 import { render } from 'svelte/server';
 import { describe, expect, it } from 'vitest';
-import type { Solution, SolverEngine } from '../types';
+import type { Solution } from '../types';
 import SolutionSummary from './SolutionSummary.svelte';
 
 const solution: Solution = {
-  engine: 'z3',
   status: 'proven_optimal',
   modelVersion: 1,
   stats: {
@@ -48,7 +47,7 @@ describe('SolutionSummary', () => {
 
     expect(header).toBeDefined();
     expect(header).toContain('3 nodes');
-    expect(header).toContain('Proven optimal · Z3');
+    expect(header).toContain('Proven optimal');
     expect(header).toContain('justify-between');
     expect(header).toContain('border-b');
     expect(header).toContain('border-line');
@@ -60,25 +59,22 @@ describe('SolutionSummary', () => {
     expect(html).not.toMatch(/rounded-tl-|rounded-br-/);
   });
 
-  it.each<SolverEngine>(['z3', 'custom'])(
-    'shows one optimal status pill with the %s engine after the node count',
-    (engine) => {
-      const html = renderSummary({ engine });
-
-      expect(html.match(/rounded-full/g)).toHaveLength(1);
-      expect(html).toContain(`Proven optimal · ${engine === 'z3' ? 'Z3' : 'Custom'}`);
-      expect(html.indexOf('rounded-full')).toBeGreaterThan(html.indexOf('</h2>'));
-      expect(html).toContain('text-[#8bdeb8]');
-      expect(html).not.toContain('Verified optimal');
-      expect(html).not.toContain('Exact &amp; optimal');
-    },
-  );
-
-  it.each<SolverEngine>(['z3', 'custom'])('keeps best-known results distinct for the %s engine', (engine) => {
-    const html = renderSummary({ engine, status: 'best_known' });
+  it('shows one optimal status pill after the node count', () => {
+    const html = renderSummary();
 
     expect(html.match(/rounded-full/g)).toHaveLength(1);
-    expect(html).toContain(`Best known · ${engine === 'z3' ? 'Z3' : 'Custom'}`);
+    expect(html).toContain('Proven optimal');
+    expect(html.indexOf('rounded-full')).toBeGreaterThan(html.indexOf('</h2>'));
+    expect(html).toContain('text-[#8bdeb8]');
+    expect(html).not.toContain('Verified optimal');
+    expect(html).not.toContain('Exact &amp; optimal');
+  });
+
+  it('keeps best-known results distinct ', () => {
+    const html = renderSummary({ status: 'best_known' });
+
+    expect(html.match(/rounded-full/g)).toHaveLength(1);
+    expect(html).toContain('Best known');
     expect(html).toContain('title="Not proven optimal"');
     expect(html).toContain('text-[#e6c27a]');
     expect(html).not.toContain('Proven optimal');

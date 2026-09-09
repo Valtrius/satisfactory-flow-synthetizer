@@ -37,7 +37,7 @@
   import { formatElapsed, searchHeadline, searchStageView, searchSubline, sizeSearchBody } from './lib/searchStage';
   import { DEFAULT_SORT_COLUMNS, compareSolutions, type SortColumn } from './lib/solutionSort';
   import { readUiPrefs, updateUiPrefs } from './lib/uiPrefs';
-  import { enumeratesLayouts, type EndpointRow, type Solution, type SolverEngine } from './types';
+  import { enumeratesLayouts, type EndpointRow, type Solution } from './types';
 
   const savedForm = readUiPrefs().form;
   let nextEndpointId = $state(savedForm.nextEndpointId);
@@ -45,7 +45,6 @@
   let outputs = $state<EndpointRow[]>(savedForm.outputs.map((row) => ({ ...row })));
   let beltRate = $state(savedForm.beltRate);
   let solveMode = $state(savedForm.solveMode);
-  let engine = $state<SolverEngine>(savedForm.engine);
 
   let historyEntries = $state<HistoryEntry[]>([]);
   let selectedEntryId = $state<string | null>(null);
@@ -164,7 +163,6 @@
     solutionsLength: solutions.length,
     searchEnumerate,
     firstNodeCount: solutions[0]?.stats.nodeCount ?? null,
-    engine: selectedEntry?.request.engine ?? engine,
   });
   const elapsedLabel = $derived(formatElapsed(elapsedMs));
   const runningElapsedLabel = $derived(
@@ -214,7 +212,7 @@
         outputs,
         beltRate,
         solveMode,
-        engine,
+
         nextEndpointId,
       },
     });
@@ -250,12 +248,12 @@
   async function solve(): Promise<void> {
     graph.setFullscreen(false);
     errorMessage = '';
-    const request = buildSolveRequest(inputs, outputs, beltRate, solveMode, engine);
+    const request = buildSolveRequest(inputs, outputs, beltRate, solveMode);
     if (request.outputs.length < 1) {
       errorMessage = 'Add at least one output before solving.';
       return;
     }
-    const entry = createQueuedEntry(snapshotForm(inputs, outputs, beltRate, solveMode, engine), request);
+    const entry = createQueuedEntry(snapshotForm(inputs, outputs, beltRate, solveMode), request);
     graph.flushChrome();
     // Newest queued jobs stack on top; the runner drains from the bottom.
     const parts = partitionEntries(historyEntries);
@@ -326,7 +324,7 @@
     outputs = entry.form.outputs.map((row) => ({ ...row }));
     beltRate = entry.form.beltRate;
     solveMode = entry.form.solveMode;
-    engine = entry.form.engine ?? entry.request.engine ?? 'custom';
+
     const maxId = [...inputs, ...outputs]
       .map((row) => Number(String(row.id).replace(/\D+/g, '')) || 0)
       .reduce((max, value) => Math.max(max, value), nextEndpointId);
@@ -432,7 +430,7 @@
   <title>Satisfactory Flow Synthetizer</title>
   <meta
     name="description"
-    content="Exact Satisfactory splitter and merger flow synthetizer with Custom and Z3 engines."
+    content="Exact Satisfactory splitter and merger flow synthetizer with an exact cvc5 solver."
   />
 </svelte:head>
 
@@ -476,7 +474,6 @@
           {outputSlots}
           bind:beltRate
           {solveMode}
-          {engine}
           {hasRunning}
           onAddInput={() => addEndpoint('inputs')}
           onRemoveInput={(index) => removeEndpoint('inputs', index)}
@@ -488,9 +485,6 @@
           onCommitOutputMultiplier={(index) => commitMultiplier('outputs', index)}
           onSolveModeChange={(value) => {
             solveMode = value;
-          }}
-          onEngineChange={(value) => {
-            engine = value;
           }}
           onSolve={() => void solve()}
         />

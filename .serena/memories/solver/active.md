@@ -1,1 +1,0 @@
-Idle. Experiment64 develop-vs-master analyzed: 24/24 at `target/parallelism-ladder/develop-vs-master-20260905`, failures []. Develop faster on all 22 completed jobs; 115 all wall −57.6%; cyclic10 both capped. No solver change. `mem:solver/experiments/64-develop-vs-master`.

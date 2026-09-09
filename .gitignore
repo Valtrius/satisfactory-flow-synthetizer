@@ -1,14 +1,14 @@
 /target/
 /target-*/
 /src-tauri/gen/
+/src-tauri/binaries/
+/src-tauri/resources/cvc5/
 /frontend/node_modules/
 /frontend/dist/
 /node_modules/
 /.idea/
 /.vscode/
 *.log
-**/.z3-trace
-/.z3-trace
 /tmp
 /.tmp
 /.cargo/config.toml

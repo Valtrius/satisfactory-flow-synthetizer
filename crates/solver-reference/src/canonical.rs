@@ -124,9 +124,9 @@ fn discard_labelings(
             permutation
                 .into_iter()
                 .enumerate()
-                .map(|(canonical, old)| {
+                .map(|(canonical, source)| {
                     (
-                        old,
+                        source,
                         DiscardTerminalIndex(
                             u32::try_from(canonical).expect("discard count must fit public index"),
                         ),
@@ -143,7 +143,7 @@ fn sorted_rates(rates: &[Rational]) -> Vec<Rational> {
     sorted
 }
 
-/// Returns maps from old terminal index to canonical terminal index.
+/// Returns maps from source terminal index to canonical terminal index.
 fn terminal_labelings(rates: &[Rational]) -> Vec<Vec<u32>> {
     let mut rate_classes = BTreeMap::<Rational, Vec<usize>>::new();
     for (index, rate) in rates.iter().cloned().enumerate() {
@@ -172,7 +172,7 @@ fn terminal_labelings(rates: &[Rational]) -> Vec<Vec<u32>> {
     labelings
 }
 
-/// Returns maps from old node identifier to contiguous canonical identifier.
+/// Returns maps from source node identifier to contiguous canonical identifier.
 fn node_labelings(nodes: &[PhysicalNode]) -> Vec<BTreeMap<NodeId, NodeId>> {
     let mut type_classes = BTreeMap::<NodeType, Vec<NodeId>>::new();
     for node in nodes {

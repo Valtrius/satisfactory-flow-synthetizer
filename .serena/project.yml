@@ -149,10 +149,8 @@ added_modes:
 # initial prompt for the project. It will always be given to the LLM upon activating the project
 # (contrary to the memories, which are loaded on demand).
 initial_prompt: |
-  Custom solver / parallelism / benchmark knowledge lives only in Serena memories (no docs corpus).
-  For that work: read `mem:critical_info` first, then only the memories it names.
-  Historical lookups: `mem:solver/experiments/index` then exactly one experiment memory
-  under that topic. Non-solver tasks: do not read solver/* memories.
+  Read `mem:index` for the project knowledge map, then only the relevant memory.
+  Production uses solver-core; solver-reference is the independent test oracle.
 
 # time budget (seconds) per tool call for the retrieval of additional symbol information
 # such as docstrings or parameter information.

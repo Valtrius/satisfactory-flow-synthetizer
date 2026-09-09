@@ -7,7 +7,6 @@ autobins = false
 
 [dependencies]
 solver-core = { path = "../solver-core" }
-solver-z3 = { path = "../solver-z3" }
 solver-validation = { path = "../solver-validation" }
 solver-api = { path = "../solver-api" }
 num = "0.4.3"

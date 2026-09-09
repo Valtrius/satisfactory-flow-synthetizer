@@ -4,27 +4,27 @@
   import Button from './ui/Button.svelte';
   import Input from './ui/Input.svelte';
   import SegmentedControl from './ui/SegmentedControl.svelte';
-  import type { SolveMode, SolverEngine } from '../types';
+  import type { SolveMode } from '../types';
 
   type Props = {
     beltRate: string;
     solveMode: SolveMode;
-    engine: SolverEngine;
+
     hasRunning: boolean;
     class?: string;
     onSolveModeChange: (value: SolveMode) => void;
-    onEngineChange: (value: SolverEngine) => void;
+
     onSolve: () => void;
   };
 
   let {
     beltRate = $bindable(),
     solveMode,
-    engine,
+
     hasRunning,
     class: className = '',
     onSolveModeChange,
-    onEngineChange,
+
     onSolve,
   }: Props = $props();
 
@@ -47,14 +47,10 @@
     };
   });
 
-  const engineOptions: { value: SolverEngine; label: string }[] = [
-    { value: 'custom', label: 'Custom' },
-    { value: 'z3', label: 'Z3' },
-  ];
   const solveModeOptions: { value: SolveMode; label: string }[] = [
-    { value: 'optimal', label: 'One' },
-    { value: 'all_at_minimum_nodes_and_minimum_links', label: 'All min L' },
-    { value: 'all_at_minimum_nodes', label: 'All L' },
+    { value: 'one_min_nl', label: 'One min N/L' },
+    { value: 'all_min_nl', label: 'All min N/L' },
+    { value: 'all_min_n', label: 'All min N' },
   ];
 
   const helpSections = [
@@ -68,30 +64,21 @@
       ],
     },
     {
-      title: 'Solvers',
-      tone: 'default' as const,
-      items: [
-        'Custom — deterministic exact search with incumbents and proof accounting; usually the better default.',
-        'Z3 — portfolio SMT with parallel attempts and streamed best-known incumbents; a useful alternate engine.',
-        'Both optimize fewest nodes (N), then fewest links (L) at that N, and return independently validated layouts.',
-      ],
-    },
-    {
       title: 'Layouts',
       tone: 'default' as const,
       items: [
-        'One — return a single layout at minimum N and minimum L.',
-        'All min L — return every distinct layout at minimum N and that proven minimum L.',
-        'All L — return every distinct layout at minimum N across every feasible L.',
+        'One min N/L — return a single layout at minimum N and minimum L.',
+        'All min N/L — return every distinct layout at minimum N and that proven minimum L.',
+        'All min N — return every distinct layout at minimum N across every feasible L.',
       ],
     },
     {
       title: 'Runtime warnings',
       tone: 'warning' as const,
       items: [
-        'Find-all modes (All min L and All L) can take far longer than One; cost grows with the search space and how many layouts exist.',
-        'All L is the widest scope and can explode on harder problems (many layouts across several L values).',
-        'Prefer One while exploring. Use All min L for every min-L alternative; reserve All L only when you need every min-N layout. Jobs stay cancellable and queueable.',
+        'Find-all modes (All min N/L and All min N) can take far longer than One min N/L; cost grows with the search space and how many layouts exist.',
+        'All min N is the widest scope and can explode on harder problems (many layouts across several L values).',
+        'Prefer One min N/L while exploring. Use All min N/L for every min-L alternative; reserve All min N only when you need every min-N layout. Jobs stay cancellable and queueable.',
       ],
     },
   ] as const;
@@ -161,20 +148,9 @@
   </label>
 
   <div>
-    <span class="text-muted mb-2 block text-xs font-bold tracking-wide">Solver engine</span>
-    <SegmentedControl
-      size="default"
-      options={engineOptions}
-      value={engine}
-      onchange={onEngineChange}
-      aria-label="Solver engine"
-    />
-  </div>
-
-  <div>
     <span class="text-muted mb-2 block text-xs font-bold tracking-wide">Layouts</span>
     <SegmentedControl
-      size="default"
+      size="small"
       options={solveModeOptions}
       value={solveMode}
       onchange={onSolveModeChange}
@@ -183,13 +159,8 @@
   </div>
   <div class="mt-auto flex items-center gap-2.5 pt-2">
     <Button variant="primary" class="flex-1" type="button" onclick={onSolve}>
-      {hasRunning
-        ? solveMode === 'optimal'
-          ? 'Queue optimal layout'
-          : 'Queue all layouts'
-        : solveMode === 'optimal'
-          ? 'Find optimal layout'
-          : 'Find all layouts'}
+      {hasRunning ? 'Queue' : 'Find'}
+      {solveModeOptions.find((option) => option.value === solveMode)?.label}
     </Button>
   </div>
 </section>
