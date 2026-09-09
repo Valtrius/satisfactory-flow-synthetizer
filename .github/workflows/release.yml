@@ -71,26 +71,10 @@ jobs:
         run: npm run tauri build -- --bundles nsis
 
       - name: Prepare release artifacts
-        shell: pwsh
-        run: |
-          # Cargo workspace target lives at the repo root.
-          $binary = "target/release/satisfactory-flow-synthetizer.exe"
+        run: npm run package:release
 
-          Copy-Item `
-            $binary `
-            "satisfactory-flow-synthetizer_${{ github.ref_name }}_portable.exe"
-
-          $installer = Get-ChildItem `
-            "target/release/bundle/nsis/*-setup.exe" |
-            Select-Object -First 1
-
-          if (-not $installer) {
-            throw "NSIS installer not found"
-          }
-
-          Copy-Item `
-            $installer.FullName `
-            "satisfactory-flow-synthetizer_${{ github.ref_name }}_setup.exe"
+      - name: Verify packaged solver and notices
+        run: npm run verify:release
 
       - name: Create GitHub release
         shell: bash
@@ -98,7 +82,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "${{ github.ref_name }}" \
-            "satisfactory-flow-synthetizer_${{ github.ref_name }}_portable.exe" \
-            "satisfactory-flow-synthetizer_${{ github.ref_name }}_setup.exe" \
+            "target/release/bundle/distribution/satisfactory-flow-synthetizer_${{ github.ref_name }}_portable.zip" \
+            "target/release/bundle/distribution/satisfactory-flow-synthetizer_${{ github.ref_name }}_setup.exe" \
+            target/release/bundle/distribution/*.sha256 \
             --title "${{ github.ref_name }}" \
             --notes-file RELEASE_NOTES.md

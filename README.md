@@ -11,7 +11,9 @@ Offline Windows desktop app for exact Satisfactory splitter/merger flow synthesi
 
 ## Use
 
-Install the app from GitHub Releases, or build it below. Install cvc5 1.3.4 separately and put it on PATH. The app also checks `%LOCALAPPDATA%/Programs/cvc5/bin/cvc5.exe`; `SOLVER_CVC5` can specify an explicit executable. The app runs offline and does not download a solver at solve time.
+The Windows x64 installer and portable ZIP include cvc5 1.3.4 and its license notices. Install the app, or extract the entire portable ZIP and run `satisfactory-flow-synthetizer.exe`, keeping `cvc5.exe` beside it. No separate cvc5 installation is needed. The app solves offline. Microsoft Edge WebView2 is required; the installer can install that runtime if it is missing.
+
+`SOLVER_CVC5` can override the bundled executable for development. Without an override, the app checks beside its executable first, then PATH and `%LOCALAPPDATA%/Programs/cvc5/bin/cvc5.exe`.
 
 Enter rates as decimals or fractions and set the maximum belt rate. Automatic supply uses one belt; totals above capacity require explicit input belts. Every physical belt, including discard, has strictly positive flow within capacity.
 
@@ -25,11 +27,13 @@ N counts splitters and mergers. L counts operator-to-operator belts, excluding e
 
 `best_known` is a validated incumbent. `proven_optimal` requires a completed objective proof. Enumeration completion is separate: cancelling keeps already delivered layouts and incomplete proofs remain incomplete. Finite impossibility proofs are distinct from timeouts, resource limits and failures.
 
-History stores requests, results, proofs and graph edits without a solver type. Imported entries migrate on load. The history card shows proved minimum L; an unknown minimum is shown as L=�.
+History stores requests, results, proofs and graph edits without a solver type. Imported entries migrate on load. The history card shows proved minimum L; an unknown minimum is shown as L=—.
 
 ## Developers
 
-Requirements: current stable Rust, Node.js 20.19+ or 22.12+, cvc5 1.3.4, Visual Studio C++ Build Tools and WebView2. The installer requires a separate cvc5 installation.
+Requirements: current stable Rust, Node.js 20.19+ or 22.12+, PowerShell 7, Visual Studio C++ Build Tools and WebView2. `npm run dev` and `npm run build` prepare the pinned cvc5 package automatically. The first preparation downloads the official archive; subsequent runs verify and reuse its cached copy. Binaries are generated locally, not stored in Git.
+
+For direct Cargo commands, first run `npm run prepare:cvc5`. Use `SOLVER_CVC5` to point standalone solver tests at the prepared binary if cvc5 is not on PATH.
 
 ```powershell
 npm ci
@@ -43,6 +47,8 @@ npm run check
 cargo test --workspace --locked
 cargo clippy --workspace --all-targets -- -D warnings
 npm run build
+npm run package:release
+npm run verify:release
 ```
 
 - `crates/solver-core`: Exact cvc5 search, sparse/Boolean portfolio, proof ledger and diagnostics.
@@ -53,6 +59,8 @@ npm run build
 - `src-tauri`: desktop jobs, IPC, cancellation and SQLite history migrations.
 - `frontend`: Svelte UI, queue, graph editing and SVG export.
 - `benchmarks`: cases, experiment records and current smoke manifest.
+
+`npm run package:release` writes the installer, portable ZIP and SHA256 files to `target/release/bundle/distribution`. `npm run verify:release` uses 7-Zip to inspect both packages and checks an exact solve with external backend lookup disabled. The pin, download URL and archive checksum live in `src-tauri/cvc5-package.json`; bundled notices are under `licenses/cvc5`.
 
 Project contracts and experiments live in the [Serena memory index](.serena/memories/index.md). The [benchmark guide](benchmarks/README.md) explains the current runner and recorded artifacts. Use release builds for performance comparisons.
 

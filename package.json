@@ -8,6 +8,9 @@
   "scripts": {
     "dev": "tauri dev",
     "build": "tauri build",
+    "prepare:cvc5": "pwsh -NoProfile -File scripts/prepare-cvc5.ps1",
+    "package:release": "pwsh -NoProfile -File scripts/package-release.ps1",
+    "verify:release": "pwsh -NoProfile -File scripts/verify-release.ps1",
     "check": "npm run check -w frontend",
     "test": "npm run test -w frontend",
     "format": "cargo fmt --all && prettier --write .",

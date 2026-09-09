@@ -1,0 +1,27 @@
+This distribution includes the unmodified official cvc5 1.3.4 Windows x64
+static executable, used as a separate process. Its release archive, binary
+checksum and source location are recorded in package.json beside this file.
+
+cvc5 source, build scripts and dependency configuration:
+https://github.com/cvc5/cvc5/tree/cvc5-1.3.4
+https://github.com/cvc5/cvc5/archive/refs/tags/cvc5-1.3.4.tar.gz
+
+Dependency source locations specified by that cvc5 source revision:
+GMP 6.3.0:
+https://github.com/cvc5/cvc5-deps/blob/main/gmp-6.3.0.tar.bz2?raw=true
+SHA256 ac28211a7cfb609bae2e2c8d6058d66c8fe96434f740cf6fe2e47b000d1c20cb
+LibPoly 0.2.1:
+https://github.com/SRI-CSL/libpoly/archive/refs/tags/v0.2.1.tar.gz
+CaDiCaL rel-2.1.3-elevate:
+https://github.com/arminbiere/cadical/archive/refs/tags/rel-2.1.3-elevate.tar.gz
+SymFPU (BSD license option):
+https://github.com/cvc5/symfpu/archive/227a7246b8ce513b393cc2645d6d65d3490ea1de.tar.gz
+
+The official cvc5 release archive also provides headers, static libraries and
+CMake package files. Refer to the source tree's README and cmake/Find*.cmake
+files for build instructions and exact dependency download checksums.
+
+COPYING and AUTHORS are reproduced from the cvc5 release archive. The licenses
+directory contains its bundled notices plus the matching CaDiCaL, LibPoly and
+SymFPU notices. cvc5 and its dependencies retain their respective licenses;
+the application's license does not replace them.

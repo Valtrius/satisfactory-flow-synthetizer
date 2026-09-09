@@ -1,0 +1,24 @@
+{
+  "version": "1.3.4",
+  "target": "x86_64-pc-windows-msvc",
+  "url": "https://github.com/cvc5/cvc5/releases/download/cvc5-1.3.4/cvc5-Win64-x86_64-static.zip",
+  "sha256": "279fe7e95810cfb62433fcfc2932f35325a665f32d3697ff33f75e31d5c6a179",
+  "sourceUrl": "https://github.com/cvc5/cvc5/tree/cvc5-1.3.4",
+  "notices": [
+    {
+      "name": "cadical-LICENSE",
+      "url": "https://raw.githubusercontent.com/arminbiere/cadical/rel-2.1.3-elevate/LICENSE",
+      "sha256": "faf8e28f930684e3fbaf50a03c0c0b6b2373977cd74988efec19144241f0667c"
+    },
+    {
+      "name": "libpoly-LICENSE",
+      "url": "https://raw.githubusercontent.com/SRI-CSL/libpoly/v0.2.1/LICENCE",
+      "sha256": "da7eabb7bafdf7d3ae5e9f223aa5bdc1eece45ac569dc21b3b037520b4464768"
+    },
+    {
+      "name": "symfpu-BSD-LICENSE",
+      "url": "https://raw.githubusercontent.com/cvc5/symfpu/227a7246b8ce513b393cc2645d6d65d3490ea1de/LICENSE-BSD",
+      "sha256": "00f50e5054992dc8d34e9995d33ce092c2633c8a000a67df00844b560ba8aeb0"
+    }
+  ]
+}

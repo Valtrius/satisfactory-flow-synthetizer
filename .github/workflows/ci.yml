@@ -48,19 +48,13 @@ jobs:
       - name: Frontend build
         run: npm run build -w frontend
 
-      - name: Install cvc5 for exact solver tests
+      - name: Prepare bundled cvc5 and test backend
         shell: pwsh
         run: |
-          $archive = Join-Path $env:RUNNER_TEMP 'cvc5.zip'
-          $destination = Join-Path $env:RUNNER_TEMP 'cvc5'
-          Invoke-WebRequest 'https://github.com/cvc5/cvc5/releases/download/cvc5-1.3.4/cvc5-Win64-x86_64-static.zip' -OutFile $archive
-          if ((Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant() -ne '279fe7e95810cfb62433fcfc2932f35325a665f32d3697ff33f75e31d5c6a179') { throw 'cvc5 checksum mismatch' }
-          Expand-Archive -LiteralPath $archive -DestinationPath $destination
-          $backend = @(Get-ChildItem -LiteralPath $destination -Recurse -Filter cvc5.exe)
-          if ($backend.Count -ne 1) { throw 'Expected one cvc5 executable' }
-          "SOLVER_CVC5=$($backend[0].FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
-          & $backend[0].FullName --version
-          if ($LASTEXITCODE -ne 0) { throw 'cvc5 cannot start' }
+          npm run prepare:cvc5
+          if ($LASTEXITCODE -ne 0) { throw 'cvc5 preparation failed' }
+          $backend = Join-Path $env:GITHUB_WORKSPACE 'src-tauri/binaries/cvc5-x86_64-pc-windows-msvc.exe'
+          "SOLVER_CVC5=$backend" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
       - name: Cargo tests
         run: cargo test --workspace --locked
