@@ -177,29 +177,39 @@
 
   onMount(() => {
     let unlistenClose: (() => void) | undefined;
+    let disposed = false;
 
     void (async () => {
-      const loaded = await loadHistoryOrEmpty();
-      if (loaded.ok) {
+      try {
+        const unlisten = await installCloseFlush({
+          flush: () => flushHistoryToDisk(),
+          onError: (message) => {
+            errorMessage = message;
+          },
+        });
+        if (disposed) {
+          unlisten();
+          return;
+        }
+        unlistenClose = unlisten;
+        const loaded = await loadHistoryOrEmpty();
+        if (disposed) return;
+        if (!loaded.ok) {
+          errorMessage = loaded.error;
+          return;
+        }
         historyEntries = loaded.document.entries;
         selectedEntryId = loaded.document.selectedEntryId;
         historyReady = true;
         if (selectedEntryId) await hydrateViewFromEntry(selectedEntryId);
-        void queue.pump();
-      } else {
-        errorMessage = loaded.error;
-        // Keep historyReady false so a transient load failure never overwrites SQLite.
+        if (!disposed) void queue.pump();
+      } catch (error) {
+        if (!disposed) errorMessage = `Could not initialize history: ${String(error)}`;
       }
-
-      unlistenClose = await installCloseFlush({
-        flush: () => flushHistoryToDisk(),
-        onError: (message) => {
-          errorMessage = message;
-        },
-      });
     })();
 
     return () => {
+      disposed = true;
       unlistenClose?.();
     };
   });
@@ -249,6 +259,7 @@
   }
 
   async function solve(): Promise<void> {
+    if (!historyReady) return;
     graph.setFullscreen(false);
     errorMessage = '';
     const request = buildSolveRequest(inputs, outputs, beltRate, solveMode);
@@ -299,6 +310,7 @@
   }
 
   async function deleteAllHistory(): Promise<void> {
+    if (!historyReady) return;
     graph.flushChrome();
     const running = partitionEntries(historyEntries).running;
     if (running?.jobId) {
@@ -355,6 +367,7 @@
   }
 
   async function importHistory(): Promise<void> {
+    if (!historyReady) return;
     try {
       const payload = await importHistoryPayload();
       if (payload == null) return;
@@ -440,7 +453,7 @@
 <div class="min-h-screen">
   <main class="mx-auto w-full max-w-[1680px] p-4">
     <div class="grid grid-cols-1 items-start gap-4 xl:grid-cols-[minmax(240px,280px)_minmax(0,1fr)]">
-      <div class="xl:sticky xl:top-4 xl:h-[calc(100dvh-2rem)]">
+      <div class="xl:sticky xl:top-4 xl:h-[calc(100dvh-2rem)]" inert={!historyReady} aria-busy={!historyReady}>
         <HistoryPanel
           queued={bands.queued}
           running={bands.running}
@@ -478,6 +491,7 @@
           bind:beltRate
           {solveMode}
           {hasRunning}
+          ready={historyReady}
           onAddInput={() => addEndpoint('inputs')}
           onRemoveInput={(index) => removeEndpoint('inputs', index)}
           onUpdateInput={(index, field, value) => updateEndpoint('inputs', index, field, value)}

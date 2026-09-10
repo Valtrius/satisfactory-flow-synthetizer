@@ -68,3 +68,17 @@ it('restores the window instead of losing data when the failure dialog cannot op
   expect(windowMock.show).toHaveBeenCalledOnce();
   expect(onError).toHaveBeenCalledWith(expect.stringContaining('dialog unavailable'));
 });
+
+it('does not schedule or flush writes while history is still loading or has failed', async () => {
+  vi.useFakeTimers();
+  let ready = false;
+  const persist = createPersistController({ isReady: () => ready, onError: vi.fn() });
+  persist.schedule([], 'too-early');
+  await persist.flushNow([], 'too-early');
+  await vi.advanceTimersByTimeAsync(6_000);
+  expect(applyHistoryChanges).not.toHaveBeenCalled();
+  ready = true;
+  persist.schedule([], 'loaded');
+  await vi.advanceTimersByTimeAsync(400);
+  expect(applyHistoryChanges).toHaveBeenCalledExactlyOnceWith([], 'loaded');
+});

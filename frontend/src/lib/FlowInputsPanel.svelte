@@ -15,6 +15,7 @@
     solveMode: SolveMode;
 
     hasRunning: boolean;
+    ready?: boolean;
     onAddInput: () => void;
     onRemoveInput: (index: number) => void;
     onUpdateInput: (index: number, field: 'rate' | 'multiplier', value: string) => void;
@@ -37,6 +38,7 @@
     solveMode,
 
     hasRunning,
+    ready = true,
     onAddInput,
     onRemoveInput,
     onUpdateInput,
@@ -83,5 +85,5 @@
     onCommitMultiplier={onCommitOutputMultiplier}
   />
 
-  <ConstraintPanel bind:beltRate {solveMode} {hasRunning} {onSolveModeChange} {onSolve} />
+  <ConstraintPanel bind:beltRate {solveMode} {hasRunning} {ready} {onSolveModeChange} {onSolve} />
 </Panel>

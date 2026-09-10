@@ -11,6 +11,7 @@
     solveMode: SolveMode;
 
     hasRunning: boolean;
+    ready?: boolean;
     class?: string;
     onSolveModeChange: (value: SolveMode) => void;
 
@@ -22,6 +23,7 @@
     solveMode,
 
     hasRunning,
+    ready = true,
     class: className = '',
     onSolveModeChange,
 
@@ -158,7 +160,7 @@
     />
   </div>
   <div class="mt-auto flex items-center gap-2.5 pt-2">
-    <Button variant="primary" class="flex-1" type="button" onclick={onSolve}>
+    <Button variant="primary" class="flex-1" type="button" disabled={!ready} onclick={onSolve}>
       {hasRunning ? 'Queue' : 'Find'}
       {solveModeOptions.find((option) => option.value === solveMode)?.label}
     </Button>
