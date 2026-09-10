@@ -24,7 +24,7 @@ export function cloneGraphNodes(nodes: Node[]): Node[] {
 }
 
 export function cloneGraphEdges(edges: Edge[]): Edge[] {
-  return edges.map((edge) => ({ ...edge }));
+  return edges.map((edge) => ({ ...edge, deletable: false }));
 }
 
 export function captureGraphSnapshot(nodes: Node[], edges: Edge[]): GraphSnapshot {

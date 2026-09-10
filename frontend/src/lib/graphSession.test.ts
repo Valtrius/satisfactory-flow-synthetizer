@@ -90,6 +90,19 @@ function setup() {
 }
 
 describe('graph session ownership', () => {
+  it('protects loaded nodes from topology changes while allowing movement', async () => {
+    const state = setup();
+    vi.mocked(layoutSolution).mockResolvedValue(layout('A'));
+    await state.session.applySolution(solution);
+    expect(get(state.nodes)[0]).toMatchObject({ deletable: false, connectable: false });
+    const before = get(state.nodes)[0].position;
+    state.session.onNodeDragStart();
+    state.nodes.update((nodes) => nodes.map((node) => ({ ...node, position: { x: 24, y: 48 } })));
+    state.session.onNodeDragStop();
+    expect(state.session.canUndo).toBe(true);
+    state.session.undo();
+    expect(get(state.nodes)[0].position).toEqual(before);
+  });
   it('discards a layout completed after selecting an empty history entry', async () => {
     const state = setup(),
       pending = deferred<FlowGraph>();

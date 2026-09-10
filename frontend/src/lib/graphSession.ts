@@ -192,6 +192,8 @@ export function createGraphSession(host: GraphSessionHost): GraphSession {
       const { draggable: _draggable, selectable: _selectable, ...rest } = node;
       return {
         ...rest,
+        deletable: false,
+        connectable: false,
         data: {
           ...rest.data,
           onSwapSides: swapSides,

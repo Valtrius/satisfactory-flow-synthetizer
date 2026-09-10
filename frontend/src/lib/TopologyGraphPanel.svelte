@@ -313,7 +313,9 @@
       {nodeTypes}
       {snapGrid}
       nodesDraggable={interactive}
-      nodesConnectable={interactive}
+      nodesConnectable={false}
+      deleteKey={null}
+      onbeforedelete={async () => false}
       elementsSelectable={interactive}
       proOptions={{ hideAttribution: true }}
       fitView
