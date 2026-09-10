@@ -17,6 +17,8 @@
   import MenuItem from './ui/MenuItem.svelte';
   import Input from './ui/Input.svelte';
   import Panel from './ui/Panel.svelte';
+  import Popup from './ui/Popup.svelte';
+  import ConfirmDialog from './ui/ConfirmDialog.svelte';
   import { formatElapsed } from './searchStage';
   import {
     displayTitle,
@@ -172,6 +174,7 @@
 
   function togglePanel(panel: ToolbarPanel, event: MouseEvent): void {
     event.stopPropagation();
+    (event.currentTarget as HTMLElement).focus();
     menuId = null;
     headerMenuOpen = false;
     openPanel = openPanel === panel ? null : panel;
@@ -179,6 +182,7 @@
 
   function toggleHeaderMenu(event: MouseEvent): void {
     event.stopPropagation();
+    (event.currentTarget as HTMLElement).focus();
     menuId = null;
     openPanel = null;
     headerMenuOpen = !headerMenuOpen;
@@ -196,16 +200,6 @@
   function confirmDeleteAllHistory(): void {
     confirmDeleteAll = false;
     onDeleteAll();
-  }
-
-  /** Mount overlays on `document.body` so sticky/overflow ancestors cannot trap their stacking context. */
-  function portalToBody(node: HTMLElement) {
-    document.body.appendChild(node);
-    return {
-      destroy() {
-        node.remove();
-      },
-    };
   }
 
   function clearFilters(): void {
@@ -505,6 +499,7 @@
 
   function toggleMenu(id: string, event: MouseEvent): void {
     event.stopPropagation();
+    (event.currentTarget as HTMLElement).focus();
     openPanel = null;
     headerMenuOpen = false;
     if (menuId === id) {
@@ -580,13 +575,13 @@
         ⋯
       </Button>
       {#if headerMenuOpen}
-        <div
+        <Popup
+          label="History actions"
+          onclose={() => {
+            headerMenuOpen = false;
+          }}
           class="border-line bg-panel absolute top-[calc(100%+0.25rem)] right-0 z-20 min-w-48 rounded-lg border py-1 shadow-[0_14px_32px_rgb(0_0_0/45%)]"
           role="menu"
-          tabindex="-1"
-          onkeydown={(event) => event.stopPropagation()}
-          onclick={(event) => event.stopPropagation()}
-          onpointerdown={(event) => event.stopPropagation()}
         >
           <MenuItem
             type="button"
@@ -614,7 +609,7 @@
             <Trash2 class="size-3.5" />
             Delete all history…
           </MenuItem>
-        </div>
+        </Popup>
       {/if}
     </div>
   </div>
@@ -658,14 +653,13 @@
     </div>
 
     {#if openPanel === 'sort'}
-      <div
+      <Popup
+        label="Sort history"
+        onclose={() => {
+          openPanel = null;
+        }}
         class="rounded-control border-line bg-panel-2 absolute inset-x-2 top-[calc(100%-0.15rem)] z-20 border py-1.5 shadow-[0_14px_32px_rgb(0_0_0/45%)]"
         role="dialog"
-        aria-label="Sort history"
-        tabindex="-1"
-        onclick={(event) => event.stopPropagation()}
-        onpointerdown={(event) => event.stopPropagation()}
-        onkeydown={(event) => event.stopPropagation()}
       >
         <p class="text-dim m-0 px-3 pt-1 pb-1.5 text-[0.65rem] font-bold tracking-[0.08em] uppercase">Sort by</p>
         <div class="flex flex-col gap-0.5 px-1.5 pb-1" role="listbox" aria-label="Sort options">
@@ -689,16 +683,15 @@
             </Button>
           {/each}
         </div>
-      </div>
+      </Popup>
     {:else if openPanel === 'filter'}
-      <div
+      <Popup
+        label="Filter history"
+        onclose={() => {
+          openPanel = null;
+        }}
         class="rounded-control border-line bg-panel-2 absolute inset-x-2 top-[calc(100%-0.15rem)] z-20 max-h-[min(28rem,70dvh)] overflow-y-auto border px-3 py-2.5 shadow-[0_14px_32px_rgb(0_0_0/45%)]"
         role="dialog"
-        aria-label="Filter history"
-        tabindex="-1"
-        onclick={(event) => event.stopPropagation()}
-        onpointerdown={(event) => event.stopPropagation()}
-        onkeydown={(event) => event.stopPropagation()}
       >
         <div class="mb-2.5 flex items-center justify-between gap-2">
           <p class="text-dim m-0 text-[0.65rem] font-bold tracking-[0.08em] uppercase">Filter</p>
@@ -774,7 +767,7 @@
             </div>
           </div>
         </div>
-      </div>
+      </Popup>
     {/if}
   </div>
 
@@ -808,32 +801,13 @@
 </Panel>
 
 {#if confirmDeleteAll}
-  <div
-    class="fixed inset-0 z-110 flex items-center justify-center bg-[#040a0f]/70 p-4"
-    use:portalToBody
-    role="presentation"
-    onclick={closeConfirmDeleteAll}
-  >
-    <div
-      class="border-line bg-panel w-full max-w-md rounded-xl border p-5 shadow-[0_24px_48px_rgb(0_0_0/55%)]"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="delete-all-history-title"
-      tabindex="-1"
-      onclick={(event) => event.stopPropagation()}
-      onkeydown={(event) => event.stopPropagation()}
-    >
-      <h3 id="delete-all-history-title" class="text-ink m-0 text-base font-bold tracking-tight">Delete all history?</h3>
-      <p class="text-muted mt-2 mb-0 text-sm leading-relaxed">
-        This permanently clears your entire history database — including entries that took a very long time to solve —
-        and cannot be undone. Any running job will be cancelled.
-      </p>
-      <div class="mt-5 flex justify-end gap-2">
-        <Button size="small" type="button" onclick={closeConfirmDeleteAll}>Cancel</Button>
-        <Button size="small" variant="danger" type="button" onclick={confirmDeleteAllHistory}>Delete all</Button>
-      </div>
-    </div>
-  </div>
+  <ConfirmDialog
+    title="Delete all history?"
+    description="This permanently clears all saved results and graph edits. This cannot be undone. Any running job will be cancelled."
+    confirmLabel="Delete all"
+    onconfirm={confirmDeleteAllHistory}
+    onclose={closeConfirmDeleteAll}
+  />
 {/if}
 
 {#if dragActive && dragEntry && dragBand}
@@ -977,15 +951,15 @@
           ⋯
         </Button>
         {#if menuId === entry.id && !floating}
-          <div
+          <Popup
+            label="Entry actions"
+            onclose={() => {
+              menuId = null;
+            }}
             class={`border-line bg-panel absolute right-0 z-20 min-w-44 rounded-lg border py-1 shadow-[0_14px_32px_rgb(0_0_0/45%)] ${
               menuOpenUpward ? 'bottom-full mb-1' : 'top-full mt-1'
             }`}
             role="menu"
-            tabindex="-1"
-            onkeydown={(event) => event.stopPropagation()}
-            onclick={(event) => event.stopPropagation()}
-            onpointerdown={(event) => event.stopPropagation()}
           >
             <MenuItem type="button" onclick={() => startRename(entry)}>
               <Pencil class="text-muted size-3.5" />
@@ -1022,7 +996,7 @@
               <Trash2 class="size-3.5" />
               Delete
             </MenuItem>
-          </div>
+          </Popup>
         {/if}
       {/if}
     </div>

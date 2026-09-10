@@ -75,3 +75,45 @@ it('Escape abandons the rename without committing on blur', async () => {
     await unmount(component);
   }
 });
+
+it.each(['History actions', 'Sort history', 'Filter history'])(
+  'Escape closes %s and returns focus to its trigger',
+  async (label) => {
+    const { component } = setup();
+    try {
+      const trigger = document.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)!;
+      trigger.click();
+      flushSync();
+      const popup = document.querySelector<HTMLElement>(`div[aria-label="${label}"][tabindex="-1"]`)!;
+      expect(popup).not.toBeNull();
+      expect(popup.contains(document.activeElement)).toBe(true);
+      document.activeElement!.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }),
+      );
+      flushSync();
+      expect(trigger.getAttribute('aria-expanded')).toBe('false');
+      expect(document.activeElement).toBe(trigger);
+    } finally {
+      await unmount(component);
+    }
+  },
+);
+
+it('menu arrow keys navigate actions and the trigger can close an open menu', async () => {
+  const { component } = setup();
+  try {
+    const trigger = document.querySelector<HTMLButtonElement>('[aria-label="History actions"]')!;
+    trigger.click();
+    flushSync();
+    const items = Array.from(document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]'));
+    expect(document.activeElement).toBe(items[0]);
+    items[0].dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+    expect(document.activeElement).toBe(items[1]);
+    trigger.focus();
+    trigger.click();
+    flushSync();
+    expect(trigger.getAttribute('aria-expanded')).toBe('false');
+  } finally {
+    await unmount(component);
+  }
+});

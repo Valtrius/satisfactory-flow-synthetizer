@@ -1,5 +1,5 @@
 <script lang="ts">
-  import CircleHelp from '@lucide/svelte/icons/circle-help';
+  import HelpPopover from './ui/HelpPopover.svelte';
   import SlidersHorizontal from '@lucide/svelte/icons/sliders-horizontal';
   import Button from './ui/Button.svelte';
   import Input from './ui/Input.svelte';
@@ -29,25 +29,6 @@
 
     onSolve,
   }: Props = $props();
-
-  let helpOpen = $state(false);
-  let helpRoot: HTMLDivElement | undefined = $state();
-
-  $effect(() => {
-    if (!helpOpen) return;
-    const onPointerDown = (event: PointerEvent) => {
-      if (helpRoot && !helpRoot.contains(event.target as HTMLElement)) helpOpen = false;
-    };
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') helpOpen = false;
-    };
-    window.addEventListener('pointerdown', onPointerDown);
-    window.addEventListener('keydown', onKeyDown);
-    return () => {
-      window.removeEventListener('pointerdown', onPointerDown);
-      window.removeEventListener('keydown', onKeyDown);
-    };
-  });
 
   const solveModeOptions: { value: SolveMode; label: string }[] = [
     { value: 'one_min_nl', label: 'One min N/L' },
@@ -87,55 +68,12 @@
 </script>
 
 <section class={`flex flex-col gap-3 px-4 py-3 ${className}`}>
-  <div class="relative flex items-center gap-2" bind:this={helpRoot}>
+  <div class="relative flex items-center gap-2">
     <h2 class="m-0 flex items-center gap-2 text-lg font-bold tracking-tight">
       <SlidersHorizontal class="text-accent size-[1.05rem] shrink-0" strokeWidth={2.2} aria-hidden="true" />
       Constraint
     </h2>
-    <Button
-      size="small"
-      square
-      variant="quiet"
-      type="button"
-      class="!min-h-7 !w-7"
-      title="Constraint help"
-      aria-label="Constraint help"
-      aria-expanded={helpOpen}
-      aria-haspopup="dialog"
-      onclick={() => (helpOpen = !helpOpen)}
-    >
-      <CircleHelp size={16} strokeWidth={2.2} aria-hidden="true" />
-    </Button>
-    {#if helpOpen}
-      <div
-        class="border-line bg-panel absolute top-[calc(100%+0.35rem)] right-0 z-30 max-h-[min(36rem,80dvh)] w-[min(28rem,calc(100vw-2rem))] overflow-y-auto rounded-lg border px-4 py-3.5 shadow-[0_14px_32px_rgb(0_0_0/45%)]"
-        role="dialog"
-        aria-label="Constraint glossary and options"
-      >
-        <div class="flex flex-col gap-3.5 text-sm leading-relaxed">
-          {#each helpSections as section}
-            <div>
-              <p
-                class={`m-0 mb-1.5 text-xs font-bold tracking-wide uppercase ${
-                  section.tone === 'warning' ? 'text-warning' : 'text-ink'
-                }`}
-              >
-                {section.title}
-              </p>
-              <ul
-                class={`m-0 list-disc space-y-1.5 pl-4 text-[0.8125rem] ${
-                  section.tone === 'warning' ? 'text-warning/90' : 'text-muted'
-                }`}
-              >
-                {#each section.items as item}
-                  <li>{item}</li>
-                {/each}
-              </ul>
-            </div>
-          {/each}
-        </div>
-      </div>
-    {/if}
+    <HelpPopover label="Constraint help" sections={helpSections} align="right" />
   </div>
   <label class="mt-3">
     <span class="text-muted mb-1.5 block text-xs font-bold tracking-wide">Maximum belt rate</span>

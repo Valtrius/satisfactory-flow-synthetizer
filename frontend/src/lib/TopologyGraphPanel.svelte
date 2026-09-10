@@ -8,7 +8,7 @@
     type Edge,
     type Node,
   } from '@xyflow/svelte';
-  import CircleHelp from '@lucide/svelte/icons/circle-help';
+  import HelpPopover from './ui/HelpPopover.svelte';
   import Download from '@lucide/svelte/icons/download';
   import Lock from '@lucide/svelte/icons/lock';
   import LockOpen from '@lucide/svelte/icons/lock-open';
@@ -68,8 +68,6 @@
   // so SvelteFlow 1.x bind:nodes/edges can work.
   let nodes = $state.raw<Node[]>([]);
   let edges = $state.raw<Edge[]>([]);
-  let helpOpen = $state(false);
-  let helpRoot: HTMLDivElement | undefined = $state();
 
   $effect(() => {
     const unsub = nodesStore.subscribe((value) => {
@@ -82,22 +80,6 @@
       edges = value;
     });
     return unsub;
-  });
-
-  $effect(() => {
-    if (!helpOpen) return;
-    const onPointerDown = (event: PointerEvent) => {
-      if (helpRoot && !helpRoot.contains(event.target as HTMLElement)) helpOpen = false;
-    };
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') helpOpen = false;
-    };
-    window.addEventListener('pointerdown', onPointerDown);
-    window.addEventListener('keydown', onKeyDown);
-    return () => {
-      window.removeEventListener('pointerdown', onPointerDown);
-      window.removeEventListener('keydown', onKeyDown);
-    };
   });
 
   function readNodes(): Node[] {
@@ -174,45 +156,12 @@
   <div
     class="border-line flex flex-col items-start justify-between gap-3 border-b px-5 py-2 md:flex-row md:items-center"
   >
-    <div class="relative flex items-center gap-3" bind:this={helpRoot}>
+    <div class="relative flex items-center gap-3">
       <h3 class="m-0 flex items-center gap-2 text-lg font-bold tracking-tight">
         <Network class="text-accent size-[1.05rem] shrink-0" strokeWidth={2.2} aria-hidden="true" />
         Topology graph
       </h3>
-      <Button
-        size="small"
-        square
-        variant="quiet"
-        type="button"
-        class="!min-h-7 !w-7"
-        title="Graph controls help"
-        aria-label="Graph controls help"
-        aria-expanded={helpOpen}
-        aria-haspopup="dialog"
-        onclick={() => (helpOpen = !helpOpen)}
-      >
-        <CircleHelp size={16} strokeWidth={2.2} aria-hidden="true" />
-      </Button>
-      {#if helpOpen}
-        <div
-          class="border-line bg-panel absolute top-[calc(100%+0.35rem)] left-0 z-30 w-[min(22rem,calc(100vw-2.5rem))] rounded-lg border px-3.5 py-3 shadow-[0_14px_32px_rgb(0_0_0/45%)]"
-          role="dialog"
-          aria-label="Topology graph controls"
-        >
-          <div class="flex flex-col gap-3 text-xs leading-relaxed">
-            {#each helpSections as section}
-              <div>
-                <p class="text-ink m-0 mb-1 font-bold tracking-wide uppercase">{section.title}</p>
-                <ul class="text-muted m-0 list-disc space-y-1 pl-4">
-                  {#each section.items as item}
-                    <li>{item}</li>
-                  {/each}
-                </ul>
-              </div>
-            {/each}
-          </div>
-        </div>
-      {/if}
+      <HelpPopover label="Graph controls help" sections={helpSections} align="left" />
     </div>
     <div class="flex w-full items-start justify-between gap-4 md:w-auto md:items-center">
       <div class="text-muted flex flex-wrap gap-4.5 text-xs" aria-label="Graph legend">
