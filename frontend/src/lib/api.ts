@@ -73,3 +73,11 @@ export async function cancelJob(jobId: string): Promise<JobSnapshot> {
 export async function releaseJob(jobId: string): Promise<void> {
   await invoke('release_job', { jobId });
 }
+
+export async function shutdownJobs(): Promise<JobSnapshot[]> {
+  return invoke('shutdown_jobs');
+}
+
+export async function resumeJobs(): Promise<void> {
+  await invoke('resume_jobs');
+}

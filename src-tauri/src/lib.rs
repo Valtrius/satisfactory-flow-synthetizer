@@ -1,6 +1,8 @@
 mod contract;
 mod history;
 mod jobs;
+mod shutdown;
+use shutdown::{resume_jobs, shutdown_jobs};
 
 use std::{
     collections::HashMap,
@@ -17,16 +19,18 @@ use uuid::Uuid;
 
 use contract::{Solution, SolveRequest, SolverProgress, UnsatProof};
 use history::{apply_history_ops, load_history};
-use jobs::run_job;
 
 const JOB_SNAPSHOT_EVENT: &str = "job-snapshot";
 
+#[derive(Default)]
 struct AppState {
+    lifecycle: Mutex<shutdown::Lifecycle>,
     jobs: Arc<RwLock<HashMap<Uuid, Arc<Job>>>>,
 }
 
 pub(crate) struct Job {
     cancel: AtomicBool,
+    accepts_cancel: AtomicBool,
     snapshot: Mutex<JobSnapshot>,
 }
 
@@ -74,6 +78,7 @@ impl Job {
     fn new(id: Uuid) -> Arc<Self> {
         Arc::new(Self {
             cancel: AtomicBool::new(false),
+            accepts_cancel: AtomicBool::new(true),
             snapshot: Mutex::new(JobSnapshot {
                 job_id: id,
                 status: JobStatus::Running,
@@ -91,6 +96,22 @@ impl Job {
                 unsat: None,
             }),
         })
+    }
+
+    fn request_cancel(&self) -> bool {
+        let mut snapshot = self.snapshot.lock().expect("job snapshot lock poisoned");
+        if snapshot.status != JobStatus::Running || !self.accepts_cancel.load(Ordering::Relaxed) {
+            return false;
+        }
+        self.cancel.store(true, Ordering::Relaxed);
+        snapshot.status = JobStatus::Cancelling;
+        snapshot.sequence += 1;
+        true
+    }
+
+    fn finish_search(&self) {
+        let _snapshot = self.snapshot.lock().expect("job snapshot lock poisoned");
+        self.accepts_cancel.store(false, Ordering::Relaxed);
     }
 
     fn is_active(&self) -> bool {
@@ -189,6 +210,7 @@ impl Job {
         let _ = app.emit(JOB_SNAPSHOT_EVENT, &payload);
     }
 
+    #[cfg(test)]
     fn set_status(&self, status: JobStatus) {
         self.snapshot
             .lock()
@@ -210,9 +232,8 @@ fn create_job(
         .map_err(|error| error.to_string())?;
     let id = Uuid::new_v4();
     let job = Job::new(id);
-    register_job(&state, id, Arc::clone(&job))?;
+    shutdown::start(app.clone(), &state, id, Arc::clone(&job), request, prepared)?;
     let _ = app.emit(JOB_SNAPSHOT_EVENT, &job.current());
-    tauri::async_runtime::spawn_blocking(move || run_job(&app, &job, &request, &prepared));
 
     Ok(id)
 }
@@ -272,24 +293,10 @@ fn cancel_job(
     job_id: Uuid,
 ) -> Result<JobSnapshot, String> {
     let job = find_job(&state, job_id)?;
-    if job.is_active() {
-        job.cancel.store(true, Ordering::Relaxed);
-        job.update(&app, |snapshot| {
-            if snapshot.status == JobStatus::Running {
-                snapshot.status = JobStatus::Cancelling;
-            }
-        });
+    if job.request_cancel() {
+        let _ = app.emit(JOB_SNAPSHOT_EVENT, &job.current());
     }
     Ok(job.current())
-}
-
-fn cancel_all_jobs(state: &AppState) {
-    for job in state.jobs.read().expect("jobs lock poisoned").values() {
-        if job.is_active() {
-            job.cancel.store(true, Ordering::Relaxed);
-            job.set_status(JobStatus::Cancelling);
-        }
-    }
 }
 
 fn find_job(state: &AppState, id: Uuid) -> Result<Arc<Job>, String> {
@@ -330,15 +337,15 @@ pub fn run() {
             let store = history::init_history_store(app.handle())
                 .map_err(|error| -> Box<dyn std::error::Error> { error.into() })?;
             app.manage(store);
-            app.manage(AppState {
-                jobs: Arc::new(RwLock::new(HashMap::new())),
-            });
+            app.manage(AppState::default());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             create_job,
             get_job,
             release_job,
+            shutdown_jobs,
+            resume_jobs,
             cancel_job,
             load_history,
             apply_history_ops
@@ -346,11 +353,18 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app, event| {
-            if matches!(
-                event,
-                tauri::RunEvent::Exit | tauri::RunEvent::ExitRequested { .. }
-            ) {
-                cancel_all_jobs(&app.state::<AppState>());
+            if let tauri::RunEvent::ExitRequested { api, .. } = event {
+                let state = app.state::<AppState>();
+                if !state
+                    .lifecycle
+                    .lock()
+                    .expect("job lifecycle lock poisoned")
+                    .tasks
+                    .is_empty()
+                {
+                    api.prevent_exit();
+                    shutdown::exit_in_background(app.clone());
+                }
             }
         });
 }
@@ -360,9 +374,7 @@ mod registry_tests {
     use super::*;
 
     fn state() -> AppState {
-        AppState {
-            jobs: Arc::new(RwLock::new(HashMap::new())),
-        }
+        AppState::default()
     }
 
     #[test]
@@ -404,5 +416,22 @@ mod registry_tests {
             assert_ne!(left.join().unwrap().is_ok(), right.join().unwrap().is_ok());
         });
         assert_eq!(state.jobs.read().unwrap().len(), 1);
+    }
+}
+
+#[cfg(test)]
+mod cancellation_tests {
+    use super::*;
+    #[test]
+    fn cancellation_is_accepted_before_search_seals_and_not_during_presentation() {
+        let early = Job::new(Uuid::nil());
+        assert!(early.request_cancel());
+        early.finish_search();
+        assert!(early.cancel.load(Ordering::Relaxed));
+        assert!(early.current().status == JobStatus::Cancelling);
+        let late = Job::new(Uuid::nil());
+        late.finish_search();
+        assert!(!late.request_cancel());
+        assert!(!late.cancel.load(Ordering::Relaxed));
     }
 }

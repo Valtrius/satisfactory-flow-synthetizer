@@ -82,3 +82,31 @@ it('does not schedule or flush writes while history is still loading or has fail
   await vi.advanceTimersByTimeAsync(400);
   expect(applyHistoryChanges).toHaveBeenCalledExactlyOnceWith([], 'loaded');
 });
+
+it('keeps cleanup hidden, retries failures, and flushes only after cleanup succeeds', async () => {
+  const prepare = vi.fn().mockRejectedValueOnce('still stopping').mockResolvedValue(undefined);
+  const flush = vi.fn().mockResolvedValue(undefined);
+  vi.mocked(message).mockResolvedValue('Retry cleanup');
+  await installCloseFlush({ prepare, flush, onError: vi.fn() });
+  await windowMock.onCloseRequested.mock.calls[0][0]({ preventDefault: vi.fn() });
+  expect(prepare).toHaveBeenCalledTimes(2);
+  expect(windowMock.hide.mock.invocationCallOrder[0]).toBeLessThan(prepare.mock.invocationCallOrder[0]);
+  expect(flush.mock.invocationCallOrder[0]).toBeGreaterThan(prepare.mock.invocationCallOrder[1]);
+  expect(windowMock.show).not.toHaveBeenCalled();
+  expect(windowMock.destroy).toHaveBeenCalledOnce();
+});
+
+it('returns to the app rather than abandoning an unfinished solver task', async () => {
+  const onReopen = vi.fn().mockResolvedValue(undefined);
+  vi.mocked(message).mockResolvedValue('Return to app');
+  await installCloseFlush({
+    prepare: vi.fn().mockRejectedValue('still stopping'),
+    flush: vi.fn(),
+    onReopen,
+    onError: vi.fn(),
+  });
+  await windowMock.onCloseRequested.mock.calls[0][0]({ preventDefault: vi.fn() });
+  expect(windowMock.destroy).not.toHaveBeenCalled();
+  expect(onReopen).toHaveBeenCalledOnce();
+  expect(windowMock.show).toHaveBeenCalledOnce();
+});

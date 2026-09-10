@@ -49,6 +49,7 @@ pub fn run_job(app: &AppHandle, job: &Job, request: &SolveRequest, prepared: &Pr
             job.cancel.store(true, Ordering::Relaxed);
         }
     });
+    job.finish_search();
     let error = failure.into_inner().expect("presentation failure");
     if let Some(error) = error {
         fail(app, job, error);
@@ -61,7 +62,47 @@ pub fn run_job(app: &AppHandle, job: &Job, request: &SolveRequest, prepared: &Pr
             return;
         }
     };
+    let outcome = cancel_before_presentation(
+        outcome,
+        request.solve_mode,
+        job.cancel.load(Ordering::Relaxed),
+    );
     apply_outcome(app, job, request, prepared, &outcome);
+}
+
+fn cancel_before_presentation(
+    outcome: SolveOutcome,
+    mode: SolveMode,
+    cancelled: bool,
+) -> SolveOutcome {
+    if !cancelled || matches!(outcome.result, SolveResult::Incomplete(_)) {
+        return outcome;
+    }
+    let (best_known, proof) = match outcome.result {
+        SolveResult::Optimal(s) => (
+            Some(solver_api::BestKnownSolution {
+                node_count: s.node_count,
+                link_count: s.link_count,
+                physical_link_count: s.physical_link_count,
+                discard_link_count: s.discard_link_count,
+                canonical_graph_key: s.canonical_graph_key,
+                graph: s.graph,
+                validation: s.validation,
+            }),
+            s.proof,
+        ),
+        SolveResult::GloballyUnsat(s) => (None, s.proof),
+        SolveResult::Incomplete(_) => unreachable!(),
+    };
+    SolveOutcome::new(
+        SolveResult::Incomplete(solver_api::IncompleteResult {
+            reason: IncompleteReason::Cancelled,
+            best_known,
+            proof,
+        }),
+        mode,
+        outcome.solutions,
+    )
 }
 
 fn apply_outcome(
@@ -103,6 +144,7 @@ fn apply_terminal(
     presented: PresentedSolveOutcome,
     mut solutions: Vec<Solution>,
 ) {
+    let cancelled = snapshot.status == JobStatus::Cancelling;
     let complete = matches!(
         outcome.enumeration,
         EnumerationStatus::AllMinN { complete: true, .. }
@@ -123,7 +165,7 @@ fn apply_terminal(
             .unwrap_or(usize::MAX)
     });
     snapshot.results = solutions;
-    snapshot.enumeration_complete = complete;
+    snapshot.enumeration_complete = complete && !cancelled;
     snapshot.error = None;
     snapshot.unsat = None;
     snapshot.proof = Some(outcome.proof);
@@ -144,7 +186,11 @@ fn apply_terminal(
                 *existing = solution.clone();
             }
             snapshot.result = Some(solution);
-            snapshot.status = JobStatus::Completed;
+            snapshot.status = if cancelled {
+                JobStatus::Cancelled
+            } else {
+                JobStatus::Completed
+            };
         }
         PresentedSolveOutcome::GloballyUnsat(proof) => {
             snapshot.result = None;
@@ -272,6 +318,11 @@ mod tests {
                 .count(),
             1
         );
+        let stopped = cancel_before_presentation(outcome, request.solve_mode, true);
+        project(&mut snapshot, &request, &stopped);
+        assert!(snapshot.status == JobStatus::Cancelled);
+        assert!(!snapshot.enumeration_complete);
+        assert_eq!(snapshot.proof.unwrap().minimum_link_count, None);
     }
 
     #[test]

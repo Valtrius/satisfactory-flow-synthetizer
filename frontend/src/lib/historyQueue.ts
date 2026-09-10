@@ -1,4 +1,4 @@
-import { cancelJob, createJob, getJob, releaseJob, watchJob, type JobWatch } from './api';
+import { cancelJob, createJob, getJob, releaseJob, shutdownJobs, resumeJobs, watchJob, type JobWatch } from './api';
 import { assembleEntries, isTerminalJobStatus, partitionEntries, type HistoryEntry } from './historyModel';
 import type { JobSnapshot, SolveRequest } from '../types';
 
@@ -50,13 +50,36 @@ async function createJobWhenIdle(request: SolveRequest): Promise<string> {
 /** One-at-a-time solver queue runner over history entries. */
 export class HistoryQueue {
   private startingJob = false;
+  private paused = false;
+  private startup: Promise<boolean> | null = null;
   private jobWatch: JobWatch | null = null;
   private timer: ReturnType<typeof setInterval> | null = null;
 
   constructor(private readonly host: HistoryQueueHost) {}
 
   dispose(): void {
+    this.paused = true;
     this.resetTransport();
+  }
+
+  reset(): void {
+    this.resetTransport();
+  }
+  pause(): void {
+    this.paused = true;
+  }
+
+  async shutdown(): Promise<void> {
+    this.paused = true;
+    await this.startup;
+    for (const snapshot of await shutdownJobs()) this.acceptSnapshot(snapshot);
+    this.resetTransport();
+  }
+
+  async resume(): Promise<void> {
+    await resumeJobs();
+    this.paused = false;
+    void this.pump();
   }
 
   async cancel(): Promise<void> {
@@ -70,16 +93,18 @@ export class HistoryQueue {
   }
 
   async pump(): Promise<void> {
-    if (this.startingJob) return;
+    if (this.paused || this.startingJob) return;
     const parts = partitionEntries(this.host.getEntries());
     if (parts.running || parts.queued.length === 0) return;
     this.startingJob = true;
     try {
       // Queue stacks newest-first; always start the bottom (oldest) entry.
       const nextId = parts.queued[parts.queued.length - 1].id;
-      await this.startQueuedEntry(nextId);
+      this.startup = this.startQueuedEntry(nextId);
+      await this.startup;
     } finally {
       this.startingJob = false;
+      this.startup = null;
     }
     // Re-check after startingJob clears: a fast job can finish while startup
     // still held the lock, so acceptSnapshot's pump no-oped.

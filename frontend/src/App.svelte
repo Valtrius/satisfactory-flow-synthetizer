@@ -63,6 +63,7 @@
   let errorMessage = $state('');
   let elapsedMs = $state(0);
   let historyReady = $state(false);
+  let closing = $state(false);
   let runningTick = $state(Date.now());
   let graphFitRevision = $state(0);
   let graphFullscreen = $state(false);
@@ -182,6 +183,19 @@
     void (async () => {
       try {
         const unlisten = await installCloseFlush({
+          onClosing: () => {
+            closing = true;
+            queue.pause();
+            persist.dispose();
+          },
+          prepare: () => queue.shutdown(),
+          onReopen: async () => {
+            try {
+              await queue.resume();
+            } finally {
+              closing = false;
+            }
+          },
           flush: () => flushHistoryToDisk(),
           onError: (message) => {
             errorMessage = message;
@@ -215,7 +229,7 @@
   });
 
   $effect(() => {
-    persist.schedule(historyEntries, selectedEntryId);
+    if (!closing) persist.schedule(historyEntries, selectedEntryId);
   });
 
   $effect(() => {
@@ -259,7 +273,7 @@
   }
 
   async function solve(): Promise<void> {
-    if (!historyReady) return;
+    if (!historyReady || closing) return;
     graph.setFullscreen(false);
     errorMessage = '';
     const request = buildSolveRequest(inputs, outputs, beltRate, solveMode);
@@ -310,7 +324,7 @@
   }
 
   async function deleteAllHistory(): Promise<void> {
-    if (!historyReady) return;
+    if (!historyReady || closing) return;
     graph.flushChrome();
     const running = partitionEntries(historyEntries).running;
     if (running?.jobId) {
@@ -320,7 +334,7 @@
         /* best-effort; still wipe local history */
       }
     }
-    queue.dispose();
+    queue.reset();
     historyEntries = [];
     selectedEntryId = null;
     graph.clearView();
@@ -367,7 +381,7 @@
   }
 
   async function importHistory(): Promise<void> {
-    if (!historyReady) return;
+    if (!historyReady || closing) return;
     try {
       const payload = await importHistoryPayload();
       if (payload == null) return;
@@ -431,7 +445,7 @@
     queue.dispose();
     persist.dispose();
     document.body.classList.remove('graph-expanded');
-    if (historyReady) {
+    if (historyReady && !closing) {
       graph.flushChrome();
       void persist.flushNow(historyEntries, selectedEntryId).catch(() => {
         /* close path already tried; avoid noisy teardown errors */
@@ -453,7 +467,11 @@
 <div class="min-h-screen">
   <main class="mx-auto w-full max-w-[1680px] p-4">
     <div class="grid grid-cols-1 items-start gap-4 xl:grid-cols-[minmax(240px,280px)_minmax(0,1fr)]">
-      <div class="xl:sticky xl:top-4 xl:h-[calc(100dvh-2rem)]" inert={!historyReady} aria-busy={!historyReady}>
+      <div
+        class="xl:sticky xl:top-4 xl:h-[calc(100dvh-2rem)]"
+        inert={!historyReady || closing}
+        aria-busy={!historyReady}
+      >
         <HistoryPanel
           queued={bands.queued}
           running={bands.running}
@@ -491,7 +509,7 @@
           bind:beltRate
           {solveMode}
           {hasRunning}
-          ready={historyReady}
+          ready={historyReady && !closing}
           onAddInput={() => addEndpoint('inputs')}
           onRemoveInput={(index) => removeEndpoint('inputs', index)}
           onUpdateInput={(index, field, value) => updateEndpoint('inputs', index, field, value)}

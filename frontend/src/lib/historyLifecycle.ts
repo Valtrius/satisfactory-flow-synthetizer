@@ -6,6 +6,9 @@ import type { HistoryDocument, HistoryEntry } from './historyModel';
 
 export type CloseFlushOptions = {
   flush: () => Promise<void>;
+  onClosing?: () => void;
+  prepare?: () => Promise<void>;
+  onReopen?: () => Promise<void>;
   onError: (message: string) => void;
 };
 
@@ -19,7 +22,21 @@ export async function installCloseFlush(options: CloseFlushOptions): Promise<() 
     if (closing) return;
     closing = true;
     try {
+      options.onClosing?.();
       await appWindow.hide();
+      for (;;) {
+        try {
+          await options.prepare?.();
+          break;
+        } catch (error) {
+          const choice = await message(`Solver cleanup failed.\n\n${String(error)}`, {
+            title: 'Solver cleanup failed',
+            kind: 'error',
+            buttons: { ok: 'Retry cleanup', cancel: 'Return to app' },
+          });
+          if (choice !== 'Retry cleanup') throw error;
+        }
+      }
       for (;;) {
         try {
           await options.flush();
@@ -37,6 +54,7 @@ export async function installCloseFlush(options: CloseFlushOptions): Promise<() 
       await appWindow.destroy();
     } catch (error) {
       closing = false;
+      await options.onReopen?.().catch((resumeError) => options.onError(String(resumeError)));
       options.onError(`Could not close the application: ${String(error)}`);
       await appWindow.show().catch(() => {});
     }

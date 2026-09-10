@@ -2,13 +2,15 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { JobSnapshot, Solution, SolveRequest } from '../types';
 import { createQueuedEntry, type HistoryEntry } from './historyModel';
 import { HistoryQueue } from './historyQueue';
-import { createJob, getJob, releaseJob, watchJob } from './api';
+import { createJob, getJob, releaseJob, shutdownJobs, resumeJobs, watchJob } from './api';
 
 vi.mock('./api', () => ({
   createJob: vi.fn(),
   getJob: vi.fn(),
   watchJob: vi.fn(),
   cancelJob: vi.fn(),
+  shutdownJobs: vi.fn(),
+  resumeJobs: vi.fn(),
   releaseJob: vi.fn().mockResolvedValue(undefined),
 }));
 
@@ -146,4 +148,17 @@ it('releases a full terminal snapshot once and ignores late duplicates', async (
   expect(releaseJob).toHaveBeenCalledExactlyOnceWith('job');
   expect(state.entry().jobId).toBeNull();
   expect(state.entry().results).toEqual([solution]);
+});
+
+it('recovers final results during shutdown without starting queued work', async () => {
+  const state = await setup();
+  const final = snapshot({ sequence: 10, status: 'cancelled', result: solution, results: [solution] });
+  vi.mocked(shutdownJobs).mockResolvedValue([final]);
+  queue.pause();
+  await queue.shutdown();
+  expect(state.entry()).toMatchObject({ status: 'cancelled', results: [solution], jobId: null });
+  expect(createJob).toHaveBeenCalledTimes(1);
+  vi.mocked(resumeJobs).mockResolvedValue(undefined);
+  await queue.resume();
+  expect(resumeJobs).toHaveBeenCalledOnce();
 });
