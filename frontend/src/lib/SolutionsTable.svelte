@@ -1,5 +1,6 @@
 <script lang="ts">
   import { flip } from 'svelte/animate';
+  import Button from './ui/Button.svelte';
   import type { Solution } from '../types';
   import {
     insertIndexFromClient,
@@ -174,7 +175,8 @@
                 {@const column = item.item}
                 {@const index = item.index}
                 <div class="flex items-center gap-1.5">
-                  <button
+                  <Button
+                    variant="plain"
                     type="button"
                     class="cursor-grab touch-none px-0.5 text-base leading-none text-[#5d7180]"
                     title="Drag to change sort priority"
@@ -182,8 +184,9 @@
                     onpointerdown={(event) => onHandlePointerDown(index, event)}
                   >
                     ⠿
-                  </button>
-                  <button
+                  </Button>
+                  <Button
+                    variant="plain"
                     type="button"
                     class="text-muted inline-flex cursor-pointer items-center gap-1 border-0 bg-transparent p-0 font-bold tracking-wide uppercase"
                     title="Click to flip sort direction"
@@ -198,7 +201,7 @@
                     <span class="text-accent">
                       {column.dir === 'asc' ? '↑' : '↓'}
                     </span>
-                  </button>
+                  </Button>
                 </div>
               {/if}
             </th>

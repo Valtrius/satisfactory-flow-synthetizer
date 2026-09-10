@@ -14,6 +14,7 @@
   import ArrowUpDown from '@lucide/svelte/icons/arrow-up-down';
   import ListFilter from '@lucide/svelte/icons/list-filter';
   import Button from './ui/Button.svelte';
+  import MenuItem from './ui/MenuItem.svelte';
   import Input from './ui/Input.svelte';
   import Panel from './ui/Panel.svelte';
   import { formatElapsed } from './searchStage';
@@ -478,14 +479,6 @@
     };
   });
 
-  function chipClass(active: boolean): string {
-    return `cursor-pointer rounded-control border px-2.5 py-1.5 text-left text-xs font-semibold transition-colors ${
-      active
-        ? 'border-accent/70 bg-selected text-ink'
-        : 'border-control-border bg-control/60 text-muted hover:border-control-border-hover hover:text-control-fg'
-    }`;
-  }
-
   function iconBtnClass(active: boolean): string {
     return active ? '!border-accent/70 !bg-selected !text-accent' : '';
   }
@@ -595,10 +588,8 @@
           onclick={(event) => event.stopPropagation()}
           onpointerdown={(event) => event.stopPropagation()}
         >
-          <button
+          <MenuItem
             type="button"
-            class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-[#152833]"
-            role="menuitem"
             onclick={() => {
               headerMenuOpen = false;
               onImport();
@@ -606,11 +597,9 @@
           >
             <Upload class="text-muted size-3.5" />
             Import history…
-          </button>
-          <button
+          </MenuItem>
+          <MenuItem
             type="button"
-            class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-[#152833] disabled:cursor-not-allowed disabled:opacity-50"
-            role="menuitem"
             disabled={listEmpty}
             onclick={() => {
               headerMenuOpen = false;
@@ -619,18 +608,12 @@
           >
             <Download class="text-muted size-3.5" />
             Export all…
-          </button>
+          </MenuItem>
           <div class="border-line my-1 border-t" role="separator"></div>
-          <button
-            type="button"
-            class="text-danger flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-[#152833] disabled:cursor-not-allowed disabled:opacity-50"
-            role="menuitem"
-            disabled={listEmpty}
-            onclick={() => requestDeleteAll()}
-          >
+          <MenuItem type="button" danger disabled={listEmpty} onclick={() => requestDeleteAll()}>
             <Trash2 class="size-3.5" />
             Delete all history…
-          </button>
+          </MenuItem>
         </div>
       {/if}
     </div>
@@ -687,7 +670,8 @@
         <p class="text-dim m-0 px-3 pt-1 pb-1.5 text-[0.65rem] font-bold tracking-[0.08em] uppercase">Sort by</p>
         <div class="flex flex-col gap-0.5 px-1.5 pb-1" role="listbox" aria-label="Sort options">
           {#each sortOptions as option (option.value)}
-            <button
+            <Button
+              variant="plain"
               type="button"
               role="option"
               aria-selected={sort === option.value}
@@ -702,7 +686,7 @@
               <span class="text-muted mt-0.5 block text-[0.68rem]">
                 {option.tip}
               </span>
-            </button>
+            </Button>
           {/each}
         </div>
       </div>
@@ -718,35 +702,36 @@
       >
         <div class="mb-2.5 flex items-center justify-between gap-2">
           <p class="text-dim m-0 text-[0.65rem] font-bold tracking-[0.08em] uppercase">Filter</p>
-          <button
+          <Button
+            variant="plain"
             type="button"
             class="text-accent hover:text-accent-bright disabled:text-dim cursor-pointer border-0 bg-transparent p-0 text-xs font-semibold disabled:cursor-default"
             disabled={!filtersActive}
             onclick={() => clearFilters()}
           >
             Clear
-          </button>
+          </Button>
         </div>
 
         <div class="flex flex-col gap-3">
           <div>
             <p class="text-muted m-0 mb-1.5 text-[0.7rem] font-semibold">Status</p>
             <div class="flex flex-wrap gap-1.5" role="group" aria-label="Status filters">
-              <button
+              <Button
+                variant="chip"
                 type="button"
-                class={chipClass(statusFilters.length === 0)}
                 aria-pressed={statusFilters.length === 0}
                 onclick={() => {
                   statusFilters = [];
                 }}
               >
                 All
-              </button>
+              </Button>
               {#each statusOptions as option (option.value)}
                 {@const count = countStatus(option.value)}
-                <button
+                <Button
+                  variant="chip"
                   type="button"
-                  class={chipClass(statusFilters.includes(option.value))}
                   aria-pressed={statusFilters.includes(option.value)}
                   onclick={() => toggleStatus(option.value)}
                 >
@@ -754,7 +739,7 @@
                   <span class="text-dim ml-1 font-medium tabular-nums">
                     {count}
                   </span>
-                </button>
+                </Button>
               {/each}
             </div>
           </div>
@@ -762,21 +747,21 @@
           <div>
             <p class="text-muted m-0 mb-1.5 text-[0.7rem] font-semibold">Search</p>
             <div class="flex flex-wrap gap-1.5" role="group" aria-label="Search filters">
-              <button
+              <Button
+                variant="chip"
                 type="button"
-                class={chipClass(searchFilters.length === 0)}
                 aria-pressed={searchFilters.length === 0}
                 onclick={() => {
                   searchFilters = [];
                 }}
               >
                 Any
-              </button>
+              </Button>
               {#each searchOptions as option (option.value)}
                 {@const count = countSearch(option.value)}
-                <button
+                <Button
+                  variant="chip"
                   type="button"
-                  class={chipClass(searchFilters.includes(option.value))}
                   aria-pressed={searchFilters.includes(option.value)}
                   onclick={() => toggleSearch(option.value)}
                 >
@@ -784,7 +769,7 @@
                   <span class="text-dim ml-1 font-medium tabular-nums">
                     {count}
                   </span>
-                </button>
+                </Button>
               {/each}
             </div>
           </div>
@@ -901,8 +886,10 @@
   >
     <div class="min-w-0">
       {#if renamingId === entry.id && !floating}
-        <input
-          class="border-accent text-ink w-full rounded border bg-[#08141c] px-1.5 py-0.5 text-sm font-bold"
+        <Input
+          size="inline"
+          focusOnMount
+          class="border-accent bg-[#08141c]"
           bind:value={renameDraft}
           aria-label="Rename history entry"
           onclick={(event) => event.stopPropagation()}
@@ -938,13 +925,12 @@
     <div class="relative flex items-start">
       {#if band === 'running'}
         <Button
-          size="small"
+          size="tiny"
           square
           variant="danger"
           type="button"
           title="Cancel and keep any layouts found"
           aria-label="Cancel running job"
-          class="!min-h-7 !w-7"
           onclick={(event) => {
             event.stopPropagation();
             onCancelRunning();
@@ -954,13 +940,12 @@
         </Button>
       {:else if band === 'queued'}
         <Button
-          size="small"
+          size="tiny"
           square
           variant="quiet"
           type="button"
           title="Remove from queue"
           aria-label="Remove from queue"
-          class="!min-h-7 !w-7"
           tabindex={floating ? -1 : undefined}
           onclick={(event) => {
             event.stopPropagation();
@@ -972,13 +957,12 @@
         </Button>
       {:else}
         <Button
-          size="small"
+          size="tiny"
           square
           variant="quiet"
           type="button"
           title="More actions"
           aria-label="More actions"
-          class="!min-h-7 !w-7"
           tabindex={floating ? -1 : undefined}
           aria-expanded={menuId === entry.id}
           aria-haspopup="menu"
@@ -1003,19 +987,12 @@
             onclick={(event) => event.stopPropagation()}
             onpointerdown={(event) => event.stopPropagation()}
           >
-            <button
-              type="button"
-              class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-[#152833]"
-              role="menuitem"
-              onclick={() => startRename(entry)}
-            >
+            <MenuItem type="button" onclick={() => startRename(entry)}>
               <Pencil class="text-muted size-3.5" />
               Rename
-            </button>
-            <button
+            </MenuItem>
+            <MenuItem
               type="button"
-              class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-[#152833]"
-              role="menuitem"
               onclick={() => {
                 menuId = null;
                 onCopyToNew(entry.id);
@@ -1023,11 +1000,9 @@
             >
               <Copy class="text-muted size-3.5" />
               Copy to New problem
-            </button>
-            <button
+            </MenuItem>
+            <MenuItem
               type="button"
-              class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-[#152833]"
-              role="menuitem"
               onclick={() => {
                 menuId = null;
                 onExportEntry(entry.id);
@@ -1035,11 +1010,10 @@
             >
               <Download class="text-muted size-3.5" />
               Export entry…
-            </button>
-            <button
+            </MenuItem>
+            <MenuItem
               type="button"
-              class="text-danger flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-[#152833]"
-              role="menuitem"
+              danger
               onclick={() => {
                 menuId = null;
                 onDelete(entry.id);
@@ -1047,7 +1021,7 @@
             >
               <Trash2 class="size-3.5" />
               Delete
-            </button>
+            </MenuItem>
           </div>
         {/if}
       {/if}
