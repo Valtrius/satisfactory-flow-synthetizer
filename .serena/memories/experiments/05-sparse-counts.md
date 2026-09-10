@@ -1,21 +1,7 @@
 # Sparse link count
 
-Decision: retain as a portfolio branch; unsuitable as the sole default.
-Let P be operator input ports, I external input belts, X input-to-operator belts, D input-to-terminal belts and L operator-to-operator belts. Exact port equations P=L+X and I=X+D imply L=P-I+D. Assert D=L+I-P using sparse terminal edges. This holds with cycles, surplus, parallel belts and multiple inputs.
+Retained as a portfolio branch, not a sole default. Exact port equations P=L+X and I=X+D imply L=P-I+D, so constrain sparse direct-terminal edges D=L+I-P. Valid with cycles, surplus, parallel belts and multiple inputs.
 
-Evidence: `cardinality-screen` in benchmarks/evidence.json; benchmarks/cardinality.json and cardinality-binaries.json. The shared screen has 132 verified records, 128 completed; four timeouts belong to Boolean case 10.
+Evidence ID cardinality-screen: shared 132 verified records, 128 complete; four caps belong to the Boolean cohort. First-optimum/sparse medians: case 10 One min N/L 121.187/22.731 s, but 258 One min N/L 7.110/38.921 s and All min N/L 50.268/68.810 s. All min N: 36 22.819/19.432 s, 115 11.551/16.580 s, 238 2.007/2.281 s. Full exact comparisons passed; retain regressions.
 
-First-optimum / sparse paired medians in seconds:
-
-| Scope           | First optimum / sparse |
-| --------------- | ---------------------- |
-| 10 One min N/L  | 121.187 / 22.731       |
-| 36 One min N/L  | 8.249 / 8.645          |
-| 36 All min N    | 22.819 / 19.432        |
-| 115 All min N   | 11.551 / 16.580        |
-| 238 All min N   | 2.007 / 2.281          |
-| 258 One min N/L | 7.110 / 38.921         |
-| 258 All min N/L | 50.268 / 68.810        |
-
-Full exact result comparisons passed. Retain the regression evidence.
-Snapshot: `sparse-links-candidate` in benchmarks/evidence.json. Runner SHA256: bb7bb2da257aafbb456d09f0e353cfc07f4150a7e9a1b3ed79be520393a3b0ff.
+Snapshot ID sparse-links-candidate. See benchmarks/evidence.json and `mem:experiments/07-portfolio`.

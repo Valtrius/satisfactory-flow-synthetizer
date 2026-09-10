@@ -27,7 +27,7 @@ N counts splitters and mergers. L counts operator-to-operator belts, excluding e
 
 `best_known` is a validated incumbent. `proven_optimal` requires a completed objective proof. Enumeration completion is separate: cancelling keeps already delivered layouts and incomplete proofs remain incomplete. Finite impossibility proofs are distinct from timeouts, resource limits and failures.
 
-History stores requests, results, proofs and graph edits without a solver type. Imported entries migrate on load. The history card shows proved minimum L; an unknown minimum is shown as L=—.
+History stores requests, results, proofs and graph edits without a solver type. Imported entries migrate on load. The history card shows proved minimum L; an unknown minimum is shown as L=â€”.
 
 ## Developers
 
@@ -45,13 +45,13 @@ npm run format
 npm test
 npm run check
 cargo test --workspace --locked
-cargo clippy --workspace --all-targets -- -D warnings
+cargo clippy --workspace --all-targets --locked -- -D warnings
 npm run build
 npm run package:release
 npm run verify:release
 ```
 
-- `crates/solver-core`: Exact cvc5 search, sparse/Boolean portfolio, proof ledger and diagnostics.
+- `crates/solver-core`: Exact cvc5 search, sparse/Boolean portfolio, hybrid minimum-link partitions, proof ledgers and diagnostics.
 - `crates/solver-reference`: independent exhaustive oracle for small differential tests.
 - `crates/solver-validation`: independent exact validation and layout identity.
 - `crates/solver-api`: problems, rational arithmetic, result scopes, proof and progress contracts.
@@ -62,11 +62,13 @@ npm run verify:release
 
 `npm run package:release` writes the installer, portable ZIP and SHA256 files to `target/release/bundle/distribution`. `npm run verify:release` uses 7-Zip to inspect both packages and checks an exact solve with external backend lookup disabled. The pin, download URL and archive checksum live in `src-tauri/cvc5-package.json`; bundled notices are under `licenses/cvc5`.
 
+Release steps and versioned notes are in the [release guide](docs/release.md).
+
 Project contracts and experiments live in the [Serena memory index](.serena/memories/index.md). The [benchmark guide](benchmarks/README.md) explains the current runner and recorded artifacts. Use release builds for performance comparisons.
 
 ### Contributing
 
-- Use [Conventional Commits](https://www.conventionalcommits.org/): `type(optional-scope): summary` (for example `feat(ui): …`, `fix(solver): …`, `docs: …`).
+- Use [Conventional Commits](https://www.conventionalcommits.org/): `type(optional-scope): summary` (for example `feat(ui): â€¦`, `fix(solver): â€¦`, `docs: â€¦`).
 - PR titles must follow the same Conventional Commits format (this repo uses [git-cliff](https://git-cliff.org/) for changelogs).
 - Common types used here: `feat`, `fix`, `refactor`, `perf`, `chore`, `docs`, `test`.
 - Keep commits focused; prefer small PRs over large mixed changes.

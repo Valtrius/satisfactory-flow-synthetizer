@@ -39,8 +39,11 @@ impl RootStats {
         let source = root_info
             .source
             .map_or_else(|| "null".to_owned(), |v| v.to_string());
+        let second_source = root_info
+            .second_source
+            .map_or_else(|| "null".to_owned(), |v| v.to_string());
         format!(
-            "{{\"root\":{root},\"profile\":{profile},\"nodes\":{nodes},\"links\":{links},\"source\":{source},\"state\":\"{state}\",\"start_s\":{},\"wall_s\":{},\"check_s\":{},\"validation_s\":{},\"identity_s\":{},\"models\":{},\"duplicates\":{},\"valid\":{}}}",
+            "{{\"root\":{root},\"profile\":{profile},\"nodes\":{nodes},\"links\":{links},\"source\":{source},\"second_source\":{second_source},\"state\":\"{state}\",\"start_s\":{},\"wall_s\":{},\"check_s\":{},\"validation_s\":{},\"identity_s\":{},\"models\":{},\"duplicates\":{},\"valid\":{}}}",
             self.started.duration_since(origin).as_secs_f64(),
             self.started.elapsed().as_secs_f64(),
             self.check.as_secs_f64(),

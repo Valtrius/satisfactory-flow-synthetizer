@@ -40,8 +40,11 @@ fn preferred(outcome: &SolveOutcome) -> BestKnownSolution {
     }
 }
 fn compare(problem: &Problem, mode: SolveMode, cap: u32) -> SolveOutcome {
+    compare_workers(problem, mode, cap, 2)
+}
+fn compare_workers(problem: &Problem, mode: SolveMode, cap: u32, workers: usize) -> SolveOutcome {
     let cancel = AtomicBool::new(false);
-    let opts = options(mode, cap, 2);
+    let opts = options(mode, cap, workers);
     let actual = solver_core::solve_problem(problem, &opts, &cancel, &|_| {}).unwrap();
     let reference = solver_reference::solve_problem(problem, &opts, &cancel).unwrap();
     assert_eq!(actual.proof, reference.proof, "{problem:?}");
@@ -431,4 +434,193 @@ fn optimal_returns_first_incumbent_without_claiming_equal_link_exhaustion() {
             assert!(root["duplicates"].as_u64().unwrap() <= root["models"].as_u64().unwrap());
         }
     }
+}
+
+#[test]
+fn enumeration_matches_reference_at_partitioning_worker_budgets() {
+    for workers in [1, 2, 8, 16, 32] {
+        for p in [
+            problem(&["1/3"], &["1/6", "1/6"], "1/3"),
+            problem(&["2", "1"], &["1", "1"], "3"),
+            problem(&["2", "2"], &["2", "2"], "2"),
+        ] {
+            compare_workers(&p, SolveMode::AllMinNL, 2, workers);
+        }
+    }
+    for mode in [SolveMode::AllMinNL, SolveMode::AllMinN] {
+        let outcome = compare_workers(&problem(&["5"], &["2", "2", "1"], "6"), mode, 3, 32);
+        assert!(preferred(&outcome).validation.cyclic_scc_count > 0);
+    }
+}
+
+#[test]
+fn cancellation_keeps_partitioned_enumeration_incomplete() {
+    let p = problem(&["2", "1"], &["1", "1"], "3");
+    let cancel = AtomicBool::new(false);
+    let delivered = Mutex::new(Vec::new());
+    let outcome = solver_core::solve_problem(
+        &p,
+        &options(SolveMode::AllMinNL, 2, 32),
+        &cancel,
+        &|event| {
+            if let SolverEvent::SolutionFound(solution) = event {
+                delivered.lock().unwrap().push(solution);
+                cancel.store(true, Ordering::Relaxed);
+            }
+        },
+    )
+    .unwrap();
+    assert!(
+        matches!(outcome.result, SolveResult::Incomplete(ref r) if r.reason == IncompleteReason::Cancelled)
+    );
+    assert!(matches!(
+        outcome.enumeration,
+        EnumerationStatus::AllMinNL {
+            complete: false,
+            ..
+        }
+    ));
+    assert!(!delivered.lock().unwrap().is_empty());
+    for solution in delivered.lock().unwrap().iter() {
+        assert!(outcome.solutions.contains(solution));
+        validate_solution(&p, &solution.graph).unwrap();
+    }
+}
+
+fn run_with_root_diagnostics(test_name: &str) -> bool {
+    // Enable diagnostics in an isolated child so ordinary cargo test exercises
+    // this contract without mutating the environment of concurrent tests.
+    if std::env::var_os("SOLVER_DIAGNOSTICS").is_some_and(|value| value == "1") {
+        return false;
+    }
+    let output = std::process::Command::new(std::env::current_exe().unwrap())
+        .args(["--exact", test_name, "--nocapture"])
+        .env("SOLVER_DIAGNOSTICS", "1")
+        .output()
+        .expect("diagnostic contract process must start");
+    assert!(
+        output.status.success(),
+        "diagnostic contract failed:\n{}\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    true
+}
+
+#[test]
+fn adaptive_children_follow_optimum_and_keep_one_complete_proof_cover() {
+    if run_with_root_diagnostics(
+        "adaptive_children_follow_optimum_and_keep_one_complete_proof_cover",
+    ) {
+        return;
+    }
+    let p = problem(&["258"], &["195", "63"], "1200");
+    let cancel = AtomicBool::new(false);
+    let traces = Mutex::new(Vec::<serde_json::Value>::new());
+    let outcome = solver_core::solve_problem(
+        &p,
+        &options(SolveMode::AllMinNL, 9, 16),
+        &cancel,
+        &|event| {
+            if let SolverEvent::Progress(progress) = event {
+                for diagnostic in progress.custom {
+                    if diagnostic.name == "solver.root" {
+                        let value = serde_json::to_value(diagnostic.value).unwrap();
+                        traces
+                            .lock()
+                            .unwrap()
+                            .push(serde_json::from_str(value["value"].as_str().unwrap()).unwrap());
+                    }
+                }
+            }
+        },
+    )
+    .unwrap();
+    assert!(matches!(
+        outcome.enumeration,
+        EnumerationStatus::AllMinNL { complete: true, .. }
+    ));
+    assert_eq!(outcome.solutions.len(), 2);
+    for solution in &outcome.solutions {
+        validate_solution(&p, &solution.graph).unwrap();
+    }
+    let traces = traces.into_inner().unwrap();
+    let children: Vec<_> = traces
+        .iter()
+        .filter(|r| r.get("parent_root").is_some() && !r["second_source"].is_null())
+        .collect();
+    assert!(!children.is_empty(), "adaptive path must actually run");
+    for child in &children {
+        assert!(
+            child["refinement_trigger_s"].as_f64().unwrap() <= child["start_s"].as_f64().unwrap()
+        );
+        let parent = traces
+            .iter()
+            .find(|r| {
+                r["branch"] == child["branch"]
+                    && r["nodes"] == child["nodes"]
+                    && r["links"] == child["links"]
+                    && r["root"] == child["parent_root"]
+            })
+            .unwrap();
+        assert!(parent["second_source"].is_null());
+        assert_eq!(parent["source"], child["source"]);
+        assert!(!(parent["proof_committed"] == true && child["proof_committed"] == true));
+    }
+    let mut timeline = Vec::new();
+    for root in traces.iter().filter(|r| r.get("parent_root").is_some()) {
+        let start = root["start_s"].as_f64().unwrap();
+        let end = start + root["wall_s"].as_f64().unwrap();
+        if end > start {
+            timeline.push((start, 1_i32));
+            timeline.push((end, -1_i32));
+        }
+        if root["proof_committed"] == true {
+            assert_eq!(root["state"], "exhausted");
+        }
+    }
+    timeline.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
+    let mut running = 0;
+    for (_, delta) in timeline {
+        running += delta;
+        assert!((0..=8).contains(&running));
+    }
+    assert_eq!(running, 0);
+}
+
+#[test]
+fn adaptive_cancellation_after_child_dispatch_keeps_a_valid_incumbent() {
+    let p = problem(&["258"], &["195", "63"], "1200");
+    let cancel = AtomicBool::new(false);
+    let started = std::time::Instant::now();
+    let outcome = solver_core::solve_problem(
+        &p,
+        &options(SolveMode::AllMinNL, 9, 16),
+        &cancel,
+        &|event| {
+            if let SolverEvent::Progress(progress) = event
+                && progress.best_node_count.is_some()
+                && started.elapsed() > std::time::Duration::from_secs(12)
+            {
+                cancel.store(true, Ordering::Relaxed);
+            }
+        },
+    )
+    .unwrap();
+    assert!(cancel.load(Ordering::Relaxed));
+    assert!(matches!(
+        outcome.enumeration,
+        EnumerationStatus::AllMinNL {
+            complete: false,
+            ..
+        }
+    ));
+    let SolveResult::Incomplete(result) = outcome.result else {
+        panic!("cancellation must stay incomplete")
+    };
+    assert_eq!(result.reason, IncompleteReason::Cancelled);
+    let best = result
+        .best_known
+        .expect("validated optimum witness survives cancellation");
+    validate_solution(&p, &best.graph).unwrap();
 }

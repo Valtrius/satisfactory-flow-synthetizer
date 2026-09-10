@@ -1,10 +1,11 @@
 # Project memory index
 
-The current solver-core code is the baseline: exact cvc5 search with first-optimum stopping and the sparse/Boolean portfolio. solver-reference is the independent exhaustive test oracle.
+Current baseline: solver-core, an exact cvc5 sparse/Boolean portfolio with descending first-output roots and hybrid static/adaptive All min N/L refinement. solver-reference remains the independent exhaustive test oracle. Scheduling experiments are paused after the user accepted the hybrid's measured tradeoff.
 
-- Product, exact scopes and terminology: `mem:product`.
-- Code map, mathematical proof and cancellation rules: `mem:solver/contracts`.
-- Frozen benchmarks and interpretation: `mem:solver/benchmarking`.
-- Experiments and decisions: `mem:experiments/index`.
+- Product and exact result terminology: `mem:product`.
+- Code, proof, cancellation and history contracts: `mem:solver/contracts`.
+- Benchmark evidence and run limits: `mem:solver/benchmarking`.
+- Experiment decisions, one record per experiment: `mem:experiments/index`.
+- Accepted hybrid and adverse samples: `mem:experiments/13-hybrid-final`.
 
-Conventional commits; run npm run format before committing. Launch benchmarks with durable completion status and notification, then end the turn. Experiment time allowances apply only to their authorized scope.
+Release workflow: docs/release.md. Conventional commits; npm run format before committing. Preserve unrelated work. Launch an authorized benchmark with durable status and notification, then end the turn.

@@ -1,15 +1,11 @@
-# Benchmark workflow
+# Benchmark workflow and priorities
 
-Goal: reduce terminal wall time on the hardest exact problems. The current solver-core code is the baseline. Build release, run correctness and strict Clippy, then freeze source, executable, cvc5/DLLs, cases, manifest and hashes before timing. Case names never select solver behavior.
+Goal: reduce terminal wall time of the hardest exact requests. The user accepts reasonable easy penalties up to about ten seconds and explicitly accepted the hybrid's case-97 uncertainty (`mem:experiments/13-hybrid-final`). Keep adverse samples; the timeout is not established to be a fluke. Scheduling experiments are paused. Future timing requires a new request, >=8 total workers, and <=3 hours including cleanup and verification. Smaller-worker correctness still matters; performance below eight cannot block promotion.
 
-Corpus: benchmarks/cases. Experiment manifests and binary maps are in benchmarks. benchmarks/evidence.json maps evidence IDs in memories to exact frozen run or source directories. Recorded artifacts preserve the paths, schema keys and labels required for reproducibility; use their matching frozen harness.
+Current guides: benchmarks/README.md and benchmarks/optimization/README.md. Evidence IDs resolve through benchmarks/evidence.json. The corpus and eight-worker smoke manifest remain; completed sweep recipes/manifests are reproducible from Git 2dccf50 and frozen artifacts. Never edit a completed campaign to reflect a later promotion.
 
-Runner: cargo build --release -p synthetizer-app --example profile_solver.
-Use scripts/start-benchmark-screen.ps1 for frozen runs with a completion dialog and durable status. End the turn after launch; let the machine idle. PlanOnly prepares without measuring.
-Current manifests require RunnerProtocol=layout-v1 and use Diagnostics for root traces. The runner emits diagnostics_enabled and roots; SOLVER_DIAGNOSTICS controls root tracing and SOLVER_CVC5 selects the backend.
+Build the release profile_solver example. Freeze source/binary/backend/cases/schedule before timing. Match input, scope, cap, workers, instrumentation and balanced adjacent order. layout-v1 compares complete canonical sets and saved witnesses; One min N/L accepts any validated equal optimum. Keep first witness, objective proof and exact scope completion distinct. Include worker cleanup in terminal time; comparison canonicalization is outside it.
 
-Use balanced paired variants, exact same problem/capacity, scope, worker budget, timeout and diagnostics settings. Full result-set and saved witness equality for enumeration; any validated equal optimal tie for One min N/L. Record first witness, first optimum proof, All min N/L completion and All min N completion separately. Include worker/process cleanup in terminal wall time. Root times overlap and are not CPU time; parent-only process metrics exclude cvc5.
+A cap is censored, never a completion-time denominator. Preserve regressions and incomplete proofs even if layout counts match. Compare within a campaign, without pooling session baselines or treating scaled inputs as independent evidence. Root durations overlap; parent-process CPU/memory excludes cvc5 children. Timing root traces are disabled; diagnostic probes are separate.
 
-A timeout is censored, not a measured completion time or a speedup denominator. Keep regressions, failures, missing independent references and incomplete scopes. Compare within matched screens, not medians from different days. Two/three repeats are screening evidence.
-
-Experiment history: `mem:experiments/index`. The layout-v1 witness comparison protocol must match between variants.
+Retained tools: start/run-benchmark-screen, benchmark_policy, analyze-benchmarks, audit-optimization-results, and bounded freeze/start-optimization campaign/suite scripts. Python tests cover exact-result comparison, proof covers, cancellation and session limits. Launch authorized benchmarks with durable status and a completion dialog, then end the turn.

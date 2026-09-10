@@ -1,10 +1,7 @@
 # First-output producer partitions
 
-Decision: keep complete first-output-source roots and explicit root/profile ledger.
-Each requested output has exactly one incoming belt. Enumerating every possible producer is disjoint and exhaustive; impossible choices are proved UNSAT. Single worker stays unsplit. Cancellation leaves unfinished parents incomplete.
+Retained: every output has one producer; enumerating all producer choices is exhaustive/disjoint, with impossible choices UNSAT. Multiple workers own complete roots; one worker stays unsplit. Root/profile ledgers require actual exhaustion and preserve cancellation.
 
-Evidence: `partitions-screen` in benchmarks/evidence.json; benchmarks/partitions.json, partition-binaries.json. All 48 records verified. Two repeats at 32 workers.
-Independent control/candidate: 36 All min N 61.712/52.882; 115 15.495/22.532; 238 5.148/27.394; 258 All min N/L incomplete180/70.519; 10 One min N/L both incomplete180.
-Separate partition-control/candidate pairs: 36 66.783/51.460; 115 58.482/20.445; 238 28.002/31.492 (regression, runs27.804–35.179).
-258 had no completed independent reference yet; its two exact witnesses agreed only across candidate runs. Initial 24 tie failure was not retested/erased.
-Retained snapshot `before-direct-flow` in benchmarks/evidence.json; runner 8cb6248770aeaed5f28e54a192ec4a3f8d6a1c5b1e542f0dd5add41d026699ef.
+Evidence ID partitions-screen: 48 verified records, two repeats at 32 workers. Independent-control/candidate: 258 All min N/L capped at 180 s / completed in 70.519 s; 10 One min N/L both capped. All min N: 36 61.712/52.882 s, 115 15.495/22.532 s, 238 5.148/27.394 s. A partition-control pair also regressed 238 from 28.002 to 31.492 s.
+
+At this stage 258 lacked a completed independent reference; candidate witnesses agreed across runs only. The initial tie failure was not erased. Evidence snapshot: before-direct-flow. Full paths in benchmarks/evidence.json; follow-up `mem:experiments/03-direct-flow`.
