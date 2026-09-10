@@ -67,7 +67,7 @@ export type GraphSession = {
   handleKeydown: (event: KeyboardEvent) => void;
 };
 
-/** Graph session using the pre-modularity writable + TopologyGraphPanel `$nodes` binding. */
+/** Owns the displayed graph, its saved layout and pending layout operations. */
 export function createGraphSession(host: GraphSessionHost): GraphSession {
   let fitRevision = 0;
   let fullscreen = false;
@@ -80,6 +80,21 @@ export function createGraphSession(host: GraphSessionHost): GraphSession {
   let layoutTicket = 0;
   let layoutKey = '';
   let committedSourceIndex: number | null = null;
+  let committedEntryId: string | null = null;
+
+  function beginLayout() {
+    const ticket = ++layoutTicket;
+    const entryId = host.getSelectedEntryId();
+    const sourceIndex = host.getSelectedSourceIndex();
+    return {
+      entryId,
+      sourceIndex,
+      current: () =>
+        ticket === layoutTicket &&
+        entryId === host.getSelectedEntryId() &&
+        sourceIndex === host.getSelectedSourceIndex(),
+    };
+  }
 
   const session: GraphSession = {
     get fitRevision() {
@@ -216,7 +231,13 @@ export function createGraphSession(host: GraphSessionHost): GraphSession {
   }
 
   function persistLiveLayout(): void {
-    if (committedSourceIndex == null || !layoutKey || get(host.nodes).length === 0) return;
+    if (
+      committedEntryId !== host.getSelectedEntryId() ||
+      committedSourceIndex == null ||
+      !layoutKey ||
+      get(host.nodes).length === 0
+    )
+      return;
     rememberLayout(committedSourceIndex, layoutKey, get(host.nodes), get(host.edges));
   }
 
@@ -226,7 +247,7 @@ export function createGraphSession(host: GraphSessionHost): GraphSession {
     if (!id || !entry) return;
     let layouts = { ...entry.layouts };
     const sourceIndex = host.getSelectedSourceIndex();
-    if (committedSourceIndex === sourceIndex && layoutKey && get(host.nodes).length > 0) {
+    if (committedEntryId === id && committedSourceIndex === sourceIndex && layoutKey && get(host.nodes).length > 0) {
       layouts = buildLayoutSnapshot(sourceIndex, layoutKey, get(host.nodes), get(host.edges));
     }
     host.patchEntry(id, {
@@ -237,6 +258,7 @@ export function createGraphSession(host: GraphSessionHost): GraphSession {
   }
 
   function recordUndo(): void {
+    layoutTicket += 1;
     const snapshot = captureGraphSnapshot(get(host.nodes), get(host.edges));
     if (snapshot.nodes.length === 0) return;
     undoStack = pushGraphUndo(undoStack, snapshot);
@@ -279,27 +301,30 @@ export function createGraphSession(host: GraphSessionHost): GraphSession {
     syncEditFlags();
   }
 
-  async function replaceGraph(nextNodes: Node[], nextEdges: Edge[], ticket: number): Promise<boolean> {
+  async function replaceGraph(nextNodes: Node[], nextEdges: Edge[], current: () => boolean): Promise<boolean> {
+    if (!current()) return false;
     committedSourceIndex = null;
+    committedEntryId = null;
     host.nodes.set([]);
     host.edges.set([]);
     await tick();
-    if (ticket !== layoutTicket) return false;
+    if (!current()) return false;
     host.nodes.set(nextNodes);
     await tick();
-    if (ticket !== layoutTicket) return false;
+    if (!current()) return false;
     host.edges.set(nextEdges);
     return true;
   }
 
   async function restoreLayout(next: Solution, sourceIndex: number, cached: CachedGraphLayout): Promise<void> {
     host.setSolution(next);
-    const ticket = ++layoutTicket;
+    const operation = beginLayout();
     const nextNodes = stampNodeCallbacks(cloneGraphNodes(cached.nodes));
     const nextEdges = cloneGraphEdges(cached.edges);
-    if (!(await replaceGraph(nextNodes, nextEdges, ticket))) return;
+    if (!(await replaceGraph(nextNodes, nextEdges, operation.current)) || !operation.current()) return;
     layoutKey = cached.layoutKey;
     committedSourceIndex = sourceIndex;
+    committedEntryId = operation.entryId;
     bumpFit();
     rememberLayout(sourceIndex, cached.layoutKey, nextNodes, nextEdges);
     clearEditHistory();
@@ -308,21 +333,28 @@ export function createGraphSession(host: GraphSessionHost): GraphSession {
   async function applySolution(next: Solution, options: { force?: boolean } = {}): Promise<void> {
     host.setSolution(next);
     const nextLayoutKey = solutionLayoutKey(next);
-    if (!options.force && nextLayoutKey === layoutKey && committedSourceIndex === host.getSelectedSourceIndex()) {
+    if (
+      !options.force &&
+      committedEntryId === host.getSelectedEntryId() &&
+      nextLayoutKey === layoutKey &&
+      committedSourceIndex === host.getSelectedSourceIndex()
+    ) {
       return;
     }
-    const ticket = ++layoutTicket;
+    const operation = beginLayout();
     try {
       const laidOut = await layoutSolution(next);
-      if (ticket !== layoutTicket) return;
+      if (!operation.current()) return;
       const nextNodes = stampNodeCallbacks(laidOut.nodes);
-      if (!(await replaceGraph(nextNodes, laidOut.edges, ticket))) return;
+      if (!(await replaceGraph(nextNodes, laidOut.edges, operation.current)) || !operation.current()) return;
       layoutKey = nextLayoutKey;
-      committedSourceIndex = host.getSelectedSourceIndex();
+      committedSourceIndex = operation.sourceIndex;
+      committedEntryId = operation.entryId;
       bumpFit();
-      rememberLayout(host.getSelectedSourceIndex(), nextLayoutKey, nextNodes, laidOut.edges);
+      rememberLayout(operation.sourceIndex, nextLayoutKey, nextNodes, laidOut.edges);
       clearEditHistory();
     } catch (error) {
+      if (!operation.current()) return;
       host.setError(
         `The result is valid, but its graph could not be laid out: ${
           error instanceof Error ? error.message : String(error)
@@ -334,9 +366,11 @@ export function createGraphSession(host: GraphSessionHost): GraphSession {
   async function resetLayout(): Promise<void> {
     const solution = host.getSolution();
     if (!solution || get(host.nodes).length === 0) return;
-    recordUndo();
+    const operation = beginLayout();
     try {
       const laidOut = await layoutSolution(solution);
+      if (!operation.current()) return;
+      recordUndo();
       const nextNodes = stampNodeCallbacks(laidOut.nodes);
       host.nodes.set(nextNodes);
       host.edges.set(laidOut.edges);
@@ -346,16 +380,13 @@ export function createGraphSession(host: GraphSessionHost): GraphSession {
       }
       bumpFit();
     } catch (error) {
-      if (undoStack.length > 0) {
-        applySnapshot(undoStack[undoStack.length - 1]);
-        undoStack = undoStack.slice(0, -1);
-        syncEditFlags();
-      }
+      if (!operation.current()) return;
       host.setError(`The graph could not be reset: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
   function onNodeDragStart(): void {
+    layoutTicket += 1;
     dragOrigin = captureGraphSnapshot(get(host.nodes), get(host.edges));
   }
 
@@ -454,6 +485,7 @@ export function createGraphSession(host: GraphSessionHost): GraphSession {
     layoutTicket += 1;
     layoutKey = '';
     committedSourceIndex = null;
+    committedEntryId = null;
     host.setSolution(null);
     host.setSolutions([]);
     host.setSelectedSourceIndex(0);
@@ -463,20 +495,22 @@ export function createGraphSession(host: GraphSessionHost): GraphSession {
   }
 
   async function hydrateFromEntry(entry: HistoryEntry): Promise<void> {
+    clearView();
     host.setSortColumns(
       entry.sortColumns.length > 0 ? entry.sortColumns.map((column) => ({ ...column })) : [...DEFAULT_SORT_COLUMNS],
     );
-    host.setSelectedSourceIndex(entry.selectedSourceIndex);
+    const sourceIndex = Math.max(0, Math.min(entry.selectedSourceIndex, entry.results.length - 1));
+    host.setSelectedSourceIndex(sourceIndex);
     const enumerate = enumeratesLayouts(entry.request.solveMode);
     if (enumerate) {
       host.setSolutions(entry.results);
-      const chosen = entry.results[entry.selectedSourceIndex] ?? entry.results[0] ?? null;
+      const chosen = entry.results[sourceIndex] ?? null;
       host.setSolution(chosen);
       if (chosen) {
-        const cached = entry.layouts[String(entry.selectedSourceIndex)];
+        const cached = entry.layouts[String(sourceIndex)];
         const key = solutionLayoutKey(chosen);
         if (cached && cached.layoutKey === key && cached.nodes.length > 0) {
-          await restoreLayout(chosen, entry.selectedSourceIndex, cached);
+          await restoreLayout(chosen, sourceIndex, cached);
         } else {
           await applySolution(chosen, { force: true });
         }
