@@ -11,5 +11,10 @@
   "before-portfolio": "../target/astra-before-portfolio-20260908",
   "portfolio-screen": "../target/astra-portfolio-screen-20260908",
   "before-output-pairs": "../target/astra-before-output-pairs-20260908",
-  "output-pairs-screen": "../target/astra-output-pairs-screen-20260908"
+  "output-pairs-screen": "../target/astra-output-pairs-screen-20260908",
+  "optimization-discovery": "../target/optimization-campaign-20260909/frozen",
+  "optimization-confirmation-recovery": "../target/optimization-campaign-20260910-recovery/RECOVERY.json",
+  "optimization-confirmation-analysis": "../target/optimization-campaign-20260910/analysis",
+  "partition-promotion-preparation": "../target/optimization-promotion-prep-20260910",
+  "partition-promotion-campaign": "../target/optimization-promotion-20260910/frozen"
 }

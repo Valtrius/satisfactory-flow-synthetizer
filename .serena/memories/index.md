@@ -1,6 +1,6 @@
 # Project memory index
 
-The current solver-core code is the baseline: exact cvc5 search with first-optimum stopping and the sparse/Boolean portfolio. solver-reference is the independent exhaustive test oracle.
+The current solver-core code is the baseline: exact cvc5 search with first-optimum stopping, descending first-output root order and the sparse/Boolean portfolio. solver-reference is the independent exhaustive test oracle.
 
 - Product, exact scopes and terminology: `mem:product`.
 - Code map, mathematical proof and cancellation rules: `mem:solver/contracts`.

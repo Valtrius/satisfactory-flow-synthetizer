@@ -1,9 +1,34 @@
 # Prepared optimization screens
 
+Current decisions and performance requirements are in
+[10 September results](results-20260910.md). Descending first-output order is now
+the production baseline. New timing campaigns use at least 8 total workers and
+the next session is limited to three hours, including cleanup and verification.
+Use `--promotion` to generate the focused partition confirmation below. The
+discovery and follow-up sections describe the recorded experiments; reproduce
+their source with the recorded revision and frozen manifests.
+
+## Current promotion check
+
+`python scripts/make-optimization-campaign.py --promotion --output <new-directory>`
+prepares five suites: regression guards at 8, 16 and 32 workers, then six paired
+repeats each for cases 258 and 97 All min N/L at 32 workers. Build `baseline` and
+`pairs-boolean` from the descending-order production revision. Thus each pair
+compares production against production plus Boolean second-output partitions.
+The partition candidate preserves descending parent order and interleaves second
+output producers using the existing static refinement policy.
+
+The 56 jobs reserve 9,860 seconds for search and per-job cancellation cleanup,
+plus 600 seconds for suite setup and verification: **2 h 54 m 20 s** in total.
+The controller also stops its owned process tree if a stalled runner or verifier
+reaches the session limit. Interrupted evidence remains explicitly incomplete.
+Use `validate-optimization-followup.py --promotion` for release proof checks
+before freezing. No candidate is automatically promoted by the runner.
+
 The completed discovery findings and the next implementation are recorded in
 [Scheduling and adaptive partitioning follow-up](followup.md).
 
-Baseline: merged revision `2d4e0d6` on `develop`. Production defaults are unchanged.
+Discovery baseline: merged revision `2d4e0d6` on `develop`.
 The preparation scripts generate source variants outside the checkout, run exactness
 and cancellation tests, run strict Clippy, build release runners, and freeze their
 source, configuration, patches, logs, backend and hashes. Preparation runs no timing
@@ -101,7 +126,7 @@ To launch the full prepared queue sequentially, with one final completion dialog
 The campaign records each suite's outcome and continues with independent suites
 if one fails verification. It never overlaps timing runs. Inspect
 `CAMPAIGN-STATUS.txt`, `suite-outcomes.json`, and the individual verification logs.
-The earlier eight-hour run allowance remains a guard: a suite starts only if its
+The three-hour run allowance is enforced: a suite starts only if its
 entire search/cleanup allowance plus two minutes for setup and verification fits
 the remaining time. Otherwise the controller pauses between suites and writes
 `remaining-suites.json`. This avoids interrupting a matched pair or comparing a

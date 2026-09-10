@@ -1,6 +1,6 @@
 # Solver experiments
 
-The current solver-core code is the baseline, including first-output partitions, direct flow equalities, first-optimum stopping and the sparse/Boolean portfolio. The eager second-output candidate is excluded.
+The current solver-core code is the baseline, including descending first-output partitions, direct flow equalities, first-optimum stopping and the sparse/Boolean portfolio. Current confirmation and promotion decisions: `mem:experiments/10-ordering-and-partitions`. The eager second-output candidate is excluded.
 
 All experiments below ran on 2026-09-08 (initial screen started 2026-09-07). Times are release wall seconds, 32 total workers unless stated. Read one corresponding memory for details.
 

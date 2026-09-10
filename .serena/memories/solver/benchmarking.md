@@ -1,6 +1,6 @@
 # Benchmark workflow
 
-Goal: reduce terminal wall time on the hardest exact problems. The current solver-core code is the baseline. Build release, run correctness and strict Clippy, then freeze source, executable, cvc5/DLLs, cases, manifest and hashes before timing. Case names never select solver behavior.
+Goal: reduce terminal wall time on the hardest exact problems. The user accepts reasonable easy-case penalties up to roughly 10 additional seconds for substantial hard-case gains. Future performance benchmarks must use at least 8 total solver workers; performance below 8 workers must not block promotion. The next session is limited to three hours including cleanup and verification. Normal exactness and cancellation contracts still apply. The current solver-core code is the baseline. Build release, run correctness and strict Clippy, then freeze source, executable, cvc5/DLLs, cases, manifest and hashes before timing. Case names never select solver behavior.
 
 Corpus: benchmarks/cases. Experiment manifests and binary maps are in benchmarks. benchmarks/evidence.json maps evidence IDs in memories to exact frozen run or source directories. Recorded artifacts preserve the paths, schema keys and labels required for reproducibility; use their matching frozen harness.
 

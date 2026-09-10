@@ -9,6 +9,13 @@ $repoRoot = Split-Path $PSScriptRoot -Parent
 $matrix = (Resolve-Path -LiteralPath $MatrixDirectory).Path
 $binaryMap = Get-Content -LiteralPath $VariantBinaryMap -Raw | ConvertFrom-Json -AsHashtable
 $campaign = Get-Content -LiteralPath (Join-Path $matrix 'campaign.json') -Raw | ConvertFrom-Json
+foreach ($suite in $campaign.suites) {
+    $manifest = Get-Content -LiteralPath (Join-Path $matrix $suite.manifest) -Raw | ConvertFrom-Json
+    if (@($manifest.jobs | Where-Object { $_.Workers -lt 8 }).Count) { throw 'Performance campaigns require at least eight total workers' }
+    $allowance = ($manifest.jobs | Measure-Object TimeoutSeconds -Sum).Sum + 15 * $manifest.jobs.Count
+    if ($suite.max_scheduled_seconds -ne $allowance -or $manifest.MaxScheduledSeconds -ne $allowance) { throw "Suite allowance differs from its jobs: $($suite.name)" }
+    if ($allowance + 120 -gt 10800) { throw "Suite exceeds the three-hour budget: $($suite.name)" }
+}
 $backend = Join-Path $repoRoot 'src-tauri/binaries/cvc5-x86_64-pc-windows-msvc.exe'
 $backendHash = (Get-FileHash -LiteralPath $backend -Algorithm SHA256).Hash.ToLowerInvariant()
 if ($ValidationEvidence) {

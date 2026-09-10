@@ -34,9 +34,9 @@ def timeout(case, mode, family):
     return 20
 
 
-def generate(output, finalists=None, followup=False):
-    if finalists and followup:
-        raise ValueError("Choose finalists or the focused follow-up campaign")
+def generate(output, finalists=None, followup=False, promotion=False):
+    if sum((bool(finalists), followup, promotion)) > 1:
+        raise ValueError("Choose finalists, follow-up, or promotion")
     output.mkdir(parents=True, exist_ok=False)
     cases = output / "cases"
     cases.mkdir()
@@ -48,8 +48,11 @@ def generate(output, finalists=None, followup=False):
     suites = []
 
     def screen(name, candidate, scopes, workers=(32,), repeats=2, family="screen", diagnostics=False, limit_s=None):
+        if any(worker < 8 for worker in workers):
+            raise ValueError("Performance campaigns require at least eight total workers")
         jobs = []
         for case, mode in scopes:
+            seconds = limit_s[(case, mode)] if isinstance(limit_s, dict) else limit_s or timeout(case, mode, family)
             for worker in workers:
                 for repeat in range(1, repeats + 1):
                     pair = f"{name}-{case}-{mode}-w{worker}-r{repeat}"
@@ -57,19 +60,45 @@ def generate(output, finalists=None, followup=False):
                         jobs.append(dict(Case=case, CaseFile=f"cases/{case}.json", Mode=mode,
                                          Stage="baseline", Workers=worker, Repeat=repeat,
                                          Variant=variant, MaxNodes=caps[case],
-                                         TimeoutSeconds=limit_s or timeout(case, mode, family), Hotspots="off",
+                                         TimeoutSeconds=seconds, Hotspots="off",
                                          Cohort="reference" if case in ("tiny", "surplus-multi", "capacity-mixed") else "stress",
                                          Diagnostics=diagnostics, Comparison=name, PairId=pair, PairRole=role))
         allowance = sum(j["TimeoutSeconds"] + 15 for j in jobs)
-        if allowance > 28800:
-            raise ValueError(f"Split suite exceeding eight scheduled hours: {name}")
+        if allowance + 120 > 10800:
+            # Keep complete paired repeats together when broader confirmation
+            # templates need more than one bounded suite.
+            if len(scopes) > 1:
+                middle = len(scopes) // 2
+                for part, subset in enumerate((scopes[:middle], scopes[middle:]), 1):
+                    screen(f"{name}-part{part}", candidate, subset, workers, repeats, family, diagnostics, limit_s)
+                return
+            if len(workers) > 1:
+                for worker in workers:
+                    screen(f"{name}-w{worker}", candidate, scopes, (worker,), repeats, family, diagnostics, limit_s)
+                return
+            raise ValueError(f"Split suite exceeding three hours including verification: {name}")
         manifest = dict(RunnerProtocol="layout-v1", ResultPolicy="any_optimum", MaxScheduledSeconds=allowance, jobs=jobs)
         (output / f"{name}.json").write_text(json.dumps(manifest, indent=2) + "\n")
         suites.append(dict(name=name, candidate=candidate, family=family, jobs=len(jobs), pairs=len(jobs)//2,
                            repeats=repeats, diagnostics=diagnostics, max_scheduled_seconds=allowance,
                            manifest=f"{name}.json"))
 
-    if followup:
+    if promotion:
+        # Both runners start from the promoted descending-order revision. The
+        # candidate adds only the Boolean minimum-link partition policy.
+        screen("promotion-guards8", "pairs-boolean", [("cyclic10", "one_min_nl")],
+               workers=(8,), limit_s=45)
+        guards16 = [("cyclic10", "one_min_nl"), ("ratio97", "one_min_nl"), ("acyclic36", "all_min_nl")]
+        screen("promotion-guards16", "pairs-boolean", guards16, workers=(16,),
+               limit_s=dict(zip(guards16, (45, 20, 15), strict=True)))
+        screen("promotion-guards32", "pairs-boolean",
+               [("acyclic36", "all_min_nl"), ("acyclic36", "all_min_n"),
+                ("acyclic24", "all_min_nl"), ("cyclic65", "all_min_nl")], limit_s=15)
+        screen("promotion-confirm258", "pairs-boolean", [("medium258", "all_min_nl")],
+               repeats=6, limit_s=90, family="confirmation")
+        screen("promotion-confirm97", "pairs-boolean", [("ratio97", "all_min_nl")],
+               repeats=6, limit_s=600, family="confirmation")
+    elif followup:
         key_scopes = [("cyclic10", "one_min_nl"), ("medium258", "all_min_nl"),
                       ("acyclic36", "all_min_nl"), ("acyclic36", "all_min_n")]
         # Six repeats where the completed discovery showed a worker-budget cliff.
@@ -89,10 +118,10 @@ def generate(output, finalists=None, followup=False):
         remaining = [(case,"all_min_nl") for case in caps if case not in ("cyclic10","ratio97","medium258","acyclic36","acyclic24","cyclic115")]
         screen("adaptive-boolean-coverage", "adaptive-boolean", remaining, family="partitions")
         screen("confirm-pairs-boolean-coverage", "pairs-boolean", remaining, repeats=6, family="confirmation")
-        screen("workers-adaptive-boolean", "adaptive-boolean", key_scopes, workers=(1,2,8,16), family="workers")
-        for workers in (1,2,8,16):
+        screen("workers-adaptive-boolean", "adaptive-boolean", key_scopes, workers=(8,16), family="workers")
+        for workers in (8,16):
             screen(f"workers{workers}-pairs-boolean", "pairs-boolean", key_scopes, workers=(workers,), repeats=4, family="workers")
-        for workers in ((8,16),(1,2)):
+        for workers in ((8,16),):
             screen(f"workers{workers[0]}-{workers[1]}-delay-sparse250", "delay-sparse250", HARD[:2]+[("acyclic36","all_min_n")], workers=workers, repeats=4, family="workers")
         # Diagnostic runs are separate from every completion-time comparison.
         for candidate in ("pairs-boolean", "adaptive-boolean"):
@@ -113,7 +142,7 @@ def generate(output, finalists=None, followup=False):
             screen(f"confirm-{candidate}", candidate, scopes, repeats=6, family="confirmation")
             screen(f"confirm-workers-{candidate}", candidate,
                    [("cyclic10", "one_min_nl"), ("medium258", "all_min_nl"), ("acyclic36", "all_min_n")],
-                   workers=(1, 2, 8, 16), repeats=4, family="workers")
+                   workers=(8, 16, 32), repeats=4, family="workers")
     else:
         # Scope-gated candidates are checked on every corpus case and independent additions.
         for candidate in ("pairs-both", "pairs-sparse", "pairs-boolean"):
@@ -126,13 +155,13 @@ def generate(output, finalists=None, followup=False):
         for candidate in ("sparse-only", "boolean-only"):
             screen(f"workers-{candidate}", candidate,
                    [("cyclic10", "one_min_nl"), ("medium258", "all_min_nl"), ("acyclic36", "all_min_n")],
-                   workers=(1, 2, 8, 16, 32), repeats=2, family="workers")
+                   workers=(8, 16, 32), repeats=2, family="workers")
         # Diagnostics are separate paired observations, never folded into timing cohorts.
         for candidate in ("pairs-both", "sparse25", "sparse75"):
             screen(f"roots-{candidate}", candidate,
                    [("cyclic10", "one_min_nl"), ("medium258", "all_min_nl"), ("acyclic36", "all_min_n")],
                    repeats=1, family="diagnostics", diagnostics=True)
-    if not finalists and not followup:
+    if not finalists and not followup and not promotion:
         priority = ["pairs-both", "sparse25", "sparse75", "pairs-sparse", "pairs-boolean",
                     "delay-sparse250", "delay-boolean250", "workers-sparse-only", "workers-boolean-only",
                     "roots-pairs-both", "roots-sparse25", "roots-sparse75"]
@@ -143,11 +172,18 @@ def generate(output, finalists=None, followup=False):
                     "confirm-pairs-boolean-core", "confirm-delay-sparse250-hard"]
         suites.sort(key=lambda suite: priority.index(suite["name"]) if suite["name"] in priority else len(priority))
     campaign = dict(suites=suites, cancellation_grace_seconds=15, prepared_only=True,
+                    runtime_budget_seconds=10800, suite_overhead_seconds=120,
+                    minimum_workers=8,
                     total_jobs=sum(s["jobs"] for s in suites), total_pairs=sum(s["pairs"] for s in suites),
                     max_scheduled_seconds=sum(s["max_scheduled_seconds"] for s in suites),
                     corpus=list(CAPS), additional_cases=list(EXTRA),
                     independent_holdouts=[name for name in EXTRA if name != "scaled258"],
                     scale_invariance_cases=["scaled258"])
+    if promotion:
+        campaign["purpose"] = "Qualify Boolean partitions on the promoted descending-order baseline"
+        campaign["max_session_seconds"] = campaign["max_scheduled_seconds"] + len(suites) * campaign["suite_overhead_seconds"]
+        if campaign["max_session_seconds"] > campaign["runtime_budget_seconds"]:
+            raise ValueError("Promotion queue exceeds the three-hour session budget")
     (output / "campaign.json").write_text(json.dumps(campaign, indent=2) + "\n")
     return campaign
 
@@ -157,5 +193,6 @@ if __name__ == "__main__":
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--finalists", nargs="+")
     parser.add_argument("--followup", action="store_true")
+    parser.add_argument("--promotion", action="store_true")
     args = parser.parse_args()
-    print(json.dumps(generate(args.output, args.finalists, args.followup), indent=2))
+    print(json.dumps(generate(args.output, args.finalists, args.followup, args.promotion), indent=2))

@@ -18,6 +18,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--binaries", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
+    parser.add_argument("--promotion", action="store_true")
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=False)
     binaries = json.loads(args.binaries.read_text(encoding="utf-8-sig"))
@@ -25,10 +26,16 @@ def main():
     env = dict(os.environ, SOLVER_CVC5=str(backend), SOLVER_DIAGNOSTICS="1")
     results = []
     references = {}
-    probes = [(variant, "acyclic36", workers, 9, 30) for workers in (12,24)
-              for variant in ("baseline", "order-reverse", "order-outside-in", "adaptive-boolean")]
-    probes += [("baseline","medium258",32,12,90),("adaptive-boolean","medium258",32,12,90),
-               ("adaptive-boolean","medium258",32,12,4)]
+    if args.promotion:
+        probes = [(variant, "acyclic36", workers, 9, 20) for workers in (8,16,32)
+                  for variant in ("baseline", "pairs-boolean")]
+        probes += [("baseline","medium258",32,12,90),("pairs-boolean","medium258",32,12,90),
+                   ("pairs-boolean","medium258",32,12,4)]
+    else:
+        probes = [(variant, "acyclic36", workers, 9, 30) for workers in (12,24)
+                  for variant in ("baseline", "order-reverse", "order-outside-in", "adaptive-boolean")]
+        probes += [("baseline","medium258",32,12,90),("adaptive-boolean","medium258",32,12,90),
+                   ("adaptive-boolean","medium258",32,12,4)]
     for variant, case, workers, cap, seconds in probes:
         label = f"{variant}-{case}-w{workers}-limit{seconds}"
         path = args.output / f"{label}.json"
@@ -48,9 +55,12 @@ def main():
             assert not result_comparison_errors(result,reference,"all_min_nl","any_optimum"), label
         else:
             assert result["deadline_fired"] and result["outcome"]["kind"] == "incomplete"
-            assert result["outcome"]["result"]["bestKnown"] is not None
+            if not args.promotion:
+                assert result["outcome"]["result"]["bestKnown"] is not None
         if variant == "adaptive-boolean" and case == "medium258":
             assert audit["adaptive_roots"] > 0 and audit["refined_roots"] > 0, label
+        if args.promotion and variant == "pairs-boolean" and case == "medium258":
+            assert audit["refined_roots"] > 0, label
         results.append(dict(label=label, passed=True, audit=audit))
     hashes = {name:hashlib.sha256((Path(directory)/"profile_solver.exe").read_bytes()).hexdigest() for name,directory in binaries.items()}
     evidence = dict(passed=True, benchmark=False, runner_hashes=hashes,

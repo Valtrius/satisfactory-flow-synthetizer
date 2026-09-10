@@ -111,6 +111,34 @@ if ($label -eq 'failed') { exit 1 }
         result["outcome"]["result"]["proof"]["rootPartitionsExhausted"] = 4
         self.assertTrue(auditor.audit(result)[0])
 
+    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is required")
+    def test_session_budget_stops_a_stalled_owned_suite(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            suite = root / "stalled"
+            suite.mkdir()
+            starter = Path(__file__).with_name("start-optimization-campaign.ps1")
+            shutil.copy2(starter, root / starter.name)
+            (root / "campaign.json").write_text(json.dumps(dict(
+                suites=[dict(name="stalled", max_scheduled_seconds=0)],
+                runtime_budget_seconds=3, suite_overhead_seconds=0)))
+            (suite / "frozen-hashes.json").write_text("{}")
+            (suite / "start-optimization-suite.ps1").write_text('''param([string]$PreparedSuite, [switch]$Run, [switch]$NoDialog)
+'started' | Set-Content -LiteralPath (Join-Path $PreparedSuite 'started.txt')
+Start-Sleep -Seconds 30
+'must not finish' | Set-Content -LiteralPath (Join-Path $PreparedSuite 'BENCHMARK-FINISHED.txt')
+''')
+            files = ["campaign.json", starter.name, "stalled/frozen-hashes.json"]
+            (root / "campaign-hashes.json").write_text(json.dumps({path: hashlib.sha256((root/path).read_bytes()).hexdigest() for path in files}))
+            result = subprocess.run(["pwsh", "-NoProfile", "-File", str(root/starter.name), "-PreparedCampaign", str(root), "-Run", "-NoDialog"], capture_output=True, text=True, timeout=15, check=False)
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertTrue((suite / "started.txt").is_file())
+            self.assertFalse((suite / "BENCHMARK-FINISHED.txt").exists())
+            outcome = json.loads((root / "suite-outcomes.json").read_text(encoding="utf-8-sig"))[0]
+            self.assertFalse(outcome["verified"])
+            self.assertEqual(outcome["reason"], "session_budget")
+            self.assertIn("Session time budget reached", (root / "CAMPAIGN-STATUS.txt").read_text(encoding="utf-8-sig"))
+
     def test_cancelled_and_first_optimum_roots_are_not_exhausted(self):
         result = diagnostic_result()
         result["roots"][-1]["state"] = "optimum"
@@ -159,15 +187,33 @@ if ($label -eq 'failed') { exit 1 }
                     self.assertEqual({j["Mode"] for j in jobs}, set(matrix.MODES))
                     self.assertEqual(len({j["Case"] for j in jobs if j["Mode"] == "all_min_nl"}), 17)
                 if suite["family"] == "workers":
-                    self.assertEqual({j["Workers"] for j in jobs}, {1, 2, 8, 16, 32})
+                    self.assertEqual({j["Workers"] for j in jobs}, {8, 16, 32})
                 count += len(jobs)
             self.assertEqual(count, campaign["total_jobs"])
+
+    def test_promotion_queue_fits_three_hours_and_confirms_combined_hard_cases(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "promotion"
+            campaign = matrix.generate(root, promotion=True)
+            self.assertEqual(campaign["runtime_budget_seconds"], 10800)
+            allowance = 0
+            for suite in campaign["suites"]:
+                jobs = json.loads((root / suite["manifest"]).read_text())["jobs"]
+                self.assertTrue(all(job["Workers"] >= 8 for job in jobs))
+                self.assertEqual(len(validate_pairs(jobs)), len(jobs) // 2)
+                allowance += sum(job["TimeoutSeconds"] + 15 for job in jobs) + 120
+                if suite["name"].startswith("promotion-confirm"):
+                    self.assertEqual(suite["repeats"], 6)
+                    self.assertEqual({job["Mode"] for job in jobs}, {"all_min_nl"})
+            self.assertEqual(campaign["max_session_seconds"], allowance)
+            self.assertLessEqual(allowance, 10800)
 
     def test_confirmation_requires_known_finalists_and_has_six_repeats(self):
         with tempfile.TemporaryDirectory() as directory:
             result = matrix.generate(Path(directory) / "confirm", ["pairs-both"])
-            self.assertEqual(result["suites"][0]["repeats"], 6)
-            self.assertEqual(result["suites"][1]["repeats"], 4)
+            self.assertTrue(all(s["repeats"] == 6 for s in result["suites"] if s["family"] == "confirmation"))
+            self.assertTrue(any(s["repeats"] == 4 and s["family"] == "workers" for s in result["suites"]))
+            self.assertTrue(all(s["max_scheduled_seconds"] + 120 <= 10800 for s in result["suites"]))
             with self.assertRaises(ValueError):
                 matrix.generate(Path(directory) / "invalid", ["not-a-variant"])
 

@@ -1,5 +1,9 @@
 # Scheduling and adaptive partitioning follow-up
 
+This records preparation for the recovered 10 September campaign. Its completed
+decisions and the current three-hour promotion queue are in
+[10 September results](results-20260910.md) and [the benchmark guide](README.md).
+
 The 9 September discovery campaign finished all 578 jobs in 4 h 20 m: 502 optimal
 results, 76 deadline-capped results, and no exact-result or proof-owner verification
 failures. Its 1,814 frozen file hashes matched during analysis. Complete enumeration

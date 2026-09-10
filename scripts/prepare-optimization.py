@@ -35,6 +35,13 @@ def replace_once(text, before, after):
 def transform(sources, config):
     """Exact changes are compiled into each variant; no runtime or case-name dispatch."""
     sources = dict(sources)
+    if "root_order" in config:
+        # Explicit ordering experiments start from ascending owner construction,
+        # even when the production revision already constructs descending roots.
+        descending = "for source in (0..self.problem.inputs.len() + task.profile.node_count() as usize).rev()"
+        if descending in sources["lib.rs"]:
+            sources["lib.rs"] = replace_once(sources["lib.rs"], descending,
+                "for source in 0..self.problem.inputs.len() + task.profile.node_count() as usize")
     if "refine" in config or config.get("adaptive"):
         lib = sources["lib.rs"]
         lib = replace_once(lib, "    source: Option<usize>,\n    impossible: bool,", "    source: Option<usize>,\n    second_source: Option<usize>,\n    impossible: bool,")
