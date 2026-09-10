@@ -20,16 +20,25 @@ def main():
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--promotion", action="store_true")
     parser.add_argument("--adaptive", action="store_true")
+    parser.add_argument("--hybrid", action="store_true")
     args = parser.parse_args()
-    if args.promotion and args.adaptive:
-        parser.error("Choose promotion or adaptive qualification")
+    if sum((args.promotion, args.adaptive, args.hybrid)) > 1:
+        parser.error("Choose promotion, adaptive, or hybrid qualification")
     args.output.mkdir(parents=True, exist_ok=False)
     binaries = json.loads(args.binaries.read_text(encoding="utf-8-sig"))
     backend = REPO / "src-tauri/binaries/cvc5-x86_64-pc-windows-msvc.exe"
     env = dict(os.environ, SOLVER_CVC5=str(backend), SOLVER_DIAGNOSTICS="1")
     results = []
     references = {}
-    if args.adaptive:
+    if args.hybrid:
+        candidates = ("baseline", "hybrid-boolean")
+        probes = [(variant, "acyclic36", workers, 9, 20) for workers in (8,16,32)
+                  for variant in candidates]
+        probes += [(variant,"medium258",workers,12,90) for workers in (8,16,32)
+                   for variant in candidates]
+        probes += [("hybrid-boolean","medium258",16,12,12),
+                   ("hybrid-boolean","medium258",32,12,4)]
+    elif args.adaptive:
         candidates = ("baseline", "adaptive-boolean", "adaptive-grace250")
         probes = [(variant, "acyclic36", workers, 9, 20) for workers in (8,16,32)
                   for variant in candidates]
@@ -57,14 +66,20 @@ def main():
         assert result["validated"] is True
         errors, audit = auditor.audit(result)
         assert not errors, (label,errors)
-        if seconds != 4:
+        cancelled_probe = seconds == 4 or (args.hybrid and seconds == 12)
+        if not cancelled_probe:
             assert result["outcome"]["kind"] == "optimal", label
             key = (case,workers)
             reference = references.setdefault(key,result)
             assert not result_comparison_errors(result,reference,"all_min_nl","any_optimum"), label
+            if args.hybrid:
+                # Retain full witness equivalence as well as canonical key and
+                # completion checks. Enumeration order carries no meaning.
+                assert sorted(json.dumps(solution, sort_keys=True) for solution in result["solutions"]) == sorted(
+                    json.dumps(solution, sort_keys=True) for solution in reference["solutions"]), label
         else:
             assert result["deadline_fired"] and result["outcome"]["kind"] == "incomplete"
-            if not args.promotion:
+            if not args.promotion and not (args.hybrid and workers == 32):
                 assert result["outcome"]["result"]["bestKnown"] is not None
         if variant in ("adaptive-boolean", "adaptive-grace250") and case == "medium258":
             assert audit["adaptive_roots"] > 0 and audit["refined_roots"] > 0, label
@@ -75,6 +90,23 @@ def main():
             assert all(root.get("refinement_grace_ms") == expected_grace for root in adaptive_roots), label
         if args.promotion and variant == "pairs-boolean" and case == "medium258":
             assert audit["refined_roots"] > 0, label
+        if args.hybrid and variant == "hybrid-boolean" and case == "medium258":
+            assert audit["refined_roots"] > 0, label
+            if workers in (8,16):
+                assert audit["adaptive_roots"] > 0, label
+                children = [root for root in result["roots"] if "parent_root" in root and root.get("second_source") is not None]
+                assert children and all(root.get("refinement_grace_ms") == 0 for root in children), label
+            else:
+                # The minimum N/L group must retain production's static cover.
+                # Lower exhausted groups may independently choose adaptive work.
+                static_children = [root for root in result["roots"] if "parent_root" not in root and root.get("second_source") is not None]
+                assert static_children, label
+                static_groups = {(root["nodes"],root["links"]) for root in static_children}
+                if not cancelled_probe:
+                    optimum = result["outcome"]["result"]
+                    assert (optimum["nodeCount"],optimum["linkCount"]) in static_groups, label
+                assert not any("parent_root" in root and (root["nodes"],root["links"]) in static_groups
+                               for root in result["roots"]), label
         results.append(dict(label=label, passed=True, audit=audit))
     hashes = {name:hashlib.sha256((Path(directory)/"profile_solver.exe").read_bytes()).hexdigest() for name,directory in binaries.items()}
     evidence = dict(passed=True, benchmark=False, runner_hashes=hashes,

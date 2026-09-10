@@ -1,0 +1,13 @@
+# Final hybrid partition experiment
+
+User approved this last experiment, then a pause. No automatic promotion or additional benchmark sweep. Production source remains 6852be9; completed adaptive comparison rejected global replacement (`mem:experiments/12-adaptive-comparison`).
+
+Candidate hybrid-boolean: only Boolean All min N/L with at least two outputs and more than one branch worker. Choose on unsplit live first-output roots: fewer than branch workers retains exact production static refinement; otherwise use immediate adaptive refinement after a validated current-group optimum witness. No input-name/rate routing. Parent or all disjoint children can discharge a proof, never both. Existing encoding, descending parent order, portfolio and other result scopes remain the baseline.
+
+scripts/make-optimization-campaign.py --hybrid creates seven suites, 48 runs/24 pairs. Case 258 All min N/L: 8 workers x2 pairs (90s caps), 16 x6 (90s), 32 x2 (60s). Guards at32 x2 each: 24/36/65 All min N/L and36 All min N (15s). Case97 All min N/L at32/8/16 x2 each (600s). Search+cleanup 9,840s plus840s setup/verification =10,680s (2h58m); controller maximum10,800s. No performance jobs below8. Compare within matched pairs only; caps are incomplete, not speedups.
+
+Paths: target/optimization-hybrid-prep-20260910 and target/optimization-hybrid-20260910/{matrix,qualification,frozen}. Guide benchmarks/optimization/hybrid-final.md. Preparation includes reference contracts, adaptive ledger and sixteen-worker contracts with eight Boolean slots, strict Clippy, and release qualification that exercises actual adaptive children at8/16 and static children at32, full exact set equality and deliberate cancellation of both paths. Qualification timings are not benchmark samples.
+
+Preparation passed: 50 baseline tests, 54 hybrid tests, strict Clippy for both variants, 42 Python harness tests and all 14 release probes (12 complete exact comparisons, two deliberate incomplete cancellations). All 94 prepared artifact hashes and recipe hashes match. Case 258 produced actual adaptive children at 8/16 workers; at 32 it retained 100 static children and no adaptive records. These are qualification observations, not speed results.
+
+Read frozen/CAMPAIGN-STATUS.txt and suite-outcomes.json for actual run completion; preparation alone is not evidence of speed. PRELAUNCH-VALIDATION.json records verified identities and checks when ready. After completion analyze terminal hard-case results, preserve adverse samples, recommend whether the hybrid is worth keeping, then pause. Further SMT or encoding experiments require a new request.

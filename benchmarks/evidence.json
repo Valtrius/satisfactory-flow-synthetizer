@@ -19,5 +19,8 @@
   "partition-promotion-campaign": "../target/optimization-promotion-20260910/frozen",
   "partition-promotion-analysis": "../target/optimization-promotion-20260910/analysis",
   "adaptive-comparison-preparation": "../target/optimization-adaptive-prep-20260910",
-  "adaptive-comparison-campaign": "../target/optimization-adaptive-20260910/frozen"
+  "adaptive-comparison-campaign": "../target/optimization-adaptive-20260910/frozen",
+  "adaptive-comparison-analysis": "../target/optimization-adaptive-20260910/analysis",
+  "hybrid-final-preparation": "../target/optimization-hybrid-prep-20260910",
+  "hybrid-final-campaign": "../target/optimization-hybrid-20260910/frozen"
 }

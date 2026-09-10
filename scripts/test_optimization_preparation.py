@@ -107,6 +107,47 @@ class OptimizationPreparationTests(unittest.TestCase):
                     self.assertEqual({j["TimeoutSeconds"] for j in jobs}, {600})
                     self.assertEqual(suite["pairs"], 2)
 
+    def test_hybrid_selects_unsplit_parents_and_preserves_static_policy(self):
+        source_dir = Path(__file__).resolve().parents[1] / "crates/solver-core/src"
+        original = {name: (source_dir / name).read_text() for name in ("lib.rs", "encoding.rs", "diagnostics.rs", "portfolio.rs")}
+        result = preparer.transform(original, dict(adaptive=True, hybrid=True))
+        lib = result["lib.rs"]
+        static_helper = original["lib.rs"].split("/// Children partition the parent", 1)[1].split("struct RootLedger {", 1)[0]
+        self.assertIn(static_helper, lib)
+        static_call = original["lib.rs"].split("        let roots =\n            if self.options.mode == SolveMode::AllMinNL", 1)[1].split("        let mut ledger", 1)[0]
+        self.assertIn(static_call, lib)
+        self.assertLess(lib.index("return self.adaptive_group(nodes, links, tasks, &roots)"),
+                        lib.index("        let roots =\n            if self.options.mode == SolveMode::AllMinNL"))
+        self.assertIn("roots.iter().filter(|root| !root.impossible).count() >= self.options.worker_count", lib)
+        for name in ("encoding.rs", "diagnostics.rs", "portfolio.rs"):
+            self.assertEqual(result[name], original[name])
+        with self.assertRaises(ValueError):
+            preparer.transform(original, dict(hybrid=True))
+        with self.assertRaises(ValueError):
+            preparer.transform(preparer.transform(original, dict(adaptive=True)), dict(adaptive=True, hybrid=True))
+
+    def test_final_hybrid_queue_checks_both_shapes_and_preserves_three_hour_budget(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "hybrid"
+            campaign = matrix.generate(root, hybrid=True)
+            self.assertEqual(campaign["total_jobs"], 48)
+            self.assertEqual(campaign["max_session_seconds"], 10680)
+            self.assertLess(campaign["max_session_seconds"], 10800)
+            scopes = set()
+            for suite in campaign["suites"]:
+                jobs = json.loads((root / suite["manifest"]).read_text())["jobs"]
+                self.assertEqual(len(validate_pairs(jobs)), len(jobs) // 2)
+                self.assertTrue(all(j["Workers"] >= 8 and not j["Diagnostics"] for j in jobs))
+                self.assertEqual({j["Variant"] for j in jobs}, {"baseline", "hybrid-boolean"})
+                scopes.update((j["Case"], j["Workers"]) for j in jobs)
+                if suite["name"] == "hybrid258-w16":
+                    self.assertEqual(suite["pairs"], 6)
+                if suite["name"].startswith("hybrid97-"):
+                    self.assertEqual({j["TimeoutSeconds"] for j in jobs}, {600})
+            for case in ("medium258", "ratio97"):
+                for workers in (8,16,32):
+                    self.assertIn((case,workers), scopes)
+
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is required")
     def test_campaign_runs_sequentially_and_preserves_a_failed_suite(self):
         # Stub suites exercise orchestration without running any solver or benchmark.

@@ -37,6 +37,8 @@ def transform(sources, config):
     sources = dict(sources)
     if "adaptive_grace_ms" in config and (not config.get("adaptive") or config["adaptive_grace_ms"] < 0):
         raise ValueError("Adaptive grace requires a nonnegative delay and the adaptive policy")
+    if config.get("hybrid") and (not config.get("adaptive") or "fn refine_roots(" not in sources["lib.rs"]):
+        raise ValueError("Hybrid requires adaptive refinement and the production static scheduler")
     if "root_order" in config:
         # Explicit ordering experiments start from ascending owner construction,
         # even when the production revision already constructs descending roots.
@@ -47,7 +49,7 @@ def transform(sources, config):
     if "refine" in config or config.get("adaptive"):
         lib = sources["lib.rs"]
         has_second_source = "    second_source: Option<usize>," in lib
-        if "fn refine_roots(" in lib:
+        if "fn refine_roots(" in lib and not config.get("hybrid"):
             # Replace the production static scheduler, retaining its shared
             # encoding and diagnostics. Adaptive parents must start unsplit.
             start = lib.index("/// Children partition the parent")
@@ -72,7 +74,17 @@ def transform(sources, config):
                 "gate.filter(|_| active < workers && queue.is_empty())",
                 f"gate.filter(|trigger| active < workers && queue.is_empty() && origin.elapsed().as_secs_f64() - *trigger >= Duration::from_millis({config['adaptive_grace_ms']}).as_secs_f64())")
         lib = replace_once(lib, "struct RootLedger {", helper_source + "\nstruct RootLedger {")
-        if config.get("adaptive"):
+        if config.get("hybrid"):
+            # Select from unsplit parents. The complementary live-root condition
+            # leaves every group eligible for production static splitting intact.
+            anchor = "        let roots =\n            if self.options.mode == SolveMode::AllMinNL"
+            lib = replace_once(lib, anchor, """        if self.options.mode == SolveMode::AllMinNL && matches!(self.counts, Counts::Boolean)
+            && self.options.worker_count > 1 && self.problem.outputs.len() >= 2
+            && roots.iter().filter(|root| !root.impossible).count() >= self.options.worker_count {
+            return self.adaptive_group(nodes, links, tasks, &roots);
+        }
+""" + anchor)
+        elif config.get("adaptive"):
             lib = replace_once(lib, "        let mut ledger = RootLedger::new(&roots, tasks.len());", """        if self.options.mode == SolveMode::AllMinNL && matches!(self.counts, Counts::Boolean)
             && self.options.worker_count > 1 && self.problem.outputs.len() >= 2 {
             return self.adaptive_group(nodes, links, tasks, &roots);
@@ -185,6 +197,12 @@ def main():
         for index, name in enumerate(selected, 1):
             config = variants[name]
             extra_contracts = "\n" + (SPEC / "adaptive-contract.rs").read_text() if config.get("adaptive") else ""
+            if config.get("hybrid"):
+                # Case 258 uses adaptive refinement at 16 total workers and
+                # production static splitting at 32. Exercise the adaptive path.
+                extra_contracts = extra_contracts.replace("SolveMode::AllMinNL, 9, 32", "SolveMode::AllMinNL, 9, 16")
+                extra_contracts = replace_once(extra_contracts, "(0..=16)", "(0..=8)")
+                extra_contracts = replace_once(extra_contracts, "Duration::from_secs(4)", "Duration::from_secs(12)")
             (workspace / contract_path).write_text(contracts + extra_contracts, encoding="utf-8")
             destination = root / "variants" / name
             metadata_path = destination / "metadata.json"

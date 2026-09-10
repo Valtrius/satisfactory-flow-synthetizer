@@ -1,11 +1,19 @@
 # Prepared optimization screens
 
+The adaptive batch is complete: see
+[Adaptive results and scheduling stopping point](results-adaptive-20260910.md).
+Keep the promoted static policy; both adaptive replacements regress hard
+32-worker completion. The approved [final hybrid comparison](hybrid-final.md)
+tests adaptive fallback while preserving static splitting. It has 48 jobs at
+8/16/32 workers, a 2 h 58 m allowance and a three-hour hard limit. Analyze this
+last batch, then pause; broad scheduling sweeps should end.
+
 The focused combined-policy campaign is complete: see
 [Partition promotion confirmation](results-promotion-20260910.md). All 56 timing
 solves completed, both hard cases improved in all six pairs, and static Boolean
 partitions are integrated into production alongside descending first-output order.
 
-The next batch is [Adaptive comparison after partition promotion](adaptive-followup.md).
+The recorded adaptive batch is [Adaptive comparison after partition promotion](adaptive-followup.md).
 Use `--adaptive` to compare both adaptive candidates against production revision
 `6852be9`, with a maximum allowance of 2 h 48 m and a three-hour controller limit.
 New timing campaigns use at least 8 total workers.

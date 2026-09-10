@@ -34,9 +34,9 @@ def timeout(case, mode, family):
     return 20
 
 
-def generate(output, finalists=None, followup=False, promotion=False, adaptive=False):
-    if sum((bool(finalists), followup, promotion, adaptive)) > 1:
-        raise ValueError("Choose finalists, follow-up, promotion, or adaptive")
+def generate(output, finalists=None, followup=False, promotion=False, adaptive=False, hybrid=False):
+    if sum((bool(finalists), followup, promotion, adaptive, hybrid)) > 1:
+        raise ValueError("Choose finalists, follow-up, promotion, adaptive, or hybrid")
     output.mkdir(parents=True, exist_ok=False)
     cases = output / "cases"
     cases.mkdir()
@@ -83,7 +83,19 @@ def generate(output, finalists=None, followup=False, promotion=False, adaptive=F
                            repeats=repeats, diagnostics=diagnostics, max_scheduled_seconds=allowance,
                            manifest=f"{name}.json"))
 
-    if adaptive:
+    if hybrid:
+        for workers, repeats, seconds in ((8, 2, 90), (16, 6, 90), (32, 2, 60)):
+            screen(f"hybrid258-w{workers}", "hybrid-boolean", [("medium258", "all_min_nl")],
+                   workers=(workers,), repeats=repeats, limit_s=seconds, family="confirmation")
+        screen("hybrid-guards32", "hybrid-boolean",
+               [(case, "all_min_nl") for case in ("acyclic24", "acyclic36", "cyclic65")]
+               + [("acyclic36", "all_min_n")], limit_s=15)
+        # Verify the static hard-case protection, then fill the unmeasured
+        # worker budgets. Keep every paired timeout as incomplete evidence.
+        for workers in (32, 8, 16):
+            screen(f"hybrid97-w{workers}", "hybrid-boolean", [("ratio97", "all_min_nl")],
+                   workers=(workers,), limit_s=600, family="long-enumeration")
+    elif adaptive:
         for candidate in ("adaptive-boolean", "adaptive-grace250"):
             for workers in (8, 16, 32):
                 screen(f"adaptive258-{candidate}-w{workers}", candidate,
@@ -173,7 +185,7 @@ def generate(output, finalists=None, followup=False, promotion=False, adaptive=F
             screen(f"roots-{candidate}", candidate,
                    [("cyclic10", "one_min_nl"), ("medium258", "all_min_nl"), ("acyclic36", "all_min_n")],
                    repeats=1, family="diagnostics", diagnostics=True)
-    if not finalists and not followup and not promotion and not adaptive:
+    if not finalists and not followup and not promotion and not adaptive and not hybrid:
         priority = ["pairs-both", "sparse25", "sparse75", "pairs-sparse", "pairs-boolean",
                     "delay-sparse250", "delay-boolean250", "workers-sparse-only", "workers-boolean-only",
                     "roots-pairs-both", "roots-sparse25", "roots-sparse75"]
@@ -191,8 +203,9 @@ def generate(output, finalists=None, followup=False, promotion=False, adaptive=F
                     corpus=list(CAPS), additional_cases=list(EXTRA),
                     independent_holdouts=[name for name in EXTRA if name != "scaled258"],
                     scale_invariance_cases=["scaled258"])
-    if promotion or adaptive:
-        campaign["purpose"] = ("Compare adaptive policies against production descending order and static Boolean partitions"
+    if promotion or adaptive or hybrid:
+        campaign["purpose"] = ("Final hybrid comparison: preserve static splitting and adapt otherwise; pause after analysis"
+                               if hybrid else "Compare adaptive policies against production descending order and static Boolean partitions"
                                if adaptive else "Qualify Boolean partitions on the promoted descending-order baseline")
         campaign["max_session_seconds"] = campaign["max_scheduled_seconds"] + len(suites) * campaign["suite_overhead_seconds"]
         if campaign["max_session_seconds"] > campaign["runtime_budget_seconds"]:
@@ -208,5 +221,6 @@ if __name__ == "__main__":
     parser.add_argument("--followup", action="store_true")
     parser.add_argument("--promotion", action="store_true")
     parser.add_argument("--adaptive", action="store_true")
+    parser.add_argument("--hybrid", action="store_true")
     args = parser.parse_args()
-    print(json.dumps(generate(args.output, args.finalists, args.followup, args.promotion, args.adaptive), indent=2))
+    print(json.dumps(generate(args.output, args.finalists, args.followup, args.promotion, args.adaptive, args.hybrid), indent=2))

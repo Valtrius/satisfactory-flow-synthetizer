@@ -12,5 +12,6 @@
   "order-reverse": { "root_order": "reverse" },
   "order-outside-in": { "root_order": "outside-in" },
   "adaptive-boolean": { "adaptive": true },
-  "adaptive-grace250": { "adaptive": true, "adaptive_grace_ms": 250 }
+  "adaptive-grace250": { "adaptive": true, "adaptive_grace_ms": 250 },
+  "hybrid-boolean": { "adaptive": true, "hybrid": true }
 }
