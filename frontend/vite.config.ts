@@ -19,6 +19,16 @@ export default defineConfig({
     },
   },
   test: {
-    environment: 'jsdom',
+    projects: [
+      {
+        extends: true,
+        test: { name: 'unit', environment: 'jsdom', include: ['src/**/*.test.ts'], exclude: ['src/**/*.dom.test.ts'] },
+      },
+      {
+        extends: true,
+        resolve: { conditions: ['browser'] },
+        test: { name: 'dom', environment: 'jsdom', include: ['src/**/*.dom.test.ts'] },
+      },
+    ],
   },
 });

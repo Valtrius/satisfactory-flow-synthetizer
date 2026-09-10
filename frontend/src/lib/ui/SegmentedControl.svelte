@@ -26,6 +26,34 @@
     'aria-label': ariaLabel,
   }: Props = $props();
 
+  function navigate(event: KeyboardEvent, index: number): void {
+    if (disabled || options.length === 0) return;
+    let next: number;
+    switch (event.key) {
+      case 'ArrowRight':
+      case 'ArrowDown':
+        next = (index + 1) % options.length;
+        break;
+      case 'ArrowLeft':
+      case 'ArrowUp':
+        next = (index - 1 + options.length) % options.length;
+        break;
+      case 'Home':
+        next = 0;
+        break;
+      case 'End':
+        next = options.length - 1;
+        break;
+      default:
+        return;
+    }
+    event.preventDefault();
+    onchange(options[next].value);
+    (event.currentTarget as HTMLElement).parentElement
+      ?.querySelectorAll<HTMLButtonElement>('[role="radio"]')
+      [next]?.focus();
+  }
+
   const selectedIndex = $derived(
     Math.max(
       0,
@@ -84,11 +112,13 @@
     style={`width: ${segmentWidth}; left: ${segmentLeft};`}
     aria-hidden="true"
   ></span>
-  {#each options as option (option.value)}
+  {#each options as option, index (option.value)}
     <button
       type="button"
       role="radio"
       aria-checked={value === option.value}
+      tabindex={index === selectedIndex ? 0 : -1}
+      onkeydown={(event) => navigate(event, index)}
       class={`relative z-1 flex h-full flex-1 items-center justify-center rounded-md border border-transparent font-bold whitespace-nowrap transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-50 ${style.button} ${
         value === option.value ? 'text-on-accent cursor-default' : 'text-muted hover:text-control-fg cursor-pointer'
       }`}
