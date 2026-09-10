@@ -387,7 +387,11 @@ impl Search<'_> {
             // Every output has exactly one producer. Keep all source owners,
             // including impossible choices, for cvc5 to discharge explicitly.
             if !impossible && self.options.worker_count > 1 && !self.problem.outputs.is_empty() {
-                for source in 0..self.problem.inputs.len() + task.profile.node_count() as usize {
+                // Descending owners start the opposite end of the complete cover
+                // first, avoiding the measured ascending-order completion cliff.
+                for source in
+                    (0..self.problem.inputs.len() + task.profile.node_count() as usize).rev()
+                {
                     roots.push(Root {
                         profile,
                         source: Some(source),
