@@ -1,6 +1,0 @@
-{
-  "portfolio-before": "../target/astra-before-output-pairs-20260908/bin",
-  "output-pairs": "../target/release/examples",
-  "output-trace-a": "../target/release/examples",
-  "output-trace-b": "../target/release/examples"
-}

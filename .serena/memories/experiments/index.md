@@ -1,21 +1,21 @@
-# Solver experiments
+# Solver experiment decisions
 
-Current production includes descending first-output order, static Boolean All min N/L partitions, direct flow equalities, first-optimum stopping and the sparse/Boolean portfolio. solver-reference remains the independent exhaustive oracle.
+Current production keeps descending roots, direct equalities, first-optimum stopping, sparse/Boolean portfolio and hybrid All min N/L partitions. solver-reference remains the independent oracle. Scheduling work is paused after explicit acceptance of the hybrid tradeoff.
 
-| Record                                       | Decision                                                |
-| -------------------------------------------- | ------------------------------------------------------- |
-| `mem:experiments/01-initial-screen`          | Initial measurement; preserve tie-verifier failure      |
-| `mem:experiments/02-output-partitions`       | Complete first-output producer roots                    |
-| `mem:experiments/03-direct-flow`             | Single-input direct equalities                          |
-| `mem:experiments/04-first-optimum`           | First proved optimum; 16713a0                           |
-| `mem:experiments/05-sparse-counts`           | Portfolio branch                                        |
-| `mem:experiments/06-boolean-counts`          | Portfolio branch                                        |
-| `mem:experiments/07-portfolio`               | General allocation; 02ae07b                             |
-| `mem:experiments/08-eager-second-output`     | Rejected/restored; a9c114d                              |
-| `mem:experiments/09-optimization-campaign`   | Discovery candidates and frozen methodology             |
-| `mem:experiments/10-ordering-and-partitions` | Descending order promoted; earlier adaptive evidence    |
-| `mem:experiments/11-partition-promotion`     | Combined static partition policy promoted; 6852be9      |
-| `mem:experiments/12-adaptive-comparison`     | Complete; global adaptive/grace rejected, retain static |
-| `mem:experiments/13-hybrid-final`            | Final static/adaptive fallback trial, then pause        |
+| Record                                       | Decision                                                   |
+| -------------------------------------------- | ---------------------------------------------------------- |
+| `mem:experiments/01-initial-screen`          | Preserve initial tie-verifier failure                      |
+| `mem:experiments/02-output-partitions`       | Keep complete first-output roots                           |
+| `mem:experiments/03-direct-flow`             | Keep single-input equalities                               |
+| `mem:experiments/04-first-optimum`           | Keep first proved optimum; 16713a0                         |
+| `mem:experiments/05-sparse-counts`           | Keep as portfolio branch                                   |
+| `mem:experiments/06-boolean-counts`          | Keep as portfolio branch                                   |
+| `mem:experiments/07-portfolio`               | Keep independent proof races; 02ae07b                      |
+| `mem:experiments/08-eager-second-output`     | Reject broad eager policy; a9c114d                         |
+| `mem:experiments/09-optimization-campaign`   | Discovery provenance and frozen evidence                   |
+| `mem:experiments/10-ordering-and-partitions` | Keep descending order; cd703e9                             |
+| `mem:experiments/11-partition-promotion`     | Keep static Boolean path; 6852be9                          |
+| `mem:experiments/12-adaptive-comparison`     | Reject global adaptive/grace replacements                  |
+| `mem:experiments/13-hybrid-final`            | Hybrid promoted with accepted case-97 uncertainty; 49d57e0 |
 
-Read the matching record and actual campaign status. Preparation never implies promotion. Prioritize hard exact completion, preserve adverse pairs, use at least eight workers for performance and enforce the current three-hour session limit. SMT obligations, complete proof-preserving decomposition and incremental reuse are the remaining hard-case targets.
+Evidence IDs resolve through benchmarks/evidence.json. Completed recipes/manifests are retained in Git 2dccf50 and matching frozen artifacts. Current contracts are in `mem:solver/contracts`, and benchmark authorization/limits in `mem:solver/benchmarking`. Read a record as measured history, not as permission to rerun its queue.

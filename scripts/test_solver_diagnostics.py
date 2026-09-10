@@ -1,4 +1,4 @@
-"""Proof and scheduling regressions for isolated optimization experiments."""
+"""Proof-diagnostic audits and bounded benchmark controller regressions."""
 import copy
 import hashlib
 import importlib.util
@@ -8,7 +8,6 @@ import tempfile
 import shutil
 import subprocess
 import unittest
-from benchmark_policy import validate_pairs
 
 
 def module(name, filename):
@@ -19,8 +18,6 @@ def module(name, filename):
 
 
 auditor = module("root_audit", "audit-optimization-results.py")
-matrix = module("optimization_matrix", "make-optimization-campaign.py")
-preparer = module("optimization_preparer", "prepare-optimization.py")
 
 
 def diagnostic_result():
@@ -32,15 +29,7 @@ def diagnostic_result():
                 outcome=dict(result=dict(proof=dict(rootPartitionsExhausted=2))))
 
 
-class OptimizationPreparationTests(unittest.TestCase):
-    def test_reproduction_allows_only_windows_line_endings(self):
-        with tempfile.TemporaryDirectory() as directory:
-            a, b = Path(directory)/"a.rs", Path(directory)/"b.rs"
-            a.write_bytes(b"fn main() {\r\n    run(1);\r\n}\r\n")
-            b.write_bytes(b"fn main() {\n    run(1);\n}\n")
-            self.assertTrue(preparer.same_source(a,b))
-            b.write_bytes(b"fn main() {\n    run(2);\n}\n")
-            self.assertFalse(preparer.same_source(a,b))
+class SolverDiagnosticTests(unittest.TestCase):
 
     def test_adaptive_cover_selects_parent_or_every_child_without_double_counting(self):
         result = diagnostic_result()
@@ -76,77 +65,6 @@ class OptimizationPreparationTests(unittest.TestCase):
         result["roots"][1]["start_s"] = 1.24
         self.assertIn("Child started before its refinement grace elapsed", auditor.audit(result)[0])
 
-    def test_adaptive_recipe_replaces_production_static_scheduler(self):
-        source_dir = Path(__file__).resolve().parents[1] / "crates/solver-core/src"
-        original = {name: (source_dir / name).read_text() for name in ("lib.rs", "encoding.rs", "diagnostics.rs", "portfolio.rs")}
-        self.assertEqual(preparer.transform(original, {}), original)
-        for config in (dict(adaptive=True), dict(adaptive=True, adaptive_grace_ms=250)):
-            result = preparer.transform(original, config)
-            self.assertNotIn("fn refine_roots(", result["lib.rs"])
-            self.assertEqual(result["lib.rs"].count("fn adaptive_group("), 1)
-            self.assertIn("return self.adaptive_group(nodes, links, tasks, &roots)", result["lib.rs"])
-            self.assertIn(".rev()", result["lib.rs"])
-            for name in ("encoding.rs", "diagnostics.rs", "portfolio.rs"):
-                self.assertEqual(result[name], original[name])
-        with self.assertRaises(ValueError):
-            preparer.transform(original, dict(adaptive_grace_ms=250))
-
-    def test_adaptive_queue_qualifies_both_hard_shapes_within_three_hours(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory) / "adaptive"
-            campaign = matrix.generate(root, adaptive=True)
-            self.assertEqual(campaign["total_jobs"], 56)
-            self.assertEqual(campaign["max_session_seconds"], 10080)
-            self.assertLess(campaign["max_session_seconds"], 10800)
-            for suite in campaign["suites"]:
-                jobs = json.loads((root / suite["manifest"]).read_text())["jobs"]
-                self.assertEqual(len(validate_pairs(jobs)), len(jobs) // 2)
-                self.assertTrue(all(j["Workers"] >= 8 and not j["Diagnostics"] for j in jobs))
-                self.assertEqual({j["Variant"] for j in jobs}, {"baseline", suite["candidate"]})
-                if suite["name"].startswith("adaptive97-"):
-                    self.assertEqual({j["TimeoutSeconds"] for j in jobs}, {600})
-                    self.assertEqual(suite["pairs"], 2)
-
-    def test_hybrid_selects_unsplit_parents_and_preserves_static_policy(self):
-        source_dir = Path(__file__).resolve().parents[1] / "crates/solver-core/src"
-        original = {name: (source_dir / name).read_text() for name in ("lib.rs", "encoding.rs", "diagnostics.rs", "portfolio.rs")}
-        result = preparer.transform(original, dict(adaptive=True, hybrid=True))
-        lib = result["lib.rs"]
-        static_helper = original["lib.rs"].split("/// Children partition the parent", 1)[1].split("struct RootLedger {", 1)[0]
-        self.assertIn(static_helper, lib)
-        static_call = original["lib.rs"].split("        let roots =\n            if self.options.mode == SolveMode::AllMinNL", 1)[1].split("        let mut ledger", 1)[0]
-        self.assertIn(static_call, lib)
-        self.assertLess(lib.index("return self.adaptive_group(nodes, links, tasks, &roots)"),
-                        lib.index("        let roots =\n            if self.options.mode == SolveMode::AllMinNL"))
-        self.assertIn("roots.iter().filter(|root| !root.impossible).count() >= self.options.worker_count", lib)
-        for name in ("encoding.rs", "diagnostics.rs", "portfolio.rs"):
-            self.assertEqual(result[name], original[name])
-        with self.assertRaises(ValueError):
-            preparer.transform(original, dict(hybrid=True))
-        with self.assertRaises(ValueError):
-            preparer.transform(preparer.transform(original, dict(adaptive=True)), dict(adaptive=True, hybrid=True))
-
-    def test_final_hybrid_queue_checks_both_shapes_and_preserves_three_hour_budget(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory) / "hybrid"
-            campaign = matrix.generate(root, hybrid=True)
-            self.assertEqual(campaign["total_jobs"], 48)
-            self.assertEqual(campaign["max_session_seconds"], 10680)
-            self.assertLess(campaign["max_session_seconds"], 10800)
-            scopes = set()
-            for suite in campaign["suites"]:
-                jobs = json.loads((root / suite["manifest"]).read_text())["jobs"]
-                self.assertEqual(len(validate_pairs(jobs)), len(jobs) // 2)
-                self.assertTrue(all(j["Workers"] >= 8 and not j["Diagnostics"] for j in jobs))
-                self.assertEqual({j["Variant"] for j in jobs}, {"baseline", "hybrid-boolean"})
-                scopes.update((j["Case"], j["Workers"]) for j in jobs)
-                if suite["name"] == "hybrid258-w16":
-                    self.assertEqual(suite["pairs"], 6)
-                if suite["name"].startswith("hybrid97-"):
-                    self.assertEqual({j["TimeoutSeconds"] for j in jobs}, {600})
-            for case in ("medium258", "ratio97"):
-                for workers in (8,16,32):
-                    self.assertIn((case,workers), scopes)
 
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is required")
     def test_campaign_runs_sequentially_and_preserves_a_failed_suite(self):
@@ -253,73 +171,6 @@ Start-Sleep -Seconds 30
         self.assertTrue(auditor.audit(result)[0])
         result["diagnostics_enabled"] = False
         self.assertTrue(auditor.audit(result)[0])
-
-    def test_generated_pairs_match_budgets_and_cover_required_scopes(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory) / "matrix"
-            campaign = matrix.generate(root)
-            self.assertEqual(len(campaign["corpus"]) + len(campaign["additional_cases"]), 17)
-            count = 0
-            for suite in campaign["suites"]:
-                manifest = json.loads((root / suite["manifest"]).read_text())
-                jobs = manifest["jobs"]
-                self.assertEqual(len(validate_pairs(jobs)), len(jobs) // 2)
-                self.assertEqual(manifest["MaxScheduledSeconds"], sum(j["TimeoutSeconds"] + 15 for j in jobs))
-                identities = [(j["Case"], j["Mode"], j["Variant"], j["Workers"], j["Repeat"]) for j in jobs]
-                self.assertEqual(len(identities), len(set(identities)))
-                self.assertTrue(all((root / j["CaseFile"]).is_file() for j in jobs))
-                self.assertTrue(all(j["Diagnostics"] == suite["diagnostics"] for j in jobs))
-                if suite["family"] == "partitions":
-                    self.assertEqual({j["Mode"] for j in jobs}, set(matrix.MODES))
-                    self.assertEqual(len({j["Case"] for j in jobs if j["Mode"] == "all_min_nl"}), 17)
-                if suite["family"] == "workers":
-                    self.assertEqual({j["Workers"] for j in jobs}, {8, 16, 32})
-                count += len(jobs)
-            self.assertEqual(count, campaign["total_jobs"])
-
-    def test_promotion_queue_fits_three_hours_and_confirms_combined_hard_cases(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory) / "promotion"
-            campaign = matrix.generate(root, promotion=True)
-            self.assertEqual(campaign["runtime_budget_seconds"], 10800)
-            allowance = 0
-            for suite in campaign["suites"]:
-                jobs = json.loads((root / suite["manifest"]).read_text())["jobs"]
-                self.assertTrue(all(job["Workers"] >= 8 for job in jobs))
-                self.assertEqual(len(validate_pairs(jobs)), len(jobs) // 2)
-                allowance += sum(job["TimeoutSeconds"] + 15 for job in jobs) + 120
-                if suite["name"].startswith("promotion-confirm"):
-                    self.assertEqual(suite["repeats"], 6)
-                    self.assertEqual({job["Mode"] for job in jobs}, {"all_min_nl"})
-            self.assertEqual(campaign["max_session_seconds"], allowance)
-            self.assertLessEqual(allowance, 10800)
-
-    def test_confirmation_requires_known_finalists_and_has_six_repeats(self):
-        with tempfile.TemporaryDirectory() as directory:
-            result = matrix.generate(Path(directory) / "confirm", ["pairs-both"])
-            self.assertTrue(all(s["repeats"] == 6 for s in result["suites"] if s["family"] == "confirmation"))
-            self.assertTrue(any(s["repeats"] == 4 and s["family"] == "workers" for s in result["suites"]))
-            self.assertTrue(all(s["max_scheduled_seconds"] + 120 <= 10800 for s in result["suites"]))
-            with self.assertRaises(ValueError):
-                matrix.generate(Path(directory) / "invalid", ["not-a-variant"])
-
-    def test_followup_targets_the_worker_cliff_and_keeps_long_roots_separate(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory) / "followup"
-            campaign = matrix.generate(root, followup=True)
-            candidates = {s["candidate"] for s in campaign["suites"]}
-            self.assertEqual(candidates, {"order-outside-in", "order-reverse", "adaptive-boolean", "pairs-boolean", "delay-sparse250"})
-            for suite in campaign["suites"]:
-                jobs = json.loads((root / suite["manifest"]).read_text())["jobs"]
-                self.assertEqual(len(validate_pairs(jobs)), len(jobs) // 2)
-                self.assertEqual(suite["max_scheduled_seconds"], sum(j["TimeoutSeconds"] + 15 for j in jobs))
-                self.assertTrue(all(j["Diagnostics"] == suite["diagnostics"] for j in jobs))
-                if suite["name"].startswith("confirm16-"):
-                    self.assertEqual(suite["repeats"], 6)
-                    self.assertEqual({j["Workers"] for j in jobs}, {16})
-                if "long-enumeration" in suite["name"]:
-                    self.assertEqual({j["TimeoutSeconds"] for j in jobs}, {600})
-                    self.assertEqual({j["Mode"] for j in jobs}, {"all_min_nl"})
 
 
 if __name__ == "__main__":
