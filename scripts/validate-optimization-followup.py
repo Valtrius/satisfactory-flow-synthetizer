@@ -19,14 +19,23 @@ def main():
     parser.add_argument("--binaries", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--promotion", action="store_true")
+    parser.add_argument("--adaptive", action="store_true")
     args = parser.parse_args()
+    if args.promotion and args.adaptive:
+        parser.error("Choose promotion or adaptive qualification")
     args.output.mkdir(parents=True, exist_ok=False)
     binaries = json.loads(args.binaries.read_text(encoding="utf-8-sig"))
     backend = REPO / "src-tauri/binaries/cvc5-x86_64-pc-windows-msvc.exe"
     env = dict(os.environ, SOLVER_CVC5=str(backend), SOLVER_DIAGNOSTICS="1")
     results = []
     references = {}
-    if args.promotion:
+    if args.adaptive:
+        candidates = ("baseline", "adaptive-boolean", "adaptive-grace250")
+        probes = [(variant, "acyclic36", workers, 9, 20) for workers in (8,16,32)
+                  for variant in candidates]
+        probes += [(variant,"medium258",32,12,90) for variant in candidates]
+        probes += [(variant,"medium258",32,12,4) for variant in candidates[1:]]
+    elif args.promotion:
         probes = [(variant, "acyclic36", workers, 9, 20) for workers in (8,16,32)
                   for variant in ("baseline", "pairs-boolean")]
         probes += [("baseline","medium258",32,12,90),("pairs-boolean","medium258",32,12,90),
@@ -57,8 +66,13 @@ def main():
             assert result["deadline_fired"] and result["outcome"]["kind"] == "incomplete"
             if not args.promotion:
                 assert result["outcome"]["result"]["bestKnown"] is not None
-        if variant == "adaptive-boolean" and case == "medium258":
+        if variant in ("adaptive-boolean", "adaptive-grace250") and case == "medium258":
             assert audit["adaptive_roots"] > 0 and audit["refined_roots"] > 0, label
+        if args.adaptive and variant != "baseline":
+            expected_grace = 250 if variant == "adaptive-grace250" else 0
+            adaptive_roots = [root for root in result["roots"] if "parent_root" in root]
+            assert adaptive_roots, label
+            assert all(root.get("refinement_grace_ms") == expected_grace for root in adaptive_roots), label
         if args.promotion and variant == "pairs-boolean" and case == "medium258":
             assert audit["refined_roots"] > 0, label
         results.append(dict(label=label, passed=True, audit=audit))

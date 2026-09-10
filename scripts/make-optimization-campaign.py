@@ -34,9 +34,9 @@ def timeout(case, mode, family):
     return 20
 
 
-def generate(output, finalists=None, followup=False, promotion=False):
-    if sum((bool(finalists), followup, promotion)) > 1:
-        raise ValueError("Choose finalists, follow-up, or promotion")
+def generate(output, finalists=None, followup=False, promotion=False, adaptive=False):
+    if sum((bool(finalists), followup, promotion, adaptive)) > 1:
+        raise ValueError("Choose finalists, follow-up, promotion, or adaptive")
     output.mkdir(parents=True, exist_ok=False)
     cases = output / "cases"
     cases.mkdir()
@@ -83,7 +83,19 @@ def generate(output, finalists=None, followup=False, promotion=False):
                            repeats=repeats, diagnostics=diagnostics, max_scheduled_seconds=allowance,
                            manifest=f"{name}.json"))
 
-    if promotion:
+    if adaptive:
+        for candidate in ("adaptive-boolean", "adaptive-grace250"):
+            for workers in (8, 16, 32):
+                screen(f"adaptive258-{candidate}-w{workers}", candidate,
+                       [("medium258", "all_min_nl")], workers=(workers,), limit_s=120)
+            screen(f"adaptive-guards-{candidate}", candidate,
+                   [(case, "all_min_nl") for case in ("acyclic24", "acyclic36", "cyclic65")], limit_s=15)
+        # Both policies get a full-completion chance on the independent hard
+        # shape. This avoids selecting only from case 258's scheduling behavior.
+        for candidate in ("adaptive-boolean", "adaptive-grace250"):
+            screen(f"adaptive97-{candidate}", candidate, [("ratio97", "all_min_nl")],
+                   limit_s=600, family="long-enumeration")
+    elif promotion:
         # Both runners start from the promoted descending-order revision. The
         # candidate adds only the Boolean minimum-link partition policy.
         screen("promotion-guards8", "pairs-boolean", [("cyclic10", "one_min_nl")],
@@ -161,7 +173,7 @@ def generate(output, finalists=None, followup=False, promotion=False):
             screen(f"roots-{candidate}", candidate,
                    [("cyclic10", "one_min_nl"), ("medium258", "all_min_nl"), ("acyclic36", "all_min_n")],
                    repeats=1, family="diagnostics", diagnostics=True)
-    if not finalists and not followup and not promotion:
+    if not finalists and not followup and not promotion and not adaptive:
         priority = ["pairs-both", "sparse25", "sparse75", "pairs-sparse", "pairs-boolean",
                     "delay-sparse250", "delay-boolean250", "workers-sparse-only", "workers-boolean-only",
                     "roots-pairs-both", "roots-sparse25", "roots-sparse75"]
@@ -179,11 +191,12 @@ def generate(output, finalists=None, followup=False, promotion=False):
                     corpus=list(CAPS), additional_cases=list(EXTRA),
                     independent_holdouts=[name for name in EXTRA if name != "scaled258"],
                     scale_invariance_cases=["scaled258"])
-    if promotion:
-        campaign["purpose"] = "Qualify Boolean partitions on the promoted descending-order baseline"
+    if promotion or adaptive:
+        campaign["purpose"] = ("Compare adaptive policies against production descending order and static Boolean partitions"
+                               if adaptive else "Qualify Boolean partitions on the promoted descending-order baseline")
         campaign["max_session_seconds"] = campaign["max_scheduled_seconds"] + len(suites) * campaign["suite_overhead_seconds"]
         if campaign["max_session_seconds"] > campaign["runtime_budget_seconds"]:
-            raise ValueError("Promotion queue exceeds the three-hour session budget")
+            raise ValueError("Focused queue exceeds the three-hour session budget")
     (output / "campaign.json").write_text(json.dumps(campaign, indent=2) + "\n")
     return campaign
 
@@ -194,5 +207,6 @@ if __name__ == "__main__":
     parser.add_argument("--finalists", nargs="+")
     parser.add_argument("--followup", action="store_true")
     parser.add_argument("--promotion", action="store_true")
+    parser.add_argument("--adaptive", action="store_true")
     args = parser.parse_args()
-    print(json.dumps(generate(args.output, args.finalists, args.followup, args.promotion), indent=2))
+    print(json.dumps(generate(args.output, args.finalists, args.followup, args.promotion, args.adaptive), indent=2))

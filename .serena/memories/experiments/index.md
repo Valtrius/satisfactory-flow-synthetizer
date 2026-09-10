@@ -1,20 +1,20 @@
 # Solver experiments
 
-The current solver-core code is the baseline, including descending first-output partitions, direct flow equalities, first-optimum stopping and the sparse/Boolean portfolio. Current promotion: `mem:experiments/11-partition-promotion` records integrated static Boolean All min N/L refinement. Ordering and earlier adaptive evidence: `mem:experiments/10-ordering-and-partitions`. The eager second-output candidate is excluded.
+Current production includes descending first-output order, static Boolean All min N/L partitions, direct flow equalities, first-optimum stopping and the sparse/Boolean portfolio. solver-reference remains the independent exhaustive oracle.
 
-All experiments below ran on 2026-09-08 (initial screen started 2026-09-07). Times are release wall seconds, 32 total workers unless stated. Read one corresponding memory for details.
+| Record                                       | Decision                                                  |
+| -------------------------------------------- | --------------------------------------------------------- |
+| `mem:experiments/01-initial-screen`          | Initial measurement; preserve tie-verifier failure        |
+| `mem:experiments/02-output-partitions`       | Complete first-output producer roots                      |
+| `mem:experiments/03-direct-flow`             | Single-input direct equalities                            |
+| `mem:experiments/04-first-optimum`           | First proved optimum; 16713a0                             |
+| `mem:experiments/05-sparse-counts`           | Portfolio branch                                          |
+| `mem:experiments/06-boolean-counts`          | Portfolio branch                                          |
+| `mem:experiments/07-portfolio`               | General allocation; 02ae07b                               |
+| `mem:experiments/08-eager-second-output`     | Rejected/restored; a9c114d                                |
+| `mem:experiments/09-optimization-campaign`   | Discovery candidates and frozen methodology               |
+| `mem:experiments/10-ordering-and-partitions` | Descending order promoted; earlier adaptive evidence      |
+| `mem:experiments/11-partition-promotion`     | Combined static partition policy promoted; 6852be9        |
+| `mem:experiments/12-adaptive-comparison`     | Next bounded adaptive/grace comparison against production |
 
-| Record                                   | Decision                                             |
-| ---------------------------------------- | ---------------------------------------------------- |
-| `mem:experiments/01-initial-screen`      | Initial measurement; preserve tie-verifier failure   |
-| `mem:experiments/02-output-partitions`   | Keep complete first-output producer roots            |
-| `mem:experiments/03-direct-flow`         | Keep direct equalities for single-input destinations |
-| `mem:experiments/04-first-optimum`       | Keep first proved optimum; commit 16713a0            |
-| `mem:experiments/05-sparse-counts`       | Keep as one portfolio branch                         |
-| `mem:experiments/06-boolean-counts`      | Keep as the other branch; unsuitable alone for 10    |
-| `mem:experiments/07-portfolio`           | Keep general default; commit 02ae07b                 |
-| `mem:experiments/08-eager-second-output` | Rejected/restored; archive commit a9c114d            |
-
-Prepared campaign: `mem:experiments/09-optimization-campaign` covers scope-limited second-output partitions, worker allocations, delayed starts, standalone controls and separate root audits. No candidate is promoted by preparation.
-
-Next unimplemented hypotheses: delayed bounded splitting that preserves parent progress, proven profile/rate cuts and incremental reuse across L groups. Measure hardest completion and retain adverse samples. SMT checks dominate, so canonicalization/duplicate suppression are lower priorities.
+Read the matching record and actual campaign status. Preparation never implies promotion. Prioritize hard exact completion, preserve adverse pairs, use at least eight workers for performance and enforce the current three-hour session limit. SMT obligations, complete proof-preserving decomposition and incremental reuse are the remaining hard-case targets.

@@ -41,6 +41,11 @@ def audit(result):
             trigger = root.get("refinement_trigger_s")
             if trigger is None or trigger < 0 or trigger > root["start_s"]:
                 errors.append("Child started before its optimum trigger")
+            grace = root.get("refinement_grace_ms", 0)
+            if not isinstance(grace, int) or grace < 0:
+                errors.append("Invalid adaptive refinement grace")
+            elif trigger is not None and trigger + grace / 1000 > root["start_s"] + 1e-6:
+                errors.append("Child started before its refinement grace elapsed")
     for key, cover in covers.items():
         parents = [r for r in cover if r.get("second_source") is None]
         if len(parents) != 1 or parents[0]["root"] != key[-1]:

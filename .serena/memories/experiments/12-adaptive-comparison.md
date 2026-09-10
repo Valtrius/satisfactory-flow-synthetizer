@@ -1,0 +1,11 @@
+# Adaptive comparison against promoted partitions
+
+Baseline revision 6852be9 includes descending first-output order and static Boolean All min N/L partitions (promotion evidence: `mem:experiments/11-partition-promotion`). Compare adaptive-boolean and adaptive-grace250; both replace static splitting, preserve parent backend progress and use spare Boolean slots. Grace variant waits at least 250 ms after the first validated current-group witness. Exact proof is either exhausted parent or a complete disjoint child cover, never both. Diagnostic refinement_grace_ms is audited against each child's start.
+
+Prepared queue: scripts/make-optimization-campaign.py --adaptive. Ten suites, 56 runs/28 pairs, two repeats: 258 All min N/L at 8/16/32, guards 24/36/65 at 32, and 97 at 32 with 600-second caps for both candidates. Testing both on 97 avoids selecting solely from 258. Maximum scheduled search+cleanup+verification 10,080 seconds (2 h 48 m); controller stops at three hours. No timing jobs below eight workers. Cap means incomplete. Two pairs are screening evidence, never automatic promotion.
+
+Preparation target/optimization-adaptive-prep-20260910; matrix/qualification/frozen under target/optimization-adaptive-20260910. scripts/validate-optimization-followup.py --adaptive checks release witness equality, proof ownership, actual children/grace and cancellation before freezing. Read CAMPAIGN-STATUS.txt and suite-outcomes.json in frozen for actual completion; preparation does not imply results. Full instructions and evidence in benchmarks/optimization/adaptive-followup.md.
+
+Priorities: substantial exact hard-case terminal savings, reasonable easy penalties up to roughly 10 seconds, no promotion blocker from performance below eight workers. Case 10 All min N/L still needs separate exact SMT-obligation work. Do not pool cross-session medians.
+
+Prelaunch verified: 50 baseline tests, 54 per adaptive candidate; strict Clippy for all three; 40 Python harness checks; 14 release evidence probes; 1,485 frozen artifact hashes. Receipt: target/optimization-adaptive-20260910/PRELAUNCH-VALIDATION.json. Use actual campaign status to determine whether the launched queue is still running or complete.

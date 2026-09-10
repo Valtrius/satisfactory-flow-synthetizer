@@ -62,6 +62,51 @@ class OptimizationPreparationTests(unittest.TestCase):
         result["roots"][1]["refinement_trigger_s"] = 3.0
         self.assertIn("Child started before its optimum trigger", auditor.audit(result)[0])
 
+    def test_refinement_grace_is_audited_against_child_start(self):
+        result = diagnostic_result()
+        result["roots"] = [dict(branch=1, nodes=2, links=1, root=0, profile=0,
+                                source=0, parent_root=0, child_count=1, state="cancelled",
+                                wall_s=1., check_s=.9, start_s=0., proof_committed=False),
+                           dict(branch=1, nodes=2, links=1, root=1, profile=0,
+                                source=0, parent_root=0, child_count=1, second_source=0,
+                                state="exhausted", wall_s=1., check_s=.9, start_s=1.25,
+                                proof_committed=True, refinement_trigger_s=1., refinement_grace_ms=250)]
+        result["outcome"]["result"]["proof"]["rootPartitionsExhausted"] = 1
+        self.assertEqual(auditor.audit(result)[0], [])
+        result["roots"][1]["start_s"] = 1.24
+        self.assertIn("Child started before its refinement grace elapsed", auditor.audit(result)[0])
+
+    def test_adaptive_recipe_replaces_production_static_scheduler(self):
+        source_dir = Path(__file__).resolve().parents[1] / "crates/solver-core/src"
+        original = {name: (source_dir / name).read_text() for name in ("lib.rs", "encoding.rs", "diagnostics.rs", "portfolio.rs")}
+        self.assertEqual(preparer.transform(original, {}), original)
+        for config in (dict(adaptive=True), dict(adaptive=True, adaptive_grace_ms=250)):
+            result = preparer.transform(original, config)
+            self.assertNotIn("fn refine_roots(", result["lib.rs"])
+            self.assertEqual(result["lib.rs"].count("fn adaptive_group("), 1)
+            self.assertIn("return self.adaptive_group(nodes, links, tasks, &roots)", result["lib.rs"])
+            self.assertIn(".rev()", result["lib.rs"])
+            for name in ("encoding.rs", "diagnostics.rs", "portfolio.rs"):
+                self.assertEqual(result[name], original[name])
+        with self.assertRaises(ValueError):
+            preparer.transform(original, dict(adaptive_grace_ms=250))
+
+    def test_adaptive_queue_qualifies_both_hard_shapes_within_three_hours(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "adaptive"
+            campaign = matrix.generate(root, adaptive=True)
+            self.assertEqual(campaign["total_jobs"], 56)
+            self.assertEqual(campaign["max_session_seconds"], 10080)
+            self.assertLess(campaign["max_session_seconds"], 10800)
+            for suite in campaign["suites"]:
+                jobs = json.loads((root / suite["manifest"]).read_text())["jobs"]
+                self.assertEqual(len(validate_pairs(jobs)), len(jobs) // 2)
+                self.assertTrue(all(j["Workers"] >= 8 and not j["Diagnostics"] for j in jobs))
+                self.assertEqual({j["Variant"] for j in jobs}, {"baseline", suite["candidate"]})
+                if suite["name"].startswith("adaptive97-"):
+                    self.assertEqual({j["TimeoutSeconds"] for j in jobs}, {600})
+                    self.assertEqual(suite["pairs"], 2)
+
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is required")
     def test_campaign_runs_sequentially_and_preserves_a_failed_suite(self):
         # Stub suites exercise orchestration without running any solver or benchmark.

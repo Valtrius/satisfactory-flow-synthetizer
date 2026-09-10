@@ -35,6 +35,8 @@ def replace_once(text, before, after):
 def transform(sources, config):
     """Exact changes are compiled into each variant; no runtime or case-name dispatch."""
     sources = dict(sources)
+    if "adaptive_grace_ms" in config and (not config.get("adaptive") or config["adaptive_grace_ms"] < 0):
+        raise ValueError("Adaptive grace requires a nonnegative delay and the adaptive policy")
     if "root_order" in config:
         # Explicit ordering experiments start from ascending owner construction,
         # even when the production revision already constructs descending roots.
@@ -44,13 +46,32 @@ def transform(sources, config):
                 "for source in 0..self.problem.inputs.len() + task.profile.node_count() as usize")
     if "refine" in config or config.get("adaptive"):
         lib = sources["lib.rs"]
-        lib = replace_once(lib, "    source: Option<usize>,\n    impossible: bool,", "    source: Option<usize>,\n    second_source: Option<usize>,\n    impossible: bool,")
-        # Every Root constructor has its source immediately before impossible.
-        lib, count = re.subn(r"(?m)^(\s+)source: (Some\([^\n]+\)|None),\n\1impossible", r"\1source: \2,\n\1second_source: None,\n\1impossible", lib)
-        if count != 5:
-            raise ValueError(f"Expected five Root constructors, got {count}")
+        has_second_source = "    second_source: Option<usize>," in lib
+        if "fn refine_roots(" in lib:
+            # Replace the production static scheduler, retaining its shared
+            # encoding and diagnostics. Adaptive parents must start unsplit.
+            start = lib.index("/// Children partition the parent")
+            end = lib.index("struct RootLedger {", start)
+            lib = lib[:start] + lib[end:]
+            lib, count = re.subn(r"        let roots =\s+if self.options.mode == SolveMode::AllMinNL.*?\n            };\n", "", lib, count=1, flags=re.S)
+            if count != 1:
+                raise ValueError("Production static scheduling anchor changed")
+        if not has_second_source:
+            lib = replace_once(lib, "    source: Option<usize>,\n    impossible: bool,", "    source: Option<usize>,\n    second_source: Option<usize>,\n    impossible: bool,")
+            # Every initial Root constructor has its source before impossible.
+            lib, count = re.subn(r"(?m)^(\s+)source: (Some\([^\n]+\)|None),\n\1impossible", r"\1source: \2,\n\1second_source: None,\n\1impossible", lib)
+            if count != 5:
+                raise ValueError(f"Expected five Root constructors, got {count}")
         helper = "adaptive.rs" if config.get("adaptive") else "refine.rs"
-        lib = replace_once(lib, "struct RootLedger {", (SPEC / helper).read_text() + "\nstruct RootLedger {")
+        helper_source = (SPEC / helper).read_text()
+        if config.get("adaptive"):
+            helper_source = replace_once(helper_source, r'\"refinement_trigger_s\":{trigger}',
+                r'\"refinement_trigger_s\":{trigger},\"refinement_grace_ms\":' + str(config.get("adaptive_grace_ms", 0)))
+        if config.get("adaptive_grace_ms"):
+            helper_source = replace_once(helper_source,
+                "gate.filter(|_| active < workers && queue.is_empty())",
+                f"gate.filter(|trigger| active < workers && queue.is_empty() && origin.elapsed().as_secs_f64() - *trigger >= Duration::from_millis({config['adaptive_grace_ms']}).as_secs_f64())")
+        lib = replace_once(lib, "struct RootLedger {", helper_source + "\nstruct RootLedger {")
         if config.get("adaptive"):
             lib = replace_once(lib, "        let mut ledger = RootLedger::new(&roots, tasks.len());", """        if self.options.mode == SolveMode::AllMinNL && matches!(self.counts, Counts::Boolean)
             && self.options.worker_count > 1 && self.problem.outputs.len() >= 2 {
@@ -63,15 +84,16 @@ def transform(sources, config):
             refine_roots(roots, tasks, self.problem.inputs.len(), self.problem.outputs.len(), self.options.worker_count)
         }} else {{ roots }};
         let mut ledger = RootLedger::new(&roots, tasks.len());""")
-        lib = replace_once(lib, "                                root.source,\n", "                                root.source,\n                                root.second_source,\n")
-        lib = replace_once(lib, "    source: Option<usize>,\n    mode: SolveMode,", "    source: Option<usize>,\n    second_source: Option<usize>,\n    mode: SolveMode,")
-        lib = replace_once(lib, "session.write(&encoding.output_source_assertion(source)?)?;", "session.write(&encoding.output_source_assertion(0, source)?)?;")
-        lib = replace_once(lib, "    let mut seen = BTreeSet::new();", "    if let Some(source) = second_source {\n        session.write(&encoding.output_source_assertion(1, source)?)?;\n    }\n    let mut seen = BTreeSet::new();")
+        if not has_second_source:
+            lib = replace_once(lib, "                                root.source,\n", "                                root.source,\n                                root.second_source,\n")
+            lib = replace_once(lib, "    source: Option<usize>,\n    mode: SolveMode,", "    source: Option<usize>,\n    second_source: Option<usize>,\n    mode: SolveMode,")
+            lib = replace_once(lib, "session.write(&encoding.output_source_assertion(source)?)?;", "session.write(&encoding.output_source_assertion(0, source)?)?;")
+            lib = replace_once(lib, "    let mut seen = BTreeSet::new();", "    if let Some(source) = second_source {\n        session.write(&encoding.output_source_assertion(1, source)?)?;\n    }\n    let mut seen = BTreeSet::new();")
+            enc = replace_once(sources["encoding.rs"], "pub fn output_source_assertion(&self, source: usize)", "pub fn output_source_assertion(&self, output: usize, source: usize)")
+            sources["encoding.rs"] = replace_once(enc, "edge.target == 0 && edge.source == source", "edge.target == output && edge.source == source")
+            diag = replace_once(sources["diagnostics.rs"], "        format!(", "        let second_source = root_info.second_source.map_or_else(|| \"null\".to_owned(), |v| v.to_string());\n        format!(")
+            sources["diagnostics.rs"] = replace_once(diag, r'\"source\":{source},', r'\"source\":{source},\"second_source\":{second_source},')
         sources["lib.rs"] = lib
-        enc = replace_once(sources["encoding.rs"], "pub fn output_source_assertion(&self, source: usize)", "pub fn output_source_assertion(&self, output: usize, source: usize)")
-        sources["encoding.rs"] = replace_once(enc, "edge.target == 0 && edge.source == source", "edge.target == output && edge.source == source")
-        diag = replace_once(sources["diagnostics.rs"], "        format!(", "        let second_source = root_info.second_source.map_or_else(|| \"null\".to_owned(), |v| v.to_string());\n        format!(")
-        sources["diagnostics.rs"] = replace_once(diag, r'\"source\":{source},', r'\"source\":{source},\"second_source\":{second_source},')
     portfolio = sources["portfolio.rs"]
     if "sparse_quarters" in config or "solo" in config:
         if config.get("solo") == 0:
@@ -149,9 +171,11 @@ def main():
     originals = {name: subprocess.check_output(["git", "show", f"{revision}:crates/solver-core/src/{name}"], cwd=REPO).decode() for name in names}
     contract_path = "crates/solver-core/tests/contracts.rs"
     contracts = subprocess.check_output(["git", "show", f"{revision}:{contract_path}"], cwd=REPO).decode()
-    contracts = replace_once(contracts, "    let opts = options(mode, cap, 2);", "    let opts = options(mode, cap, workers);")
-    contracts = replace_once(contracts, "fn compare(problem: &Problem, mode: SolveMode, cap: u32) -> SolveOutcome {", "fn compare(problem: &Problem, mode: SolveMode, cap: u32) -> SolveOutcome {\n    compare_workers(problem, mode, cap, 2)\n}\nfn compare_workers(problem: &Problem, mode: SolveMode, cap: u32, workers: usize) -> SolveOutcome {")
-    contracts += "\n" + (SPEC / "contracts.rs").read_text()
+    if "fn compare_workers(" not in contracts:
+        contracts = replace_once(contracts, "    let opts = options(mode, cap, 2);", "    let opts = options(mode, cap, workers);")
+        contracts = replace_once(contracts, "fn compare(problem: &Problem, mode: SolveMode, cap: u32) -> SolveOutcome {", "fn compare(problem: &Problem, mode: SolveMode, cap: u32) -> SolveOutcome {\n    compare_workers(problem, mode, cap, 2)\n}\nfn compare_workers(problem: &Problem, mode: SolveMode, cap: u32, workers: usize) -> SolveOutcome {")
+    if "fn enumeration_matches_reference_at_partitioning_worker_budgets(" not in contracts:
+        contracts += "\n" + (SPEC / "contracts.rs").read_text()
     backend = REPO / "src-tauri/binaries/cvc5-x86_64-pc-windows-msvc.exe"
     if not backend.is_file():
         raise ValueError("Run npm run prepare:cvc5 first")

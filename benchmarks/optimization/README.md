@@ -5,21 +5,22 @@ The focused combined-policy campaign is complete: see
 solves completed, both hard cases improved in all six pairs, and static Boolean
 partitions are integrated into production alongside descending first-output order.
 
-Current decisions and performance requirements are in
-[10 September results](results-20260910.md). Descending first-output order is now
-the production baseline. New timing campaigns use at least 8 total workers and
-the next session is limited to three hours, including cleanup and verification.
-Use `--promotion` to generate the focused partition confirmation below. The
+The next batch is [Adaptive comparison after partition promotion](adaptive-followup.md).
+Use `--adaptive` to compare both adaptive candidates against production revision
+`6852be9`, with a maximum allowance of 2 h 48 m and a three-hour controller limit.
+New timing campaigns use at least 8 total workers.
+Earlier decisions and performance requirements are in
+[10 September results](results-20260910.md). The
 discovery and follow-up sections describe the recorded experiments; reproduce
 their source with the recorded revision and frozen manifests.
 
-## Current promotion check
+## Recorded promotion check
 
 `python scripts/make-optimization-campaign.py --promotion --output <new-directory>`
 prepares five suites: regression guards at 8, 16 and 32 workers, then six paired
 repeats each for cases 258 and 97 All min N/L at 32 workers. Build `baseline` and
-`pairs-boolean` from the descending-order production revision. Thus each pair
-compares production against production plus Boolean second-output partitions.
+`pairs-boolean` from `cd703e9`, the source used in that campaign. Thus each pair
+compares descending order against descending order plus Boolean second-output partitions.
 The partition candidate preserves descending parent order and interleaves second
 output producers using the existing static refinement policy.
 

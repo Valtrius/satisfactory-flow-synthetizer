@@ -16,5 +16,8 @@
   "optimization-confirmation-recovery": "../target/optimization-campaign-20260910-recovery/RECOVERY.json",
   "optimization-confirmation-analysis": "../target/optimization-campaign-20260910/analysis",
   "partition-promotion-preparation": "../target/optimization-promotion-prep-20260910",
-  "partition-promotion-campaign": "../target/optimization-promotion-20260910/frozen"
+  "partition-promotion-campaign": "../target/optimization-promotion-20260910/frozen",
+  "partition-promotion-analysis": "../target/optimization-promotion-20260910/analysis",
+  "adaptive-comparison-preparation": "../target/optimization-adaptive-prep-20260910",
+  "adaptive-comparison-campaign": "../target/optimization-adaptive-20260910/frozen"
 }
