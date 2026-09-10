@@ -877,7 +877,7 @@
       onSelect(entry.id);
     }}
     onkeydown={(event) => {
-      if (floating) return;
+      if (floating || event.target !== event.currentTarget) return;
       if (event.key === 'Enter' || event.key === ' ') {
         event.preventDefault();
         onSelect(entry.id);
