@@ -1,16 +1,9 @@
 <script lang="ts">
-  import Route from '@lucide/svelte/icons/route';
+  import HistoryEntryCard from './HistoryEntryCard.svelte';
   import History from '@lucide/svelte/icons/history';
   import Download from '@lucide/svelte/icons/download';
   import Upload from '@lucide/svelte/icons/upload';
-  import Pencil from '@lucide/svelte/icons/pencil';
-  import Copy from '@lucide/svelte/icons/copy';
   import Trash2 from '@lucide/svelte/icons/trash-2';
-  import X from '@lucide/svelte/icons/x';
-  import Target from '@lucide/svelte/icons/target';
-  import LayoutGrid from '@lucide/svelte/icons/layout-grid';
-  import Network from '@lucide/svelte/icons/network';
-  import Table2 from '@lucide/svelte/icons/table-2';
   import ArrowUpDown from '@lucide/svelte/icons/arrow-up-down';
   import ListFilter from '@lucide/svelte/icons/list-filter';
   import Button from './ui/Button.svelte';
@@ -19,16 +12,7 @@
   import Panel from './ui/Panel.svelte';
   import Popup from './ui/Popup.svelte';
   import ConfirmDialog from './ui/ConfirmDialog.svelte';
-  import { formatElapsed } from './searchStage';
-  import {
-    displayTitle,
-    entryElapsedMs,
-    entryHistoryMetrics,
-    entryLayoutCount,
-    entryNodeCount,
-    entryStatusCaption,
-    type HistoryEntry,
-  } from './historyModel';
+  import { displayTitle, entryLayoutCount, entryNodeCount, type HistoryEntry } from './historyModel';
   import {
     readUiPrefs,
     updateUiPrefs,
@@ -39,7 +23,6 @@
   import { flip } from 'svelte/animate';
   import { untrack } from 'svelte';
   import { createHistoryEntrance, createHistoryOrder, historyMotionDuration } from './historyMotion';
-  import { enumeratesLayouts } from '../types';
   import { insertIndexFromClient, setListDragging, visualReorderSlots } from './pointerReorder';
 
   type StatusFilter = HistoryStatusFilter;
@@ -96,9 +79,6 @@
     onDeleteAll,
   }: Props = $props();
 
-  let renamingId = $state<string | null>(null);
-  let renameDraft = $state('');
-  let renameIgnoreBlur = false;
   let menuId = $state<string | null>(null);
   /** When true, the entry ⋯ menu opens above the trigger to stay in view. */
   let menuOpenUpward = $state(false);
@@ -401,7 +381,7 @@
   }
 
   function onCardPointerDown(band: DragBand, id: string, event: PointerEvent): void {
-    if (event.button !== 0 || isInteractiveTarget(event.target) || renamingId === id) return;
+    if (event.button !== 0 || isInteractiveTarget(event.target)) return;
     event.preventDefault();
     menuId = null;
     headerMenuOpen = false;
@@ -477,26 +457,6 @@
     return active ? '!border-accent/70 !bg-selected !text-accent' : '';
   }
 
-  function startRename(entry: HistoryEntry): void {
-    menuId = null;
-    headerMenuOpen = false;
-    openPanel = null;
-    renameIgnoreBlur = false;
-    renamingId = entry.id;
-    renameDraft = displayTitle(entry);
-  }
-
-  function commitRename(entry: HistoryEntry): void {
-    if (renamingId !== entry.id) return;
-    const next = renameDraft.trim();
-    onRename(entry.id, next.length > 0 ? next : null);
-    renamingId = null;
-  }
-
-  function cancelRename(): void {
-    renamingId = null;
-  }
-
   function toggleMenu(id: string, event: MouseEvent): void {
     event.stopPropagation();
     (event.currentTarget as HTMLElement).focus();
@@ -514,18 +474,6 @@
     const menuHeight = 168;
     menuOpenUpward = triggerRect.bottom + menuHeight > bounds.bottom;
     menuId = id;
-  }
-
-  function subtitle(entry: HistoryEntry, band: 'queued' | 'running' | 'history'): string {
-    if (band === 'running') {
-      if (entry.status === 'cancelling') return `Stopping… · ${runningElapsedLabel}`;
-      return runningElapsedLabel || '0:00.0';
-    }
-    const status = entryStatusCaption(entry);
-    if (band === 'queued') return status;
-    const elapsed = entry.startedAtMs != null ? formatElapsed(entryElapsedMs(entry)) : '';
-    if (elapsed && status) return `${elapsed} · ${status}`;
-    return status || elapsed;
   }
 </script>
 
@@ -821,223 +769,28 @@
 {/if}
 
 {#snippet row(entry: HistoryEntry, band: 'queued' | 'running' | 'history', draggable: boolean, floating = false)}
-  {@const selected = entry.id === selectedEntryId}
-  {@const metrics = entryHistoryMetrics(entry)}
-  {@const allLayouts = enumeratesLayouts(entry.request.solveMode)}
-  <div
-    role="option"
-    tabindex={floating ? -1 : 0}
-    aria-selected={selected}
-    data-history-id={floating ? undefined : entry.id}
-    data-history-band={floating ? undefined : band}
-    class={`border-b-line relative grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-2 gap-y-1 border-y border-solid border-t-transparent px-3 py-2.5 transition-opacity duration-150 motion-reduce:transition-none ${
-      menuId === entry.id && !floating ? 'z-20' : ''
-    } ${
-      band === 'queued' && !floating && filteredRunning
-        ? 'opacity-[0.52] hover:opacity-[0.88] aria-selected:opacity-[0.88]'
-        : ''
-    } ${
-      selected && band !== 'running' ? 'bg-selected shadow-[inset_3px_0_0_var(--color-accent)]' : ''
-    } ${selected && band === 'running' ? 'shadow-[inset_3px_0_0_var(--color-accent)]' : ''} ${
-      !selected && band !== 'running' && !floating ? 'hover:bg-well-hover/55 bg-transparent' : ''
-    } ${band === 'running' ? 'history-entry-running cursor-pointer' : ''} ${
-      selected && band === 'running' ? 'history-entry-running--selected' : ''
-    } ${draggable && !floating ? 'cursor-grab' : ''} ${floating ? 'history-drag-float-card border-solid' : ''}`}
-    onpointerdown={draggable && !floating && (band === 'queued' || band === 'history')
-      ? (event) => onCardPointerDown(band, entry.id, event)
-      : undefined}
-    onclick={() => {
-      if (draggable || floating) return;
-      onSelect(entry.id);
+  <HistoryEntryCard
+    {entry}
+    {band}
+    {draggable}
+    {floating}
+    selected={entry.id === selectedEntryId}
+    hasRunning={filteredRunning != null}
+    {runningElapsedLabel}
+    menuOpen={menuId === entry.id}
+    {menuOpenUpward}
+    {onSelect}
+    {onRename}
+    {onDelete}
+    {onCancelRunning}
+    {onCopyToNew}
+    {onExportEntry}
+    onPointerDown={(event) => {
+      if (band !== 'running') onCardPointerDown(band, entry.id, event);
     }}
-    onkeydown={(event) => {
-      if (floating || event.target !== event.currentTarget) return;
-      if (event.key === 'Enter' || event.key === ' ') {
-        event.preventDefault();
-        onSelect(entry.id);
-      }
+    onToggleMenu={(event) => toggleMenu(entry.id, event)}
+    onCloseMenu={() => {
+      menuId = null;
     }}
-  >
-    <div class="min-w-0">
-      {#if renamingId === entry.id && !floating}
-        <Input
-          size="inline"
-          focusOnMount
-          class="border-accent bg-[#08141c]"
-          bind:value={renameDraft}
-          aria-label="Rename history entry"
-          onclick={(event) => event.stopPropagation()}
-          onpointerdown={(event) => event.stopPropagation()}
-          onkeydown={(event) => {
-            if (event.key === 'Enter') {
-              event.preventDefault();
-              commitRename(entry);
-            } else if (event.key === 'Escape') {
-              event.preventDefault();
-              renameIgnoreBlur = true;
-              cancelRename();
-            }
-          }}
-          onblur={() => {
-            if (renameIgnoreBlur) {
-              renameIgnoreBlur = false;
-              return;
-            }
-            commitRename(entry);
-          }}
-        />
-      {:else}
-        <p class="m-0 text-sm leading-snug font-bold wrap-break-word">
-          {displayTitle(entry)}
-        </p>
-      {/if}
-      <p class="text-muted m-0 mt-0.5 text-[0.7rem] tabular-nums">
-        {subtitle(entry, band)}
-      </p>
-    </div>
-
-    <div class="relative flex items-start">
-      {#if band === 'running'}
-        <Button
-          size="tiny"
-          square
-          variant="danger"
-          type="button"
-          title="Cancel and keep any layouts found"
-          aria-label="Cancel running job"
-          onclick={(event) => {
-            event.stopPropagation();
-            onCancelRunning();
-          }}
-        >
-          <X class="size-3.5" />
-        </Button>
-      {:else if band === 'queued'}
-        <Button
-          size="tiny"
-          square
-          variant="quiet"
-          type="button"
-          title="Remove from queue"
-          aria-label="Remove from queue"
-          tabindex={floating ? -1 : undefined}
-          onclick={(event) => {
-            event.stopPropagation();
-            if (floating) return;
-            onDelete(entry.id);
-          }}
-        >
-          <X class="size-3.5" />
-        </Button>
-      {:else}
-        <Button
-          size="tiny"
-          square
-          variant="quiet"
-          type="button"
-          title="More actions"
-          aria-label="More actions"
-          tabindex={floating ? -1 : undefined}
-          aria-expanded={menuId === entry.id}
-          aria-haspopup="menu"
-          onclick={(event) => {
-            if (floating) {
-              event.stopPropagation();
-              return;
-            }
-            toggleMenu(entry.id, event);
-          }}
-        >
-          ⋯
-        </Button>
-        {#if menuId === entry.id && !floating}
-          <Popup
-            label="Entry actions"
-            onclose={() => {
-              menuId = null;
-            }}
-            class={`border-line bg-panel absolute right-0 z-20 min-w-44 rounded-lg border py-1 shadow-[0_14px_32px_rgb(0_0_0/45%)] ${
-              menuOpenUpward ? 'bottom-full mb-1' : 'top-full mt-1'
-            }`}
-            role="menu"
-          >
-            <MenuItem type="button" onclick={() => startRename(entry)}>
-              <Pencil class="text-muted size-3.5" />
-              Rename
-            </MenuItem>
-            <MenuItem
-              type="button"
-              onclick={() => {
-                menuId = null;
-                onCopyToNew(entry.id);
-              }}
-            >
-              <Copy class="text-muted size-3.5" />
-              Copy to New problem
-            </MenuItem>
-            <MenuItem
-              type="button"
-              onclick={() => {
-                menuId = null;
-                onExportEntry(entry.id);
-              }}
-            >
-              <Download class="text-muted size-3.5" />
-              Export entry…
-            </MenuItem>
-            <MenuItem
-              type="button"
-              danger
-              onclick={() => {
-                menuId = null;
-                onDelete(entry.id);
-              }}
-            >
-              <Trash2 class="size-3.5" />
-              Delete
-            </MenuItem>
-          </Popup>
-        {/if}
-      {/if}
-    </div>
-
-    <ul class="col-span-2 m-0 grid list-none grid-cols-2 gap-x-2 gap-y-0.5 p-0">
-      <li
-        class="text-muted inline-flex min-w-0 items-center gap-1 text-[0.68rem] font-semibold tabular-nums"
-        title={metrics.search.tip}
-        aria-label={metrics.search.tip}
-      >
-        {#if allLayouts}
-          <LayoutGrid class="text-accent-bright size-3 shrink-0" strokeWidth={2.2} aria-hidden="true" />
-        {:else}
-          <Target class="text-accent-bright size-3 shrink-0" strokeWidth={2.2} aria-hidden="true" />
-        {/if}
-        <span class="truncate">{metrics.search.value}</span>
-      </li>
-      <li
-        class="text-muted inline-flex min-w-0 items-center gap-1 text-[0.68rem] font-semibold tabular-nums"
-        title={metrics.layouts.tip}
-        aria-label={metrics.layouts.tip}
-      >
-        <Table2 class="text-warning size-3 shrink-0" strokeWidth={2.2} aria-hidden="true" />
-        <span class="truncate">{metrics.layouts.value}</span>
-      </li>
-      <li
-        class="text-muted inline-flex min-w-0 items-center gap-1 text-[0.68rem] font-semibold tabular-nums"
-        title={metrics.nodes.tip}
-        aria-label={metrics.nodes.tip}
-      >
-        <Network class="size-3 shrink-0 text-[#9ec5d6]" strokeWidth={2.2} aria-hidden="true" />
-        <span class="truncate">{metrics.nodes.value}</span>
-      </li>
-      <li
-        class="text-muted inline-flex min-w-0 items-center gap-1 text-[0.68rem] font-semibold tabular-nums"
-        title={metrics.belts.tip}
-        aria-label={metrics.belts.tip}
-      >
-        <Route class="text-flow size-3 shrink-0" strokeWidth={2.2} aria-hidden="true" />
-        <span class="truncate">{metrics.belts.value}</span>
-      </li>
-    </ul>
-  </div>
+  />
 {/snippet}
