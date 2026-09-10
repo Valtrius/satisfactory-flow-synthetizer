@@ -193,6 +193,9 @@
 
       unlistenClose = await installCloseFlush({
         flush: () => flushHistoryToDisk(),
+        onError: (message) => {
+          errorMessage = message;
+        },
       });
     })();
 

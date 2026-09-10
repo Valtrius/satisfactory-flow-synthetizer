@@ -427,3 +427,28 @@ it('shows a minimum belt count only when proved', () => {
   expect(entryHistoryMetrics(entry).belts.value).toBe('L=3');
   expect(entryHistoryMetrics({ ...entry, proof: null, result: null, results: [] }).belts.value).toBe('L=—');
 });
+
+it('checkpoints a running result without changing live state or claiming completion', () => {
+  const active = completed({
+    id: 'active',
+    status: 'running',
+    jobId: 'job',
+    startedAtMs: 10,
+    updatedAtMs: 25,
+    enumerationComplete: false,
+    proof: { minimumNodeCount: 2, minimumLinkCount: null },
+    layouts: { '0': { layoutKey: 'saved', nodes: [], edges: [] } },
+  });
+  const saved = persistableEntries([active, createQueuedEntry(form, request)]);
+  expect(saved).toHaveLength(1);
+  expect(saved[0]).toMatchObject({
+    status: 'incomplete',
+    jobId: null,
+    enumerationComplete: false,
+    finishedAtMs: 25,
+    proof: active.proof,
+    layouts: active.layouts,
+  });
+  expect(active.status).toBe('running');
+  expect(parseHistoryDocument({ entries: saved }).entries[0]).toEqual(saved[0]);
+});

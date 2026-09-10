@@ -8,6 +8,7 @@
     "core:window:allow-close",
     "core:window:allow-destroy",
     "core:window:allow-hide",
+    "core:window:allow-show",
     "dialog:default",
     "fs:allow-write-text-file",
     "fs:allow-read-text-file",

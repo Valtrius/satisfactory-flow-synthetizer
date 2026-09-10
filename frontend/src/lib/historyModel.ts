@@ -388,19 +388,24 @@ function savedProgress(progress: SolverProgress | null | undefined): SolverProgr
     : null;
 }
 
-/** Entries safe to write across sessions (no live/queued work). */
+/** Checkpoint active work as incomplete, never as resumable or completed work. */
 export function persistableEntries(entries: HistoryEntry[]): HistoryEntry[] {
   return entries
-    .filter((entry) => entryBand(entry.status) === 'history')
-    .map((entry) => ({
-      ...normalizeEntry(entry),
-      jobId: null,
-      progress: savedProgress(entry.progress),
-      form: cloneForm(entry.form),
-      sortColumns: entry.sortColumns.map((column) => ({ ...column })),
-      // JSON round-trip: layouts must be IPC-serializable (no proxies / functions).
-      layouts: jsonClone(normalizeEntry(entry).layouts),
-    }));
+    .filter((entry) => entry.status !== 'queued')
+    .map((entry) => {
+      const normalized = normalizeEntry(entry);
+      const interrupted = entry.status === 'running' || entry.status === 'cancelling';
+      return {
+        ...normalized,
+        status: interrupted ? ('incomplete' as const) : normalized.status,
+        enumerationComplete: interrupted ? false : normalized.enumerationComplete,
+        finishedAtMs: interrupted ? entry.updatedAtMs : normalized.finishedAtMs,
+        error: interrupted ? 'Interrupted before completion. Last saved checkpoint.' : normalized.error,
+        jobId: null,
+        sortColumns: normalized.sortColumns.map((column) => ({ ...column })),
+        layouts: jsonClone(normalized.layouts),
+      };
+    });
 }
 
 function jsonClone<T>(value: T): T {
