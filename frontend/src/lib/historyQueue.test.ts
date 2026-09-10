@@ -2,13 +2,14 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { JobSnapshot, Solution, SolveRequest } from '../types';
 import { createQueuedEntry, type HistoryEntry } from './historyModel';
 import { HistoryQueue } from './historyQueue';
-import { createJob, getJob, watchJob } from './api';
+import { createJob, getJob, releaseJob, watchJob } from './api';
 
 vi.mock('./api', () => ({
   createJob: vi.fn(),
   getJob: vi.fn(),
   watchJob: vi.fn(),
   cancelJob: vi.fn(),
+  releaseJob: vi.fn().mockResolvedValue(undefined),
 }));
 
 const request: SolveRequest = {
@@ -55,6 +56,7 @@ async function setup() {
   let entries: HistoryEntry[] = [queued];
   let receive!: (snapshot: JobSnapshot) => void;
   vi.mocked(createJob).mockResolvedValue('job');
+  vi.mocked(releaseJob).mockResolvedValue(undefined);
   vi.mocked(watchJob).mockImplementation(async (_id, onSnapshot) => {
     receive = onSnapshot;
     return { close: vi.fn() };
@@ -135,4 +137,13 @@ describe('common solver snapshot mapping', () => {
     expect(state.entry().result?.status).toBe('best_known');
     expect(state.entry().enumerationComplete).toBe(false);
   });
+});
+
+it('releases a full terminal snapshot once and ignores late duplicates', async () => {
+  const state = await setup();
+  state.receive(snapshot({ sequence: 9, status: 'completed', result: solution, results: [solution] }));
+  state.receive(snapshot({ sequence: 9, status: 'completed', result: solution, results: [solution] }));
+  expect(releaseJob).toHaveBeenCalledExactlyOnceWith('job');
+  expect(state.entry().jobId).toBeNull();
+  expect(state.entry().results).toEqual([solution]);
 });

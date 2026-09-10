@@ -1,4 +1,4 @@
-import { cancelJob, createJob, getJob, watchJob, type JobWatch } from './api';
+import { cancelJob, createJob, getJob, releaseJob, watchJob, type JobWatch } from './api';
 import { assembleEntries, isTerminalJobStatus, partitionEntries, type HistoryEntry } from './historyModel';
 import type { JobSnapshot, SolveRequest } from '../types';
 
@@ -110,6 +110,12 @@ export class HistoryQueue {
 
     if (snapshot.sequence != null && previous.sequence != null && snapshot.sequence < previous.sequence) return;
     const omitted = Boolean(snapshot.resultsOmitted);
+    if (omitted && isTerminalJobStatus(snapshot.status)) {
+      void getJob(snapshot.jobId)
+        .then((full) => this.acceptSnapshot(full))
+        .catch(() => this.host.setError('Lost final solver results.'));
+      return;
+    }
     const appended = Boolean(snapshot.resultAppended);
 
     if (appended && snapshot.result) {
@@ -168,7 +174,7 @@ export class HistoryQueue {
       error: snapshot.error,
       startedAtMs: snapshot.startedAtMs,
       finishedAtMs: terminal ? (previous.finishedAtMs ?? Date.now()) : previous.finishedAtMs,
-      jobId: terminal ? previous.jobId : snapshot.jobId,
+      jobId: terminal ? null : snapshot.jobId,
     });
 
     if (!omitted) {
@@ -181,6 +187,10 @@ export class HistoryQueue {
     }
 
     if (terminal) {
+      // Full terminal results are now owned by history. Late replies cannot change a new job.
+      void releaseJob(snapshot.jobId).catch(() => {
+        /* Bounded backend retention is the fallback. */
+      });
       this.resetTransport();
       if (this.host.getSelectedId() === entryId) this.host.flushSelectedChrome();
       const parts = partitionEntries(this.host.getEntries());

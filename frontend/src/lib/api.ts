@@ -69,3 +69,7 @@ export async function cancelJob(jobId: string): Promise<JobSnapshot> {
     throw invokeError(error);
   }
 }
+
+export async function releaseJob(jobId: string): Promise<void> {
+  await invoke('release_job', { jobId });
+}

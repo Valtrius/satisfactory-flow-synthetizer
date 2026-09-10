@@ -93,6 +93,16 @@ impl Job {
         })
     }
 
+    fn is_active(&self) -> bool {
+        matches!(
+            self.snapshot
+                .lock()
+                .expect("job snapshot lock poisoned")
+                .status,
+            JobStatus::Running | JobStatus::Cancelling
+        )
+    }
+
     fn current(&self) -> JobSnapshot {
         self.snapshot
             .lock()
@@ -194,37 +204,58 @@ fn create_job(
     state: State<'_, AppState>,
     request: SolveRequest,
 ) -> Result<Uuid, String> {
-    let running = state
-        .jobs
-        .read()
-        .expect("jobs lock poisoned")
-        .values()
-        .filter(|job| {
-            matches!(
-                job.current().status,
-                JobStatus::Running | JobStatus::Cancelling
-            )
-        })
-        .count();
-    if running >= 1 {
-        return Err("a solver job is already running".to_owned());
-    }
-
     let prepared = request
         .problem
         .prepare()
         .map_err(|error| error.to_string())?;
     let id = Uuid::new_v4();
     let job = Job::new(id);
-    state
-        .jobs
-        .write()
-        .expect("jobs lock poisoned")
-        .insert(id, Arc::clone(&job));
+    register_job(&state, id, Arc::clone(&job))?;
     let _ = app.emit(JOB_SNAPSHOT_EVENT, &job.current());
     tauri::async_runtime::spawn_blocking(move || run_job(&app, &job, &request, &prepared));
 
     Ok(id)
+}
+
+// Retain a few terminal snapshots when a disconnected frontend cannot acknowledge them.
+fn register_job(state: &AppState, id: Uuid, job: Arc<Job>) -> Result<(), String> {
+    let mut jobs = state.jobs.write().map_err(|_| "jobs lock poisoned")?;
+    if jobs.values().any(|job| job.is_active()) {
+        return Err("a solver job is already running".into());
+    }
+    let mut finished: Vec<_> = jobs
+        .iter()
+        .map(|(&id, job)| {
+            (
+                job.snapshot
+                    .lock()
+                    .expect("job snapshot lock poisoned")
+                    .started_at_ms,
+                id,
+            )
+        })
+        .collect();
+    finished.sort_unstable();
+    for (_, id) in finished.iter().take(finished.len().saturating_sub(3)) {
+        jobs.remove(id);
+    }
+    jobs.insert(id, job);
+    Ok(())
+}
+
+fn release_finished_job(state: &AppState, id: Uuid) -> Result<(), String> {
+    let mut jobs = state.jobs.write().map_err(|_| "jobs lock poisoned")?;
+    if jobs.get(&id).is_some_and(|job| job.is_active()) {
+        return Err("cannot release an active job".into());
+    }
+    jobs.remove(&id);
+    Ok(())
+}
+
+#[tauri::command]
+#[allow(clippy::needless_pass_by_value)]
+fn release_job(state: State<'_, AppState>, job_id: Uuid) -> Result<(), String> {
+    release_finished_job(&state, job_id)
 }
 
 #[tauri::command]
@@ -241,7 +272,7 @@ fn cancel_job(
     job_id: Uuid,
 ) -> Result<JobSnapshot, String> {
     let job = find_job(&state, job_id)?;
-    if job.current().status == JobStatus::Running {
+    if job.is_active() {
         job.cancel.store(true, Ordering::Relaxed);
         job.update(&app, |snapshot| {
             if snapshot.status == JobStatus::Running {
@@ -254,10 +285,7 @@ fn cancel_job(
 
 fn cancel_all_jobs(state: &AppState) {
     for job in state.jobs.read().expect("jobs lock poisoned").values() {
-        if matches!(
-            job.current().status,
-            JobStatus::Running | JobStatus::Cancelling
-        ) {
+        if job.is_active() {
             job.cancel.store(true, Ordering::Relaxed);
             job.set_status(JobStatus::Cancelling);
         }
@@ -310,6 +338,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             create_job,
             get_job,
+            release_job,
             cancel_job,
             load_history,
             apply_history_ops
@@ -324,4 +353,56 @@ pub fn run() {
                 cancel_all_jobs(&app.state::<AppState>());
             }
         });
+}
+
+#[cfg(test)]
+mod registry_tests {
+    use super::*;
+
+    fn state() -> AppState {
+        AppState {
+            jobs: Arc::new(RwLock::new(HashMap::new())),
+        }
+    }
+
+    #[test]
+    fn finished_snapshots_are_bounded_and_explicitly_releasable() {
+        let state = state();
+        for _ in 0..12 {
+            let id = Uuid::new_v4();
+            let job = Job::new(id);
+            register_job(&state, id, Arc::clone(&job)).unwrap();
+            assert!(release_finished_job(&state, id).is_err());
+            job.set_status(JobStatus::Completed);
+            assert!(state.jobs.read().unwrap().len() <= 4);
+        }
+        let ids = state
+            .jobs
+            .read()
+            .unwrap()
+            .keys()
+            .copied()
+            .collect::<Vec<_>>();
+        for id in ids {
+            release_finished_job(&state, id).unwrap();
+        }
+        assert!(state.jobs.read().unwrap().is_empty());
+    }
+
+    #[test]
+    fn registration_checks_and_inserts_atomically() {
+        let state = state();
+        std::thread::scope(|scope| {
+            let left = scope.spawn(|| {
+                let id = Uuid::new_v4();
+                register_job(&state, id, Job::new(id))
+            });
+            let right = scope.spawn(|| {
+                let id = Uuid::new_v4();
+                register_job(&state, id, Job::new(id))
+            });
+            assert_ne!(left.join().unwrap().is_ok(), right.join().unwrap().is_ok());
+        });
+        assert_eq!(state.jobs.read().unwrap().len(), 1);
+    }
 }
