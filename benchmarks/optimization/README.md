@@ -1,5 +1,10 @@
 # Prepared optimization screens
 
+The focused combined-policy campaign is complete: see
+[Partition promotion confirmation](results-promotion-20260910.md). All 56 timing
+solves completed, both hard cases improved in all six pairs, and static Boolean
+partitions are integrated into production alongside descending first-output order.
+
 Current decisions and performance requirements are in
 [10 September results](results-20260910.md). Descending first-output order is now
 the production baseline. New timing campaigns use at least 8 total workers and

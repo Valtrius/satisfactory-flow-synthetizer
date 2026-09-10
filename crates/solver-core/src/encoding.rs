@@ -268,11 +268,11 @@ impl Encoding {
 
     /// Each requested output has exactly one incoming belt. Fixing its source
     /// partitions all Boolean models into disjoint, collectively exhaustive roots.
-    pub fn output_source_assertion(&self, source: usize) -> Result<String, Failure> {
+    pub fn output_source_assertion(&self, output: usize, source: usize) -> Result<String, Failure> {
         let edge = self
             .edges
             .iter()
-            .find(|edge| edge.target == 0 && edge.source == source)
+            .find(|edge| edge.target == output && edge.source == source)
             .ok_or_else(|| Failure::Worker("missing Solver output partition edge".into()))?;
         Ok(format!("(assert {})\n", edge.name))
     }

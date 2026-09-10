@@ -164,7 +164,45 @@ enum Completion {
 struct Root {
     profile: usize,
     source: Option<usize>,
+    second_source: Option<usize>,
     impossible: bool,
+}
+
+/// Children partition the parent by the second output's unique producer.
+/// Only children enter the ledger; all must finish before the profile is exhausted.
+fn refine_roots(
+    roots: Vec<Root>,
+    tasks: &[AccountedProfile],
+    inputs: usize,
+    outputs: usize,
+    workers: usize,
+) -> Vec<Root> {
+    let live = roots.iter().filter(|root| !root.impossible).count();
+    if workers <= 1 || outputs < 2 || live >= workers {
+        return roots;
+    }
+    let mut refined: Vec<_> = roots
+        .into_iter()
+        .flat_map(|root| {
+            let sources = if root.impossible || root.source.is_none() {
+                0
+            } else {
+                inputs + tasks[root.profile].profile.node_count() as usize
+            };
+            if sources == 0 {
+                vec![root]
+            } else {
+                (0..sources)
+                    .map(|source| Root {
+                        second_source: Some(source),
+                        ..root
+                    })
+                    .collect()
+            }
+        })
+        .collect();
+    refined.sort_by_key(|root| root.second_source);
+    refined
 }
 
 struct RootLedger {
@@ -395,6 +433,7 @@ impl Search<'_> {
                     roots.push(Root {
                         profile,
                         source: Some(source),
+                        second_source: None,
                         impossible: false,
                     });
                 }
@@ -402,10 +441,23 @@ impl Search<'_> {
                 roots.push(Root {
                     profile,
                     source: None,
+                    second_source: None,
                     impossible,
                 });
             }
         }
+        let roots =
+            if self.options.mode == SolveMode::AllMinNL && matches!(self.counts, Counts::Boolean) {
+                refine_roots(
+                    roots,
+                    tasks,
+                    self.problem.inputs.len(),
+                    self.problem.outputs.len(),
+                    self.options.worker_count,
+                )
+            } else {
+                roots
+            };
         let mut ledger = RootLedger::new(&roots, tasks.len());
         let roots = &roots;
         let next = AtomicUsize::new(0);
@@ -448,6 +500,7 @@ impl Search<'_> {
                                 normalized,
                                 tasks[root.profile],
                                 root.source,
+                                root.second_source,
                                 mode,
                                 counts,
                                 cancel,
@@ -682,6 +735,7 @@ fn profile(
     normalized: &NormalizedProblem,
     task: AccountedProfile,
     source: Option<usize>,
+    second_source: Option<usize>,
     mode: SolveMode,
     counts: Counts,
     cancel: &AtomicBool,
@@ -693,7 +747,10 @@ fn profile(
     let mut session = Session::new()?;
     session.write(&encoding.script)?;
     if let Some(source) = source {
-        session.write(&encoding.output_source_assertion(source)?)?;
+        session.write(&encoding.output_source_assertion(0, source)?)?;
+    }
+    if let Some(source) = second_source {
+        session.write(&encoding.output_source_assertion(1, source)?)?;
     }
     let mut seen = BTreeSet::new();
     loop {
@@ -786,16 +843,19 @@ mod tests {
             Root {
                 profile: 0,
                 source: Some(0),
+                second_source: None,
                 impossible: false,
             },
             Root {
                 profile: 0,
                 source: Some(1),
+                second_source: None,
                 impossible: false,
             },
             Root {
                 profile: 1,
                 source: None,
+                second_source: None,
                 impossible: true,
             },
         ];

@@ -10,7 +10,7 @@ History schema 4 stores no solver type. JSON schemas through version 2 and relat
 
 Exact search normalizes every rate and capacity with one positive scale, preserving terminal mappings. Enumerate N then exact L then all feasible profiles. Unary belt multiplicities, sorted same-type operator flow, source/destination port counts, direct one-input flow equalities and decreasing selected reachability paths preserve all physical graphs, including cycles. Reject nonunique steady states; unexpected validation/extraction failures stop the worker.
 
-With multiple workers, first-output producer choices partition each profile completely. Exhausted roots alone discharge the ledger. First optimum stops/joins siblings without claiming same-group exhaustion. Enumeration exhausts the entire requested scope.
+With multiple workers, first-output producer choices partition each profile completely. Boolean All min N/L groups with at least two outputs and fewer live roots than branch workers refine by the second output's producer. The disjoint children replace the parent; every child must exhaust. Keep descending parent order and stable interleaving by second producer. Exhausted roots alone discharge the ledger. First optimum stops/joins siblings without claiming same-group exhaustion. Enumeration exhausts the entire requested scope.
 
 Portfolio races independent sparse arithmetic and Boolean count formulations, each with its own ledger. Total workers are split; sparse gets the odd extra, one worker uses Boolean. Join both searches and processes before terminal events. Return one proof owner, never sum ledgers. User cancellation remains incomplete even if internal success races it.
 
