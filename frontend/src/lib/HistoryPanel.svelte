@@ -1068,11 +1068,11 @@
       </li>
       <li
         class="text-muted inline-flex min-w-0 items-center gap-1 text-[0.68rem] font-semibold tabular-nums"
-        title={metrics.belts.tip}
-        aria-label={metrics.belts.tip}
+        title={metrics.layouts.tip}
+        aria-label={metrics.layouts.tip}
       >
-        <Route class="text-flow size-3 shrink-0" strokeWidth={2.2} aria-hidden="true" />
-        <span class="truncate">{metrics.belts.value}</span>
+        <Table2 class="text-warning size-3 shrink-0" strokeWidth={2.2} aria-hidden="true" />
+        <span class="truncate">{metrics.layouts.value}</span>
       </li>
       <li
         class="text-muted inline-flex min-w-0 items-center gap-1 text-[0.68rem] font-semibold tabular-nums"
@@ -1084,11 +1084,11 @@
       </li>
       <li
         class="text-muted inline-flex min-w-0 items-center gap-1 text-[0.68rem] font-semibold tabular-nums"
-        title={metrics.layouts.tip}
-        aria-label={metrics.layouts.tip}
+        title={metrics.belts.tip}
+        aria-label={metrics.belts.tip}
       >
-        <Table2 class="text-warning size-3 shrink-0" strokeWidth={2.2} aria-hidden="true" />
-        <span class="truncate">{metrics.layouts.value}</span>
+        <Route class="text-flow size-3 shrink-0" strokeWidth={2.2} aria-hidden="true" />
+        <span class="truncate">{metrics.belts.value}</span>
       </li>
     </ul>
   </div>
