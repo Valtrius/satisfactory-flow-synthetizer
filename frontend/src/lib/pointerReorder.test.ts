@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { insertIndexFromClient, toIndexFromInsertAt, visualReorderSlots } from './pointerReorder';
+import { insertIndexFromClient, visualReorderSlots } from './pointerReorder';
 
 function fakeEl(start: number, size: number, axis: 'x' | 'y') {
   return {
@@ -44,13 +44,5 @@ describe('visualReorderSlots', () => {
       'ghost',
       'c',
     ]);
-  });
-});
-
-describe('toIndexFromInsertAt', () => {
-  it('matches splice reorder semantics', () => {
-    expect(toIndexFromInsertAt(0, 2)).toBe(2);
-    expect(toIndexFromInsertAt(2, 0)).toBe(0);
-    expect(toIndexFromInsertAt(1, 1)).toBe(1);
   });
 });

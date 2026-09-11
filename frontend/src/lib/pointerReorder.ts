@@ -50,11 +50,6 @@ export function visualReorderSlots<T>(
   ];
 }
 
-/** Map without-list insert index to a `toIndex` for splice-based reorder helpers. */
-export function toIndexFromInsertAt(fromIndex: number, insertAt: number): number {
-  return insertAt;
-}
-
 export function setListDragging(active: boolean): void {
   document.body.classList.toggle('list-dragging', active);
 }

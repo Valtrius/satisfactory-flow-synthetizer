@@ -1,14 +1,10 @@
 <script lang="ts">
   import { flip } from 'svelte/animate';
+  import { onDestroy } from 'svelte';
+  import { createPointerDrag } from './pointerDrag';
   import Button from './ui/Button.svelte';
   import type { Solution } from '../types';
-  import {
-    insertIndexFromClient,
-    prefersReducedMotion,
-    setListDragging,
-    toIndexFromInsertAt,
-    visualReorderSlots,
-  } from './pointerReorder';
+  import { insertIndexFromClient, prefersReducedMotion, visualReorderSlots } from './pointerReorder';
   import { SORT_LABELS, type SortColumn, type SortKey, flipColumnDir, reorderColumns } from './solutionSort';
 
   type Props = {
@@ -24,11 +20,7 @@
   let dragFrom = $state<number | null>(null);
   let dragInsertAt = $state<number | null>(null);
   let dragActive = $state(false);
-  let dragPointerId = $state<number | null>(null);
-  let dragOriginX = 0;
-  let dragOriginY = 0;
-  let dragGrabX = 0;
-  let dragGrabY = 0;
+  let dragContainer: HTMLElement | null = null;
   let dragWidth = $state(0);
   let dragHeight = $state(0);
   let dragFloatX = $state(0);
@@ -45,16 +37,22 @@
     dragFrom = null;
     dragInsertAt = null;
     dragActive = false;
-    dragPointerId = null;
+    dragContainer = null;
     dragWidth = 0;
     dragHeight = 0;
-    setListDragging(false);
   }
 
-  function cancelDrag(): void {
-    if (dragFrom == null) return;
-    clearDragState();
-  }
+  const pointerDrag = createPointerDrag({
+    move: (frame) => {
+      dragActive = true;
+      dragFloatX = frame.left;
+      dragFloatY = frame.top;
+      updateDropTarget(frame.clientX);
+    },
+    finish: finishDrag,
+    cancel: clearDragState,
+  });
+  onDestroy(pointerDrag.dispose);
 
   function headerClick(key: SortKey): void {
     if (dragActive || dragFrom != null) return;
@@ -68,7 +66,9 @@
   }
 
   function updateDropTarget(clientX: number): void {
-    const headers = [...document.querySelectorAll<HTMLElement>('th[data-col-source-index]')];
+    const headers = [...(dragContainer?.querySelectorAll<HTMLElement>('th[data-col-source-index]') ?? [])].filter(
+      (element) => Number(element.dataset.colSourceIndex) !== dragFrom,
+    );
     dragInsertAt = insertIndexFromClient(headers, clientX, 'x');
   }
 
@@ -79,60 +79,27 @@
     dragReduceMotion = prefersReducedMotion();
     const header = (event.currentTarget as HTMLElement).closest('th');
     const rect = (header ?? (event.currentTarget as HTMLElement)).getBoundingClientRect();
+    if (!pointerDrag.start(event, rect)) return;
+    dragContainer = (event.currentTarget as HTMLElement).closest('table');
     dragFrom = index;
     dragInsertAt = index;
     dragActive = false;
-    dragPointerId = event.pointerId;
-    dragOriginX = event.clientX;
-    dragOriginY = event.clientY;
-    dragGrabX = event.clientX - rect.left;
-    dragGrabY = event.clientY - rect.top;
     dragWidth = rect.width;
     dragHeight = rect.height;
     dragFloatX = rect.left;
     dragFloatY = rect.top;
   }
 
-  function onWindowPointerMove(event: PointerEvent): void {
-    if (dragPointerId == null || event.pointerId !== dragPointerId || dragFrom == null) return;
-    if (!dragActive) {
-      if (Math.abs(event.clientX - dragOriginX) <= 4 && Math.abs(event.clientY - dragOriginY) <= 4) {
-        return;
-      }
-      dragActive = true;
-      setListDragging(true);
-    }
-    dragFloatX = event.clientX - dragGrabX;
-    dragFloatY = event.clientY - dragGrabY;
-    updateDropTarget(event.clientX);
-  }
-
-  function onWindowPointerUp(event: PointerEvent): void {
-    if (dragPointerId == null || event.pointerId !== dragPointerId || dragFrom == null) return;
+  function finishDrag(active: boolean): void {
+    if (dragFrom == null) return;
     const from = dragFrom;
     const insertAt = dragInsertAt;
-    const active = dragActive;
     clearDragState();
     if (!active || insertAt == null) return;
-    const to = toIndexFromInsertAt(from, insertAt);
+    const to = insertAt;
     if (to === from) return;
     onColumnsChange(reorderColumns(columns, from, to));
   }
-
-  $effect(() => {
-    if (dragPointerId == null) return;
-    const move = (event: PointerEvent) => onWindowPointerMove(event);
-    const up = (event: PointerEvent) => onWindowPointerUp(event);
-    window.addEventListener('pointermove', move);
-    window.addEventListener('pointerup', up);
-    window.addEventListener('pointercancel', up);
-    return () => {
-      window.removeEventListener('pointermove', move);
-      window.removeEventListener('pointerup', up);
-      window.removeEventListener('pointercancel', up);
-      setListDragging(false);
-    };
-  });
 
   function cellValue(solution: Solution, key: SortKey): string {
     if (key === 'belts') return String(solution.stats.linkCount ?? solution.stats.beltCount ?? '—');
@@ -140,15 +107,6 @@
     return String(solution.stats.feedbackLoops);
   }
 </script>
-
-<svelte:window
-  onkeydown={(event) => {
-    if (event.key === 'Escape' && dragFrom != null) {
-      event.preventDefault();
-      cancelDrag();
-    }
-  }}
-/>
 
 <div class="flex h-full min-h-0 flex-col overflow-hidden bg-[#0d1922]">
   <div class="min-h-0 flex-1 overflow-auto">

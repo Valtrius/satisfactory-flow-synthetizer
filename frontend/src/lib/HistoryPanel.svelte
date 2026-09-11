@@ -21,9 +21,10 @@
     type HistoryStatusFilter,
   } from './uiPrefs';
   import { flip } from 'svelte/animate';
-  import { untrack } from 'svelte';
+  import { untrack, onDestroy } from 'svelte';
+  import { createPointerDrag } from './pointerDrag';
   import { createHistoryEntrance, createHistoryOrder, historyMotionDuration } from './historyMotion';
-  import { insertIndexFromClient, setListDragging, visualReorderSlots } from './pointerReorder';
+  import { insertIndexFromClient, visualReorderSlots } from './pointerReorder';
 
   type StatusFilter = HistoryStatusFilter;
   type SearchFilter = HistorySearchFilter;
@@ -95,11 +96,7 @@
   let dragFromId = $state<string | null>(null);
   let dragInsertAt = $state<number | null>(null);
   let dragActive = $state(false);
-  let dragPointerId = $state<number | null>(null);
-  let dragOriginX = 0;
-  let dragOriginY = 0;
-  let dragGrabX = 0;
-  let dragGrabY = 0;
+  let dragContainer: HTMLElement | null = null;
   let dragWidth = $state(0);
   let dragHeight = $state(0);
   let dragFloatX = $state(0);
@@ -363,20 +360,28 @@
     dragFromId = null;
     dragInsertAt = null;
     dragActive = false;
-    dragPointerId = null;
+    dragContainer = null;
     dragWidth = 0;
     dragHeight = 0;
-    setListDragging(false);
   }
 
-  function cancelDrag(): void {
-    if (!dragFromId) return;
-    clearDragState();
-  }
+  const pointerDrag = createPointerDrag({
+    move: (frame) => {
+      dragActive = true;
+      dragFloatX = frame.left;
+      dragFloatY = frame.top;
+      updateDropTarget(frame.clientY);
+    },
+    finish: finishDrag,
+    cancel: clearDragState,
+  });
+  onDestroy(pointerDrag.dispose);
 
   function updateDropTarget(clientY: number): void {
     if (!dragBand || !dragFromId) return;
-    const entryEls = [...document.querySelectorAll<HTMLElement>(`[data-history-band="${dragBand}"][data-history-id]`)];
+    const entryEls = [
+      ...(dragContainer?.querySelectorAll<HTMLElement>(`[data-history-band="${dragBand}"][data-history-id]`) ?? []),
+    ].filter((element) => element.dataset.historyId !== dragFromId);
     dragInsertAt = insertIndexFromClient(entryEls, clientY, 'y');
   }
 
@@ -386,44 +391,27 @@
     menuId = null;
     headerMenuOpen = false;
     openPanel = null;
-    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    const card = event.currentTarget as HTMLElement;
+    const rect = card.getBoundingClientRect();
+    if (!pointerDrag.start(event, rect)) return;
+    dragContainer = card.closest('[role="listbox"]');
     const source = band === 'queued' ? filteredQueued : filteredHistory;
     const fromIndex = source.findIndex((entry) => entry.id === id);
     dragBand = band;
     dragFromId = id;
     dragInsertAt = fromIndex >= 0 ? fromIndex : 0;
     dragActive = false;
-    dragPointerId = event.pointerId;
-    dragOriginX = event.clientX;
-    dragOriginY = event.clientY;
-    dragGrabX = event.clientX - rect.left;
-    dragGrabY = event.clientY - rect.top;
     dragWidth = rect.width;
     dragHeight = rect.height;
     dragFloatX = rect.left;
     dragFloatY = rect.top;
   }
 
-  function onWindowPointerMove(event: PointerEvent): void {
-    if (dragPointerId == null || event.pointerId !== dragPointerId || !dragFromId) return;
-    if (!dragActive) {
-      if (Math.abs(event.clientX - dragOriginX) <= 4 && Math.abs(event.clientY - dragOriginY) <= 4) {
-        return;
-      }
-      dragActive = true;
-      setListDragging(true);
-    }
-    dragFloatX = event.clientX - dragGrabX;
-    dragFloatY = event.clientY - dragGrabY;
-    updateDropTarget(event.clientY);
-  }
-
-  function onWindowPointerUp(event: PointerEvent): void {
-    if (dragPointerId == null || event.pointerId !== dragPointerId || !dragFromId) return;
+  function finishDrag(active: boolean): void {
+    if (!dragFromId) return;
     const fromId = dragFromId;
     const band = dragBand;
     const insertAt = dragInsertAt;
-    const active = dragActive;
     const source = band === 'queued' ? filteredQueued : band === 'history' ? filteredHistory : [];
     clearDragState();
     if (active && band && insertAt != null) {
@@ -436,22 +424,6 @@
     }
     if (!active) onSelect(fromId);
   }
-
-  $effect(() => {
-    if (dragPointerId == null) return;
-    const move = (event: PointerEvent) => onWindowPointerMove(event);
-    const up = (event: PointerEvent) => onWindowPointerUp(event);
-    window.addEventListener('pointermove', move);
-    window.addEventListener('pointerup', up);
-    window.addEventListener('pointercancel', up);
-    return () => {
-      window.removeEventListener('pointermove', move);
-      window.removeEventListener('pointerup', up);
-      window.removeEventListener('pointercancel', up);
-      document.body.classList.remove('history-dragging');
-      setListDragging(false);
-    };
-  });
 
   function iconBtnClass(active: boolean): string {
     return active ? '!border-accent/70 !bg-selected !text-accent' : '';
@@ -492,7 +464,7 @@
       }
       if (dragFromId) {
         event.preventDefault();
-        cancelDrag();
+        pointerDrag.cancel();
         return;
       }
       menuId = null;
