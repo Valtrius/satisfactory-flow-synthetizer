@@ -150,7 +150,7 @@ pub struct HistoryStore {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(tag = "op", rename_all = "camelCase")]
+#[serde(tag = "op", rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum HistoryOp {
     UpsertEntry {
         entry: Value,
@@ -165,6 +165,7 @@ pub enum HistoryOp {
     },
     SaveSortColumns {
         id: String,
+        #[serde(alias = "sort_columns")]
         sort_columns: Value,
     },
     SaveSolverState {
@@ -1596,6 +1597,26 @@ pub fn apply_history_ops(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn frontend_sort_column_payload_persists_without_rewriting_graphs() {
+        let directory = tempfile::tempdir().unwrap();
+        let store = HistoryStore::open(directory.path()).unwrap();
+        store
+            .apply_ops(&[HistoryOp::UpsertEntry {
+                entry: sample_entry(),
+            }])
+            .unwrap();
+        let columns = json!([{ "key": "belts", "dir": "desc" }]);
+        let operation: HistoryOp = serde_json::from_value(json!({
+            "op": "saveSortColumns", "id": "entry-1", "sortColumns": columns
+        }))
+        .unwrap();
+        store.apply_ops(&[operation]).unwrap();
+        let loaded = store.load_document().unwrap();
+        assert_eq!(loaded["entries"][0]["sortColumns"], columns);
+        assert_eq!(loaded["entries"][0]["results"][0]["nodes"][0]["id"], "n1");
+    }
 
     fn sample_entry() -> Value {
         json!({
