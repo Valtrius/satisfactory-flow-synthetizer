@@ -438,7 +438,10 @@ fn apply_op(tx: &Transaction<'_>, op: &HistoryOp) -> Result<(), String> {
 
 fn upsert_entry(tx: &Transaction<'_>, entry: &Value) -> Result<(), String> {
     let id = required_str(entry, "id")?;
-    let sort_order = existing_sort_order(tx, id)?.unwrap_or(next_sort_order(tx)?);
+    let sort_order = match existing_sort_order(tx, id)? {
+        Some(order) => order,
+        None => next_sort_order(tx)?,
+    };
     tx.execute("DELETE FROM entries WHERE id = ?1", params![id])
         .map_err(|error| format!("replace history entry: {error}"))?;
 
