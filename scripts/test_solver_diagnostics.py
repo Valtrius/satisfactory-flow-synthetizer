@@ -18,6 +18,25 @@ def module(name, filename):
 
 
 auditor = module("root_audit", "audit-optimization-results.py")
+ROOT = Path(__file__).resolve().parents[1]
+SCRIPT_TEST_ROOT = ROOT / "target" / "script-tests"
+
+
+def temporary_campaign():
+    # Hosted Windows runners can treat scripts created under the user TEMP tree
+    # differently from scripts under the checked-out workspace. Real frozen
+    # campaigns also live under the repository target tree, so test the same
+    # filesystem context here.
+    SCRIPT_TEST_ROOT.mkdir(parents=True, exist_ok=True)
+    return tempfile.TemporaryDirectory(dir=SCRIPT_TEST_ROOT)
+
+
+def campaign_debug(result, root):
+    parts = [f"stdout:\n{result.stdout}", f"stderr:\n{result.stderr}"]
+    for path in [root / "CAMPAIGN-STATUS.txt", *sorted(root.glob("*/runner.stderr.log"))]:
+        if path.is_file():
+            parts.append(f"{path.relative_to(root)}:\n{path.read_text(encoding='utf-8-sig')}")
+    return "\n".join(parts)
 
 
 def diagnostic_result():
@@ -69,7 +88,7 @@ class SolverDiagnosticTests(unittest.TestCase):
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is required")
     def test_campaign_runs_sequentially_and_preserves_a_failed_suite(self):
         # Stub suites exercise orchestration without running any solver or benchmark.
-        with tempfile.TemporaryDirectory() as directory:
+        with temporary_campaign() as directory:
             root = Path(directory)
             starter = Path(__file__).with_name("start-optimization-campaign.ps1")
             shutil.copy2(starter, root / starter.name)
@@ -94,7 +113,9 @@ if ($label -eq 'failed') { exit 1 }
             (root / "campaign-hashes.json").write_text(json.dumps({path: hashlib.sha256((root/path).read_bytes()).hexdigest() for path in paths}))
             result = subprocess.run(["pwsh", "-NoProfile", "-File", str(root/starter.name), "-PreparedCampaign", str(root), "-Run", "-NoDialog"], capture_output=True, text=True, timeout=30, check=False)
             self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
-            self.assertEqual((root / "events.txt").read_text(encoding="utf-8-sig").splitlines(),
+            event_file = root / "events.txt"
+            self.assertTrue(event_file.is_file(), campaign_debug(result, root))
+            self.assertEqual(event_file.read_text(encoding="utf-8-sig").splitlines(),
                              [f"{event} {name}" for name in ("first", "failed", "last") for event in ("start", "end")])
             outcomes = json.loads((root / "suite-outcomes.json").read_text(encoding="utf-8-sig"))
             self.assertEqual([o["verified"] for o in outcomes], [True, False, True])
@@ -117,7 +138,7 @@ if ($label -eq 'failed') { exit 1 }
 
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is required")
     def test_session_budget_stops_a_stalled_owned_suite(self):
-        with tempfile.TemporaryDirectory() as directory:
+        with temporary_campaign() as directory:
             root = Path(directory)
             suite = root / "stalled"
             suite.mkdir()
@@ -136,7 +157,7 @@ Start-Sleep -Seconds 30
             (root / "campaign-hashes.json").write_text(json.dumps({path: hashlib.sha256((root/path).read_bytes()).hexdigest() for path in files}))
             result = subprocess.run(["pwsh", "-NoProfile", "-File", str(root/starter.name), "-PreparedCampaign", str(root), "-Run", "-NoDialog"], capture_output=True, text=True, timeout=15, check=False)
             self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
-            self.assertTrue((suite / "started.txt").is_file())
+            self.assertTrue((suite / "started.txt").is_file(), campaign_debug(result, root))
             self.assertFalse((suite / "BENCHMARK-FINISHED.txt").exists())
             outcome = json.loads((root / "suite-outcomes.json").read_text(encoding="utf-8-sig"))[0]
             self.assertFalse(outcome["verified"])

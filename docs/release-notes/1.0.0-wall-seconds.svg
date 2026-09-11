@@ -1,0 +1,61 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 820 390" width="820" height="390" role="img">
+  <title>Historical release search wall seconds</title>
+  <desc>Wall times for four longer historical release cases on versions 0.1.0, 0.2.0 and 1.0.0. Version 1.0.0 is faster on all four.</desc>
+  <rect width="820" height="390" fill="#ffffff"/>
+  <text x="24" y="32" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="18" font-weight="700" fill="#111827">Release comparison wall seconds</text>
+  <text x="24" y="54" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#4b5563">Same Windows machine, 16 workers on the 96 MiB L3 CPU set. Lower is better.</text>
+
+  <g font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#6b7280">
+    <text x="82" y="316" text-anchor="end">0s</text>
+    <text x="82" y="236" text-anchor="end">60s</text>
+    <text x="82" y="156" text-anchor="end">120s</text>
+    <text x="82" y="76" text-anchor="end">180s</text>
+    <line x1="90" y1="312" x2="780" y2="312" stroke="#e5e7eb"/>
+    <line x1="90" y1="232" x2="780" y2="232" stroke="#e5e7eb"/>
+    <line x1="90" y1="152" x2="780" y2="152" stroke="#e5e7eb"/>
+    <line x1="90" y1="72" x2="780" y2="72" stroke="#e5e7eb"/>
+  </g>
+
+  <g font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#111827">
+    <rect x="130" y="244.1" width="26" height="67.9" fill="#6b7280"/>
+    <rect x="162" y="283.2" width="26" height="28.8" fill="#2563eb"/>
+    <rect x="194" y="301.6" width="26" height="10.4" fill="#059669"/>
+    <text x="175" y="334" text-anchor="middle">115 all</text>
+    <text x="143" y="238" text-anchor="middle" font-size="11" fill="#4b5563">50.9</text>
+    <text x="175" y="277" text-anchor="middle" font-size="11" fill="#1d4ed8">21.6</text>
+    <text x="207" y="296" text-anchor="middle" font-size="11" fill="#047857">7.82</text>
+
+    <rect x="300" y="300.6" width="26" height="11.4" fill="#6b7280"/>
+    <rect x="332" y="304.0" width="26" height="8.0" fill="#2563eb"/>
+    <rect x="364" y="311.2" width="26" height="0.8" fill="#059669"/>
+    <text x="345" y="334" text-anchor="middle">238 opt</text>
+    <text x="313" y="295" text-anchor="middle" font-size="11" fill="#4b5563">8.59</text>
+    <text x="345" y="299" text-anchor="middle" font-size="11" fill="#1d4ed8">6.02</text>
+    <text x="377" y="306" text-anchor="middle" font-size="11" fill="#047857">0.60</text>
+
+    <rect x="470" y="72" width="26" height="240" fill="#6b7280"/>
+    <rect x="502" y="103.8" width="26" height="208.2" fill="#2563eb"/>
+    <rect x="534" y="265.0" width="26" height="47.0" fill="#059669"/>
+    <text x="515" y="334" text-anchor="middle">258 min-links</text>
+    <text x="483" y="66" text-anchor="middle" font-size="11" fill="#4b5563">180</text>
+    <text x="515" y="98" text-anchor="middle" font-size="11" fill="#1d4ed8">156</text>
+    <text x="547" y="259" text-anchor="middle" font-size="11" fill="#047857">35.2</text>
+
+    <rect x="640" y="291.8" width="26" height="20.2" fill="#6b7280"/>
+    <rect x="672" y="296.9" width="26" height="15.1" fill="#2563eb"/>
+    <rect x="704" y="307.1" width="26" height="4.9" fill="#059669"/>
+    <text x="685" y="334" text-anchor="middle">36 opt</text>
+    <text x="653" y="286" text-anchor="middle" font-size="11" fill="#4b5563">15.1</text>
+    <text x="685" y="291" text-anchor="middle" font-size="11" fill="#1d4ed8">11.3</text>
+    <text x="717" y="302" text-anchor="middle" font-size="11" fill="#047857">3.65</text>
+  </g>
+
+  <g font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12">
+    <rect x="90" y="360" width="12" height="12" fill="#6b7280"/>
+    <text x="108" y="370" fill="#111827">0.1.0</text>
+    <rect x="164" y="360" width="12" height="12" fill="#2563eb"/>
+    <text x="182" y="370" fill="#111827">0.2.0</text>
+    <rect x="238" y="360" width="12" height="12" fill="#059669"/>
+    <text x="256" y="370" fill="#111827">1.0.0</text>
+  </g>
+</svg>

@@ -16,6 +16,31 @@ foreach ($entry in $hashes.GetEnumerator()) {
     if (-not $path.StartsWith($root + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) { throw 'Campaign path escaped its directory' }
     if ((Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant() -ne $entry.Value) { throw "Frozen campaign index changed: $($entry.Key)" }
 }
+function Start-OwnedSuite([string]$SuiteRoot) {
+    $start = [Diagnostics.ProcessStartInfo]::new()
+    $start.FileName = (Get-Process -Id $PID).Path
+    $start.WorkingDirectory = $SuiteRoot
+    $start.UseShellExecute = $false
+    $start.CreateNoWindow = $true
+    $start.RedirectStandardOutput = $true
+    $start.RedirectStandardError = $true
+    foreach ($argument in @('-NoProfile','-File',(Join-Path $SuiteRoot 'start-optimization-suite.ps1'),'-PreparedSuite',$SuiteRoot,'-Run','-NoDialog')) {
+        $start.ArgumentList.Add($argument)
+    }
+    $process = [Diagnostics.Process]::new()
+    $process.StartInfo = $start
+    if (-not $process.Start()) { throw "Could not start optimization suite: $SuiteRoot" }
+    [pscustomobject]@{
+        Process = $process
+        StandardOutput = $process.StandardOutput.ReadToEndAsync()
+        StandardError = $process.StandardError.ReadToEndAsync()
+    }
+}
+function Save-OwnedSuiteLogs([object]$Running, [string]$SuiteRoot) {
+    $encoding = [Text.UTF8Encoding]::new($false)
+    [IO.File]::WriteAllText((Join-Path $SuiteRoot 'runner.log'), $Running.StandardOutput.GetAwaiter().GetResult(), $encoding)
+    [IO.File]::WriteAllText((Join-Path $SuiteRoot 'runner.stderr.log'), $Running.StandardError.GetAwaiter().GetResult(), $encoding)
+}
 if (-not $Run) {
     foreach ($suite in $campaign.suites) {
         if (Test-Path -LiteralPath (Join-Path $root "$($suite.name)/results")) { throw 'This campaign already has results; prepare a fresh campaign directory.' }
@@ -47,8 +72,8 @@ try {
         $index++
         $suiteRoot = Join-Path $root $suite.name
         @("RUNNING: suite $index / $($campaign.suites.Count): $($suite.name)", "Progress: $suiteRoot/results/BENCHMARK-STATUS.txt", "Completed suite outcomes: $($outcomes.Count)", "Session limit: $budgetSeconds seconds including cleanup and verification.", "Started: $($started.ToString('o'))") | Set-Content -LiteralPath $status
-        $arguments = @('-NoProfile','-File',('"'+(Join-Path $suiteRoot 'start-optimization-suite.ps1')+'"'),'-PreparedSuite',('"'+$suiteRoot+'"'),'-Run','-NoDialog')
-        $child = Start-Process -FilePath (Get-Process -Id $PID).Path -ArgumentList $arguments -WorkingDirectory $suiteRoot -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $suiteRoot 'runner.log') -RedirectStandardError (Join-Path $suiteRoot 'runner.stderr.log')
+        $running = Start-OwnedSuite $suiteRoot
+        $child = $running.Process
         # A stalled runner or verifier must also respect the user's session cap.
         # Kill only this owned process tree; retain partial evidence for review.
         $cleanupReserve = [Math]::Min(10, $budgetSeconds / 10)
@@ -56,12 +81,16 @@ try {
         if (-not $child.WaitForExit($waitMilliseconds)) {
             $child.Kill($true)
             $child.WaitForExit(5000) | Out-Null
+            Save-OwnedSuiteLogs $running $suiteRoot
+            $child.Dispose()
             $outcomes += [pscustomobject]@{suite=$suite.name;verified=$false;results=(Join-Path $suiteRoot 'results');reason='session_budget'}
             ConvertTo-Json -InputObject $outcomes -Depth 5 | Set-Content -LiteralPath (Join-Path $root 'suite-outcomes.json')
             'INTERRUPTED AT SESSION BUDGET: partial results are incomplete; rerun this suite in a fresh campaign.' | Set-Content -LiteralPath (Join-Path $suiteRoot 'BENCHMARK-FAILED.txt')
             throw 'Session time budget reached; stopped the owned runner and backend processes. Partial results are preserved.'
         }
+        Save-OwnedSuiteLogs $running $suiteRoot
         $passed = $child.ExitCode -eq 0 -and (Test-Path -LiteralPath (Join-Path $suiteRoot 'BENCHMARK-FINISHED.txt'))
+        $child.Dispose()
         $outcomes += [pscustomobject]@{suite=$suite.name;verified=$passed;results=(Join-Path $suiteRoot 'results')}
         ConvertTo-Json -InputObject $outcomes -Depth 5 | Set-Content -LiteralPath (Join-Path $root 'suite-outcomes.json')
     }

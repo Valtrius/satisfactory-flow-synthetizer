@@ -297,7 +297,7 @@ impl Encoding {
         if tokens.len() != self.edges.len() * 2 {
             return Err(Failure::Worker("malformed cvc5 model".into()));
         }
-        for pair in tokens.chunks_exact(2) {
+        for pair in tokens.as_chunks::<2>().0 {
             let value = match pair[1] {
                 "true" => true,
                 "false" => false,

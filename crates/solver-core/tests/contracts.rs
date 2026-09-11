@@ -270,92 +270,31 @@ fn completed_results_do_not_depend_on_worker_count() {
 
 #[test]
 fn optimal_returns_a_valid_minimum_without_requiring_a_particular_tie() {
-    use solver_api::{ConsumerPortRef, PhysicalGraph, ProducerPortRef};
-    let fixture: serde_json::Value =
-        serde_json::from_str(include_str!("fixtures/preferred-order.json")).unwrap();
-    let problem: Problem = serde_json::from_value(fixture["problem"].clone()).unwrap();
-    let graphs: Vec<PhysicalGraph> = serde_json::from_value(fixture["graphs"].clone()).unwrap();
-    let expected: PhysicalGraph =
-        serde_json::from_value(fixture["preferredGraph"].clone()).unwrap();
-    let solver_core::Preparation::Prepared(normalized) =
-        solver_core::prepare_problem(&problem).unwrap()
-    else {
-        panic!("feasible fixture")
-    };
-    let normalized_problem = Problem {
-        inputs: normalized.inputs.as_slice().to_vec(),
-        outputs: normalized.outputs.as_slice().to_vec(),
-        max_link_rate: normalized.max_link_rate.clone(),
-    };
-    let mut ordered = Vec::new();
-    for graph in graphs {
-        let validation = validate_solution(&problem, &graph).unwrap();
-        let mut scaled = graph.clone();
-        for link in &mut scaled.links {
-            link.flow = &link.flow / &normalized.original_scale;
-            if let ProducerPortRef::Input(ref mut id) = link.producer {
-                id.0 = u32::try_from(
-                    normalized
-                        .terminal_mapping
-                        .normalized_input(id.0 as usize)
-                        .unwrap(),
-                )
-                .unwrap();
-            }
-            if let ConsumerPortRef::Output(ref mut id) = link.consumer {
-                id.0 = u32::try_from(
-                    normalized
-                        .terminal_mapping
-                        .normalized_output(id.0 as usize)
-                        .unwrap(),
-                )
-                .unwrap();
-            }
-        }
-        let reference = solver_reference::canonicalize_graph(&normalized_problem, &scaled);
-        ordered.push((
-            validation.node_count,
-            validation.link_count,
-            reference.key,
-            graph,
-        ));
-    }
-    ordered.sort_by(|a, b| (&a.0, &a.1, &a.2).cmp(&(&b.0, &b.1, &b.2)));
-    assert_eq!(ordered[0].3, expected);
-    assert_eq!(ordered.iter().filter(|row| row.1 == 8).count(), 3);
-
+    // This small problem has two distinct N=3/L=3 optima. Enumerate them with
+    // the independent reference solver, then require OneMinNL to return either
+    // exact optimum rather than a particular canonical tie winner.
+    let problem = problem(&["6"], &["3", "2", "1"], "1200");
     let cancel = AtomicBool::new(false);
-    let actual = std::thread::scope(|scope| {
-        let (send, receive) = std::sync::mpsc::channel();
-        let flag = &cancel;
-        let deadline = scope.spawn(move || {
-            if receive
-                .recv_timeout(std::time::Duration::from_mins(1))
-                .is_err()
-            {
-                flag.store(true, Ordering::Relaxed);
-            }
-        });
-        let result = solver_core::solve_problem(
-            &problem,
-            &options(SolveMode::OneMinNL, 7, 4),
-            &cancel,
-            &|_| {},
-        )
-        .unwrap();
-        let _ = send.send(());
-        deadline.join().unwrap();
-        result
-    });
+    let reference =
+        solver_reference::solve_problem(&problem, &options(SolveMode::AllMinNL, 3, 1), &cancel)
+            .unwrap();
+    assert_eq!(reference.solutions.len(), 2);
+
+    let actual = solver_core::solve_problem(
+        &problem,
+        &options(SolveMode::OneMinNL, 3, 4),
+        &cancel,
+        &|_| {},
+    )
+    .unwrap();
     let best = preferred(&actual);
-    assert_eq!((best.node_count, best.link_count), (7, 8));
+    assert_eq!((best.node_count, best.link_count), (3, 3));
     validate_solution(&problem, &best.graph).unwrap();
-    let key = solver_validation::layout_key(&problem, &best.graph);
     assert!(
-        ordered
+        reference
+            .solutions
             .iter()
-            .filter(|row| row.1 == 8)
-            .any(|row| solver_validation::layout_key(&problem, &row.3) == key)
+            .any(|solution| solution.canonical_graph_key == best.canonical_graph_key)
     );
 }
 

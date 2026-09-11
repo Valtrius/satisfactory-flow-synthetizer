@@ -459,10 +459,7 @@ fn present_link(
 }
 
 fn terminal(count: usize, side: &'static str, index: u32) -> Result<(), PresentationError> {
-    if usize::try_from(index)
-        .ok()
-        .is_some_and(|index| index < count)
-    {
+    if usize::try_from(index).is_ok_and(|index| index < count) {
         Ok(())
     } else {
         Err(PresentationError::TerminalOutOfRange { side, index, count })
