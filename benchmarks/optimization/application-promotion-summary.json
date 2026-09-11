@@ -1,0 +1,247 @@
+{
+  "baseline": "61b8be60ebcb201f2e3e535f55622fbff2c2c01d",
+  "candidate": "ab8b91334ce1d2a1b51432c8b588c57cd48c866a",
+  "failures": [],
+  "planned": 112,
+  "recorded": 112,
+  "groups": [
+    {
+      "kind": "frontend",
+      "case": "cyclic115",
+      "parameter": 1,
+      "workers": 1,
+      "control": false,
+      "pairs": 4,
+      "wall_s": {
+        "reference_median": 0.03183801,
+        "candidate_median": 0.06263095499999999,
+        "change_pct": 96.11769060958177,
+        "interval_pct": [92.60521943409394, 99.42858155842022],
+        "ratios": [1.9942858155842023, 1.9616162559660175, 1.9260521943409394, 1.960737556225618]
+      }
+    },
+    {
+      "kind": "frontend",
+      "case": "cyclic115",
+      "parameter": 10,
+      "workers": 1,
+      "control": false,
+      "pairs": 4,
+      "wall_s": {
+        "reference_median": 0.004814305,
+        "candidate_median": 0.00852263,
+        "change_pct": 76.95240776772417,
+        "interval_pct": [76.23548028826481, 82.04676174985588],
+        "ratios": [1.7623548028826481, 1.772654971916942, 1.8204676174985588, 1.766393183437541]
+      }
+    },
+    {
+      "kind": "frontend",
+      "case": "cyclic115",
+      "parameter": 100,
+      "workers": 1,
+      "control": false,
+      "pairs": 4,
+      "wall_s": {
+        "reference_median": 0.002353295,
+        "candidate_median": 0.00373569,
+        "change_pct": 58.15336913747817,
+        "interval_pct": [50.39525771286131, 61.6408135722257],
+        "ratios": [1.564699895638374, 1.503952577128613, 1.5983674871111893, 1.616408135722257]
+      }
+    },
+    {
+      "kind": "history",
+      "case": "cyclic115",
+      "parameter": 1,
+      "workers": 1,
+      "control": false,
+      "pairs": 4,
+      "wall_s": {
+        "reference_median": 0.3461324833333333,
+        "candidate_median": 0.11704099999999999,
+        "change_pct": -66.2139731164476,
+        "interval_pct": [-67.81135881159697, -64.52590960574854],
+        "ratios": [0.3547409039425146, 0.3463893738399197, 0.3218864118840302, 0.32933116383112804]
+      }
+    },
+    {
+      "kind": "history",
+      "case": "cyclic115",
+      "parameter": 10,
+      "workers": 1,
+      "control": false,
+      "pairs": 4,
+      "wall_s": {
+        "reference_median": 0.052571483333333335,
+        "candidate_median": 0.03195813333333333,
+        "change_pct": -39.208819712711,
+        "interval_pct": [-39.755064637781715, -38.68910371196594],
+        "ratios": [0.6024493536221829, 0.610519225278871, 0.6131089628803406, 0.605304380466909]
+      }
+    },
+    {
+      "kind": "history",
+      "case": "cyclic115",
+      "parameter": 100,
+      "workers": 1,
+      "control": false,
+      "pairs": 4,
+      "wall_s": {
+        "reference_median": 0.025346733333333336,
+        "candidate_median": 0.025006300000000002,
+        "change_pct": -1.629897821418158,
+        "interval_pct": [-6.406134769946137, 0.07822417943623705],
+        "ratios": [1.0007822417943624, 0.9870654332272197, 0.980336610344417, 0.9359386523005386]
+      }
+    },
+    {
+      "kind": "presentation",
+      "case": "cyclic115",
+      "parameter": 0,
+      "workers": 1,
+      "control": false,
+      "pairs": 4,
+      "wall_s": {
+        "reference_median": 0.0018246825,
+        "candidate_median": 0.0018278614999999998,
+        "change_pct": 0.3683599462144693,
+        "interval_pct": [-1.8937044640715328, 0.41390946141373064],
+        "ratios": [1.0040940979085393, 1.00327310101575, 1.0041390946141373, 0.9810629553592847]
+      },
+      "phase_s": {
+        "reference_median": 0.00174185,
+        "candidate_median": 0.0017425735,
+        "change_pct": 0.2007822416203675,
+        "interval_pct": [-1.922604176790399, 0.3317462878813737],
+        "ratios": [1.0009923612860865, 1.0030232835463209, 1.0033174628788137, 0.980773958232096]
+      }
+    },
+    {
+      "kind": "presentation",
+      "case": "cyclic115",
+      "parameter": 50,
+      "workers": 1,
+      "control": false,
+      "pairs": 4,
+      "wall_s": {
+        "reference_median": 0.0025775714999999996,
+        "candidate_median": 0.0021177285,
+        "change_pct": -17.840178130500895,
+        "interval_pct": [-18.507454616725905, -16.749047178035482],
+        "ratios": [0.8228488169788067, 0.8325095282196452, 0.8203476204111754, 0.814925453832741]
+      },
+      "phase_s": {
+        "reference_median": 0.0017110125,
+        "candidate_median": 0.0012363815,
+        "change_pct": -27.78274229041109,
+        "interval_pct": [-27.941924115506744, -26.99124100738356],
+        "ratios": [0.723287871265442, 0.7300875899261644, 0.7210572829263363, 0.7205807588449326]
+      }
+    },
+    {
+      "kind": "presentation",
+      "case": "cyclic115",
+      "parameter": 100,
+      "workers": 1,
+      "control": false,
+      "pairs": 4,
+      "wall_s": {
+        "reference_median": 0.0033710985,
+        "candidate_median": 0.0024217805,
+        "change_pct": -28.39635679703818,
+        "interval_pct": [-28.668624382770126, -27.47540479881092],
+        "ratios": [0.7133137561722988, 0.7252459520118908, 0.714621354469324, 0.7174515095899123]
+      },
+      "phase_s": {
+        "reference_median": 0.0016901820000000001,
+        "candidate_median": 0.0007215645,
+        "change_pct": -57.36643431364305,
+        "interval_pct": [-57.62201774964917, -56.326205807530094],
+        "ratios": [0.4237798225035084, 0.43673794192469906, 0.4250007961886743, 0.4276705175384648]
+      }
+    },
+    {
+      "kind": "presentation",
+      "case": "cyclic65",
+      "parameter": 100,
+      "workers": 1,
+      "control": false,
+      "pairs": 4,
+      "wall_s": {
+        "reference_median": 0.0008849260000000001,
+        "candidate_median": 0.000603918,
+        "change_pct": -31.755970600837948,
+        "interval_pct": [-32.08543872928416, -27.455494029796913],
+        "ratios": [0.7254450597020309, 0.6791456127071585, 0.6830863861890846, 0.6817942017941566]
+      },
+      "phase_s": {
+        "reference_median": 0.00044174949999999997,
+        "candidate_median": 0.00020202650000000001,
+        "change_pct": -54.171919449430995,
+        "interval_pct": [-57.055977010974914, -53.60200770978645],
+        "ratios": [0.46397992290213547, 0.45628246576337683, 0.4602791452480033, 0.42944022989025094]
+      }
+    },
+    {
+      "kind": "solver",
+      "case": "acyclic24",
+      "parameter": 0,
+      "workers": 16,
+      "control": false,
+      "pairs": 4,
+      "wall_s": {
+        "reference_median": 1.6835055,
+        "candidate_median": 1.6843422000000001,
+        "change_pct": -0.026745710876685536,
+        "interval_pct": [-1.5042203288619493, 0.4289989185813914],
+        "ratios": [1.0009470872041502, 1.004289989185814, 0.9849577967113805, 0.998517998578316]
+      }
+    },
+    {
+      "kind": "solver",
+      "case": "cyclic115",
+      "parameter": 0,
+      "workers": 16,
+      "control": false,
+      "pairs": 4,
+      "wall_s": {
+        "reference_median": 7.39876215,
+        "candidate_median": 7.59891095,
+        "change_pct": 3.2936051630591656,
+        "interval_pct": [-1.3636212985694063, 9.397345889179887],
+        "ratios": [1.0939734588917989, 1.0518666222723685, 1.014005480988815, 0.9863637870143059]
+      }
+    },
+    {
+      "kind": "solver",
+      "case": "cyclic115",
+      "parameter": 0,
+      "workers": 16,
+      "control": true,
+      "pairs": 4,
+      "wall_s": {
+        "reference_median": 7.501107599999999,
+        "candidate_median": 7.5450967,
+        "change_pct": -2.0149634986566634,
+        "interval_pct": [-4.268692650184169, 3.225021694718677],
+        "ratios": [0.9959548597768956, 0.9637458702499713, 0.9573130734981583, 1.0322502169471868]
+      }
+    },
+    {
+      "kind": "solver",
+      "case": "medium258",
+      "parameter": 0,
+      "workers": 32,
+      "control": false,
+      "pairs": 4,
+      "wall_s": {
+        "reference_median": 13.33364915,
+        "candidate_median": 13.49959705,
+        "change_pct": 0.8680308138706128,
+        "interval_pct": [-2.1286177670517104, 2.306679715178217],
+        "ratios": [1.0190606798156319, 0.9787138223294829, 0.9982999364617803, 1.0230667971517822]
+      }
+    }
+  ]
+}

@@ -45,6 +45,10 @@ SQLite schema 4 migrates the original JSON schema and relational schema 3 transa
 
 Writes coalesce for 400 ms, with a five-second maximum checkpoint delay during continuous updates. Interrupted running work reloads as incomplete. The frontend releases full terminal snapshots after accepting them; backend retention is bounded as a fallback.
 
+Persistence diffs use detached, acknowledged snapshots. An unchanged result prefix can append its new suffix in the same transaction as metadata and graph-position updates. Corrections, reordering, removals and preferred-proof changes use full replacement. A lost acknowledgement can cause a prefix-count mismatch; an atomic retry replaces affected entries without rewriting unrelated history. Frontend and SQLite tests share the incremental wire fixture.
+
+The collector normalizes identities after restoring caller rates and terminals. Presentation reuses those public identities and any matching live, unproved display objects. Terminal proof application and missing-result conversion remain separate; cached displays cannot confer proof.
+
 Closing hides the window before cancellation and persistence finish. The application keeps ownership of solver threads until they join. Failed saves offer Retry or Exit without saving. Failed solver cleanup offers Retry cleanup or Return to app. Cancellation is accepted until search seals; a later request does not discard a completed mathematical result.
 
 File import/export uses paths selected by native dialogs. Frontend filesystem permissions do not grant recursive access to the home directory.

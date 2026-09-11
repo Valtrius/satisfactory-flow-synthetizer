@@ -18,4 +18,6 @@ Current production keeps descending roots, direct equalities, first-optimum stop
 | `mem:experiments/12-adaptive-comparison`     | Reject global adaptive/grace replacements                  |
 | `mem:experiments/13-hybrid-final`            | Hybrid promoted with accepted case-97 uncertainty; 49d57e0 |
 
+Application follow-up: benchmarks/optimization/results-application-20260911.md records three promotions, two exclusions, and the combined frontend/database tradeoff. The measured production candidate is ab8b913; no solver scheduling change was promoted.
+
 Evidence IDs resolve through benchmarks/evidence.json. Completed recipes/manifests are retained in Git 2dccf50 and matching frozen artifacts. Current contracts are in `mem:solver/contracts`, and benchmark authorization/limits in `mem:solver/benchmarking`. Read a record as measured history, not as permission to rerun its queue.

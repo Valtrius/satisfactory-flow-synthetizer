@@ -23,5 +23,7 @@
   "adaptive-comparison-analysis": "../target/optimization-adaptive-20260910/analysis",
   "hybrid-final-preparation": "../target/optimization-hybrid-prep-20260910",
   "hybrid-final-campaign": "../target/optimization-hybrid-20260910/frozen",
-  "hybrid-final-analysis": "../target/optimization-hybrid-20260910/analysis"
+  "hybrid-final-analysis": "../target/optimization-hybrid-20260910/analysis",
+  "release-audit-opportunities": "../target/readiness-20260911-105255",
+  "application-promotion": "../target/promotion-20260911-135547"
 }

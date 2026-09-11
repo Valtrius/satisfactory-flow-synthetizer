@@ -15,5 +15,6 @@
 - Graph placement no longer leaks between history entries. Connections stay locked to the validated solution.
 - Keyboard navigation covers layout selection, menus and segmented controls.
 - Closing hides the window immediately, completes solver cleanup, and reports save failures with retry and discard choices. Running work has five-second history checkpoints.
+- Result processing reuses completed work, and growing history entries save new layouts without rewriting existing graphs. Corrections and failed append recovery retain a full-write path.
 
-Release-speed comparisons are pending the performance-opportunity campaign and the subsequent 0.1.0/0.2.0/1.0.0 comparison. Internal scheduling results remain in the [experiment record](../../benchmarks/optimization/results-hybrid-20260910.md); they are not release-to-release speedups.
+The 0.1.0/0.2.0/1.0.0 release-speed comparison is still pending. The [application measurements](../../benchmarks/optimization/results-application-20260911.md) distinguish projection/checkpoint gains from frontend costs and uncertain solver timings; they are not release-to-release speedups.
