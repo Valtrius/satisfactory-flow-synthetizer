@@ -1,6 +1,5 @@
 import { isTauri } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { message } from '@tauri-apps/plugin-dialog';
 import { loadHistoryDocument, applyHistoryChanges } from './historyPersist';
 import type { HistoryDocument, HistoryEntry } from './historyModel';
 
@@ -29,6 +28,7 @@ export async function installCloseFlush(options: CloseFlushOptions): Promise<() 
           await options.prepare?.();
           break;
         } catch (error) {
+          const { message } = await import('@tauri-apps/plugin-dialog');
           const choice = await message(`Solver cleanup failed.\n\n${String(error)}`, {
             title: 'Solver cleanup failed',
             kind: 'error',
@@ -42,6 +42,7 @@ export async function installCloseFlush(options: CloseFlushOptions): Promise<() 
           await options.flush();
           break;
         } catch (error) {
+          const { message } = await import('@tauri-apps/plugin-dialog');
           const choice = await message(`History could not be saved.\n\n${String(error)}`, {
             title: 'History save failed',
             kind: 'error',
