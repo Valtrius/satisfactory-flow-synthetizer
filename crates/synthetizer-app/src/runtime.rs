@@ -30,6 +30,8 @@ pub struct Solution {
 }
 
 impl Solution {
+    /// Present a witness from the public solve API for this prepared problem.
+    /// Its identity has already been normalized after restoring caller rates and terminals.
     /// # Errors
     /// Returns inconsistent witness metadata or malformed graph references.
     pub fn from_best(
@@ -39,7 +41,7 @@ impl Solution {
         let display = present_best_known_solution(prepared, best, None)?;
         Ok(Self {
             display,
-            layout_key: solver_validation::layout_key(&prepared.problem, &best.graph),
+            layout_key: best.canonical_graph_key.clone(),
         })
     }
 

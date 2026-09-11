@@ -342,6 +342,64 @@ fn presentation_payloads_omit_layout_keys_but_live_deduplication_keeps_them() {
 }
 
 #[test]
+fn restored_public_keys_match_live_terminal_and_presented_solutions() {
+    let request: solver_api::ProblemRequest = serde_json::from_value(serde_json::json!({
+        "inputs": [{"id":"a","name":"A","rate":"2/7"},{"id":"b","name":"B","rate":"3/7"}],
+        "outputs": [{"id":"x","name":"X","rate":"4/7"},{"id":"y","name":"Y","rate":"1/7"}],
+        "beltRate":"5/7"
+    }))
+    .unwrap();
+    let prepared = request.prepare().unwrap();
+    for mode in [SolveMode::OneMinNL, SolveMode::AllMinNL, SolveMode::AllMinN] {
+        let live = Mutex::new(Vec::new());
+        let outcome = solve(
+            &prepared.problem,
+            &RunOptions {
+                mode,
+                max_nodes: Some(2),
+                worker_count: 8,
+            },
+            &AtomicBool::new(false),
+            &|event| {
+                if let SolverEvent::Incumbent(best) | SolverEvent::SolutionFound(best) = event {
+                    let expected = layout_key(&prepared.problem, &best.graph);
+                    assert_eq!(best.canonical_graph_key, expected);
+                    assert_eq!(
+                        synthetizer_app::runtime::Solution::from_best(&prepared, &best)
+                            .unwrap()
+                            .layout_key,
+                        expected
+                    );
+                    live.lock().unwrap().push(expected);
+                }
+            },
+        )
+        .unwrap();
+        let SolveResult::Optimal(best) = outcome.result else {
+            panic!("expected a proved fixture");
+        };
+        assert_eq!(
+            best.canonical_graph_key,
+            layout_key(&prepared.problem, &best.graph)
+        );
+        assert!(!live.lock().unwrap().is_empty());
+        for best in outcome.solutions {
+            assert_eq!(
+                best.canonical_graph_key,
+                layout_key(&prepared.problem, &best.graph)
+            );
+            assert!(live.lock().unwrap().contains(&best.canonical_graph_key));
+            assert_eq!(
+                synthetizer_app::runtime::Solution::from_best(&prepared, &best)
+                    .unwrap()
+                    .layout_key,
+                best.canonical_graph_key
+            );
+        }
+    }
+}
+
+#[test]
 fn layout_identity_ignores_storage_node_ids_and_symmetric_ports() {
     let problem = problem(&["3"], &["1", "2"], "3");
     let outcome = solver_reference::solve_problem(

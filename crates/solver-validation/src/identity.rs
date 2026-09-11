@@ -212,7 +212,14 @@ fn relabel(
 /// # Panics
 /// Panics if a returned witness has invalid graph references.
 pub fn normalize_outcome_identity(problem: &Problem, outcome: &mut solver_api::SolveOutcome) {
-    match &mut outcome.result {
+    normalize_result_identity(problem, &mut outcome.result);
+    for solution in &mut outcome.solutions {
+        solution.canonical_graph_key = layout_key(problem, &solution.graph);
+    }
+}
+
+pub(crate) fn normalize_result_identity(problem: &Problem, result: &mut solver_api::SolveResult) {
+    match result {
         solver_api::SolveResult::Optimal(solution) => {
             solution.canonical_graph_key = layout_key(problem, &solution.graph);
         }
@@ -222,8 +229,5 @@ pub fn normalize_outcome_identity(problem: &Problem, outcome: &mut solver_api::S
             }
         }
         solver_api::SolveResult::GloballyUnsat(_) => {}
-    }
-    for solution in &mut outcome.solutions {
-        solution.canonical_graph_key = layout_key(problem, &solution.graph);
     }
 }
