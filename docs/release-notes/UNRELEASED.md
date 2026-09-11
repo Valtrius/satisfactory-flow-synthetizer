@@ -12,10 +12,8 @@
 - History migrates saved entries without recording a solver type. The history
   card shows the proved minimum operator-belt count when available.
 
-Performance depends on the request and worker budget. The final matched benchmark
-on one Windows machine improved case 258 at 16 workers by about 41% across six
-pairs, while 32-worker hard-case performance was effectively preserved. Case 97
-was mixed at 8/16 workers, including one 600-second timeout. This tradeoff was
-accepted for promotion; these are not claims of universal speedups or comparisons
-against a released version. See the
-[benchmark record](../../benchmarks/optimization/results-hybrid-20260910.md).
+- Graph placement no longer leaks between history entries. Connections stay locked to the validated solution.
+- Keyboard navigation covers layout selection, menus and segmented controls.
+- Closing hides the window immediately, completes solver cleanup, and reports save failures with retry and discard choices. Running work has five-second history checkpoints.
+
+Release-speed comparisons are pending the performance-opportunity campaign and the subsequent 0.1.0/0.2.0/1.0.0 comparison. Internal scheduling results remain in the [experiment record](../../benchmarks/optimization/results-hybrid-20260910.md); they are not release-to-release speedups.
