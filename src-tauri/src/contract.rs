@@ -40,22 +40,35 @@ mod tests {
     }
 
     #[test]
-    fn both_job_engines_reject_automatic_supply_above_one_belt() {
+    fn automatic_supply_above_one_belt_is_rejected() {
+        let request: SolveRequest = serde_json::from_value(serde_json::json!({
+            "inputs": [], "outputs": [
+                {"id": "a", "name": "A", "rate": "60"},
+                {"id": "b", "name": "B", "rate": "60"}
+            ], "beltRate": "100"
+        }))
+        .unwrap();
+        assert!(
+            request
+                .problem
+                .prepare()
+                .unwrap_err()
+                .to_string()
+                .contains("split the inputs explicitly")
+        );
+    }
+
+    #[test]
+    fn legacy_engine_labels_are_accepted_but_not_serialized() {
         for engine in ["custom", "z3", "astra"] {
             let request: SolveRequest = serde_json::from_value(serde_json::json!({
-                "engine": engine, "inputs": [], "outputs": [
-                    {"id": "a", "name": "A", "rate": "60"},
-                    {"id": "b", "name": "B", "rate": "60"}
-                ], "beltRate": "100"
-            }))
-            .unwrap();
+                "engine": engine, "inputs": [], "outputs": [{"id":"o", "name":"", "rate":"1"}], "beltRate":"1"
+            })).unwrap();
             assert!(
-                request
-                    .problem
-                    .prepare()
-                    .unwrap_err()
-                    .to_string()
-                    .contains("split the inputs explicitly")
+                serde_json::to_value(request)
+                    .unwrap()
+                    .get("engine")
+                    .is_none()
             );
         }
     }

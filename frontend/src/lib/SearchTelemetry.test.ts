@@ -24,17 +24,19 @@ function renderTelemetry(overrides: Partial<ComponentProps<typeof SearchTelemetr
 }
 
 describe('SearchTelemetry', () => {
-  it('groups metric cards, profile counts, diagnostics, and collapsed found counts', () => {
+  it('formats counts in expanded details and the collapsed summary', () => {
     const searchView = {
       ...searchStageView(null),
       lowerBound: 1234,
       nodeCount: 5678,
-      custom: ['solver.profiles_exhausted'].map((name, index) => ({
-        name,
-        label: name,
-        value: { type: 'integer' as const, value: index ? '20000' : '10000' },
-        unit: null,
-      })),
+      custom: [
+        {
+          name: 'solver.profiles_exhausted',
+          label: 'Profiles',
+          value: { type: 'integer' as const, value: '10000' },
+          unit: null,
+        },
+      ],
     };
     const html = renderTelemetry({
       searchView,

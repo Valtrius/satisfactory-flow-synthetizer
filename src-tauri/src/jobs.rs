@@ -239,15 +239,63 @@ fn fail(app: &AppHandle, job: &Job, error: String) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use solver_api::{IncompleteResult, OptimalityProof};
+    use solver_api::{
+        BestKnownSolution, IncompleteResult, OptimalSolution, OptimalityProof, PhysicalGraph,
+        ProofSummary,
+    };
 
     fn request() -> SolveRequest {
         serde_json::from_value(serde_json::json!({
-            "engine": "custom", "solveMode": "all_min_n",
-            "inputs": [{"id": "a", "name": "A", "rate": "2"}, {"id": "b", "name": "B", "rate": "3"}],
-            "outputs": [{"id": "c", "name": "C", "rate": "1"}, {"id": "d", "name": "D", "rate": "4"}],
-            "beltRate": "5"
+            "solveMode": "all_min_n",
+            "inputs": [{"id": "a", "name": "A", "rate": "24"}],
+            "outputs": [{"id":"a","name":"","rate":"7"},{"id":"b","name":"","rate":"6"},{"id":"c","name":"","rate":"5"},{"id":"d","name":"","rate":"4"},{"id":"e","name":"","rate":"2"}],
+            "beltRate": "1200"
         })).unwrap()
+    }
+
+    // Fixed independently validated graphs test projection without rerunning search.
+    // Proof counters below are projection fixtures, not a new mathematical proof.
+    fn fixture_outcome(mode: SolveMode) -> SolveOutcome {
+        let data: serde_json::Value = serde_json::from_str(include_str!(
+            "../../crates/solver-core/tests/fixtures/preferred-order.json"
+        ))
+        .unwrap();
+        let problem: solver_api::Problem = serde_json::from_value(data["problem"].clone()).unwrap();
+        let graphs: Vec<PhysicalGraph> = serde_json::from_value(data["graphs"].clone()).unwrap();
+        let solutions = graphs
+            .into_iter()
+            .map(|graph| {
+                let validation = solver_validation::validate_solution(&problem, &graph).unwrap();
+                BestKnownSolution {
+                    node_count: validation.node_count,
+                    link_count: validation.link_count,
+                    physical_link_count: validation.physical_link_count,
+                    discard_link_count: validation.discard_link_count,
+                    canonical_graph_key: solver_validation::layout_key(&problem, &graph),
+                    graph,
+                    validation,
+                }
+            })
+            .collect::<Vec<_>>();
+        let best = solutions
+            .iter()
+            .min_by_key(|s| (s.node_count, s.link_count, &s.canonical_graph_key))
+            .unwrap()
+            .clone();
+        let result = SolveResult::Optimal(OptimalSolution {
+            node_count: best.node_count,
+            link_count: best.link_count,
+            physical_link_count: best.physical_link_count,
+            discard_link_count: best.discard_link_count,
+            canonical_graph_key: best.canonical_graph_key,
+            graph: best.graph,
+            validation: best.validation,
+            proof: ProofSummary {
+                initial_node_lower_bound: best.node_count,
+                ..ProofSummary::default()
+            },
+        });
+        SolveOutcome::new(result, mode, solutions)
     }
 
     fn project(snapshot: &mut JobSnapshot, request: &SolveRequest, outcome: &SolveOutcome) {
@@ -265,17 +313,7 @@ mod tests {
     fn final_projection_preserves_published_indices_and_promotes_only_the_preferred_layout() {
         let request = request();
         let prepared = request.problem.prepare().unwrap();
-        let outcome = runtime::solve(
-            &prepared.problem,
-            &RunOptions {
-                mode: SolveMode::AllMinN,
-                max_nodes: Some(2),
-                worker_count: 1,
-            },
-            &std::sync::atomic::AtomicBool::new(false),
-            &|_| {},
-        )
-        .unwrap();
+        let outcome = fixture_outcome(request.solve_mode);
         assert!(outcome.solutions.len() > 1);
         let mut snapshot = Job::new(uuid::Uuid::nil()).current();
         snapshot.results = outcome
@@ -329,14 +367,7 @@ mod tests {
     fn cancelled_opt_keeps_a_best_known_result_but_no_enumeration_or_link_proof() {
         let mut request = request();
         request.solve_mode = SolveMode::OneMinNL;
-        let prepared = request.problem.prepare().unwrap();
-        let outcome = runtime::solve(
-            &prepared.problem,
-            &RunOptions::default(),
-            &std::sync::atomic::AtomicBool::new(false),
-            &|_| {},
-        )
-        .unwrap();
+        let outcome = fixture_outcome(request.solve_mode);
         let SolveResult::Optimal(optimal) = outcome.result else {
             panic!()
         };
@@ -367,7 +398,7 @@ mod tests {
         assert_eq!(
             snapshot.proof,
             Some(OptimalityProof {
-                minimum_node_count: Some(2),
+                minimum_node_count: Some(7),
                 minimum_link_count: None
             })
         );
