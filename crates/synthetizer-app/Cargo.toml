@@ -7,7 +7,6 @@ autobins = false
 
 [dependencies]
 solver-core = { path = "../solver-core" }
-solver-validation = { path = "../solver-validation" }
 solver-api = { path = "../solver-api" }
 num = "0.4.3"
 serde = { version = "1.0", features = ["derive"] }
@@ -17,5 +16,6 @@ thiserror = "2.0"
 workspace = true
 
 [dev-dependencies]
+solver-validation = { path = "../solver-validation" }
 solver-reference = { path = "../solver-reference" }
 serde_json = "1.0"
