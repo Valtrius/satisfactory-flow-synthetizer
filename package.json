@@ -12,6 +12,10 @@
     "package:release": "pwsh -NoProfile -File scripts/package-release.ps1",
     "verify:release": "pwsh -NoProfile -File scripts/verify-release.ps1",
     "check": "npm run check -w frontend",
+    "build:web:verifier": "python scripts/build-web-verifier.py",
+    "build:web:cvc5": "python scripts/build-cvc5-wasm.py",
+    "build:web:backends": "npm run build:web:verifier && npm run build:web:cvc5",
+    "test:web:backends": "node scripts/prepare-web-fixtures.mjs && playwright test -c web/playwright.config.mjs",
     "test": "npm run test -w frontend",
     "format": "cargo fmt --all && prettier --write .",
     "format:check": "cargo fmt --all -- --check && prettier --check .",
@@ -19,6 +23,7 @@
     "tauri": "tauri"
   },
   "devDependencies": {
+    "@playwright/test": "1.63.0",
     "@tauri-apps/cli": "^2.11.4",
     "prettier": "^3.9.6",
     "prettier-plugin-svelte": "^4.1.1",

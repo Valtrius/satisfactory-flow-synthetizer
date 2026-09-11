@@ -9,3 +9,5 @@ Current baseline: solver-core, an exact cvc5 sparse/Boolean portfolio with desce
 - Accepted hybrid and adverse samples: `mem:experiments/13-hybrid-final`.
 
 Release workflow: docs/release.md. Conventional commits; npm run format before committing. Preserve unrelated work. Launch an authorized benchmark with durable status and notification, then end the turn.
+
+Browser work: docs/web-backends.md records the agreed product scope, verifier-only Wasm and incremental cvc5 modules, build/test commands and the unresolved Canonaut wasm32 port. Browser release requires exact single-solution and all minimum-N,L solving; a viewer alone is not the release target. No input-only sharing.

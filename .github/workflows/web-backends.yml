@@ -1,0 +1,73 @@
+name: Web backend proof
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'crates/solver-web/**'
+      - 'crates/solver-api/**'
+      - 'crates/solver-validation/**'
+      - 'crates/synthetizer-app/**'
+      - 'scripts/*web*'
+      - 'scripts/build-cvc5-wasm.py'
+      - 'web/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/web-backends.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: web-backends-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  browser:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      CARGO_BUILD_JOBS: 2
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+          components: clippy
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - uses: Swatinem/rust-cache@v2
+      - name: Cache cvc5 toolchain and library build
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/satisfactory-flow-synthetizer-web
+          key: web-cvc5-ubuntu24-${{ hashFiles('web/cvc5/toolchain.json', 'scripts/build-cvc5-wasm.py') }}
+      - name: Install dependencies
+        run: npm ci
+      - name: Native verifier tests
+        run: cargo test -p solver-web --locked --lib
+      - name: Browser verifier lint
+        run: cargo clippy -p solver-web --target wasm32-unknown-unknown --locked --lib -- -D warnings
+      - name: Build both backend modules
+        run: npm run build:web:backends
+      - name: Install browser
+        run: npx playwright install --with-deps chromium
+      - name: Browser integration tests
+        run: npm run test:web:backends
+      - name: Upload test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-backend-test-evidence
+          path: |
+            target/web-backends/browser-results.json
+            target/web-backends/cvc5/build.json
+            target/web-backends/test-results
+          if-no-files-found: warn
