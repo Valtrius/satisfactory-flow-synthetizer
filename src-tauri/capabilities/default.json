@@ -11,10 +11,6 @@
     "core:window:allow-show",
     "dialog:default",
     "fs:allow-write-text-file",
-    "fs:allow-read-text-file",
-    "fs:scope-home-recursive",
-    "fs:scope-desktop-recursive",
-    "fs:scope-document-recursive",
-    "fs:scope-download-recursive"
+    "fs:allow-read-text-file"
   ]
 }
