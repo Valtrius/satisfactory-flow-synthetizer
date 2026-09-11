@@ -1,4 +1,5 @@
 import * as tauriCore from '@tauri-apps/api/core';
+import { publicViewerUrl } from '../sharing/viewer';
 import type { JobSnapshot } from '../../types';
 import type { CloseFlushOptions, JobClient, PlatformServices } from './contracts';
 
@@ -100,6 +101,7 @@ async function installDesktopCloseFlush(options: CloseFlushOptions): Promise<() 
 export function createDesktopPlatform(): PlatformServices {
   return {
     capabilities: { runtime: 'desktop', solve: 'ready', persistentStorage: 'native' },
+    shareViewerUrl: publicViewerUrl('desktop'),
     jobs: createDesktopJobs(),
     history: { load: () => invoke('load_history'), apply: (ops) => invoke('apply_history_ops', { ops }) },
     files: {
@@ -112,11 +114,17 @@ export function createDesktopPlatform(): PlatformServices {
         });
         if (path) await writeTextFile(path, contents);
       },
-      async openJsonText() {
+      async openJsonText(maxBytes) {
         const { open } = await import('@tauri-apps/plugin-dialog');
-        const { readTextFile } = await import('@tauri-apps/plugin-fs');
+        const { readTextFile, stat } = await import('@tauri-apps/plugin-fs');
         const path = await open({ multiple: false, filters: [{ name: 'JSON', extensions: ['json'] }] });
-        return !path || Array.isArray(path) ? null : readTextFile(path);
+        if (!path || Array.isArray(path)) return null;
+        if (maxBytes !== undefined && (await stat(path)).size > maxBytes)
+          throw new Error(`Selected file exceeds ${maxBytes} bytes.`);
+        const text = await readTextFile(path);
+        if (maxBytes !== undefined && (text.length > maxBytes || new TextEncoder().encode(text).length > maxBytes))
+          throw new Error(`Selected file exceeds ${maxBytes} bytes.`);
+        return text;
       },
     },
     lifecycle: { installCloseFlush: installDesktopCloseFlush },

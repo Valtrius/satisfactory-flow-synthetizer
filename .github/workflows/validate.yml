@@ -32,6 +32,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
+          targets: wasm32-unknown-unknown
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -64,7 +65,7 @@ jobs:
         run: npm run check
 
       - name: Frontend build
-        run: npm run build -w frontend
+        run: npm run build:web
 
       - name: Prepare bundled cvc5 and test backend
         shell: pwsh

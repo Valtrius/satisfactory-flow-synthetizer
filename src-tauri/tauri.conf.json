@@ -4,8 +4,8 @@
   "version": "1.0.0",
   "identifier": "dev.satisfactory.flowsynthetizer",
   "build": {
-    "beforeDevCommand": "npm run prepare:cvc5 && npm run dev -w frontend",
-    "beforeBuildCommand": "npm run prepare:cvc5 && npm run build -w frontend",
+    "beforeDevCommand": "npm run prepare:cvc5 && npm run build:web:verifier && npm run dev -w frontend",
+    "beforeBuildCommand": "npm run prepare:cvc5 && npm run build:web:verifier && npm run build -w frontend",
     "devUrl": "http://localhost:5173",
     "frontendDist": "../frontend/dist"
   },
@@ -21,7 +21,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: http://asset.localhost data:; font-src 'self'; connect-src ipc: http://ipc.localhost; object-src 'none'; base-uri 'none'"
+      "csp": "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: http://asset.localhost data:; font-src 'self'; connect-src 'self' ipc: http://ipc.localhost; object-src 'none'; base-uri 'none'"
     }
   },
   "bundle": {

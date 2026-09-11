@@ -123,6 +123,17 @@ it('browser file cancellation settles the operation and removes its input', asyn
   expect(document.querySelector('input')).toBeNull();
 });
 
+it('sharing file limits are checked before FileReader allocates the contents', async () => {
+  vi.spyOn(HTMLInputElement.prototype, 'click').mockImplementation(() => {});
+  const read = vi.spyOn(FileReader.prototype, 'readAsText');
+  const result = browserFiles.openJsonText(4);
+  const rejected = expect(result).rejects.toThrow('exceeds 4 bytes');
+  chooseFile('12345');
+  await rejected;
+  expect(read).not.toHaveBeenCalled();
+  expect(document.querySelector('input')).toBeNull();
+});
+
 it('browser import propagates malformed JSON rather than treating it as cancellation', async () => {
   vi.spyOn(HTMLInputElement.prototype, 'click').mockImplementation(() => {});
   const result = importHistoryPayload();

@@ -1,6 +1,6 @@
 # Browser backend foundations and platform services
 
-Step 00 adds testable backend modules. Step 01 adds host adapters, shared job projection and IndexedDB history to the existing Svelte interface. Browser solving remains explicitly unavailable. No GitHub Pages site is deployed. Native scheduling, cvc5 process ownership and SQLite storage remain native.
+Step 00 adds testable backend modules. Step 01 adds host adapters, shared job projection and IndexedDB history. Step 02 adds self-contained selected-solution links and verified viewing without backend storage. Browser solving remains explicitly unavailable. No GitHub Pages site is deployed. Native scheduling, cvc5 process ownership and SQLite storage remain native.
 
 ## Agreed product scope
 
@@ -8,7 +8,7 @@ The browser release must support exact single-solution optimization and complete
 
 Use one Svelte interface with host-specific adapters where needed. Sharing publishes one selected physical solution with its input/output rates, belt capacity and topology. It does not initially include graph coordinates, solve mode or the full result collection. Do not add input-only sharing. Generate the default display from the shared topology.
 
-Short revocable links and local history with offline use are required. Short-link storage is a separate service from static GitHub Pages hosting. Offline use covers locally available data and solving after the required assets have been cached, not guaranteed offline retrieval of an unseen short link. Do not promise revocation of copies someone has already downloaded.
+Long, self-contained selected-solution links and browser-local history are required. Sharing needs no backend storage. Offline use must cover locally available data and solving after the required assets have been cached. Asset caching is not implemented yet.
 
 Tab closure stops browser computation. Exact search resumption and initial desktop/browser history synchronization are out of scope.
 
@@ -97,7 +97,7 @@ The audit also found hardcoded 64-bit operations in `src/structs/schreier_arena.
 
 Before browser solving is released, port or replace canonicalization with parity tests around 31/32/33 and 63/64/65 vertices, relabeled graphs, duplicate terminals and the existing `layout-v1` corpus. The native canonical byte contract must not change silently. Complete minimum-N,L enumeration remains blocked until this gate passes.
 
-Step 01 below extracts the platform services and implements browser history before the search port. Later phases separate mathematical search transitions from native thread/process ownership, implement worker scheduling with unchanged proof obligations, and connect actual browser jobs to Svelte. The selected-solution schema, short-link service, offline assets and Pages deployment remain later work. Browser exactness tests must compare canonical result sets and proof completion against native runs, including interrupted enumeration. The current backend tests do not establish full search parity.
+Step 01 below extracts the platform services and implements browser history before the search port. Later phases separate mathematical search transitions from native thread/process ownership, implement worker scheduling with unchanged proof obligations, and connect actual browser jobs to Svelte. Step 02 below implements selected-solution sharing. Offline assets and Pages deployment remain later work. Browser exactness tests must compare canonical result sets and proof completion against native runs, including interrupted enumeration. The current backend tests do not establish full search parity.
 
 ## Step 01: platform services
 
@@ -160,3 +160,57 @@ The native workspace passed 158 tests, including the three moved projection test
 Native workspace Clippy, portable job-projection wasm32 Clippy and verifier wasm32 Clippy passed with warnings denied. The verifier rebuilt successfully, Svelte checks found no errors or warnings, and the production frontend build passed. Formatting and release metadata checks passed; the version remains 1.0.0. No performance campaign or installer packaging was run.
 
 The graph interaction test emitted a non-failing `svelte-put/shortcut` configuration warning. Shortcut code is outside this extraction and unchanged. Firefox, WebKit/Safari, mobile storage pressure, public deployment and GitHub-hosted CI execution are not qualified by these local Chrome checks.
+
+## Step 02: selected-solution sharing and verified viewing
+
+The shared interface now has Open shared solution and a Share selected solution action in the graph toolbar. The toolbar uses the currently displayed layout, not the collection's preferred result. Shared data contains the original input/output rates and names, belt capacity and one physical topology. It excludes graphical positions, solve mode, collections, history IDs, result status and proof claims. Input-only links are not supported.
+
+Opening a fragment or JSON file previews the graph after verification. It does not save automatically or start a search. Save to history and view stores a `best_known` witness with no optimality proof and `enumerationComplete=false`. The local form defaults to one minimum-N,L search when copying that configuration later. This default was neither shared nor solved. Retrying a failed save reuses its existing local entry instead of appending duplicates.
+
+### Public format and verification
+
+The public JSON envelope is `{ kind: "selected-solution", version: 1, request, topology }`. Request endpoints contain names and rate strings, without application IDs. An empty input list retains the existing automatic one-belt supply rule. Topology nodes are splitter/merger kinds indexed by array position. Links connect typed producer and consumer ports, including anonymous discard consumers. They omit flows because the receiver reconstructs unique exact flows.
+
+`solver-web::verify_share_json` rejects unknown fields throughout the public envelope, endpoints, topology and ports. It calls the existing exact reconstruction and validation routines and regenerates the presentation. A successful response never claims optimality or complete enumeration. It does not call Canonaut or cvc5. Source labels, embedded scripts and proof fields do not enter trusted presentation data.
+
+`share_from_presentation_json` converts the known `modelVersion=4` display convention to physical topology. It maps terminals by the presenter's documented IDs and checks every supplied exact edge flow before omitting flows from the public format. Display status, proof, statistics, labels and graphical coordinates are not trusted. Older or unknown presentation conventions are rejected rather than guessing a terminal mapping. Existing history import remains separate and does not become a public verification boundary.
+
+### Bounded URLs and workers
+
+Self-contained links use `#s1.<base64url-gzip>`. The codec bounds decoded UTF-8 JSON to 256 KiB, compressed tokens to 65,536 characters and complete inline URLs to 32,768 characters. Limits also cover 256 operators, 1,024 links, 24 endpoints per side and 256-byte rate literals. The public file picker checks file size before reading it. For solutions that exceed the inline URL bound, export the bounded JSON file instead.
+
+Decompression feeds small compressed chunks and checks the accumulated output limit. Truncated gzip, invalid UTF-8, malformed base64url and unsupported versions reject. Both decoding and exact verification run in a dedicated worker. The page terminates the worker after success, failure, cancellation or a 20-second verification deadline. A late response cannot overwrite a newer attempt. This deadline is not a solve-time limit or an optimality result.
+
+The verifier's JavaScript and Wasm files ship together under a content-versioned asset directory. Vite emits the pair from `target/web-backends/verifier`, serves them locally in development and rejects production builds without the pair. No cvc5 asset is copied into this viewer path. The static browser test exercises a GitHub-style project subpath with a restrictive CSP and no external asset requests. Offline caching and upgrade management are still later work.
+
+### Viewer address
+
+`VITE_PUBLIC_APP_URL` can set the public browser viewer address. Browser builds otherwise use the current project directory. Desktop builds require that configuration or an address entered in the dialog, rather than generating an unusable native-app URL. The viewer address must use HTTPS, or HTTP loopback during development, and must contain no credentials, query or fragment. No sharing service or network publication is involved.
+
+### Develop and validate sharing
+
+```powershell
+rustup target add wasm32-unknown-unknown
+npm run dev:web
+```
+
+That command builds the verifier and starts the shared frontend. Import a current history file, choose a layout and use Share selected solution. A desktop share needs the browser viewer address, either configured with `VITE_PUBLIC_APP_URL` or entered in the dialog. Tauri's build hooks now build the verifier too. Its CSP permits only the local worker/Wasm assets and native IPC.
+
+```powershell
+npm run build:web
+$env:WEB_TEST_CHANNEL='chrome'; npm run test:web:shares
+```
+
+The tests compare 15 native presentation exports and topology reconstructions against the actual Wasm worker. They also exercise selected-layout export, invalid payload rejection, proofless persistence, text escaping, decompression bounds, worker cancellation and static-only sharing. The browser suite uses ports 4181 and 4182. It starts and stops its own servers and writes evidence under `target/web-shares`.
+
+### Next implementation phase
+
+Step 03 separates the portable search planner and leaf driver from native process/thread ownership and resolves canonicalization portability. The browser's Find action remains disabled. The mandatory exact single-optimum and complete minimum-N,L modes still require browser/native result-set and proof-completion qualification. Sharing and verified viewing are an internal development milestone, not the requested browser solver release. Offline assets and Pages deployment remain unfinished, and no public links or release have been deployed.
+
+### Step 02 validation on 11 September 2026
+
+After removing backend link storage and its UI, all 165 frontend tests, nine sharing browser tests, nine history browser tests, four backend browser tests and 40 Python tooling tests passed. Sharing tests include 15 native/Wasm round trips, selected-layout export, proofless persistence, JSON download/import and a static-only network check. The seven Rust verifier tests and verifier wasm32 Clippy also passed again. The earlier full native workspace run passed 162 tests; this cleanup did not change Rust source.
+
+Native workspace Clippy, verifier wasm32 Clippy and portable job-projection wasm32 Clippy passed with warnings denied. The verifier and production frontend built successfully. Svelte checks, formatting and release metadata checks passed. Tauri library tests also passed after adding the file-size-check capability. The graph shortcut configuration warning still appears during some browser interactions without failing them.
+
+These are local Windows/Chrome results. No public browser deployment, packaged desktop sharing UI test, new installer, Firefox/WebKit qualification, mobile memory-budget test or remote GitHub workflow execution is claimed. Step 01 was committed as `d42ff639f4a509fd0a229fb6c8b35a31865ac6e8`.

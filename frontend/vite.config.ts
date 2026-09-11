@@ -1,10 +1,11 @@
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import tailwindcss from '@tailwindcss/vite';
 import { defineConfig } from 'vitest/config';
+import { verifierAssets } from './verifierAssets.ts';
 
 export default defineConfig({
   base: './',
-  plugins: [svelte(), tailwindcss()],
+  plugins: [svelte(), tailwindcss(), verifierAssets()],
   clearScreen: false,
   build: {
     // ELK is intentionally lazy-loaded only when a graph is laid out. Its standalone bundled

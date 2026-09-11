@@ -14,6 +14,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let output = match fixture["operation"].as_str() {
             Some("verify") => solver_web::verify_witness_json(payload),
             Some("reconstruct") => solver_web::reconstruct_topology_json(payload),
+            Some("share") => solver_web::verify_share_json(payload),
+            Some("presentation-share") => solver_web::share_from_presentation_json(payload),
             _ => return Err("unknown fixture operation".into()),
         };
         fixture["native"] = serde_json::from_str(&output)?;

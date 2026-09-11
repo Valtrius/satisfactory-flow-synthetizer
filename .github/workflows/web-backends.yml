@@ -11,6 +11,7 @@ on:
       - 'scripts/*web*'
       - 'scripts/build-cvc5-wasm.py'
       - 'web/**'
+      - 'scripts/prepare-share-fixtures.mjs'
       - 'frontend/**'
       - 'src-tauri/history-fixtures/**'
       - 'Cargo.toml'
@@ -69,6 +70,8 @@ jobs:
         run: npm run check && npm test && npm run build -w frontend
       - name: Browser platform and history tests
         run: npm run test:web:platform
+      - name: Selected-solution sharing tests
+        run: npm run test:web:shares
       - name: Upload test evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -80,4 +83,6 @@ jobs:
             target/web-backends/test-results
             target/web-platform/results.json
             target/web-platform/test-results
+            target/web-shares/results.json
+            target/web-shares/test-results
           if-no-files-found: warn

@@ -1,4 +1,4 @@
-//! Browser-safe exact witness verification. This is not a search engine or share codec.
+//! Browser-safe exact witness and selected-solution verification. This is not a search engine.
 //!
 //! Both entry points return JSON and run without native threads, cvc5, or canonicalization.
 //! The caller must run them in a terminable worker, including for imported data.
@@ -9,6 +9,9 @@ use solver_api::{
     ProducerPortRef, Rational,
 };
 use synthetizer_app::presentation::{PresentationSolution, present_best_known_solution};
+
+mod share;
+pub use share::{share_from_presentation_json, verify_share_json};
 
 const MAX_PAYLOAD_BYTES: usize = 262_144;
 const MAX_NODES: usize = 256;

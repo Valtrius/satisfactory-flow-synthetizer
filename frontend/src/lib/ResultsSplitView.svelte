@@ -39,6 +39,7 @@
     onRedo: () => void;
     onReset: () => void;
     onExport: () => void;
+    onShare?: () => void;
     onToggleFullscreen: () => void;
     onFlowError: (id: string, message: string) => void;
     onNodeDragStart?: () => void;
@@ -74,6 +75,7 @@
     onRedo,
     onReset,
     onExport,
+    onShare,
     onToggleFullscreen,
     onFlowError,
     onNodeDragStart,
@@ -121,6 +123,7 @@
         {onRedo}
         {onReset}
         {onExport}
+        {onShare}
         {onToggleFullscreen}
         {onFlowError}
         {onNodeDragStart}

@@ -29,7 +29,7 @@ export type TextFile = {
 
 export interface FileActions {
   saveText(file: TextFile): Promise<void>;
-  openJsonText(): Promise<string | null>;
+  openJsonText(maxBytes?: number): Promise<string | null>;
 }
 
 export type CloseFlushOptions = {
@@ -49,6 +49,7 @@ export interface PlatformServices {
   jobs: JobClient;
   history: HistoryStore;
   files: FileActions;
+  readonly shareViewerUrl: string | null;
   lifecycle: {
     installCloseFlush(options: CloseFlushOptions): Promise<() => void>;
   };

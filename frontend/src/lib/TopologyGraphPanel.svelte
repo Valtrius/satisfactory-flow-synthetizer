@@ -10,6 +10,7 @@
   } from '@xyflow/svelte';
   import HelpPopover from './ui/HelpPopover.svelte';
   import Download from '@lucide/svelte/icons/download';
+  import Share2 from '@lucide/svelte/icons/share-2';
   import Lock from '@lucide/svelte/icons/lock';
   import LockOpen from '@lucide/svelte/icons/lock-open';
   import Maximize2 from '@lucide/svelte/icons/maximize-2';
@@ -38,6 +39,8 @@
     onRedo: () => void;
     onReset: () => void;
     onExport: () => void;
+    onShare?: () => void;
+    preview?: boolean;
     onToggleFullscreen: () => void;
     onFlowError: (id: string, message: string) => void;
     onNodeDragStart?: () => void;
@@ -58,6 +61,8 @@
     onRedo,
     onReset,
     onExport,
+    onShare,
+    preview = false,
     onToggleFullscreen,
     onFlowError,
     onNodeDragStart,
@@ -161,9 +166,9 @@
         <Network class="text-accent size-[1.05rem] shrink-0" strokeWidth={2.2} aria-hidden="true" />
         Topology graph
       </h3>
-      <HelpPopover label="Graph controls help" sections={helpSections} align="left" />
+      {#if !preview}<HelpPopover label="Graph controls help" sections={helpSections} align="left" />{/if}
     </div>
-    <div class="flex w-full items-start justify-between gap-4 md:w-auto md:items-center">
+    <div class="flex w-full flex-wrap items-start justify-between gap-4 md:w-auto md:items-center">
       <div class="text-muted flex flex-wrap gap-4.5 text-xs" aria-label="Graph legend">
         <span class="flex items-center gap-1.5">
           <i class="bg-flow block h-0.75 w-5.5"></i>
@@ -178,81 +183,91 @@
           Discard
         </span>
       </div>
-      <div class="flex flex-col items-end gap-1">
-        <div class="flex gap-1.5" aria-label="Graph tools">
-          <Button
-            size="small"
-            square
-            type="button"
-            title="Rotate graph 90° counter-clockwise"
-            aria-label="Rotate graph 90 degrees counter-clockwise"
-            onclick={() => onRotate('ccw')}
-          >
-            ↺
-          </Button>
-          <Button
-            size="small"
-            square
-            type="button"
-            title="Rotate graph 90° clockwise"
-            aria-label="Rotate graph 90 degrees clockwise"
-            onclick={() => onRotate('cw')}
-          >
-            ↻
-          </Button>
-          <Button size="small" square type="button" title="Export SVG" aria-label="Export SVG" onclick={onExport}>
-            <Download size={16} strokeWidth={2.2} aria-hidden="true" />
-          </Button>
-          <Button
-            size="small"
-            square
-            type="button"
-            title={fullscreen ? 'Exit expanded graph' : 'Expand graph'}
-            aria-label={fullscreen ? 'Exit expanded graph' : 'Expand graph'}
-            onclick={onToggleFullscreen}
-          >
-            {#if fullscreen}
-              <Minimize2 size={16} strokeWidth={2.2} aria-hidden="true" />
-            {:else}
-              <Maximize2 size={16} strokeWidth={2.2} aria-hidden="true" />
-            {/if}
-          </Button>
-        </div>
-        <div class="flex gap-1.5" aria-label="Graph edit history">
-          <Button
-            size="small"
-            square
-            type="button"
-            title="Undo"
-            aria-label="Undo last graph change"
-            disabled={!canUndo}
-            onclick={onUndo}
-          >
-            <Undo2 size={16} strokeWidth={2.2} aria-hidden="true" />
-          </Button>
-          <Button
-            size="small"
-            square
-            type="button"
-            title="Redo"
-            aria-label="Redo last undone graph change"
-            disabled={!canRedo}
-            onclick={onRedo}
-          >
-            <Redo2 size={16} strokeWidth={2.2} aria-hidden="true" />
-          </Button>
-          <Button
-            size="small"
-            square
-            type="button"
-            title="Reset layout"
-            aria-label="Reset graph to default positions"
-            onclick={onReset}
-          >
-            <RotateCcw size={16} strokeWidth={2.2} aria-hidden="true" />
-          </Button>
-        </div>
-      </div>
+      {#if !preview}<div class="flex flex-col items-end gap-1">
+          <div class="flex gap-1.5" aria-label="Graph tools">
+            <Button
+              size="small"
+              square
+              type="button"
+              title="Rotate graph 90° counter-clockwise"
+              aria-label="Rotate graph 90 degrees counter-clockwise"
+              onclick={() => onRotate('ccw')}
+            >
+              ↺
+            </Button>
+            <Button
+              size="small"
+              square
+              type="button"
+              title="Rotate graph 90° clockwise"
+              aria-label="Rotate graph 90 degrees clockwise"
+              onclick={() => onRotate('cw')}
+            >
+              ↻
+            </Button>
+            <Button size="small" square type="button" title="Export SVG" aria-label="Export SVG" onclick={onExport}>
+              <Download size={16} strokeWidth={2.2} aria-hidden="true" />
+            </Button>
+            {#if onShare}<Button
+                size="small"
+                square
+                type="button"
+                title="Share selected solution"
+                aria-label="Share selected solution"
+                onclick={onShare}
+              >
+                <Share2 size={16} strokeWidth={2.2} aria-hidden="true" />
+              </Button>{/if}
+            <Button
+              size="small"
+              square
+              type="button"
+              title={fullscreen ? 'Exit expanded graph' : 'Expand graph'}
+              aria-label={fullscreen ? 'Exit expanded graph' : 'Expand graph'}
+              onclick={onToggleFullscreen}
+            >
+              {#if fullscreen}
+                <Minimize2 size={16} strokeWidth={2.2} aria-hidden="true" />
+              {:else}
+                <Maximize2 size={16} strokeWidth={2.2} aria-hidden="true" />
+              {/if}
+            </Button>
+          </div>
+          <div class="flex gap-1.5" aria-label="Graph edit history">
+            <Button
+              size="small"
+              square
+              type="button"
+              title="Undo"
+              aria-label="Undo last graph change"
+              disabled={!canUndo}
+              onclick={onUndo}
+            >
+              <Undo2 size={16} strokeWidth={2.2} aria-hidden="true" />
+            </Button>
+            <Button
+              size="small"
+              square
+              type="button"
+              title="Redo"
+              aria-label="Redo last undone graph change"
+              disabled={!canRedo}
+              onclick={onRedo}
+            >
+              <Redo2 size={16} strokeWidth={2.2} aria-hidden="true" />
+            </Button>
+            <Button
+              size="small"
+              square
+              type="button"
+              title="Reset layout"
+              aria-label="Reset graph to default positions"
+              onclick={onReset}
+            >
+              <RotateCcw size={16} strokeWidth={2.2} aria-hidden="true" />
+            </Button>
+          </div>
+        </div>{/if}
     </div>
   </div>
   <div class={canvasClass} aria-label="Interactive topology layout">
@@ -261,7 +276,7 @@
       bind:edges={readEdges, writeEdges}
       {nodeTypes}
       {snapGrid}
-      nodesDraggable={interactive}
+      nodesDraggable={interactive && !preview}
       nodesConnectable={false}
       deleteKey={null}
       onbeforedelete={async () => false}

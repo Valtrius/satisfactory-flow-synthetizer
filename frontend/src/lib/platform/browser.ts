@@ -1,4 +1,5 @@
 import { createBrowserHistoryStore } from './browserHistory';
+import { publicViewerUrl } from '../sharing/viewer';
 import type { CloseFlushOptions, FileActions, PlatformServices } from './contracts';
 
 export const BROWSER_SOLVE_UNAVAILABLE =
@@ -24,7 +25,7 @@ export const browserFiles: FileActions = {
       setTimeout(() => URL.revokeObjectURL(url), 0);
     }
   },
-  openJsonText() {
+  openJsonText(maxBytes) {
     return new Promise((resolve, reject) => {
       const input = document.createElement('input');
       input.type = 'file';
@@ -45,6 +46,10 @@ export const browserFiles: FileActions = {
         cleanup();
         if (!file) {
           resolve(null);
+          return;
+        }
+        if (maxBytes !== undefined && file.size > maxBytes) {
+          reject(new Error(`Selected file exceeds ${maxBytes} bytes.`));
           return;
         }
         const reader = new FileReader();
@@ -97,6 +102,7 @@ export function createBrowserPlatform(): PlatformServices {
     },
     history: createBrowserHistoryStore(),
     files: browserFiles,
+    shareViewerUrl: publicViewerUrl('browser'),
     lifecycle: { installCloseFlush: installBrowserCloseFlush },
   };
 }

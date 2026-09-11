@@ -34,14 +34,53 @@
     type HistoryEntry,
   } from './lib/historyModel';
   import { HistoryQueue } from './lib/historyQueue';
+  import ShareDialog from './lib/sharing/ShareDialog.svelte';
+  import { sharedHistoryEntry } from './lib/sharing/history';
+  import type { VerifiedShare } from './lib/sharing/client';
+  import Button from './lib/ui/Button.svelte';
   import { getPlatform } from './lib/platform';
   import { BROWSER_SOLVE_UNAVAILABLE } from './lib/platform/browser';
   import { formatElapsed, searchHeadline, searchStageView, searchSubline, sizeSearchBody } from './lib/searchStage';
   import { DEFAULT_SORT_COLUMNS, compareSolutions, type SortColumn } from './lib/solutionSort';
   import { readUiPrefs, updateUiPrefs } from './lib/uiPrefs';
-  import { enumeratesLayouts, type EndpointRow, type Solution } from './types';
+  import { enumeratesLayouts, type EndpointRow, type Solution, type SolveRequest } from './types';
 
   const platform = getPlatform();
+  let shareDialog = $state<{
+    target?: { request: SolveRequest; solution: Solution };
+    source?: string;
+  } | null>(null);
+  let shareDialogRevision = $state(0);
+  const savedShares = new WeakMap<VerifiedShare, string>();
+  function openShareDialog(options: NonNullable<typeof shareDialog>): void {
+    shareDialog = options;
+    shareDialogRevision++;
+  }
+  function shareSelected(): void {
+    if (selectedEntry && solution) openShareDialog({ target: { request: selectedEntry.request, solution } });
+  }
+  async function saveSharedSolution(value: VerifiedShare): Promise<void> {
+    if (!historyReady || closing) throw new Error('History is not ready for saving.');
+    graph.flushChrome();
+    let entryId = savedShares.get(value);
+    if (!entryId || !historyEntries.some((entry) => entry.id === entryId)) {
+      const entry = sharedHistoryEntry(value);
+      entryId = entry.id;
+      savedShares.set(value, entryId);
+      historyEntries = [...historyEntries, entry];
+    }
+    selectedEntryId = entryId;
+    await hydrateViewFromEntry(entryId);
+    await flushHistoryToDisk();
+  }
+  onMount(() => {
+    const openFragment = () => {
+      if (window.location.hash) openShareDialog({ source: window.location.hash });
+    };
+    openFragment();
+    window.addEventListener('hashchange', openFragment);
+    return () => window.removeEventListener('hashchange', openFragment);
+  });
   const savedForm = readUiPrefs().form;
   let nextEndpointId = $state(savedForm.nextEndpointId);
   let inputs = $state<EndpointRow[]>(savedForm.inputs.map((row) => ({ ...row })));
@@ -467,6 +506,9 @@
 
 <div class="min-h-screen">
   <main class="mx-auto w-full max-w-[1680px] p-4">
+    <div class="mb-3 flex flex-wrap justify-end gap-2">
+      <Button size="small" onclick={() => openShareDialog({})}>Open shared solution</Button>
+    </div>
     <div class="grid grid-cols-1 items-start gap-4 xl:grid-cols-[minmax(240px,280px)_minmax(0,1fr)]">
       <div
         class="xl:sticky xl:top-4 xl:h-[calc(100dvh-2rem)]"
@@ -597,6 +639,7 @@
             onRedo={graph.redo}
             onReset={() => void graph.resetLayout()}
             onExport={() => void graph.exportSvg()}
+            onShare={shareSelected}
             onToggleFullscreen={graph.toggleFullscreen}
             onFlowError={handleFlowError}
             onNodeDragStart={graph.onNodeDragStart}
@@ -624,6 +667,7 @@
                 onRedo={graph.redo}
                 onReset={() => void graph.resetLayout()}
                 onExport={() => void graph.exportSvg()}
+                onShare={shareSelected}
                 onToggleFullscreen={graph.toggleFullscreen}
                 onFlowError={handleFlowError}
                 onNodeDragStart={graph.onNodeDragStart}
@@ -638,3 +682,18 @@
     </div>
   </main>
 </div>
+
+{#if shareDialog}
+  {#key shareDialogRevision}
+    <ShareDialog
+      {...shareDialog}
+      canSave={historyReady && !closing}
+      onSave={saveSharedSolution}
+      onclose={() => {
+        shareDialog = null;
+        if (window.location.hash)
+          window.history.replaceState(null, '', window.location.pathname + window.location.search);
+      }}
+    />
+  {/key}
+{/if}
