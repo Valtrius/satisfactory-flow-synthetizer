@@ -1,12 +1,18 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { get, writable } from 'svelte/store';
 import type { Edge, Node } from '@xyflow/svelte';
-import type { Solution } from '../types';
+import type { Solution, SolveRequest } from '../types';
+import { saveSvgFile } from './exportSvg';
 import { createGraphSession } from './graphSession';
 import { createQueuedEntry, type HistoryEntry } from './historyModel';
 import { layoutSolution, type FlowGraph } from './graph';
 
 vi.mock('./graph', async (original) => ({ ...(await original<typeof import('./graph')>()), layoutSolution: vi.fn() }));
+vi.mock('./exportSvg', async (original) => ({
+  ...(await original<typeof import('./exportSvg')>()),
+  graphToSvg: () => '<svg/>',
+  saveSvgFile: vi.fn(),
+}));
 afterEach(() => vi.resetAllMocks());
 
 function deferred<T>() {
@@ -72,8 +78,6 @@ function setup() {
     },
     getSortColumns: () => [],
     setSortColumns: () => {},
-    getInputs: () => [],
-    getOutputs: () => [],
     patchEntry,
     setError,
   });
@@ -82,6 +86,9 @@ function setup() {
     nodes,
     patchEntry,
     setError,
+    setRequest: (request: SolveRequest) => {
+      entry = { ...entry, request };
+    },
     select: (id: string, result: Solution | null) => {
       entry = { ...entry, id, result };
       return session.hydrateFromEntry(entry);
@@ -90,6 +97,22 @@ function setup() {
 }
 
 describe('graph session ownership', () => {
+  it('names the exported graph from its saved request rather than the editable form', async () => {
+    const state = setup();
+    vi.mocked(layoutSolution).mockResolvedValue(layout('A'));
+    await state.session.applySolution(solution);
+    state.setRequest({
+      inputs: [{ id: 'i', name: '', rate: '60' }],
+      outputs: [
+        { id: 'a', name: '', rate: '40' },
+        { id: 'b', name: '', rate: '20' },
+      ],
+      beltRate: '60',
+      solveMode: 'one_min_nl',
+    });
+    await state.session.exportSvg();
+    expect(saveSvgFile).toHaveBeenCalledWith('<svg/>', '60_to_40-20_n-0.svg');
+  });
   it('protects loaded nodes from topology changes while allowing movement', async () => {
     const state = setup();
     vi.mocked(layoutSolution).mockResolvedValue(layout('A'));

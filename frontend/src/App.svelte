@@ -100,8 +100,6 @@
     setSortColumns: (next) => {
       sortColumns = next;
     },
-    getInputs: () => inputs,
-    getOutputs: () => outputs,
     patchEntry,
     setError: (message) => {
       errorMessage = message;

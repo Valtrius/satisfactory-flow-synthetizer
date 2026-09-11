@@ -21,7 +21,7 @@ import {
 } from './graph';
 import type { CachedGraphLayout, HistoryEntry } from './historyModel';
 import { DEFAULT_SORT_COLUMNS } from './solutionSort';
-import { enumeratesLayouts, type EndpointRow, type Solution } from '../types';
+import { enumeratesLayouts, type Solution } from '../types';
 
 export type GraphSessionHost = {
   nodes: Writable<Node[]>;
@@ -36,8 +36,6 @@ export type GraphSessionHost = {
   setSolutions: (solutions: Solution[]) => void;
   getSortColumns: () => HistoryEntry['sortColumns'];
   setSortColumns: (columns: HistoryEntry['sortColumns']) => void;
-  getInputs: () => EndpointRow[];
-  getOutputs: () => EndpointRow[];
   patchEntry: (id: string, patch: Partial<HistoryEntry>) => void;
   setError: (message: string) => void;
   /** Called when undo/redo availability or fit/fullscreen chrome changes. */
@@ -419,8 +417,10 @@ export function createGraphSession(host: GraphSessionHost): GraphSession {
     if (nodeList.length === 0 || !solution) return;
     try {
       const svg = graphToSvg(nodeList, get(host.edges));
-      const inputs = host.getInputs();
-      const outputs = host.getOutputs();
+      const request = host.getSelectedEntry()?.request;
+      if (!request) return;
+      const inputs = request.inputs.map((endpoint) => ({ ...endpoint, multiplier: '1' }));
+      const outputs = request.outputs.map((endpoint) => ({ ...endpoint, multiplier: '1' }));
       const exportInputs =
         inputs.length > 0
           ? inputs
