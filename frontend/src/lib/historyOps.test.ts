@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { createQueuedEntry, type FormSnapshot, type HistoryEntry } from './historyModel';
 import { diffHistoryOps, snapshotHistory } from './historyOps';
 import type { SolveRequest } from '../types';
+import { historyEntry, solution } from '../test/fixtures';
+import contract from '../../../src-tauri/history-fixtures/incremental.json';
 
 const form: FormSnapshot = {
   inputs: [],
@@ -28,6 +30,17 @@ function completed(partial: Partial<HistoryEntry> & Pick<HistoryEntry, 'id'>): H
 }
 
 describe('diffHistoryOps', () => {
+  it.each(contract.checkpoints.map((checkpoint, index) => ({ ...checkpoint, index })))(
+    '$name matches the operations consumed by the SQLite contract test',
+    ({ index, patch, ops }) => {
+      let previous = contract.initial as unknown as HistoryEntry;
+      for (const step of contract.checkpoints.slice(0, index)) {
+        previous = { ...previous, ...step.patch } as HistoryEntry;
+      }
+      const next = { ...previous, ...patch } as HistoryEntry;
+      expect(diffHistoryOps(snapshotHistory([previous], previous.id), snapshotHistory([next], next.id))).toEqual(ops);
+    },
+  );
   it('inserts a new persistable entry and selects it', () => {
     const entry = completed({ id: 'a' });
     const next = snapshotHistory([entry], 'a');
@@ -87,11 +100,68 @@ describe('diffHistoryOps', () => {
     ]);
   });
 
-  it('upserts when request or results change', () => {
+  it('upserts when the request changes', () => {
     const entry = completed({ id: 'a' });
     const previous = snapshotHistory([entry], 'a');
     const next = snapshotHistory([{ ...entry, request: { ...request, beltRate: '780' } }], 'a');
     expect(diffHistoryOps(previous, next)).toEqual([{ op: 'upsertEntry', entry: next.entries[0] }]);
+  });
+
+  it('appends only the new suffix alongside scalar, layout, selection and proof changes', () => {
+    const first = historyEntry({ status: 'incomplete', enumerationComplete: false });
+    const appended = { ...solution, buildSteps: ['second stored layout'] };
+    const next = {
+      ...first,
+      results: [...first.results, appended],
+      updatedAtMs: first.updatedAtMs + 1,
+      selectedSourceIndex: 1,
+      layouts: { '1': { layoutKey: 'placed', nodes: [], edges: [] } },
+      proof: { minimumNodeCount: 1, minimumLinkCount: null },
+      sequence: 7,
+    };
+    const ops = diffHistoryOps(snapshotHistory([first], first.id), snapshotHistory([next], next.id));
+    expect(ops.map((op) => op.op)).toEqual(['appendSolutions', 'patchEntry', 'saveLayouts', 'saveSolverState']);
+    expect(ops[0]).toEqual({ op: 'appendSolutions', id: first.id, expectedCount: 1, solutions: [appended] });
+    expect(ops).toContainEqual({ op: 'saveSolverState', id: first.id, progress: null, proof: next.proof, sequence: 7 });
+  });
+
+  it.each(['correction', 'removal', 'reorder', 'terminal proof', 'form'])(
+    'uses a full replacement for a %s rather than an unsafe append',
+    (kind) => {
+      const second = { ...solution, buildSteps: ['second stored layout'] };
+      const first = historyEntry({ results: [solution, second] });
+      const next = structuredClone(first);
+      if (kind === 'correction') next.results[0].stats.linkCount = 9;
+      if (kind === 'removal') next.results.pop();
+      if (kind === 'reorder') next.results.reverse();
+      if (kind === 'terminal proof') next.result = { ...solution, status: 'best_known' };
+      if (kind === 'form') next.form.beltRate = '1200';
+      const snapshot = snapshotHistory([next], next.id);
+      expect(diffHistoryOps(snapshotHistory([first], first.id), snapshot)).toEqual([
+        { op: 'upsertEntry', entry: snapshot.entries[0] },
+      ]);
+    },
+  );
+
+  it('replaces a stored singleton before switching to an explicit result list', () => {
+    const first = historyEntry({ results: [], result: solution });
+    const next = snapshotHistory(
+      [{ ...first, results: [solution, { ...solution, buildSteps: ['second'] }] }],
+      first.id,
+    );
+    expect(diffHistoryOps(snapshotHistory([first], first.id), next)).toEqual([
+      { op: 'upsertEntry', entry: next.entries[0] },
+    ]);
+  });
+
+  it('detaches persisted requests and graphs from subsequent in-place UI edits', () => {
+    const entry = structuredClone(historyEntry());
+    const previous = snapshotHistory([entry], entry.id);
+    entry.results[0].nodes[0].label = 'Changed after checkpoint';
+    entry.request.outputs[0].rate = '12';
+    expect(previous.entries[0].results[0].nodes[0].label).not.toBe(entry.results[0].nodes[0].label);
+    expect(previous.entries[0].request.outputs[0].rate).toBe('1');
+    expect(diffHistoryOps(previous, snapshotHistory([entry], entry.id))[0].op).toBe('upsertEntry');
   });
 
   it('does not persist queued jobs until they become history', () => {

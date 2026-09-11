@@ -152,6 +152,11 @@ pub struct HistoryStore {
 #[derive(Debug, Deserialize)]
 #[serde(tag = "op", rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum HistoryOp {
+    AppendSolutions {
+        id: String,
+        expected_count: usize,
+        solutions: Vec<Value>,
+    },
     UpsertEntry {
         entry: Value,
     },
@@ -388,6 +393,11 @@ fn json_schema_rows(conn: &Connection, query: &str) -> Result<Vec<Value>, String
 
 fn apply_op(tx: &Transaction<'_>, op: &HistoryOp) -> Result<(), String> {
     match op {
+        HistoryOp::AppendSolutions {
+            id,
+            expected_count,
+            solutions,
+        } => append_solutions(tx, id, *expected_count, solutions),
         HistoryOp::UpsertEntry { entry } => upsert_entry(tx, entry),
         HistoryOp::PatchEntry { id, fields } => patch_entry(tx, id, fields),
         HistoryOp::SaveLayouts { id, layouts } => replace_layouts(tx, id, layouts),
@@ -435,6 +445,40 @@ fn apply_op(tx: &Transaction<'_>, op: &HistoryOp) -> Result<(), String> {
             }
         }
     }
+}
+
+fn append_solutions(
+    tx: &Transaction<'_>,
+    id: &str,
+    expected_count: usize,
+    solutions: &[Value],
+) -> Result<(), String> {
+    let exists: bool = tx
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM entries WHERE id = ?1)",
+            params![id],
+            |row| row.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+    if !exists {
+        return Err(format!("history entry not found: {id}"));
+    }
+    let expected = i64::try_from(expected_count).map_err(|_| "history result count overflow")?;
+    let (count, first, next): (i64, i64, i64) = tx.query_row(
+        "SELECT COUNT(*), COALESCE(MIN(source_index), 0), COALESCE(MAX(source_index) + 1, 0) FROM solutions WHERE entry_id = ?1",
+        params![id], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+    ).map_err(|e| e.to_string())?;
+    if count != expected || first != 0 || next != count {
+        return Err(format!("history_append_prefix_mismatch: {id}"));
+    }
+    for (offset, solution) in solutions.iter().enumerate() {
+        let index = expected_count
+            .checked_add(offset)
+            .and_then(|index| i64::try_from(index).ok())
+            .ok_or("history result index overflow")?;
+        insert_solution(tx, id, index, solution)?;
+    }
+    Ok(())
 }
 
 fn upsert_entry(tx: &Transaction<'_>, entry: &Value) -> Result<(), String> {
@@ -1597,6 +1641,157 @@ pub fn apply_history_ops(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn frontend_incremental_operations_match_full_replacement_at_every_checkpoint() {
+        let fixture: Value =
+            serde_json::from_str(include_str!("../history-fixtures/incremental.json")).unwrap();
+        let left_dir = tempfile::tempdir().unwrap();
+        let right_dir = tempfile::tempdir().unwrap();
+        let left = HistoryStore::open(left_dir.path()).unwrap();
+        let right = HistoryStore::open(right_dir.path()).unwrap();
+        let mut entry = fixture["initial"].clone();
+        for store in [&left, &right] {
+            store
+                .apply_ops(&[
+                    HistoryOp::UpsertEntry {
+                        entry: entry.clone(),
+                    },
+                    HistoryOp::SetSelected {
+                        id: Some("entry".into()),
+                    },
+                ])
+                .unwrap();
+        }
+        for checkpoint in fixture["checkpoints"].as_array().unwrap() {
+            entry
+                .as_object_mut()
+                .unwrap()
+                .extend(checkpoint["patch"].as_object().unwrap().clone());
+            let ops: Vec<HistoryOp> = serde_json::from_value(checkpoint["ops"].clone()).unwrap();
+            left.apply_ops(&ops).unwrap();
+            right
+                .apply_ops(&[HistoryOp::UpsertEntry {
+                    entry: entry.clone(),
+                }])
+                .unwrap();
+            assert_eq!(
+                left.load_document().unwrap(),
+                right.load_document().unwrap(),
+                "{}",
+                checkpoint["name"]
+            );
+        }
+    }
+
+    #[test]
+    fn appends_preserve_graph_edits_and_roll_back_the_whole_batch_on_failure() {
+        let left_dir = tempfile::tempdir().unwrap();
+        let right_dir = tempfile::tempdir().unwrap();
+        let left = HistoryStore::open(left_dir.path()).unwrap();
+        let right = HistoryStore::open(right_dir.path()).unwrap();
+        let mut entry = sample_entry();
+        let additional = entry["results"][0].clone();
+        left.apply_ops(&[
+            HistoryOp::UpsertEntry {
+                entry: entry.clone(),
+            },
+            HistoryOp::SetSelected {
+                id: Some("entry-1".into()),
+            },
+        ])
+        .unwrap();
+        let append: HistoryOp = serde_json::from_value(json!({
+            "op":"appendSolutions", "id":"entry-1", "expectedCount":1, "solutions":[additional.clone()]
+        })).unwrap();
+        left.apply_ops(&[append]).unwrap();
+        entry["results"]
+            .as_array_mut()
+            .unwrap()
+            .push(additional.clone());
+        right
+            .apply_ops(&[
+                HistoryOp::UpsertEntry { entry },
+                HistoryOp::SetSelected {
+                    id: Some("entry-1".into()),
+                },
+            ])
+            .unwrap();
+        let expected = right.load_document().unwrap();
+        assert_eq!(left.load_document().unwrap(), expected);
+        let error = left
+            .apply_ops(&[
+                HistoryOp::AppendSolutions {
+                    id: "entry-1".into(),
+                    expected_count: 2,
+                    solutions: vec![additional.clone()],
+                },
+                HistoryOp::SetSelected { id: None },
+                HistoryOp::AppendSolutions {
+                    id: "entry-1".into(),
+                    expected_count: 99,
+                    solutions: vec![additional],
+                },
+            ])
+            .unwrap_err();
+        assert_eq!(error, "history_append_prefix_mismatch: entry-1");
+        assert_eq!(left.load_document().unwrap(), expected);
+        assert!(
+            left.apply_ops(&[HistoryOp::AppendSolutions {
+                id: "entry-1".into(),
+                expected_count: 2,
+                solutions: vec![json!({})],
+            }])
+            .is_err()
+        );
+        assert_eq!(left.load_document().unwrap(), expected);
+    }
+
+    #[test]
+    fn appends_reject_missing_entries_and_noncontiguous_saved_prefixes() {
+        let directory = tempfile::tempdir().unwrap();
+        let store = HistoryStore::open(directory.path()).unwrap();
+        assert!(
+            store
+                .apply_ops(&[HistoryOp::AppendSolutions {
+                    id: "missing".into(),
+                    expected_count: 0,
+                    solutions: Vec::new(),
+                }])
+                .unwrap_err()
+                .contains("not found")
+        );
+        let entry = sample_entry();
+        store
+            .apply_ops(&[HistoryOp::UpsertEntry {
+                entry: entry.clone(),
+            }])
+            .unwrap();
+        {
+            let mut conn = store.conn.lock().unwrap();
+            let tx = conn.transaction().unwrap();
+            tx.execute("DELETE FROM solutions WHERE entry_id = 'entry-1'", [])
+                .unwrap();
+            insert_solution(&tx, "entry-1", 2, &entry["results"][0]).unwrap();
+            tx.commit().unwrap();
+        }
+        assert_eq!(
+            store
+                .apply_ops(&[HistoryOp::AppendSolutions {
+                    id: "entry-1".into(),
+                    expected_count: 1,
+                    solutions: Vec::new(),
+                }])
+                .unwrap_err(),
+            "history_append_prefix_mismatch: entry-1"
+        );
+        assert!(
+            serde_json::from_value::<HistoryOp>(json!({
+                "op":"appendSolutions", "id":"entry-1", "expectedCount":-1, "solutions":[]
+            }))
+            .is_err()
+        );
+    }
 
     #[test]
     fn frontend_sort_column_payload_persists_without_rewriting_graphs() {

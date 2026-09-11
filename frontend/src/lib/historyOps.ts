@@ -1,5 +1,5 @@
 import { persistableEntries, type CachedGraphLayout, type HistoryEntry, type HistoryEntryStatus } from './historyModel';
-import type { SolverProgress, OptimalityProof } from '../types';
+import type { Solution, SolverProgress, OptimalityProof } from '../types';
 import type { SortColumn } from './solutionSort';
 
 export type HistoryEntryPatch = {
@@ -16,6 +16,7 @@ export type HistoryEntryPatch = {
 
 export type HistoryOp =
   | { op: 'upsertEntry'; entry: HistoryEntry }
+  | { op: 'appendSolutions'; id: string; expectedCount: number; solutions: Solution[] }
   | { op: 'patchEntry'; id: string; fields: HistoryEntryPatch }
   | { op: 'saveLayouts'; id: string; layouts: Record<string, CachedGraphLayout> }
   | { op: 'saveSortColumns'; id: string; sortColumns: SortColumn[] }
@@ -44,7 +45,9 @@ export function persistableSelection(entries: HistoryEntry[], selectedEntryId: s
 export function snapshotHistory(entries: HistoryEntry[], selectedEntryId: string | null): HistorySnapshot {
   const persisted = persistableEntries(entries);
   return {
-    entries: persisted,
+    // UI objects may still change while an IPC write is in flight. Diff only
+    // against detached snapshots of the payload that was actually committed.
+    entries: JSON.parse(JSON.stringify(persisted)) as HistoryEntry[],
     selectedEntryId: persistableSelection(persisted, selectedEntryId),
   };
 }
@@ -89,6 +92,15 @@ function classifyEntryDelta(previous: HistoryEntry, next: HistoryEntry): History
   }
 
   const ops: HistoryOp[] = [];
+  if (!jsonEq(previous.results, next.results)) {
+    const count = previous.results.length;
+    const unchangedPrefix =
+      count < next.results.length &&
+      (count > 0 || previous.result == null) &&
+      previous.results.every((solution, index) => jsonEq(solution, next.results[index]));
+    if (!unchangedPrefix) return [{ op: 'upsertEntry', entry: next }];
+    ops.push({ op: 'appendSolutions', id: next.id, expectedCount: count, solutions: next.results.slice(count) });
+  }
   if (!jsonEq(scalarFields(previous), scalarFields(next))) {
     ops.push({ op: 'patchEntry', id: next.id, fields: scalarFields(next) });
   }
@@ -115,7 +127,6 @@ function coreFields(entry: HistoryEntry): unknown {
     request: entry.request,
     form: entry.form,
     result: entry.result,
-    results: entry.results,
   };
 }
 

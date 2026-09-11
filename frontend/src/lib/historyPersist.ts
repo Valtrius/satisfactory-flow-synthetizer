@@ -45,6 +45,26 @@ async function flushPending(): Promise<void> {
       }
       lastSnapshot = next;
     } catch (error) {
+      // A lost acknowledgement can leave the database ahead of our snapshot.
+      // Prefix failures roll back the entire batch. Replace only entries whose
+      // append could not be applied, and keep all other operations in the batch.
+      if (typeof error === 'string' && error.startsWith('history_append_prefix_mismatch:')) {
+        const replacements = new Map(next.entries.map((entry) => [entry.id, entry]));
+        if (ops.some((op) => op.op === 'appendSolutions')) {
+          try {
+            await invoke('apply_history_ops', {
+              ops: ops.map((op) =>
+                op.op === 'appendSolutions' ? { op: 'upsertEntry', entry: replacements.get(op.id)! } : op,
+              ),
+            });
+            lastSnapshot = next;
+            continue;
+          } catch (recoveryError) {
+            pending ??= next;
+            throw recoveryError;
+          }
+        }
+      }
       pending ??= next;
       throw error;
     }
