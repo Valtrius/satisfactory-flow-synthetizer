@@ -119,11 +119,7 @@ fn apply_outcome(
             return;
         }
     };
-    let solutions = outcome
-        .solutions
-        .iter()
-        .map(|s| Solution::from_best(prepared, s))
-        .collect::<Result<Vec<_>, _>>();
+    let solutions = terminal_solutions(job, prepared, outcome);
     let solutions = match solutions {
         Ok(s) => s,
         Err(e) => {
@@ -134,6 +130,33 @@ fn apply_outcome(
     job.update(app, |snapshot| {
         apply_terminal(snapshot, request, prepared, outcome, presented, solutions);
     });
+}
+
+fn terminal_solutions(
+    job: &Job,
+    prepared: &PreparedProblem,
+    outcome: &SolveOutcome,
+) -> Result<Vec<Solution>, synthetizer_app::presentation::PresentationError> {
+    // Search has sealed, so no further live results can change this cache.
+    let snapshot = job.snapshot.lock().expect("job snapshot lock poisoned");
+    let published = snapshot
+        .results
+        .iter()
+        .filter(|solution| {
+            solution.display.status == "best_known" && solution.display.proof.is_none()
+        })
+        .map(|solution| (&solution.layout_key, solution))
+        .collect::<std::collections::BTreeMap<_, _>>();
+    outcome
+        .solutions
+        .iter()
+        .map(|best| {
+            if let Some(solution) = published.get(&best.canonical_graph_key) {
+                return Ok((*solution).clone());
+            }
+            Solution::from_best(prepared, best)
+        })
+        .collect()
 }
 
 fn apply_terminal(
@@ -300,13 +323,41 @@ mod tests {
 
     fn project(snapshot: &mut JobSnapshot, request: &SolveRequest, outcome: &SolveOutcome) {
         let prepared = request.problem.prepare().unwrap();
-        let solutions = outcome
-            .solutions
-            .iter()
-            .map(|s| Solution::from_best(&prepared, s).unwrap())
-            .collect();
+        let job = Job::new(uuid::Uuid::nil());
+        job.snapshot.lock().unwrap().results = snapshot.results.clone();
+        let solutions = terminal_solutions(&job, &prepared, outcome).unwrap();
         let presented = present_solve_result(&prepared, &outcome.result).unwrap();
         apply_terminal(snapshot, request, &prepared, outcome, presented, solutions);
+    }
+
+    #[test]
+    fn terminal_conversion_matches_fresh_projection_with_partial_live_delivery() {
+        let request = request();
+        let prepared = request.problem.prepare().unwrap();
+        let outcome = fixture_outcome(SolveMode::AllMinN);
+        let expected = outcome
+            .solutions
+            .iter()
+            .map(|best| Solution::from_best(&prepared, best).unwrap())
+            .collect::<Vec<_>>();
+        for count in [0, 1, expected.len()] {
+            let job = Job::new(uuid::Uuid::nil());
+            job.snapshot.lock().unwrap().results =
+                expected.iter().take(count).cloned().rev().collect();
+            assert_eq!(
+                terminal_solutions(&job, &prepared, &outcome).unwrap(),
+                expected
+            );
+            // Cache entries with terminal proof metadata must be reconstructed.
+            for solution in &mut job.snapshot.lock().unwrap().results {
+                solution.display.status = "proven_optimal".into();
+                solution.display.proof = Some(ProofSummary::default());
+            }
+            assert_eq!(
+                terminal_solutions(&job, &prepared, &outcome).unwrap(),
+                expected
+            );
+        }
     }
 
     #[test]
