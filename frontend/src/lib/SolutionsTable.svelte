@@ -106,19 +106,41 @@
     if (key === 'peak') return solution.stats.internalMaxThroughput?.exact ?? '—';
     return String(solution.stats.feedbackLoops);
   }
+  function navigateLayouts(event: KeyboardEvent, index: number): void {
+    const keys: Record<string, number> = {
+      ArrowDown: Math.min(solutions.length - 1, index + 1),
+      ArrowUp: Math.max(0, index - 1),
+      Home: 0,
+      End: solutions.length - 1,
+    };
+    const next = keys[event.key];
+    if (next === undefined) return;
+    event.preventDefault();
+    (event.currentTarget as HTMLElement)
+      .closest('table')
+      ?.querySelector<HTMLButtonElement>(`[data-layout-select="${next}"]`)
+      ?.focus();
+    onSelect(next);
+  }
 </script>
 
 <div class="flex h-full min-h-0 flex-col overflow-hidden bg-[#0d1922]">
   <div class="min-h-0 flex-1 overflow-auto">
     <table class="w-full border-collapse text-sm">
       <caption class="sr-only">
-        Sortable layouts. Drag column handles to set sort priority; click labels to flip direction.
+        Select layouts with their buttons or Up/Down, Home and End. Drag column handles to set sort priority; click
+        labels to flip direction.
       </caption>
       <thead>
         <tr>
           {#each visualColumns as item, visualIndex (item.kind === 'ghost' ? 'ghost' : item.item.key)}
             <th
               scope="col"
+              aria-sort={item.kind === 'item' && item.index === 0
+                ? item.item.dir === 'asc'
+                  ? 'ascending'
+                  : 'descending'
+                : undefined}
               data-col-source-index={item.kind === 'item' ? item.index : undefined}
               class={item.kind === 'ghost'
                 ? 'list-drag-ghost list-drag-ghost--x sticky top-0 z-1'
@@ -173,7 +195,6 @@
               rowIndex === selectedIndex ? 'bg-selected shadow-[inset_3px_0_0_var(--color-accent)]' : ''
             }`}
             onclick={() => onSelect(rowIndex)}
-            aria-selected={rowIndex === selectedIndex}
           >
             {#each visualColumns as item, columnIndex (item.kind === 'ghost' ? `ghost-${rowIndex}` : `${item.item.key}-${rowIndex}`)}
               <td
@@ -184,7 +205,25 @@
                 aria-hidden={item.kind === 'ghost' ? true : undefined}
               >
                 {#if item.kind === 'item'}
-                  {cellValue(solution, item.item.key)}
+                  {#if item.index === 0}
+                    <Button
+                      variant="plain"
+                      class="w-full text-left tabular-nums"
+                      data-layout-select={rowIndex}
+                      aria-label={`Select layout ${rowIndex + 1}`}
+                      aria-pressed={rowIndex === selectedIndex}
+                      tabindex={rowIndex === selectedIndex ? 0 : -1}
+                      onclick={(event) => {
+                        event.stopPropagation();
+                        onSelect(rowIndex);
+                      }}
+                      onkeydown={(event) => navigateLayouts(event, rowIndex)}
+                    >
+                      {cellValue(solution, item.item.key)}
+                    </Button>
+                  {:else}
+                    {cellValue(solution, item.item.key)}
+                  {/if}
                 {/if}
               </td>
             {/each}
