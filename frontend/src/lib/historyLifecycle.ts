@@ -1,66 +1,11 @@
-import { isTauri } from '@tauri-apps/api/core';
-import { getCurrentWindow } from '@tauri-apps/api/window';
+import { getPlatform } from './platform';
+import type { CloseFlushOptions } from './platform/contracts';
 import { loadHistoryDocument, applyHistoryChanges } from './historyPersist';
 import type { HistoryDocument, HistoryEntry } from './historyModel';
+export type { CloseFlushOptions } from './platform/contracts';
 
-export type CloseFlushOptions = {
-  flush: () => Promise<void>;
-  onClosing?: () => void;
-  prepare?: () => Promise<void>;
-  onReopen?: () => Promise<void>;
-  onError: (message: string) => void;
-};
-
-/** The window disappears immediately; a failed save requires an explicit choice. */
-export async function installCloseFlush(options: CloseFlushOptions): Promise<() => void> {
-  if (!isTauri()) return () => {};
-  const appWindow = getCurrentWindow();
-  let closing = false;
-  return appWindow.onCloseRequested(async (event) => {
-    event.preventDefault();
-    if (closing) return;
-    closing = true;
-    try {
-      options.onClosing?.();
-      await appWindow.hide();
-      for (;;) {
-        try {
-          await options.prepare?.();
-          break;
-        } catch (error) {
-          const { message } = await import('@tauri-apps/plugin-dialog');
-          const choice = await message(`Solver cleanup failed.\n\n${String(error)}`, {
-            title: 'Solver cleanup failed',
-            kind: 'error',
-            buttons: { ok: 'Retry cleanup', cancel: 'Return to app' },
-          });
-          if (choice !== 'Retry cleanup') throw error;
-        }
-      }
-      for (;;) {
-        try {
-          await options.flush();
-          break;
-        } catch (error) {
-          const { message } = await import('@tauri-apps/plugin-dialog');
-          const choice = await message(`History could not be saved.\n\n${String(error)}`, {
-            title: 'History save failed',
-            kind: 'error',
-            buttons: { ok: 'Exit without saving', cancel: 'Retry' },
-          });
-          // Dismissing the dialog is not permission to discard unsaved history.
-          if (choice === 'Exit without saving') break;
-        }
-      }
-      await appWindow.destroy();
-    } catch (error) {
-      closing = false;
-      await options.onReopen?.().catch((resumeError) => options.onError(String(resumeError)));
-      options.onError(`Could not close the application: ${String(error)}`);
-      await appWindow.show().catch(() => {});
-    }
-  });
-}
+export const installCloseFlush = (options: CloseFlushOptions): Promise<() => void> =>
+  getPlatform().lifecycle.installCloseFlush(options);
 
 export type PersistController = {
   schedule: (entries: HistoryEntry[], selectedEntryId: string | null) => void;

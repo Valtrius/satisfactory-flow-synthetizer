@@ -34,11 +34,14 @@
     type HistoryEntry,
   } from './lib/historyModel';
   import { HistoryQueue } from './lib/historyQueue';
+  import { getPlatform } from './lib/platform';
+  import { BROWSER_SOLVE_UNAVAILABLE } from './lib/platform/browser';
   import { formatElapsed, searchHeadline, searchStageView, searchSubline, sizeSearchBody } from './lib/searchStage';
   import { DEFAULT_SORT_COLUMNS, compareSolutions, type SortColumn } from './lib/solutionSort';
   import { readUiPrefs, updateUiPrefs } from './lib/uiPrefs';
   import { enumeratesLayouts, type EndpointRow, type Solution } from './types';
 
+  const platform = getPlatform();
   const savedForm = readUiPrefs().form;
   let nextEndpointId = $state(savedForm.nextEndpointId);
   let inputs = $state<EndpointRow[]>(savedForm.inputs.map((row) => ({ ...row })));
@@ -271,7 +274,7 @@
   }
 
   async function solve(): Promise<void> {
-    if (!historyReady || closing) return;
+    if (!historyReady || closing || platform.capabilities.solve !== 'ready') return;
     graph.setFullscreen(false);
     errorMessage = '';
     const request = buildSolveRequest(inputs, outputs, beltRate, solveMode);
@@ -507,7 +510,7 @@
           bind:beltRate
           {solveMode}
           {hasRunning}
-          ready={historyReady && !closing}
+          ready={historyReady && !closing && platform.capabilities.solve === 'ready'}
           onAddInput={() => addEndpoint('inputs')}
           onRemoveInput={(index) => removeEndpoint('inputs', index)}
           onUpdateInput={(index, field, value) => updateEndpoint('inputs', index, field, value)}
@@ -521,6 +524,12 @@
           }}
           onSolve={() => void solve()}
         />
+
+        {#if platform.capabilities.solve === 'unavailable'}
+          <p class="text-muted m-0 text-sm" role="status">
+            {BROWSER_SOLVE_UNAVAILABLE} Browser storage is best-effort. Export a backup before clearing site data.
+          </p>
+        {/if}
 
         {#if errorMessage}
           <ErrorBanner message={errorMessage} />

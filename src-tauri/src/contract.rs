@@ -1,16 +1,6 @@
-//! Job request envelope. Mathematical contracts live in solver-api.
-use serde::{Deserialize, Serialize};
-pub use solver_api::{GlobalUnsatProof as UnsatProof, SolverProgress};
-pub use synthetizer_app::runtime::Solution;
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SolveRequest {
-    #[serde(flatten)]
-    pub problem: solver_api::ProblemRequest,
-    #[serde(default)]
-    pub solve_mode: solver_api::SolveMode,
-}
+//! Desktop aliases for the shared wire contract.
+pub use solver_api::SolverProgress;
+pub use synthetizer_app::{jobs::SolveRequest, solution::Solution};
 
 #[cfg(test)]
 mod tests {

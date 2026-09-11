@@ -1,6 +1,6 @@
-# Browser backend foundations
+# Browser backend foundations and platform services
 
-This phase adds testable backend modules. It does not enable browser solving in the Svelte application or deploy a GitHub Pages site. The native scheduler, cvc5 process transport, SQLite history and desktop interface are unchanged.
+Step 00 adds testable backend modules. Step 01 adds host adapters, shared job projection and IndexedDB history to the existing Svelte interface. Browser solving remains explicitly unavailable. No GitHub Pages site is deployed. Native scheduling, cvc5 process ownership and SQLite storage remain native.
 
 ## Agreed product scope
 
@@ -79,7 +79,7 @@ The proof build compiles upstream C++ at `-O3` and links the final module at `-O
 
 These outputs are development artifacts. Before publishing the browser application, complete the distribution package, including the corresponding source and relinking material for statically linked dependencies. Copying notices alone is not the release gate. The native Windows cvc5 package is separate and unchanged.
 
-## Local validation on 11 September 2026
+## Step 00 validation on 11 September 2026
 
 The first backend proof gate passed on Windows with Chrome, with the cvc5 module built in Ubuntu WSL. All four browser tests passed, including 28 native/Wasm verification fixtures, persistent session isolation, coexistence of both Wasm modules and termination/recreation during a blocked query. The session test enumerated two exact models to UNSAT, returned `unknown` with `resourceout` on a resource-limited query, and disposed/recreated 16 sessions.
 
@@ -97,4 +97,66 @@ The audit also found hardcoded 64-bit operations in `src/structs/schreier_arena.
 
 Before browser solving is released, port or replace canonicalization with parity tests around 31/32/33 and 63/64/65 vertices, relabeled graphs, duplicate terminals and the existing `layout-v1` corpus. The native canonical byte contract must not change silently. Complete minimum-N,L enumeration remains blocked until this gate passes.
 
-The following phases separate mathematical search transitions from native thread/process ownership, implement worker scheduling with unchanged proof obligations, and connect the shared job contract to Svelte. Then add the selected-solution schema and short-link service, browser persistence, offline assets and Pages deployment. Browser exactness tests must compare canonical result sets and proof completion against native runs, including interrupted enumeration. The current backend tests do not establish full search parity.
+Step 01 below extracts the platform services and implements browser history before the search port. Later phases separate mathematical search transitions from native thread/process ownership, implement worker scheduling with unchanged proof obligations, and connect actual browser jobs to Svelte. The selected-solution schema, short-link service, offline assets and Pages deployment remain later work. Browser exactness tests must compare canonical result sets and proof completion against native runs, including interrupted enumeration. The current backend tests do not establish full search parity.
+
+## Step 01: platform services
+
+`frontend/src/lib/platform/index.ts` selects one host for the page lifetime. `contracts.ts` defines jobs, history, file actions, lifecycle and capabilities. Existing public helpers such as `api.ts`, `historyPersist.ts` and `historyIo.ts` delegate to this host rather than making their own Tauri decisions. Only the platform implementation imports Tauri APIs in production frontend source.
+
+The desktop adapter retains the existing command names and snapshot event. Watching subscribes before fetching the full snapshot; the queue still reconciles sequences and missing appends. Native close still hides the window, joins solver work, retries cleanup or returns to the app, and asks explicitly before exiting without saving. `resume_jobs` reopens native job admission. It does not resume a mathematical search.
+
+The browser adapter rejects job creation with an explicit unavailable error. The interface disables Find but keeps inputs, history and graph edits usable. This is a development milestone, not the requested browser solver release. History import/export and SVG export use browser file actions. Cancelling import returns `null`; file read and JSON errors now propagate instead of pretending the picker was cancelled.
+
+### Shared job projection
+
+`crates/synthetizer-app/src/jobs.rs` owns `SolveRequest`, `JobStatus`, `JobSnapshot<Id>` and pure snapshot projection. Native jobs use UUIDs; another host can use strings without changing the JSON fields. The host supplies start time and owns cancellation acceptance, locks, threads and the completion seal. Thin progress/append packets keep the existing sequence, omission flags and result counts without cloning the accumulated graphs.
+
+`solution.rs` contains the portable presented solution type. `runtime::Solution` remains a re-export for existing native callers. Terminal projection preserves published indices and only reuses unproved cached displays. It consumes normalized canonical keys already returned by the solver API instead of recalculating them in the Tauri layer. Native identity generation and `layout-v1` bytes are unchanged. Projection tests compare the supplied terminal key to native canonicalization.
+
+The shared code builds with `synthetizer-app --no-default-features` for wasm32. This proves the projection boundary is portable, not that Canonaut or the search scheduler has been ported. Public share payloads must not call this projection with unverified proof or canonical-key claims.
+
+### Browser history storage
+
+The database is `satisfactory-flow-synthetizer.history`, IndexedDB schema version 1. It has four stores:
+
+| Store       | Contents                                                                     |
+| ----------- | ---------------------------------------------------------------------------- |
+| `meta`      | Schema, acknowledged revision, entry order and selection.                    |
+| `entries`   | Entry fields, request/form, preferred result, sort columns and solver state. |
+| `solutions` | One record per enumerated solution, keyed by entry ID and source index.      |
+| `layouts`   | One saved graphical layout per entry ID and source-index key.                |
+
+Each `HistoryOp` batch uses one transaction. Saving resolves only on transaction completion, never on the last request's success event. Failed writes leave both the committed records and the acknowledged revision unchanged. Append checks validate the expected count and contiguous zero-based indices. The shared persister retains its detached snapshots, coalesced writes and atomic append-prefix replacement. Growing collections append solution records instead of rewriting every solution in one opaque value.
+
+Every write compares the stored revision against the revision that this tab last acknowledged, inside the same transaction. A stale tab gets a visible error telling the user to export unsaved work and reload. It cannot overwrite a newer checkpoint. This is conflict rejection, not multi-tab merging or synchronization. Even an automatic checkpoint in another tab can make a tab stale. The adapter closes connections on database version changes; unsupported versions, damaged metadata, blocked opens and storage failures do not trigger a destructive reset.
+
+Queued entries remain unpersisted. Running and cancelling jobs become incomplete checkpoints, retain accepted solutions and layouts, clear their job IDs and never restart automatically. Selection/order and graph edits survive reload. The existing local history importer still handles legacy formats; it is not the future public-link validation boundary.
+
+The shared persistence controller keeps its 400 ms debounce and five-second maximum wait while timers run. Browser visibility/pagehide flushes supplement those saves. They do not guarantee a final write when a tab or process closes. Storage remains best-effort and can be cleared or evicted by the browser. Export backups for data that must be retained. No service worker, asset caching or persistent-storage permission request is implemented yet.
+
+Storage is origin-local. Different GitHub project paths on the same origin are not security boundaries. Moving the application to another origin does not migrate history automatically. There is no desktop/browser history synchronization.
+
+### Run the browser development interface
+
+```powershell
+npm run dev -w frontend
+```
+
+Import an existing history JSON file, edit a title or graph, and reload after a checkpoint. Find remains disabled until the search port is implemented. No cvc5 build is required for this history-only development interface.
+
+```powershell
+$env:WEB_TEST_CHANNEL='chrome'; npm run test:web:platform
+cargo check -p synthetizer-app --no-default-features --target wasm32-unknown-unknown --lib --locked -j 2
+```
+
+`web/platform/playwright.config.mjs` runs the shared Svelte app at `/satisfactory-flow-synthetizer/` on loopback port 4179, with one Chrome/Chromium test worker and no cross-origin isolation headers. The tests exercise real IndexedDB transactions, the native incremental HistoryOp fixture, cross-tab conflicts, fault-injected quota errors, late aborts, append-acknowledgement recovery, ordering, interrupted jobs and UI graph edits across reload. Browser tests install an IPC sentinel that fails if the browser calls Tauri.
+
+Results are written to `target/web-platform/results.json`. The existing four backend tests remain separate on port 4178. The workflow also checks the shared wasm32 projection and browser history contracts; remote GitHub execution still requires pushing the branch and is not claimed here.
+
+### Step 01 validation on 11 September 2026
+
+The native workspace passed 158 tests, including the three moved projection tests and three new snapshot/terminal tests. Native cancellation sealing, relational history and full solver/reference contracts passed. The frontend passed 158 tests. All nine real-browser platform/history tests and the four existing backend tests passed in installed Chrome; the verifier still matched all 28 native fixtures. Python tooling passed 40 tests.
+
+Native workspace Clippy, portable job-projection wasm32 Clippy and verifier wasm32 Clippy passed with warnings denied. The verifier rebuilt successfully, Svelte checks found no errors or warnings, and the production frontend build passed. Formatting and release metadata checks passed; the version remains 1.0.0. No performance campaign or installer packaging was run.
+
+The graph interaction test emitted a non-failing `svelte-put/shortcut` configuration warning. Shortcut code is outside this extraction and unchanged. Firefox, WebKit/Safari, mobile storage pressure, public deployment and GitHub-hosted CI execution are not qualified by these local Chrome checks.

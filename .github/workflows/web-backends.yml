@@ -11,6 +11,8 @@ on:
       - 'scripts/*web*'
       - 'scripts/build-cvc5-wasm.py'
       - 'web/**'
+      - 'frontend/**'
+      - 'src-tauri/history-fixtures/**'
       - 'Cargo.toml'
       - 'Cargo.lock'
       - 'package.json'
@@ -55,12 +57,18 @@ jobs:
         run: cargo test -p solver-web --locked --lib
       - name: Browser verifier lint
         run: cargo clippy -p solver-web --target wasm32-unknown-unknown --locked --lib -- -D warnings
+      - name: Portable job projection lint
+        run: cargo clippy -p synthetizer-app --no-default-features --target wasm32-unknown-unknown --locked --lib -- -D warnings
       - name: Build both backend modules
         run: npm run build:web:backends
       - name: Install browser
         run: npx playwright install --with-deps chromium
       - name: Browser integration tests
         run: npm run test:web:backends
+      - name: Frontend contracts
+        run: npm run check && npm test && npm run build -w frontend
+      - name: Browser platform and history tests
+        run: npm run test:web:platform
       - name: Upload test evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -70,4 +78,6 @@ jobs:
             target/web-backends/browser-results.json
             target/web-backends/cvc5/build.json
             target/web-backends/test-results
+            target/web-platform/results.json
+            target/web-platform/test-results
           if-no-files-found: warn

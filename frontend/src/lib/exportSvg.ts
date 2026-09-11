@@ -1,4 +1,4 @@
-import { isTauri } from '@tauri-apps/api/core';
+import { getPlatform } from './platform';
 import { getNodesBounds, getSmoothStepPath, type Edge, type Node } from '@xyflow/svelte';
 import { parseMultiplier } from './endpoints';
 import { handleAnchor, handlePoint, nodeBox, sideToPosition, type PortSide } from './graph';
@@ -203,28 +203,7 @@ export function graphToSvg(nodes: Node[], edges: Edge[]): string {
 }
 
 export async function saveSvgFile(contents: string, fileName: string): Promise<void> {
-  if (isTauri()) {
-    const { save } = await import('@tauri-apps/plugin-dialog');
-    const { writeTextFile } = await import('@tauri-apps/plugin-fs');
-    const path = await save({
-      defaultPath: fileName,
-      filters: [{ name: 'SVG', extensions: ['svg'] }],
-    });
-    if (!path) return;
-    await writeTextFile(path, contents);
-    return;
-  }
-  downloadInBrowser(contents, fileName);
-}
-
-function downloadInBrowser(contents: string, fileName: string): void {
-  const blob = new Blob([contents], { type: 'image/svg+xml;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = fileName;
-  link.click();
-  URL.revokeObjectURL(url);
+  await getPlatform().files.saveText({ contents, fileName, format: 'svg' });
 }
 
 function nodeKind(node: Node): string {
