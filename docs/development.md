@@ -12,6 +12,7 @@ npm run prepare:cvc5
 $env:SOLVER_CVC5 = Join-Path (Get-Location) 'src-tauri/binaries/cvc5-x86_64-pc-windows-msvc.exe'
 npm run format:check
 npm test
+npm run test:vendor
 npm run check
 npm run build -w frontend
 python -m unittest discover -s scripts -p "test_*.py"
@@ -55,6 +56,6 @@ File import/export uses paths selected by native dialogs. Frontend filesystem pe
 
 ## Further references
 
-The [browser backend foundations](web-backends.md) document covers the verifier-only Wasm build, persistent cvc5 worker sessions and the remaining browser-solver gates. The `Web backend proof` workflow tests these separately from desktop packaging.
+The [browser architecture guide](web-backends.md) covers production exact worker jobs, paged IndexedDB collections, sharing, offline delivery and qualification commands. The `Web backend proof` workflow tests browser contracts separately from desktop packaging. Dated implementation evidence is kept in the [milestone archive](web-backend-history.md).
 
 The [Windows release guide](release.md) covers native distribution checks. The [browser release guide](web-release.md) covers offline delivery, source/relink packaging and GitHub Pages. The [benchmark guide](../benchmarks/README.md) defines timing and exact-result comparisons. The [memory index](../.serena/memories/index.md) links proof contracts and experiment decisions.

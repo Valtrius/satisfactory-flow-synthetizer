@@ -19,15 +19,15 @@ The publication directory contains `release.json`, `service-worker.js`, `.nojeky
 
 ## Offline behavior
 
-The service worker automatically downloads the complete runtime on the first visit (currently about 35 MiB). The UI reports full offline readiness only after every runtime asset in `release.json`, including the selected-solution verifier and browser solver/cvc5 files, has passed its recorded byte-count and SHA-256 check and entered Cache Storage. Solver and verifier code still execute only when needed. The initial visit is claimed after installation, so its later requests use the saved files without a reload. Failed downloads can be retried; browser eviction can require a repair download.
+The service worker automatically downloads the complete runtime on the first visit (currently about 35 MiB). The UI reports full offline readiness only after every runtime asset in `release.json`, including the selected-solution verifier and browser solver/cvc5 files, has passed its recorded byte-count and SHA-256 check and entered Cache Storage. Solver and verifier code still execute only when needed. Before mounting the interface on an initial visit, bootstrap waits for installation and reloads to obtain the active worker's document and assets together. Controlled documents also check their build ID before mounting. If installation fails, the app can run online. A later successful retry saves the files and asks the user to finish work and reopen to use them, preserving any running work. Browser eviction can require a repair download.
 
-The browser checks for updates when the app registers its worker on a visit, when connectivity returns, or when the user chooses **Check for updates**. An update installs beside the active version and must download the complete new runtime before it can wait. It does not call `skipWaiting`. Open tabs continue using their old cached build, including solver files they have not used yet, and keep ownership of running solver workers. Close every app tab, then reopen the site to activate the waiting build. Activation deletes only caches carrying this application's scoped `sfs-offline-v1` prefix, then claims uncontrolled pages. IndexedDB history is separate and is not cleared by service-worker activation.
+The browser checks for updates when the app registers its worker on a visit, when connectivity returns, or when the user chooses **Check for updates**. An update installs beside the active version and must download the complete new runtime before it can wait. It never calls `skipWaiting` or `clients.claim`. Open tabs continue using their old cached build, including solver files they have not used yet, and keep ownership of running solver workers. Close every app tab, then reopen the site to activate the waiting build. Activation deletes only caches carrying this application's scoped `sfs-offline-v1` prefix. IndexedDB history is separate and is not cleared by service-worker activation.
 
 Closing or reloading a tab never resumes a search. Browser storage remains best-effort and can be evicted by the browser, so export history that must be retained.
 
 ## Publish with GitHub Pages
 
-The repository includes `.github/workflows/pages.yml`. It is manual by design, so Step 06 does not choose an automatic branch deployment policy.
+The repository includes `.github/workflows/pages.yml`. It is manual and does not deploy automatically on branch changes.
 
 One-time repository setup requires admin or maintainer access:
 
@@ -35,7 +35,7 @@ One-time repository setup requires admin or maintainer access:
 2. Under **Build and deployment**, set **Source** to **GitHub Actions**.
 3. Review the `github-pages` environment protection rules if the repository uses them.
 
-After the Step 06 changes are committed and pushed, open **Actions > Publish browser application**, choose **Run workflow**, and select the reviewed ref. The workflow builds the publication artifact on Ubuntu, runs frontend and offline-delivery tests, uploads `frontend/dist`, then deploys that exact artifact through the `github-pages` environment.
+For a reviewed ref already available on GitHub, open **Actions > Publish browser application**, choose **Run workflow**, and select the reviewed ref. The workflow builds the publication artifact on Ubuntu, runs frontend and offline-delivery tests, uploads `frontend/dist`, then deploys that exact artifact through the `github-pages` environment.
 
 No custom domain is required. Relative asset URLs and the scoped service worker support the normal GitHub project path. The browser itself creates selected-solution links from its current project URL. A separately built desktop application can use the Pages address through its existing `VITE_PUBLIC_APP_URL` setting.
 
