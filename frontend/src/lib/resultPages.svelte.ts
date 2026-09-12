@@ -1,73 +1,117 @@
-import { onDestroy, untrack } from 'svelte';
-import type { SolutionRow } from '../types';
+import { untrack } from 'svelte';
+import type { CollectionRef, SolutionRow } from '../types';
 import type { HistoryEntry } from './historyModel';
 import type { CollectionStore } from './platform/contracts';
 import { COLLECTION_PAGE_SIZE } from './platform/browserCollections';
 import { createPagedResults } from './pagedResults';
 import type { SortColumn } from './solutionSort';
 
-/** Own the selected collection's page window and pending reads. */
+/** Grow a sorted prefix of summaries as the user scrolls; load graphs only on selection. */
 export function createResultPages(
   store: CollectionStore | undefined,
   selectedEntry: () => HistoryEntry | null,
   sortColumns: () => SortColumn[],
   onError: (message: string) => void,
 ) {
-  let offset = $state(0);
-  let entryId = '';
   let loading = $state(false);
+  let failed = $state(false);
   let rows = $state<SolutionRow[]>([]);
+  let viewKey = '';
+  let active: { ref: CollectionRef; columns: SortColumn[]; limit: number; rows: SolutionRow[] } | null = null;
+
+  function readNext(): void {
+    if (!active || !pages) return;
+    loading = true;
+    failed = false;
+    pages.load(active.ref, active.rows.length, COLLECTION_PAGE_SIZE, active.columns);
+  }
+
   const pages = store
     ? createPagedResults(
         store,
         (page) => {
-          rows = page.rows;
-          loading = false;
+          if (!active) return;
+          if (page.offset !== active.rows.length || (!page.rows.length && page.offset < active.ref.count)) {
+            failed = true;
+            loading = false;
+            onError('Could not load more layouts: the result list is incomplete.');
+            return;
+          }
+          active.rows.push(...page.rows);
+          if (active.rows.length < active.limit) {
+            readNext();
+          } else {
+            rows = active.rows;
+            loading = false;
+          }
         },
         (message) => {
           onError(message);
           loading = false;
+          failed = true;
         },
       )
     : null;
-  // Telemetry and graph edits do not change a page's data.
-  const requestKey = $derived(JSON.stringify([selectedEntry()?.id, selectedEntry()?.collection, sortColumns()]));
+  // Graph selection and telemetry do not change the summary list.
+  const selectionKey = $derived(
+    JSON.stringify([
+      selectedEntry()?.id,
+      selectedEntry()?.collection?.id,
+      selectedEntry()?.collection?.legacyEntryId,
+      sortColumns(),
+    ]),
+  );
+  const requestKey = $derived(JSON.stringify([selectionKey, selectedEntry()?.collection?.count]));
   $effect(() => {
     void requestKey;
     const entry = untrack(selectedEntry);
     const columns = untrack(sortColumns);
     pages?.clear();
-    if (entry?.id !== entryId) {
-      entryId = entry?.id ?? '';
-      offset = 0;
+    active = null;
+    failed = false;
+    if (selectionKey !== viewKey) {
+      viewKey = selectionKey;
       rows = [];
     }
-    if (!entry?.collection || !pages) {
+    if (!entry?.collection?.count || !pages) {
+      rows = [];
       loading = false;
       return;
     }
-    const next = Math.min(
-      offset,
-      Math.max(0, Math.floor((entry.collection.count - 1) / COLLECTION_PAGE_SIZE) * COLLECTION_PAGE_SIZE),
-    );
-    if (next !== offset) offset = next;
+    // New results can sort ahead of existing rows. Refresh the visible prefix atomically
+    // so an append never mixes offsets from different collection revisions.
+    active = {
+      ref: { ...entry.collection },
+      columns: columns.map((column) => ({ ...column })),
+      limit: Math.min(
+        entry.collection.count,
+        Math.max(
+          COLLECTION_PAGE_SIZE,
+          untrack(() => rows.length),
+        ),
+      ),
+      rows: [],
+    };
     loading = true;
-    const timer = setTimeout(() => pages.load(entry.collection!, next, COLLECTION_PAGE_SIZE, columns), 20);
+    const timer = setTimeout(readNext, 20);
     return () => clearTimeout(timer);
   });
-  onDestroy(() => pages?.clear());
+  $effect(() => () => pages?.clear());
   return {
-    get offset() {
-      return offset;
+    loadMore() {
+      if (loading || failed || !active || rows.length >= active.ref.count) return;
+      active = { ...active, rows: [...rows], limit: Math.min(active.ref.count, rows.length + COLLECTION_PAGE_SIZE) };
+      readNext();
     },
-    set offset(value: number) {
-      offset = value;
-    },
+    retry: readNext,
     get loading() {
       return loading;
     },
     get rows() {
       return rows;
+    },
+    get failed() {
+      return failed;
     },
   };
 }

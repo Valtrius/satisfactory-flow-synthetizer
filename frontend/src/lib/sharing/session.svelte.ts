@@ -1,14 +1,17 @@
 import { onMount } from 'svelte';
+import type { Node } from '@xyflow/svelte';
+import { cloneGraphNodes } from '../graphEditHistory';
 import type { Solution, SolveRequest } from '../../types';
 import type { HistoryEntry } from '../historyModel';
 import type { VerifiedShare } from './client';
 import { sharedHistoryEntry } from './history';
 
-type ShareDialogOptions = { target?: { request: SolveRequest; solution: Solution }; source?: string };
+type ShareDialogOptions = { target?: { request: SolveRequest; solution: Solution; nodes: Node[] }; source?: string };
 type ShareHost = {
   canSave(): boolean;
   selectedEntry(): HistoryEntry | null;
   solution(): Solution | null;
+  graphNodes(): Node[];
   entries(): HistoryEntry[];
   add(entry: HistoryEntry): void;
   select(id: string): Promise<void>;
@@ -44,14 +47,15 @@ export function createShareSession(host: ShareHost) {
     shareSelected() {
       const entry = host.selectedEntry(),
         solution = host.solution();
-      if (entry && solution) open({ target: { request: entry.request, solution } });
+      if (entry && solution)
+        open({ target: { request: entry.request, solution, nodes: cloneGraphNodes(host.graphNodes()) } });
     },
     async save(value: VerifiedShare) {
       if (!host.canSave()) throw new Error('History is not ready for saving.');
       host.flushChrome();
       let id = saved.get(value);
       if (!id || !host.entries().some((entry) => entry.id === id)) {
-        const entry = sharedHistoryEntry(value);
+        const entry = await sharedHistoryEntry(value);
         id = entry.id;
         saved.set(value, id);
         host.add(entry);

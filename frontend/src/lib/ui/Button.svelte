@@ -2,7 +2,7 @@
   import type { Snippet } from 'svelte';
   import type { HTMLButtonAttributes } from 'svelte/elements';
 
-  type Variant = 'default' | 'primary' | 'danger' | 'quiet' | 'plain' | 'menu' | 'chip';
+  type Variant = 'default' | 'primary' | 'rail' | 'danger' | 'quiet' | 'plain' | 'menu' | 'chip';
   type Size = 'default' | 'small' | 'tiny';
 
   type Props = HTMLButtonAttributes & {
@@ -25,6 +25,7 @@
   const variants: Record<Variant, string> = {
     default: 'intent-default',
     primary: 'intent-primary intent-primary-glow',
+    rail: 'intent-rail',
     danger: 'intent-danger',
     quiet: 'intent-quiet',
     plain: '',

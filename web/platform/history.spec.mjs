@@ -23,7 +23,7 @@ test.beforeEach(async ({ page }) => {
     };
   });
   await page.goto('./');
-  await expect(page.getByLabel('Browser compute workers')).toBeVisible();
+  await expect(page.getByRole('combobox', { name: 'Browser compute workers', exact: true })).toBeVisible();
 });
 
 test.afterEach(async ({ page }) => {

@@ -33,6 +33,7 @@
     runningElapsedLabel: string;
     menuOpen: boolean;
     menuOpenUpward: boolean;
+    menuMaxHeight?: number;
     onSelect: (id: string) => void;
     onRename: (id: string, title: string | null) => void;
     onDelete: (id: string) => void;
@@ -53,6 +54,7 @@
     runningElapsedLabel,
     menuOpen,
     menuOpenUpward,
+    menuMaxHeight = 168,
     onSelect,
     onRename,
     onDelete,
@@ -102,6 +104,7 @@
   aria-selected={selected}
   data-history-id={floating ? undefined : entry.id}
   data-history-band={floating ? undefined : band}
+  style:--entry-menu-height={`${menuMaxHeight}px`}
   class={`border-b-line relative grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-2 gap-y-1 border-y border-solid border-t-transparent px-3 py-2.5 transition-opacity duration-150 motion-reduce:transition-none ${
     menuOpen && !floating ? 'z-20' : ''
   } ${
@@ -226,7 +229,7 @@
           onclose={() => {
             onCloseMenu();
           }}
-          class={`border-line bg-panel absolute right-0 z-20 min-w-44 rounded-lg border py-1 shadow-[0_14px_32px_rgb(0_0_0/45%)] ${
+          class={`border-line bg-panel absolute right-0 z-20 max-h-(--entry-menu-height) min-w-44 overflow-y-auto rounded-lg border py-1 shadow-[0_14px_32px_rgb(0_0_0/45%)] ${
             menuOpenUpward ? 'bottom-full mb-1' : 'top-full mt-1'
           }`}
           role="menu"

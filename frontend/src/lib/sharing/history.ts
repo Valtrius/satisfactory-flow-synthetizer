@@ -1,8 +1,10 @@
 import { createQueuedEntry, type HistoryEntry } from '../historyModel';
 import type { VerifiedShare } from './client';
+import { layoutSolution, solutionLayoutKey } from '../graph';
+import { applyShareLayout } from './layout';
 
 /** A verified physical witness is saved without a search proof or enumeration claim. */
-export function sharedHistoryEntry(verified: VerifiedShare): HistoryEntry {
+export async function sharedHistoryEntry(verified: VerifiedShare): Promise<HistoryEntry> {
   const endpoints = (items: VerifiedShare['share']['request']['inputs'], prefix: string) =>
     items.map((item, index) => ({ ...item, id: `${prefix}-${index}` }));
   const request = {
@@ -18,6 +20,7 @@ export function sharedHistoryEntry(verified: VerifiedShare): HistoryEntry {
     outputs: request.outputs.map((row) => ({ ...row, multiplier: '1' })),
   };
   const solution = { ...verified.solution, status: 'best_known', proof: null };
+  const graph = verified.layout ? applyShareLayout(await layoutSolution(solution), verified.layout) : null;
   return {
     ...createQueuedEntry(form, request),
     title: 'Shared solution',
@@ -26,5 +29,6 @@ export function sharedHistoryEntry(verified: VerifiedShare): HistoryEntry {
     results: [solution],
     enumerationComplete: false,
     proof: null,
+    layouts: graph ? { '0': { ...graph, layoutKey: solutionLayoutKey(solution) } } : {},
   };
 }

@@ -1,72 +1,72 @@
 <script lang="ts">
+  import X from '@lucide/svelte/icons/x';
   import type { Solution } from '../types';
-  import { nodeCountLabel } from './searchStage';
+  import { formatTelemetryNumber } from './searchStage';
+  import Panel from './ui/Panel.svelte';
+  import Button from './ui/Button.svelte';
 
-  type Props = {
+  let {
+    solution,
+    elapsedLabel,
+    onclose,
+  }: {
     solution: Solution;
-    elapsedLabel: string;
-  };
+    elapsedLabel?: string;
+    onclose: () => void;
+  } = $props();
 
-  let { solution, elapsedLabel }: Props = $props();
-
-  const isOptimal = $derived(solution.status === 'proven_optimal');
-  const isBestKnown = $derived(solution.status === 'best_known');
-  const statusLabel = $derived(isOptimal ? 'Proven optimal' : isBestKnown ? 'Best known' : solution.status);
+  const devices = $derived(
+    [
+      { label: 'Splitters', value: solution.stats.splitters },
+      { label: 'Mergers', value: solution.stats.mergers },
+    ].filter((metric) => metric.value != null && metric.value > 0),
+  );
+  const links = $derived(solution.stats.linkCount ?? solution.stats.beltCount);
+  const peakRate = $derived(solution.stats.internalMaxThroughput?.exact);
+  const hasPeakRate = $derived(Boolean(peakRate && /[1-9]/.test(peakRate.split('/')[0])));
+  const feedbacks = $derived(solution.stats.feedbackLoops);
+  const discard = $derived(solution.discardRate?.exact);
+  // Inspect the numerator so exact fractions remain exact, including very small rates.
+  const hasDiscard = $derived(Boolean(discard && /[1-9]/.test(discard.split('/')[0])));
+  const hasInfo = $derived(
+    elapsedLabel ||
+      solution.stats.nodeCount > 0 ||
+      devices.length ||
+      (links != null && links > 0) ||
+      hasPeakRate ||
+      feedbacks > 0 ||
+      hasDiscard,
+  );
 </script>
 
-<header class="border-line flex flex-wrap items-center justify-between gap-3 border-b px-5 py-3">
-  <h2 class="m-0 text-lg font-bold tracking-tight" id="result-title">
-    {nodeCountLabel(solution.stats.nodeCount)}
-  </h2>
-  <div
-    title={isBestKnown ? 'Not proven optimal' : undefined}
-    class={`flex items-center gap-2 rounded-full border px-2.5 py-1.5 text-xs font-extrabold whitespace-nowrap ${
-      isOptimal
-        ? 'border-[#4fc49a]/40 bg-[#20654b]/20 text-[#8bdeb8]'
-        : 'border-[#8a6a3a]/50 bg-[#3a2a12]/35 text-[#e6c27a]'
-    }`}
-  >
-    <span aria-hidden="true">{isOptimal ? '✓' : ''}</span>
-    {statusLabel}
+{#snippet metric(label: string, value: string | number, unit = '')}
+  <div class="grid grid-cols-[auto_minmax(0,1fr)] items-baseline gap-3 px-3 py-1">
+    <dt class="text-dim text-[0.65rem] font-bold tracking-wider whitespace-nowrap uppercase">{label}</dt>
+    <dd class="text-ink m-0 text-right text-sm font-bold [overflow-wrap:anywhere] tabular-nums">
+      {value}{#if unit}<small class="text-muted ml-1 text-xs font-normal">{unit}</small>{/if}
+    </dd>
   </div>
-</header>
+{/snippet}
 
-<div class="border-line bg-line grid grid-cols-2 gap-px border-b md:grid-cols-3 xl:grid-cols-6">
-  <div class="bg-[#0b1922] px-4.5 py-4">
-    <span class="text-dim mb-2 block text-xs font-bold tracking-wider uppercase">Solve time</span>
-    <strong class="block text-xl text-[#dfe9ed] tabular-nums">
-      {elapsedLabel}
-    </strong>
-  </div>
-  <div class="bg-[#0b1922] px-4.5 py-4">
-    <span class="text-dim mb-2 block text-xs font-bold tracking-wider uppercase">Splitters</span>
-    <strong class="block text-xl text-[#dfe9ed] tabular-nums">
-      {solution.stats.splitters}
-    </strong>
-  </div>
-  <div class="bg-[#0b1922] px-4.5 py-4">
-    <span class="text-dim mb-2 block text-xs font-bold tracking-wider uppercase">Mergers</span>
-    <strong class="block text-xl text-[#dfe9ed] tabular-nums">
-      {solution.stats.mergers}
-    </strong>
-  </div>
-  <div class="bg-[#0b1922] px-4.5 py-4">
-    <span class="text-dim mb-2 block text-xs font-bold tracking-wider uppercase">Feedback loops</span>
-    <strong class="block text-xl text-[#dfe9ed] tabular-nums">
-      {solution.stats.feedbackLoops}
-    </strong>
-  </div>
-  <div class="bg-[#0b1922] px-4.5 py-4">
-    <span class="text-dim mb-2 block text-xs font-bold tracking-wider uppercase">Links (L)</span>
-    <strong class="block text-xl text-[#dfe9ed] tabular-nums">
-      {solution.stats.linkCount ?? solution.stats.beltCount ?? '—'}
-    </strong>
-  </div>
-  <div class="bg-[#0b1922] px-4.5 py-4">
-    <span class="text-dim mb-2 block text-xs font-bold tracking-wider uppercase">Discard</span>
-    <strong class="block text-xl text-[#dfe9ed] tabular-nums">
-      {solution.discardRate.exact}
-      <small class="text-dim ml-1 text-xs">/min</small>
-    </strong>
-  </div>
-</div>
+{#if hasInfo}
+  <Panel element="aside" aria-label="Graph information" class="group relative w-48 max-w-full overflow-hidden">
+    <Button
+      variant="plain"
+      class="text-muted hover:text-ink pointer-events-none absolute top-2 right-1 grid size-5 place-items-center rounded opacity-0 transition-opacity duration-150 group-focus-within:pointer-events-auto group-focus-within:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100 motion-reduce:transition-none"
+      title="Hide graph info"
+      aria-label="Hide graph info"
+      onclick={onclose}
+    >
+      <X size={14} aria-hidden="true" />
+    </Button>
+    <dl class="divide-line m-0 divide-y py-1">
+      {#if elapsedLabel}{@render metric('Solve time', elapsedLabel)}{/if}
+      {#if solution.stats.nodeCount > 0}{@render metric('Nodes', formatTelemetryNumber(solution.stats.nodeCount))}{/if}
+      {#each devices as device}{@render metric(device.label, formatTelemetryNumber(device.value))}{/each}
+      {#if links != null && links > 0}{@render metric('Links', formatTelemetryNumber(links))}{/if}
+      {#if hasPeakRate && peakRate}{@render metric('Peak rate', peakRate, '/min')}{/if}
+      {#if feedbacks > 0}{@render metric('Feedbacks', formatTelemetryNumber(feedbacks))}{/if}
+      {#if hasDiscard && discard}{@render metric('Discard', discard, '/min')}{/if}
+    </dl>
+  </Panel>
+{/if}

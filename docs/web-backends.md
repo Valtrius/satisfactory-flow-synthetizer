@@ -77,7 +77,7 @@ History writes coalesce for 400 ms with a five-second maximum checkpoint delay w
 
 ## Selected-solution sharing and identity qualification
 
-Sharing encodes one physical topology with its endpoint rates and belt capacity. The self-contained `#/share/v1/` link or JSON file omits graph coordinates, solve mode, proof claims and full result collections. The verifier reconstructs exact flows and checks the graph before previewing it. Previewing does not save history; an explicit save creates a proofless entry. Input-only sharing is not a supported format.
+Sharing encodes one physical topology with its endpoint rates and belt capacity. Self-contained `#s1.` links use automatic graph positioning; exported JSON also preserves node positions and port orientations. Both omit solve mode, proof claims and full result collections. The verifier reconstructs exact flows and checks the graph before previewing it. JSON positions are checked against the verified nodes and restored in the preview and saved history entry. Previewing does not save history; an explicit save creates a proofless entry. Input-only sharing is not a supported format.
 
 The production `solver-web` module exports the selected-solution codec and verifier. Its low-level `verify_witness_json` and `reconstruct_topology_json` Wasm exports are enabled only by the `qualification` feature in the separate `verifier-qualification` distribution. The underlying Rust APIs remain available for native fixtures. All untrusted verification runs in a terminable worker with payload, decompression, graph and literal-size bounds. The verifier is separate from cvc5 and can be built or executed independently.
 

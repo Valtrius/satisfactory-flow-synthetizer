@@ -76,7 +76,11 @@ test('the four-worker UI cancels blocked compute heaps and preserves its worker 
   await observeWorkers(page);
   await injectSessionFailure(page, 'busy');
   await page.goto('./');
-  await page.getByLabel('Browser compute workers').selectOption('4');
+  await page.getByLabel('Browser compute workers', { exact: true }).click();
+  await page
+    .getByRole('listbox', { name: 'Browser compute workers options' })
+    .getByRole('option', { name: '4 workers', exact: true })
+    .click();
   await page.getByRole('button', { name: /^Find/ }).click();
   await expect.poll(() => page.evaluate(() => window.computeTest.checking)).toBe(true);
   await expect.poll(() => page.evaluate(() => window.computeTest.ticks)).toBeGreaterThan(3);
@@ -89,6 +93,6 @@ test('the four-worker UI cancels blocked compute heaps and preserves its worker 
   expect(workers.coordinators).toBe(0);
   expect(workers.terminated).toBe(workers.starts);
   await page.reload();
-  await expect(page.getByLabel('Browser compute workers')).toHaveValue('4');
+  await expect(page.getByLabel('Browser compute workers', { exact: true })).toContainText('4 workers');
   expect(await page.evaluate(() => window.computeTest.starts)).toBe(0);
 });

@@ -1,8 +1,20 @@
 import { flushSync, mount, unmount } from 'svelte';
-import { expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import SolutionsTable from './SolutionsTable.svelte';
 import { solution } from '../test/fixtures';
 import { DEFAULT_SORT_COLUMNS } from './solutionSort';
+
+beforeEach(() => {
+  vi.stubGlobal(
+    'ResizeObserver',
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  );
+});
+afterEach(() => vi.unstubAllGlobals());
 
 it('provides a keyboard entry point and selects layouts without duplicate activation', async () => {
   const onSelect = vi.fn();

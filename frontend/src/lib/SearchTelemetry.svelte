@@ -41,7 +41,7 @@
 </script>
 
 <div
-  class={`flex flex-col items-start justify-between gap-4 px-6 py-3 md:flex-row md:items-center ${
+  class={`flex flex-col items-start justify-between gap-4 px-6 py-3 @min-[700px]/telemetry:flex-row @min-[700px]/telemetry:items-center ${
     borderBottom || detailsVisible ? 'border-line border-b' : ''
   } bg-[#0a151d]`}
 >
@@ -63,7 +63,7 @@
       <p class="text-muted m-0 mt-1 text-xs">{subline}</p>
     </div>
   </div>
-  <div class="flex shrink-0 items-center gap-3">
+  <div class="flex shrink-0 flex-wrap items-center gap-3">
     {#if collapsible && showFound && !detailsVisible}
       <span class="text-muted text-sm whitespace-nowrap tabular-nums">
         <strong class="text-[#dfe9ed]">
@@ -95,11 +95,11 @@
 {#if detailsVisible}
   <div
     id={detailsId}
-    class={`grid gap-5 p-4.5 md:grid-cols-[minmax(0,1fr)_auto_minmax(0,1.1fr)] md:items-start md:gap-0 md:p-5 ${
+    class={`grid gap-5 p-4.5 @min-[700px]/telemetry:grid-cols-[minmax(0,1fr)_auto_minmax(0,1.1fr)] @min-[700px]/telemetry:items-start @min-[700px]/telemetry:gap-0 @min-[700px]/telemetry:p-5 ${
       borderBottom ? 'border-line border-b' : ''
     }`}
   >
-    <div class="md:pr-5">
+    <div class="@min-[700px]/telemetry:pr-5">
       <h3 class="text-dim m-0 mb-3 text-[0.68rem] font-bold tracking-wider uppercase">Exact search</h3>
       <div class="flex flex-wrap gap-2">
         {#each [{ label: 'N bound', value: searchView.lowerBound }, { label: 'N current', value: searchView.nodeCount }, { label: 'L exact', value: searchView.linkCount }, { label: 'Best L', value: searchView.bestLinkCount }] as metric}
@@ -122,8 +122,10 @@
       <p class="text-muted m-0 mt-3 text-xs">{sizeBody}</p>
     </div>
 
-    <div class="bg-line hidden w-px self-stretch md:block" aria-hidden="true"></div>
-    <div class="border-line border-t pt-5 md:border-t-0 md:pt-0 md:pl-5">
+    <div class="bg-line hidden w-px self-stretch @min-[700px]/telemetry:block" aria-hidden="true"></div>
+    <div
+      class="border-line border-t pt-5 @min-[700px]/telemetry:border-t-0 @min-[700px]/telemetry:pt-0 @min-[700px]/telemetry:pl-5"
+    >
       <h3 class="text-dim m-0 mb-3 text-[0.68rem] font-bold tracking-wider uppercase">Solver diagnostics</h3>
       <div class="text-muted grid gap-1.5 text-xs">
         {#each searchView.custom as entry (entry.name)}

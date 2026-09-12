@@ -6,7 +6,7 @@ export type SortColumn = {
   dir: SortDir;
 };
 
-/** Default: belts ↑, peak ↑, feedbacks ↑ */
+/** Default: links ↑, peak ↑, feedbacks ↑ */
 export const DEFAULT_SORT_COLUMNS: SortColumn[] = [
   { key: 'belts', dir: 'asc' },
   { key: 'peak', dir: 'asc' },
@@ -14,7 +14,7 @@ export const DEFAULT_SORT_COLUMNS: SortColumn[] = [
 ];
 
 export const SORT_LABELS: Record<SortKey, string> = {
-  belts: 'Belts',
+  belts: 'Links',
   peak: 'Peak',
   feedbacks: 'Feedbacks',
 };

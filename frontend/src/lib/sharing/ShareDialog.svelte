@@ -3,15 +3,18 @@
   import { get, writable } from 'svelte/store';
   import type { Edge, Node } from '@xyflow/svelte';
   import type { Solution, SolveRequest } from '../../types';
-  import { layoutSolution, rotateFlowGraph, type RotateDirection } from '../graph';
+  import { layoutSolution } from '../graph';
   import TopologyGraphPanel from '../TopologyGraphPanel.svelte';
   import Button from '../ui/Button.svelte';
+  import Copy from '@lucide/svelte/icons/copy';
+  import Check from '@lucide/svelte/icons/check';
   import { getPlatform } from '../platform';
   import { createSelectedShare, runShareWorker, type VerifiedShare } from './client';
   import { MAX_SHARE_BYTES, boundedText, inlineLink, readShareLocation } from './codec';
+  import { applyShareLayout, captureShareLayout, readShareLayout } from './layout';
 
   type Props = {
-    target?: { request: SolveRequest; solution: Solution };
+    target?: { request: SolveRequest; solution: Solution; nodes: Node[] };
     source?: string;
     canSave: boolean;
     onSave: (value: VerifiedShare) => Promise<void>;
@@ -22,7 +25,6 @@
   const id = $props.id();
   let dialog: HTMLDialogElement;
   let input = $state('');
-  let viewer = $state(platform.shareViewerUrl ?? '');
   let verified = $state<VerifiedShare | null>(null);
   let link = $state('');
   let error = $state('');
@@ -33,7 +35,19 @@
   const edges = writable<Edge[]>([]);
   let controller: AbortController | null = null;
   let disposed = false;
-  const title = $derived(target ? 'Share selected solution' : 'Open shared solution');
+  const title = $derived(target ? 'Share solution' : 'Open shared solution');
+  let backdropPressed = false;
+
+  function isBackdrop(event: PointerEvent): boolean {
+    const rect = dialog.getBoundingClientRect();
+    return (
+      event.target === dialog &&
+      (event.clientX < rect.left ||
+        event.clientX > rect.right ||
+        event.clientY < rect.top ||
+        event.clientY > rect.bottom)
+    );
+  }
 
   function fail(value: unknown): void {
     if (!disposed) error = value instanceof Error ? value.message : String(value);
@@ -42,15 +56,15 @@
     if (current.signal.aborted || disposed) return;
     verified = value;
     link = '';
-    if (target && viewer && value.token) {
+    if (platform.shareViewerUrl && value.token) {
       try {
-        link = inlineLink(viewer, value.token);
+        link = inlineLink(platform.shareViewerUrl, value.token);
       } catch (error) {
         fail(error);
       }
     }
     if (!target) {
-      const graph = await layoutSolution(value.solution);
+      const graph = applyShareLayout(await layoutSolution(value.solution), value.layout);
       if (current.signal.aborted || disposed) return;
       nodes.set(graph.nodes);
       edges.set(graph.edges);
@@ -63,6 +77,7 @@
     controller = current;
     busy = true;
     error = '';
+    notice = '';
     verified = null;
     link = '';
     nodes.set([]);
@@ -88,7 +103,10 @@
         const current = new AbortController();
         controller = current;
         busy = true;
-        await show(await createSelectedShare(target.request, target.solution, current.signal), current);
+        const value = await createSelectedShare(target.request, target.solution, current.signal);
+        if (current.signal.aborted || disposed) return;
+        value.layout = readShareLayout(captureShareLayout(target.solution, target.nodes), value.solution);
+        await show(value, current);
       } else if (source) await verifyInput(source);
     } catch (error) {
       fail(error);
@@ -122,16 +140,6 @@
       fail(error);
     }
   }
-  function refreshLink(): void {
-    error = '';
-    link = '';
-    try {
-      if (verified?.token) link = inlineLink(viewer, verified.token);
-      else throw new Error('Export JSON for this solution.');
-    } catch (error) {
-      fail(error);
-    }
-  }
   async function copy(value: string): Promise<void> {
     try {
       await navigator.clipboard.writeText(value);
@@ -143,8 +151,11 @@
   async function exportJson(): Promise<void> {
     if (!verified) return;
     try {
+      const layout = target ? verified.layout : captureShareLayout(verified.solution, get(nodes));
+      const contents = JSON.stringify({ ...verified.share, layout });
+      boundedText(contents);
       await platform.files.saveText({
-        contents: JSON.stringify(verified.share),
+        contents,
         fileName: 'selected-solution.json',
         format: 'json',
       });
@@ -152,16 +163,11 @@
       fail(error);
     }
   }
-  function rotate(direction: RotateDirection): void {
-    const rotated = rotateFlowGraph(get(nodes), get(edges), direction);
-    nodes.set(rotated.nodes);
-    edges.set(rotated.edges);
-    fitRevision++;
-  }
   async function save(): Promise<void> {
     if (!verified || !canSave || busy) return;
     busy = true;
     try {
+      verified.layout = captureShareLayout(verified.solution, get(nodes));
       await onSave(verified);
       onclose();
     } catch (error) {
@@ -175,7 +181,14 @@
 <dialog
   bind:this={dialog}
   aria-labelledby={id}
-  class="border-line bg-panel text-ink m-auto max-h-[94dvh] w-[calc(100%-2rem)] max-w-5xl overflow-y-auto rounded-xl border p-5"
+  class={`border-line bg-panel text-ink m-auto max-h-[94dvh] w-[calc(100%-2rem)] overflow-y-auto rounded-xl border p-5 backdrop:bg-[#040a0f]/75 ${target ? 'max-w-xl' : 'max-w-5xl'}`}
+  onpointerdown={(event) => {
+    backdropPressed = isBackdrop(event);
+  }}
+  onpointerup={(event) => {
+    if (backdropPressed && isBackdrop(event)) onclose();
+    backdropPressed = false;
+  }}
   oncancel={(event) => {
     event.preventDefault();
     onclose();
@@ -186,8 +199,13 @@
     <Button size="small" onclick={onclose}>Close</Button>
   </div>
   <p class="text-muted text-sm">
-    One physical solution with its rates and belt capacity. Graph positions, search mode, history and proof claims are
-    not shared.
+    {#if target}
+      Links share the solution with automatic graph positioning. Export JSON to preserve your node positions and port
+      orientations.
+    {:else}
+      Paste a share link or open a solution JSON file. Links use automatic graph positioning; JSON restores saved node
+      positions and port orientations.
+    {/if}
   </p>
   {#if !target}
     <label class="block text-sm">
@@ -209,62 +227,51 @@
   {/if}
   {#if busy}<p role="status" class="text-muted text-sm">Processing selected solution...</p>{/if}
   {#if verified}
-    <p class="text-accent text-sm" role="status">
-      Physical solution verified with exact arithmetic. Optimality and complete enumeration are not established by this
-      link.
-    </p>
-    <p class="text-muted text-sm">
-      {verified.solution.stats.nodeCount} operators, {verified.solution.stats.linkCount} operator belts. Output {verified
-        .solution.totalOutput.exact} /min.
-    </p>
     {#if !target}
+      <p class="text-accent text-sm" role="status">
+        Physical solution verified. Search proofs and history are not included.
+      </p>
       <TopologyGraphPanel
-        preview
         {nodes}
         {edges}
         {fitRevision}
-        fullscreen={false}
-        canUndo={false}
-        canRedo={false}
         canvasClass="flow-wrap h-80 w-full"
-        onRotate={rotate}
-        onUndo={() => {}}
-        onRedo={() => {}}
-        onReset={() => {
-          if (verified && controller) void show(verified, controller);
-        }}
-        onExport={() => void exportJson()}
-        onToggleFullscreen={() => {}}
         onFlowError={(_, message) => fail(message)}
       />
     {/if}
-    <label class="mt-3 block text-sm">
-      Browser viewer address
-      <input
-        aria-label="Browser viewer address"
-        class="border-line bg-well mt-1 block w-full rounded border p-2 text-sm"
-        bind:value={viewer}
-        placeholder="https://your-host/satisfactory-flow-synthetizer/"
-      />
-    </label>
-    <div class="mt-3 flex flex-wrap gap-2">
-      <Button size="small" onclick={refreshLink}>Generate inline link</Button><Button
-        size="small"
-        onclick={() => void exportJson()}
+    {#if link}
+      <label for={`${id}-link`} class="mt-3 block text-sm">Share link</label>
+      <div
+        class="border-field-border bg-well focus-within:outline-accent mt-1 flex min-w-0 items-center gap-1 rounded-md border p-1 focus-within:outline-2"
       >
-        Export solution JSON
-      </Button>
-    </div>
-    <p class="text-muted text-xs">The link contains the solution. No server stores it.</p>
-    {#if link}<label class="mt-3 block text-sm">
-        Share link
-        <textarea
+        <input
+          id={`${id}-link`}
           aria-label="Share link"
           readonly
           value={link}
-          class="border-line bg-well mt-1 block min-h-20 w-full rounded border p-2 font-mono text-xs"></textarea>
-      </label>
-      <Button size="small" class="mt-2" onclick={() => void copy(link)}>Copy link</Button>{/if}
+          class="min-w-0 flex-1 truncate border-0 bg-transparent px-2 py-1 font-mono text-xs outline-none"
+          onclick={(event) => event.currentTarget.select()}
+        />
+        <Button
+          size="small"
+          square
+          variant="quiet"
+          class="shrink-0"
+          title="Copy link"
+          aria-label="Copy link"
+          onclick={() => void copy(link)}
+        >
+          {#if notice}<Check size={16} aria-hidden="true" />{:else}<Copy size={16} aria-hidden="true" />{/if}
+        </Button>
+      </div>
+    {:else if !platform.shareViewerUrl}
+      <p class="text-muted text-sm">Export JSON to share this solution.</p>
+    {:else if !verified.token}
+      <p class="text-muted text-sm">This solution is too large for a link. Export JSON instead.</p>
+    {/if}
+    <div class="mt-3 flex flex-wrap gap-2">
+      <Button size="small" onclick={() => void exportJson()} disabled={busy}>Export solution JSON</Button>
+    </div>
     {#if !target}<Button class="mt-4" variant="primary" onclick={() => void save()} disabled={!canSave || busy}>
         Save to history and view
       </Button>{/if}
@@ -272,9 +279,3 @@
   {#if error}<p role="alert" class="text-danger text-sm">{error}</p>{/if}
   {#if notice}<p role="status" class="text-muted text-sm">{notice}</p>{/if}
 </dialog>
-
-<style>
-  dialog::backdrop {
-    background: rgb(4 10 15 / 75%);
-  }
-</style>

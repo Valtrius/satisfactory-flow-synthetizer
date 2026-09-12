@@ -83,6 +83,10 @@ export function ruledOutRangeLabel(view: SearchStageView): string {
 }
 
 export function sizeSearchBody(snapshot: JobSnapshot, view: SearchStageView): string {
+  if (snapshot.status === 'completed')
+    return view.nodeCount == null
+      ? 'No search diagnostics were recorded.'
+      : `Finished at N=${view.nodeCount}${view.linkCount == null ? '' : ` · L=${view.linkCount}`}.`;
   const stopped = ['cancelled', 'failed', 'incomplete', 'unsat'].includes(snapshot.status);
   if (view.nodeCount == null)
     return `${stopped ? 'Stopped during' : ''} ${phaseLabel(view.phase).toLowerCase()}.`.trim();
@@ -100,6 +104,7 @@ export function searchHeadline(snapshot: JobSnapshot, context: SearchCopyContext
   if (searchEnumerate && snapshot.enumerationComplete && snapshot.status === 'completed') {
     return firstNodeCount != null ? `All layouts at N = ${firstNodeCount}` : 'All layouts found';
   }
+  if (snapshot.status === 'completed' && !searchEnumerate) return 'Search completed';
   const progress = snapshot.progress;
   if (searchEnumerate && solutionsLength > 0)
     return `Enumerating layouts at N = ${firstNodeCount ?? progress?.nodeCount ?? '?'}`;
@@ -117,6 +122,10 @@ export function searchSubline(snapshot: JobSnapshot, view: SearchStageView, cont
   }
   if (context.searchEnumerate && snapshot.enumerationComplete)
     return `${context.solutionsLength} distinct layouts · exact · complete`;
+  if (snapshot.status === 'completed' && !context.searchEnumerate)
+    return snapshot.result?.status === 'proven_optimal'
+      ? 'Minimum nodes and operator belts proved.'
+      : 'Physical solution available; optimality has not been proved.';
   if (view.lowerBound == null) return `${phaseLabel(view.phase)}.`;
   return `Lower bound is ${view.lowerBound} nodes. ${context.searchEnumerate ? 'Collecting every layout at the minimum size.' : 'Proving minimum nodes, then minimum operator belts.'}`;
 }

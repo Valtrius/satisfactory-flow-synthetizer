@@ -622,6 +622,7 @@ export function createGraphSession(host: GraphSessionHost): GraphSession {
   }
 
   function handleKeydown(event: KeyboardEvent): void {
+    if (event.defaultPrevented) return;
     if (event.key === 'Escape' && fullscreen) setFullscreen(false);
 
     const target = event.target;
@@ -630,12 +631,27 @@ export function createGraphSession(host: GraphSessionHost): GraphSession {
       (target.isContentEditable ||
         target.tagName === 'INPUT' ||
         target.tagName === 'TEXTAREA' ||
-        target.tagName === 'SELECT')
+        target.tagName === 'SELECT' ||
+        target.closest(
+          '[contenteditable]:not([contenteditable="false"]), [role="combobox"], [role="dialog"], [role="menu"], [popover], dialog',
+        ))
     ) {
       return;
     }
 
     const mod = event.ctrlKey || event.metaKey;
+    if (
+      event.key.toLowerCase() === 'f' &&
+      !mod &&
+      !event.altKey &&
+      !event.repeat &&
+      host.getSolution() &&
+      get(host.nodes).length > 0
+    ) {
+      event.preventDefault();
+      toggleFullscreen();
+      return;
+    }
     if (!mod || event.altKey) return;
 
     const key = event.key.toLowerCase();

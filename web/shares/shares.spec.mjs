@@ -150,11 +150,21 @@ test('the graph toolbar shares the selected layout rather than the preferred res
   await (
     await chooser
   ).setFiles({ name: 'history.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(payload)) });
-  await expect(page.getByRole('button', { name: 'Share selected solution', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Share solution', exact: true })).toBeVisible();
+  await expect(page.locator('.svelte-flow__node')).toHaveCount(examples[1].native.solution.nodes.length);
   await page.getByRole('button', { name: 'Rotate graph 90 degrees clockwise' }).click();
-  await page.getByRole('button', { name: 'Share selected solution', exact: true }).click();
-  const dialog = page.getByRole('dialog', { name: 'Share selected solution' });
-  await expect(dialog).toContainText('Physical solution verified');
+  const graphPositions = () =>
+    page
+      .locator('.svelte-flow__node')
+      .evaluateAll((nodes) =>
+        nodes
+          .map((node) => ({ id: node.dataset.id, transform: node.style.transform }))
+          .sort((a, b) => a.id.localeCompare(b.id)),
+      );
+  const moved = await graphPositions();
+  await page.getByRole('button', { name: 'Share solution', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Share solution', exact: true });
+  await expect(dialog.getByRole('textbox', { name: 'Share link', exact: true })).toBeVisible();
   const value = await dialog.getByRole('textbox', { name: 'Share link', exact: true }).inputValue();
   const decoded = await page.evaluate(async (link) => {
     const { decodeShare } = await import('/satisfactory-flow-synthetizer/src/lib/sharing/codec.ts');
@@ -163,6 +173,48 @@ test('the graph toolbar shares the selected layout rather than the preferred res
   expect(decoded).toEqual(examples[1].native.share);
   expect(decoded.topology).not.toEqual(examples[0].native.share.topology);
   expect(Object.keys(decoded).sort()).toEqual(['kind', 'request', 'topology', 'version']);
+  const downloading = page.waitForEvent('download');
+  await dialog.getByRole('button', { name: 'Export solution JSON', exact: true }).click();
+  const contents = await readFile(await (await downloading).path());
+  const exported = JSON.parse(contents.toString());
+  expect(exported.layout.nodes).toHaveLength(moved.length);
+  await page.mouse.click(5, 5);
+  await expect(dialog).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Share solution', exact: true })).toBeFocused();
+  await page.getByRole('button', { name: 'Open shared solution', exact: true }).click();
+  const opening = page.getByRole('dialog', { name: 'Open shared solution', exact: true });
+  const choosing = page.waitForEvent('filechooser');
+  await opening.getByRole('button', { name: 'Open solution file', exact: true }).click();
+  await (await choosing).setFiles({ name: 'selected-solution.json', mimeType: 'application/json', buffer: contents });
+  await expect(opening).toContainText('Physical solution verified');
+  await expect(opening.locator('.svelte-flow__node')).toHaveCount(moved.length);
+  const preview = await opening
+    .locator('.svelte-flow__node')
+    .evaluateAll((nodes) =>
+      nodes
+        .map((node) => ({ id: node.dataset.id, transform: node.style.transform }))
+        .sort((a, b) => a.id.localeCompare(b.id)),
+    );
+  expect(preview).toEqual(moved);
+  await opening.getByRole('button', { name: 'Save to history and view', exact: true }).click();
+  await expect(opening).toHaveCount(0);
+  await expect.poll(graphPositions).toEqual(moved);
+  await page.reload();
+  await expect.poll(graphPositions).toEqual(moved);
+  const restoredLayout = await page.evaluate(async () => {
+    const { createBrowserHistoryStore } =
+      await import('/satisfactory-flow-synthetizer/src/lib/platform/browserHistory.ts');
+    const { captureShareLayout } = await import('/satisfactory-flow-synthetizer/src/lib/sharing/layout.ts');
+    const store = createBrowserHistoryStore();
+    try {
+      const history = await store.load();
+      const entry = history.entries.find((entry) => entry.id === history.selectedEntryId);
+      return captureShareLayout(entry.result, entry.layouts['0'].nodes);
+    } finally {
+      store.close();
+    }
+  });
+  expect(restoredLayout).toEqual(exported.layout);
 });
 
 test('cancelling a verifier load retires its worker and a later attempt still works', async ({ page }) => {
@@ -197,8 +249,10 @@ test('cancelling a verifier load retires its worker and a later attempt still wo
 });
 
 test('the production build opens a native-generated link under its project path and CSP without cvc5', async ({
-  page,
+  context,
 }) => {
+  // A fresh page keeps delayed development-page favicon requests out of this production check.
+  const page = await context.newPage();
   const requests = [];
   const errors = [];
   page.on('request', (request) => requests.push(request.url()));
@@ -208,7 +262,7 @@ test('the production build opens a native-generated link under its project path 
   await expect(page.getByRole('dialog').locator('.svelte-flow__node')).toHaveCount(13);
   expect(requests.filter((url) => /solver_web_bg\.wasm/.test(url))).toHaveLength(1);
   expect(requests.some((url) => /cvc5|session\.mjs/.test(url))).toBe(false);
-  expect(requests.every((url) => url.startsWith('http://127.0.0.1:4182/'))).toBe(true);
+  expect(requests.filter((url) => !url.startsWith('http://127.0.0.1:4182/'))).toEqual([]);
   expect(errors).toEqual([]);
 });
 
@@ -220,13 +274,16 @@ test('long links and JSON round trips need only static assets and have no link-m
   const dialog = page.getByRole('dialog');
   await expect(dialog).toContainText('Physical solution verified');
   await expect(dialog.getByRole('button', { name: /short link|revocation|revoke/i })).toHaveCount(0);
-  await dialog.getByRole('button', { name: 'Generate inline link' }).click();
+  await expect(dialog.getByRole('button', { name: 'Generate inline link' })).toHaveCount(0);
+  await expect(dialog.getByRole('textbox', { name: 'Browser viewer address' })).toHaveCount(0);
   const link = await dialog.getByRole('textbox', { name: 'Share link', exact: true }).inputValue();
   expect(link).toMatch(/^http:\/\/127\.0\.0\.1:4181\/satisfactory-flow-synthetizer\/#s1\./);
   const downloading = page.waitForEvent('download');
   await dialog.getByRole('button', { name: 'Export solution JSON' }).click();
   const contents = await readFile(await (await downloading).path());
-  expect(JSON.parse(contents.toString())).toEqual(share);
+  const { layout, ...physical } = JSON.parse(contents.toString());
+  expect(physical).toEqual(share);
+  expect(layout.nodes).toHaveLength(2);
   await dialog.getByRole('button', { name: 'Close', exact: true }).click();
   await page.getByRole('button', { name: 'Open shared solution', exact: true }).click();
   const choosing = page.waitForEvent('filechooser');
@@ -234,6 +291,8 @@ test('long links and JSON round trips need only static assets and have no link-m
   await (await choosing).setFiles({ name: 'selected-solution.json', mimeType: 'application/json', buffer: contents });
   await expect(dialog).toContainText('Physical solution verified');
   await expect(page.locator('[data-history-band="history"]')).toHaveCount(0);
+  await page.mouse.click(5, 5);
+  await expect(dialog).toHaveCount(0);
   expect(requests.every(({ url, method }) => method === 'GET' && new URL(url).origin === new URL(app).origin)).toBe(
     true,
   );

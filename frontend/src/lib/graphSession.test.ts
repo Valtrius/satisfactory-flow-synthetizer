@@ -106,6 +106,52 @@ function setup(loadSolution?: (entry: HistoryEntry, index: number) => Promise<So
 }
 
 describe('graph session ownership', () => {
+  it('toggles fullscreen with F only when a graph is available, without stealing browser shortcuts', () => {
+    const { session, nodes } = setup();
+    const press = (options: KeyboardEventInit = {}) => {
+      const event = new KeyboardEvent('keydown', { key: 'f', cancelable: true, ...options });
+      session.handleKeydown(event);
+      return event;
+    };
+    try {
+      expect(press().defaultPrevented).toBe(false);
+      expect(session.fullscreen).toBe(false);
+      nodes.set(layout('visible').nodes);
+      expect(press({ ctrlKey: true }).defaultPrevented).toBe(false);
+      expect(press({ repeat: true }).defaultPrevented).toBe(false);
+      expect(session.fullscreen).toBe(false);
+      expect(press().defaultPrevented).toBe(true);
+      expect(session.fullscreen).toBe(true);
+      press({ key: 'F', shiftKey: true });
+      expect(session.fullscreen).toBe(false);
+    } finally {
+      session.setFullscreen(false);
+    }
+  });
+
+  it.each(['input', 'textarea', 'select', '[contenteditable="true"]', '[role="combobox"]', '[role="dialog"]'])(
+    'leaves F to focused %s controls',
+    (selector) => {
+      const { session, nodes } = setup();
+      nodes.set(layout('visible').nodes);
+      const element = document.createElement(selector.startsWith('[') ? 'div' : selector);
+      if (selector.includes('contenteditable')) element.setAttribute('contenteditable', 'true');
+      if (selector.includes('role'))
+        element.setAttribute('role', selector.includes('combobox') ? 'combobox' : 'dialog');
+      document.body.append(element);
+      try {
+        element.addEventListener('keydown', session.handleKeydown, { once: true });
+        const event = new KeyboardEvent('keydown', { key: 'f', bubbles: true, cancelable: true });
+        element.dispatchEvent(event);
+        expect(session.fullscreen).toBe(false);
+        expect(event.defaultPrevented).toBe(false);
+      } finally {
+        element.remove();
+        session.setFullscreen(false);
+      }
+    },
+  );
+
   it.each(['read', 'layout'] as const)(
     'keeps the committed selection and graph when a paged %s fails',
     async (failure) => {

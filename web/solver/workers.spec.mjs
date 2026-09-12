@@ -3,9 +3,15 @@ import { test, expect } from '@playwright/test';
 test('automatic uses the real client thread count for a completed browser solve', async ({ page }, testInfo) => {
   await page.goto('./');
   const threads = await page.evaluate(() => navigator.hardwareConcurrency);
-  const select = page.getByLabel('Browser compute workers');
-  await expect(select).toHaveValue('auto');
-  await expect(select.locator(`option[value="${threads}"]`)).toHaveCount(1);
+  const select = page.getByRole('combobox', { name: 'Browser compute workers', exact: true });
+  await expect(select).toContainText(`Automatic (${threads} ${threads === 1 ? 'worker' : 'workers'})`);
+  await select.click();
+  await expect(
+    page
+      .getByRole('listbox', { name: 'Browser compute workers options' })
+      .getByRole('option', { name: `${threads} ${threads === 1 ? 'worker' : 'workers'}`, exact: true }),
+  ).toHaveCount(1);
+  await select.press('Escape');
   await page.evaluate(async () => {
     const { getPlatform } = await import('/satisfactory-flow-synthetizer/src/lib/platform/index.ts');
     const jobs = getPlatform().jobs;
@@ -20,7 +26,7 @@ test('automatic uses the real client thread count for a completed browser solve'
   expect(await page.evaluate(() => window.requestedWorkers)).toBe(threads);
   await expect(page.locator('[data-history-band="history"]')).toContainText('Completed', { timeout: 60_000 });
   await page.reload();
-  await expect(select).toHaveValue('auto');
+  await expect(select).toContainText('Automatic');
   await testInfo.attach('client-thread-default', {
     body: JSON.stringify({ reportedThreads: threads, defaultMode: 'auto' }),
     contentType: 'application/json',
@@ -34,19 +40,23 @@ for (const threads of [12, 24, 64, 192]) {
       localStorage.setItem('sfs.browser-workers.v1', '1');
     }, threads);
     await page.goto('./');
-    const select = page.getByLabel('Browser compute workers');
-    await expect(select).toHaveValue('auto');
-    await expect(select.locator('option[value="auto"]')).toHaveText(`Automatic (${threads} workers)`);
-    const counts = await select
-      .locator('option:not([value="auto"])')
-      .evaluateAll((options) => options.map((option) => Number(option.value)));
+    const select = page.getByRole('combobox', { name: 'Browser compute workers', exact: true });
+    await expect(select).toContainText(`Automatic (${threads} workers)`);
+    await select.click();
+    const options = page.getByRole('listbox', { name: 'Browser compute workers options' });
+    const counts = await options
+      .getByRole('option')
+      .evaluateAll((options) =>
+        options.map((option) => Number.parseInt(option.textContent, 10)).filter(Number.isFinite),
+      );
     expect(Math.max(...counts)).toBe(threads);
     expect(counts).toContain(1);
-    await select.selectOption(String(threads));
+    await options.getByRole('option', { name: `${threads} workers`, exact: true }).click();
     await page.reload();
-    await expect(select).toHaveValue(String(threads));
-    await select.selectOption('auto');
+    await expect(select).toContainText(`${threads} workers`);
+    await select.click();
+    await options.getByRole('option', { name: `Automatic (${threads} workers)`, exact: true }).click();
     await page.reload();
-    await expect(select).toHaveValue('auto');
+    await expect(select).toContainText('Automatic');
   });
 }

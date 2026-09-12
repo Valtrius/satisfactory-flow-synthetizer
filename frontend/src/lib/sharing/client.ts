@@ -1,5 +1,6 @@
 import type { Solution, SolveRequest } from '../../types';
 import { boundedText } from './codec';
+import type { ShareLayout } from './layout';
 
 export interface SelectedShare {
   kind: 'selected-solution';
@@ -12,6 +13,7 @@ export interface VerifiedShare {
   share: SelectedShare;
   solution: Solution;
   token: string | null;
+  layout?: ShareLayout;
 }
 export type ShareOperation = { operation: 'open'; source: string } | { operation: 'create'; source: string };
 

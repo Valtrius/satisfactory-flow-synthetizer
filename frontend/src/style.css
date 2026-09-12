@@ -54,6 +54,47 @@
   box-shadow: var(--shadow-accent);
 }
 
+@utility intent-rail {
+  position: relative;
+  border-color: transparent;
+  background: transparent;
+  color: var(--color-muted);
+
+  &:hover {
+    border-color: var(--color-control-border-hover);
+    background-color: var(--color-control-hover);
+    color: var(--color-ink);
+  }
+
+  &[aria-pressed='true'] {
+    border-color: transparent;
+    color: var(--color-accent);
+    background:
+      linear-gradient(var(--color-panel), var(--color-panel)) padding-box,
+      linear-gradient(to bottom right, var(--color-accent-bright), var(--color-accent)) border-box;
+    box-shadow: var(--shadow-accent-sm);
+  }
+
+  &[aria-pressed='true']::before {
+    content: '';
+    position: absolute;
+    top: 20%;
+    bottom: 20%;
+    left: -8px;
+    width: 3px;
+    border-radius: 2px;
+    background: linear-gradient(var(--color-accent-bright), var(--color-accent));
+    box-shadow: 0 0 10px rgb(255 128 52 / 45%);
+  }
+}
+
+svg.text-accent,
+svg.text-accent-bright,
+.intent-rail[aria-pressed='true'] svg {
+  stroke: url(#sfs-accent-icon-gradient);
+  filter: drop-shadow(0 0 4px rgb(255 128 52 / 35%));
+}
+
 @utility intent-default {
   border-color: var(--color-control-border);
   background-color: var(--color-control);

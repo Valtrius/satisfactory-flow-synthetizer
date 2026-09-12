@@ -6,12 +6,16 @@
     label: string;
     sections: readonly { title: string; items: readonly string[]; tone?: 'default' | 'warning' }[];
     align?: 'left' | 'right';
+    /** Parent anchoring uses the nearest positioned ancestor and constrains the popup to it. */
+    anchor?: 'trigger' | 'parent';
+    class?: string;
+    popupClass?: string;
   };
-  let { label, sections, align = 'left' }: Props = $props();
+  let { label, sections, align = 'left', anchor = 'trigger', class: className = '', popupClass = '' }: Props = $props();
   let open = $state(false);
 </script>
 
-<div class="relative">
+<div class={`${anchor === 'parent' ? 'static' : 'relative'} ${className}`}>
   <Button
     size="tiny"
     square
@@ -34,7 +38,7 @@
       onclose={() => {
         open = false;
       }}
-      class={`border-line bg-panel absolute top-[calc(100%+0.35rem)] z-30 max-h-[min(36rem,80dvh)] w-[min(28rem,calc(100vw-2rem))] overflow-y-auto rounded-lg border px-4 py-3.5 shadow-[0_14px_32px_rgb(0_0_0/45%)] ${align === 'right' ? 'right-0' : 'left-0'}`}
+      class={`border-line bg-panel absolute top-[calc(100%+0.35rem)] z-30 max-h-[min(36rem,80dvh)] w-[min(28rem,calc(100vw-2rem))] overflow-y-auto rounded-lg border px-4 py-3.5 shadow-[0_14px_32px_rgb(0_0_0/45%)] ${align === 'right' ? 'right-0' : 'left-0'} ${anchor === 'parent' ? 'max-w-full' : ''} ${popupClass}`}
     >
       <div class="flex flex-col gap-3.5 text-xs leading-relaxed">
         {#each sections as section}
