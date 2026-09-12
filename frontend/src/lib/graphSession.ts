@@ -20,6 +20,7 @@ import {
   type RotateDirection,
 } from './graph';
 import type { CachedGraphLayout, HistoryEntry } from './historyModel';
+import { prepareGraphSelection } from './graphSelection';
 import { DEFAULT_SORT_COLUMNS } from './solutionSort';
 import { enumeratesLayouts, type Solution } from '../types';
 
@@ -479,19 +480,17 @@ export function createGraphSession(host: GraphSessionHost): GraphSession {
         return;
       pendingPagedKey = `${entry.id}:${sourceIndex}`;
       try {
-        const next = await host.loadSolution(entry, sourceIndex);
-        if (!operation.current()) return;
-        const nextKey = solutionLayoutKey(next);
-        const cached = layoutsForSelected()[String(sourceIndex)];
-        const prepared =
-          cached && cached.layoutKey === nextKey && cached.nodes.length
-            ? cached
-            : { ...(await layoutSolution(next)), layoutKey: nextKey };
-        if (!operation.current()) return;
+        const loadSolution = host.loadSolution;
+        const prepared = await prepareGraphSelection(
+          () => loadSolution(entry, sourceIndex),
+          () => layoutsForSelected()[String(sourceIndex)],
+          operation.current,
+        );
+        if (!prepared || !operation.current()) return;
         snapshotCurrentLayout(host.getSelectedSourceIndex());
         host.setSelectedSourceIndex(sourceIndex);
         host.patchEntry(entry.id, { selectedSourceIndex: sourceIndex });
-        await restoreLayout(next, sourceIndex, prepared);
+        await restoreLayout(prepared.solution, sourceIndex, prepared.layout);
       } catch (error) {
         if (operation.current()) host.setError(`Could not read selected solution: ${String(error)}`);
       } finally {
