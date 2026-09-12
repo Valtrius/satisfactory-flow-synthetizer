@@ -26,6 +26,80 @@ test.afterEach(async ({ page }) => {
   await page.evaluate(() => window.store?.close());
 });
 
+test('page navigation reuses summaries and sorting while appends, prefixes and retained writes stay exact', async ({
+  page,
+}) => {
+  const result = await page.evaluate(async () => {
+    const c = window.store.collections;
+    let ref = await c.create('page-cache');
+    const row = (index) => {
+      const solution = structuredClone(window.example.result);
+      solution.stats.internalMaxThroughput = { exact: String(index + 1), decimal: String(index + 1) };
+      return { index, solution };
+    };
+    for (let index = 0; index < 80; index += 16)
+      ref = await c.append(
+        ref,
+        Array.from({ length: 16 }, (_, offset) => row(index + offset)),
+      );
+    const original = IDBObjectStore.prototype.openCursor;
+    const scans = [];
+    IDBObjectStore.prototype.openCursor = function (range, ...rest) {
+      if (this.name === 'collectionSummaries') scans.push([range.lower[1], range.upper[1]]);
+      return original.call(this, range, ...rest);
+    };
+    try {
+      const desc = [{ key: 'peak', dir: 'desc' }];
+      const first = await c.page(ref, 0, 64, desc);
+      first.rows[0].solution.stats.internalMaxThroughput.exact = '-1';
+      const next = await c.page(ref, 64, 64, desc);
+      const again = await c.page(ref, 0, 64, desc);
+      const ascending = await c.page(ref, 0, 64, [{ key: 'peak', dir: 'asc' }]);
+      const afterNavigation = scans.slice();
+      const oldRef = ref;
+      ref = await c.append(ref, [row(80), row(81)]);
+      const appended = await c.page(ref, 0, 64, desc);
+      const oldPrefix = await c.page(oldRef, 0, 64, desc);
+      const retained = c.retain(ref, [row(82)]);
+      const overlay = await c.page(retained, 0, 64, desc);
+      await c.flush(retained);
+      const flushed = await c.page(retained, 0, 64, desc);
+      const latest = await c.page(oldRef, 0, 64, desc);
+      return {
+        afterNavigation,
+        scans,
+        first: again.rows[0],
+        next: next.rows[0].sourceIndex,
+        ascending: ascending.rows[0].sourceIndex,
+        appended: appended.rows[0].sourceIndex,
+        oldPrefix: oldPrefix.rows[0].sourceIndex,
+        overlay: overlay.rows[0].sourceIndex,
+        flushed: flushed.rows[0].sourceIndex,
+        latest: latest.rows[0].sourceIndex,
+      };
+    } finally {
+      IDBObjectStore.prototype.openCursor = original;
+    }
+  });
+  expect(result.afterNavigation).toEqual([[0, 79]]);
+  expect(result.scans).toEqual([
+    [0, 79],
+    [80, 81],
+    [82, 82],
+  ]);
+  expect(result.first.sourceIndex).toBe(79);
+  expect(result.first.solution.stats.internalMaxThroughput.exact).toBe('80');
+  expect(result).toMatchObject({
+    next: 15,
+    ascending: 0,
+    appended: 81,
+    oldPrefix: 79,
+    overlay: 82,
+    flushed: 82,
+    latest: 79,
+  });
+});
+
 test('large collections keep graph objects out of history and summary pages, with exact stable sorting', async ({
   page,
 }, testInfo) => {

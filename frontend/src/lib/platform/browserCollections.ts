@@ -1,13 +1,12 @@
-import type { CollectionRef, Solution, SolutionRow } from '../../types';
+import type { CollectionRef, Solution } from '../../types';
 import type { CollectionStore, IndexedSolution } from './contracts';
-import { compareSolutions } from '../solutionSort';
+import { createCollectionPages, type PendingCollection } from './collectionPages';
 import { idbRequest as request, idbTransaction } from './idb';
 
 export const COLLECTION_STORES = ['collections', 'collectionSolutions', 'collectionSummaries'];
 export const COLLECTION_PAGE_SIZE = 64;
 export const MAX_COLLECTION_PAGE = 128;
 export type CollectionMetadata = { id: string; count: number };
-type Pending = { base: CollectionRef; values: IndexedSolution[] };
 
 export function checkCollectionRef(ref: CollectionRef): void {
   if (
@@ -60,7 +59,8 @@ function validateBatch(ref: CollectionRef, values: IndexedSolution[]): void {
 
 export function createBrowserCollections(database: () => Promise<IDBDatabase>): CollectionStore {
   // At most one failed bounded append per stopped job. No complete graph collection lives here.
-  const pending = new Map<string, Pending>();
+  const pending = new Map<string, PendingCollection>();
+  const pages = createCollectionPages(database, pending);
   let tail = Promise.resolve();
   const enqueue = <T>(work: () => Promise<T>): Promise<T> => {
     const result = tail.then(work);
@@ -165,6 +165,7 @@ export function createBrowserCollections(database: () => Promise<IDBDatabase>): 
     },
     flush: (ref) => enqueue(() => flush(ref)),
     forget: (id) => {
+      pages.forget(id);
       pending.delete(id);
     },
     discard: (ref) =>
@@ -187,7 +188,10 @@ export function createBrowserCollections(database: () => Promise<IDBDatabase>): 
             return true;
           },
         );
-        if (removed) pending.delete(ref.id);
+        if (removed) {
+          pending.delete(ref.id);
+          pages.forget(ref.id);
+        }
       }),
     read,
     async get(ref, index) {
@@ -197,51 +201,7 @@ export function createBrowserCollections(database: () => Promise<IDBDatabase>): 
     },
     async page(ref, offset, limit, columns) {
       windowRange(ref, offset, limit);
-      const saved = pending.get(ref.id);
-      const storedCount = Math.min(ref.count, saved?.base.count ?? ref.count);
-      const rows = await idbTransaction(
-        await database(),
-        ref.legacyEntryId ? ['solutions'] : ['collectionSummaries'],
-        'readonly',
-        async (tx) => {
-          if (storedCount === 0) return [] as SolutionRow[];
-          const store = tx.objectStore(ref.legacyEntryId ? 'solutions' : 'collectionSummaries');
-          const id = ref.legacyEntryId ?? ref.id;
-          // A legacy cursor decodes one graph at a time. Only summaries enter the
-          // sort index, and only a bounded row window enters the Svelte table.
-          return new Promise<SolutionRow[]>((resolve, reject) => {
-            const result: SolutionRow[] = [];
-            const cursor = store.openCursor(IDBKeyRange.bound([id, 0], [id, storedCount - 1]));
-            cursor.onerror = () => reject(cursor.error);
-            cursor.onsuccess = () => {
-              const row = cursor.result;
-              if (!row) {
-                resolve(result);
-                return;
-              }
-              const value = row.value;
-              if (value.index !== result.length || !(ref.legacyEntryId ? value.value?.stats : value.stats)) {
-                reject(new Error('Corrupt collection summary index.'));
-                return;
-              }
-              result.push({
-                sourceIndex: value.index,
-                solution: { stats: ref.legacyEntryId ? value.value.stats : value.stats },
-              });
-              row.continue();
-            };
-          });
-        },
-      );
-      for (const row of saved?.values ?? [])
-        if (row.index < ref.count)
-          rows.push({ sourceIndex: row.index, solution: { stats: structuredClone(row.solution.stats) } });
-      if (rows.length !== ref.count) throw new Error('Stored collection summary count is inconsistent.');
-      rows.sort(
-        (left, right) =>
-          compareSolutions(left.solution, right.solution, columns) || left.sourceIndex - right.sourceIndex,
-      );
-      return { offset, total: ref.count, rows: rows.slice(offset, offset + limit) };
+      return pages.page(ref, offset, limit, columns);
     },
   };
 }
