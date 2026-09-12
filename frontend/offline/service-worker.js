@@ -3,8 +3,6 @@ const release = '__SFS_RELEASE_MANIFEST__';
 const scope = self.registration.scope;
 const prefix = `sfs-offline-v1:${scope}:`;
 const cacheName = prefix + release.buildId;
-const metadataUrl = new URL('__sfs_release__', scope).href;
-const readyUrl = new URL('__sfs_complete__', scope).href;
 const assets = new Map(release.assets.map((asset) => [new URL(asset.path, scope).href, asset]));
 let preparation;
 
@@ -20,8 +18,6 @@ async function cachedStatus() {
     } else if (asset.group === 'shell') shellComplete = false;
   }
   const complete = cached === assets.size;
-  if (complete) await cache.put(readyUrl, new Response('complete'));
-  else await cache.delete(readyUrl);
   return { buildId: release.buildId, cached, total: assets.size, bytes, complete, shellComplete };
 }
 
@@ -67,11 +63,6 @@ async function prepareAll() {
 
 async function install() {
   try {
-    const cache = await caches.open(cacheName);
-    await cache.put(
-      metadataUrl,
-      new Response(JSON.stringify(release), { headers: { 'Content-Type': 'application/json' } }),
-    );
     // A tab may request its first solver or verifier after the host has already
     // replaced this release. Install only a complete, verified runtime.
     await prepareAll();
