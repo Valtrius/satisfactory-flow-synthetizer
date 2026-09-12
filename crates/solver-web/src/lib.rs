@@ -63,7 +63,10 @@ pub fn verifier_version() -> u32 {
 
 /// Verify every supplied exact flow and rebuild display data without trusting proof metadata.
 #[must_use]
-#[cfg_attr(target_arch = "wasm32", wasm_bindgen::prelude::wasm_bindgen)]
+#[cfg_attr(
+    all(target_arch = "wasm32", feature = "qualification"),
+    wasm_bindgen::prelude::wasm_bindgen
+)]
 pub fn verify_witness_json(payload: &str) -> String {
     respond(payload, false)
 }
@@ -72,7 +75,10 @@ pub fn verify_witness_json(payload: &str) -> String {
 ///
 /// A separate entry point prevents a bad supplied witness from silently being repaired.
 #[must_use]
-#[cfg_attr(target_arch = "wasm32", wasm_bindgen::prelude::wasm_bindgen)]
+#[cfg_attr(
+    all(target_arch = "wasm32", feature = "qualification"),
+    wasm_bindgen::prelude::wasm_bindgen
+)]
 pub fn reconstruct_topology_json(payload: &str) -> String {
     respond(payload, true)
 }

@@ -21,9 +21,10 @@ def main() -> None:
     selection = parser.add_mutually_exclusive_group()
     selection.add_argument('--qualification', action='store_true', help='Build the separate portable-search qualification module, not application assets')
     selection.add_argument('--browser', action='store_true', help='Build the production browser solver, separately from the small share verifier')
+    selection.add_argument('--verifier-qualification', action='store_true', help='Expose low-level verification APIs in a separate qualification distribution')
     arguments = parser.parse_args()
     package = 'solver-portable-tests' if arguments.qualification else 'solver-browser' if arguments.browser else 'solver-web'
-    directory = 'portable' if arguments.qualification else 'solver' if arguments.browser else 'verifier'
+    directory = 'portable' if arguments.qualification else 'solver' if arguments.browser else 'verifier-qualification' if arguments.verifier_qualification else 'verifier'
     module = package.replace('-', '_')
     tools = ROOT / "target/web-tools"
     tools.mkdir(parents=True, exist_ok=True)
@@ -48,7 +49,8 @@ def main() -> None:
             subprocess.run(["cargo", "install", "wasm-bindgen-cli", "--version", VERSION, "--locked", "--root", str(tools), "-j", "2"], check=True, cwd=ROOT)
     if subprocess.check_output([executable, "--version"], text=True).strip() != f"wasm-bindgen {VERSION}":
         raise RuntimeError(f"wasm-bindgen {VERSION} is required")
-    subprocess.run(["cargo", "build", "-p", package, "--target", "wasm32-unknown-unknown", "--release", "--locked", "-j", "2"], check=True, cwd=ROOT)
+    features = ['--features', 'qualification'] if arguments.verifier_qualification else []
+    subprocess.run(["cargo", "build", "-p", package, *features, "--target", "wasm32-unknown-unknown", "--release", "--locked", "-j", "2"], check=True, cwd=ROOT)
     output = ROOT / 'target/web-backends' / directory
     output.mkdir(parents=True, exist_ok=True)
     subprocess.run([executable, "--target", "web", "--out-dir", str(output), str(ROOT / 'target/wasm32-unknown-unknown/release' / f'{module}.wasm')], check=True, cwd=ROOT)

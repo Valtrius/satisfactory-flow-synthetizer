@@ -7,8 +7,10 @@ const files = new Map([
   ['worker.mjs', ['web/tests/worker.mjs', 'text/javascript']],
   ['session.mjs', ['web/cvc5/session.mjs', 'text/javascript']],
   ['fixtures.json', ['target/web-backends/fixtures.json', 'application/json']],
-  ['solver_web.js', ['target/web-backends/verifier/solver_web.js', 'text/javascript']],
-  ['solver_web_bg.wasm', ['target/web-backends/verifier/solver_web_bg.wasm', 'application/wasm']],
+  ['solver_web.js', ['target/web-backends/verifier-qualification/solver_web.js', 'text/javascript']],
+  ['solver_web_bg.wasm', ['target/web-backends/verifier-qualification/solver_web_bg.wasm', 'application/wasm']],
+  ['production/solver_web.js', ['target/web-backends/verifier/solver_web.js', 'text/javascript']],
+  ['production/solver_web_bg.wasm', ['target/web-backends/verifier/solver_web_bg.wasm', 'application/wasm']],
   ['cvc5.mjs', ['target/web-backends/cvc5/cvc5.mjs', 'text/javascript']],
   ['cvc5.wasm', ['target/web-backends/cvc5/cvc5.wasm', 'application/wasm']],
 ]);

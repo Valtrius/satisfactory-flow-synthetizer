@@ -1,5 +1,23 @@
 import { test, expect } from '@playwright/test';
 
+test('the shipped verifier exposes sharing without qualification-only entry points', async ({ page }) => {
+  await page.goto('./');
+  const exports = await page.evaluate(async () => {
+    const module = await import('./production/solver_web.js');
+    return Object.fromEntries(
+      ['verify_share_json', 'share_from_presentation_json', 'verify_witness_json', 'reconstruct_topology_json'].map(
+        (name) => [name, typeof module[name]],
+      ),
+    );
+  });
+  expect(exports).toEqual({
+    verify_share_json: 'function',
+    share_from_presentation_json: 'function',
+    verify_witness_json: 'undefined',
+    reconstruct_topology_json: 'undefined',
+  });
+});
+
 async function runWorker(page, operation) {
   return page.evaluate(
     (operation) =>
