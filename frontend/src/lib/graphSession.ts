@@ -465,20 +465,33 @@ export function createGraphSession(host: GraphSessionHost): GraphSession {
     const entry = host.getSelectedEntry();
     if (entry?.collection && host.loadSolution) {
       if (sourceIndex < 0 || sourceIndex >= entry.collection.count) return;
-      snapshotCurrentLayout(host.getSelectedSourceIndex());
-      host.setSelectedSourceIndex(sourceIndex);
-      host.patchEntry(entry.id, { selectedSourceIndex: sourceIndex });
       const operation = beginLayout();
-      const pendingKey = `${entry.id}:${sourceIndex}`;
       const readId = ++pagedRead;
-      pendingPagedKey = pendingKey;
+      pendingPagedKey = '';
+      const displayed = host.getSolution();
+      if (
+        committedEntryId === entry.id &&
+        committedSourceIndex === sourceIndex &&
+        displayed &&
+        layoutKey === solutionLayoutKey(displayed) &&
+        get(host.nodes).length > 0
+      )
+        return;
+      pendingPagedKey = `${entry.id}:${sourceIndex}`;
       try {
         const next = await host.loadSolution(entry, sourceIndex);
         if (!operation.current()) return;
+        const nextKey = solutionLayoutKey(next);
         const cached = layoutsForSelected()[String(sourceIndex)];
-        if (cached && cached.layoutKey === solutionLayoutKey(next) && cached.nodes.length)
-          await restoreLayout(next, sourceIndex, cached);
-        else await applySolution(next);
+        const prepared =
+          cached && cached.layoutKey === nextKey && cached.nodes.length
+            ? cached
+            : { ...(await layoutSolution(next)), layoutKey: nextKey };
+        if (!operation.current()) return;
+        snapshotCurrentLayout(host.getSelectedSourceIndex());
+        host.setSelectedSourceIndex(sourceIndex);
+        host.patchEntry(entry.id, { selectedSourceIndex: sourceIndex });
+        await restoreLayout(next, sourceIndex, prepared);
       } catch (error) {
         if (operation.current()) host.setError(`Could not read selected solution: ${String(error)}`);
       } finally {

@@ -106,6 +106,60 @@ function setup(loadSolution?: (entry: HistoryEntry, index: number) => Promise<So
 }
 
 describe('graph session ownership', () => {
+  it.each(['read', 'layout'] as const)(
+    'keeps the committed selection and graph when a paged %s fails',
+    async (failure) => {
+      const pending = deferred<Solution>();
+      const load = vi.fn().mockResolvedValueOnce(solution).mockReturnValueOnce(pending.promise);
+      const state = setup(load);
+      state.setPaged(2);
+      vi.mocked(layoutSolution).mockResolvedValueOnce(layout('committed'));
+      await state.session.selectSolution(0);
+      state.session.rotate('cw');
+      const before = get(state.nodes);
+      const selection = state.session.selectSolution(1);
+      expect(state.getSelected()).toBe(0);
+      expect(state.getEntry().selectedSourceIndex).toBe(0);
+      expect(state.getSolution()).toBe(solution);
+      if (failure === 'read') pending.reject(new Error('unreadable collection'));
+      else {
+        vi.mocked(layoutSolution).mockRejectedValueOnce(new Error('layout failed'));
+        pending.resolve({ ...solution, buildSteps: ['new selection'] });
+      }
+      await selection;
+      expect(state.getSelected()).toBe(0);
+      expect(state.getEntry().selectedSourceIndex).toBe(0);
+      expect(state.getSolution()).toBe(solution);
+      expect(get(state.nodes)).toEqual(before);
+      expect(state.session.canUndo).toBe(true);
+      expect(state.setError).toHaveBeenCalledOnce();
+    },
+  );
+
+  it('reselects a committed paged row without losing edits and cancels a pending switch', async () => {
+    const pending = deferred<Solution>();
+    const load = vi.fn().mockResolvedValueOnce(solution).mockReturnValueOnce(pending.promise);
+    const state = setup(load);
+    state.setPaged(2);
+    vi.mocked(layoutSolution).mockResolvedValueOnce(layout('committed'));
+    await state.session.selectSolution(0);
+    state.session.onNodeDragStart();
+    state.nodes.update((nodes) => nodes.map((node) => ({ ...node, position: { x: 12, y: 34 } })));
+    state.session.onNodeDragStop();
+    await state.session.selectSolution(0);
+    expect(load).toHaveBeenCalledOnce();
+    expect(state.session.canUndo).toBe(true);
+    const selection = state.session.selectSolution(1);
+    await state.session.selectSolution(0);
+    pending.resolve({ ...solution, buildSteps: ['abandoned'] });
+    await selection;
+    expect(state.getSelected()).toBe(0);
+    expect(state.getSolution()).toBe(solution);
+    expect(state.session.canUndo).toBe(true);
+    state.session.undo();
+    expect(get(state.nodes)[0].position).toEqual({ x: 0, y: 0 });
+  });
+
   it('loads only the requested source index and restores its saved edit independently of page order', async () => {
     const load = vi.fn(async (_entry: HistoryEntry, _index: number) => solution);
     const state = setup(load);
