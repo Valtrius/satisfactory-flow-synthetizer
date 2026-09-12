@@ -30,6 +30,7 @@
     "test:web:solver": "node scripts/prepare-browser-fixtures.mjs && playwright test -c web/solver/playwright.config.mjs",
     "test:web:delivery": "node scripts/prepare-web-delivery-tests.mjs && playwright test -c web/delivery/playwright.config.mjs",
     "test": "npm run test -w frontend",
+    "test:vendor": "cargo test --manifest-path vendor/canonaut/Cargo.toml --lib --locked --target-dir target/canonaut-tests",
     "format": "cargo fmt --all && prettier --write .",
     "format:check": "cargo fmt --all -- --check && prettier --check .",
     "release:version": "node scripts/release-version.mjs",

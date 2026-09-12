@@ -15,4 +15,8 @@ Changes:
 
 Qualification lives in crates/solver-portable-tests. It compares pre-patch native golden colored graphs and physical layout keys, storage/port/equal-rate terminal/discard permutations, and word-boundary primitives in native Rust and a real browser Wasm worker. Compilation alone is not the identity acceptance gate.
 
-The C-nauty benchmark feature is not used by the application. This patch does not introduce C-nauty or JavaScript entropy into canonical labeling.
+The curated manifest omits the upstream logo example, C-nauty comparison binary, benchmark target and build helper because their supporting sources are not included. The unused Criterion and C build dependencies are removed. The retained upstream README describes those upstream tools; this local copy supports its library, `memcheck`, `profile`, and native library tests.
+
+Run the retained upstream library tests with `npm run test:vendor`. This uses the vendor's own locked manifest and writes build outputs under the root `target/canonaut-tests`. The crate remains outside the application workspace; the web-backend workflow invokes its native library tests explicitly. Native test-only rand features supply the upstream permutation tests; the production library still uses only seeded `small_rng`, with no C-nauty or JavaScript entropy.
+
+The local test target retains the committed smoke corpus and primitive/graph tests. It omits the 56 optional full-corpus cases whose inputs and generator scripts are absent from this copy. Smoke helpers now fail on missing files instead of returning a successful empty test.

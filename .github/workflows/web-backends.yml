@@ -55,6 +55,8 @@ jobs:
           ./scripts/prepare-cvc5.ps1
           $backend = Join-Path $env:GITHUB_WORKSPACE 'src-tauri/binaries/cvc5-x86_64-pc-windows-msvc.exe'
           "SOLVER_CVC5=$backend" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+      - name: Vendored Canonaut library tests
+        run: npm run test:vendor
       - name: Native planner and identity tests
         run: cargo test -p solver-core -p solver-portable-tests --lib --locked -- --test-threads=1
       - name: Compare native scopes against the exhaustive reference

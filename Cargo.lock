@@ -237,7 +237,6 @@ dependencies = [
 name = "canonaut"
 version = "1.0.0"
 dependencies = [
- "cc",
  "rand",
 ]
 
