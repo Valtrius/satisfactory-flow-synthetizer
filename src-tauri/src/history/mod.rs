@@ -1,4 +1,4 @@
-//! Persistent SQLite history. Each operation batch commits as one transaction.
+//! Persistent `SQLite` history. Each operation batch commits as one transaction.
 mod migrations;
 mod read;
 mod values;
