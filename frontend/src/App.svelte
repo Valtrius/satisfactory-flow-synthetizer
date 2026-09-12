@@ -35,12 +35,11 @@
   } from './lib/historyModel';
   import { HistoryQueue } from './lib/historyQueue';
   import ShareDialog from './lib/sharing/ShareDialog.svelte';
-  import { sharedHistoryEntry } from './lib/sharing/history';
-  import type { VerifiedShare } from './lib/sharing/client';
+  import { createShareSession } from './lib/sharing/session.svelte';
   import Button from './lib/ui/Button.svelte';
   import { getPlatform } from './lib/platform';
   import OfflinePanel from './lib/offline/OfflinePanel.svelte';
-  import { createPagedResults } from './lib/pagedResults';
+  import { createResultPages } from './lib/resultPages.svelte';
   import { COLLECTION_PAGE_SIZE } from './lib/platform/browserCollections';
   import {
     browserThreadCount,
@@ -51,63 +50,34 @@
   import { formatElapsed, searchHeadline, searchStageView, searchSubline, sizeSearchBody } from './lib/searchStage';
   import { DEFAULT_SORT_COLUMNS, compareSolutions, type SortColumn } from './lib/solutionSort';
   import { readUiPrefs, updateUiPrefs } from './lib/uiPrefs';
-  import { enumeratesLayouts, type EndpointRow, type Solution, type SolutionRow, type SolveRequest } from './types';
+  import { enumeratesLayouts, type EndpointRow, type Solution, type SolveRequest } from './types';
 
   const platform = getPlatform();
   const clientThreads = browserThreadCount();
   let browserWorkers = $state(readBrowserWorkers(clientThreads));
   const workerChoices = $derived(browserWorkerChoices(clientThreads, browserWorkers));
-  let pageOffset = $state(0);
-  let pageEntryId = '';
-  let pageLoading = $state(false);
-  let pagedRows = $state<SolutionRow[]>([]);
-  const pages = platform.collections
-    ? createPagedResults(
-        platform.collections,
-        (page) => {
-          pagedRows = page.rows;
-          pageLoading = false;
-        },
-        (message) => {
-          errorMessage = message;
-          pageLoading = false;
-        },
-      )
-    : null;
-  let shareDialog = $state<{
-    target?: { request: SolveRequest; solution: Solution };
-    source?: string;
-  } | null>(null);
-  let shareDialogRevision = $state(0);
-  const savedShares = new WeakMap<VerifiedShare, string>();
-  function openShareDialog(options: NonNullable<typeof shareDialog>): void {
-    shareDialog = options;
-    shareDialogRevision++;
-  }
-  function shareSelected(): void {
-    if (selectedEntry && solution) openShareDialog({ target: { request: selectedEntry.request, solution } });
-  }
-  async function saveSharedSolution(value: VerifiedShare): Promise<void> {
-    if (!historyReady || closing) throw new Error('History is not ready for saving.');
-    graph.flushChrome();
-    let entryId = savedShares.get(value);
-    if (!entryId || !historyEntries.some((entry) => entry.id === entryId)) {
-      const entry = sharedHistoryEntry(value);
-      entryId = entry.id;
-      savedShares.set(value, entryId);
+  const resultPages = createResultPages(
+    platform.collections,
+    () => selectedEntry,
+    () => sortColumns,
+    (message) => {
+      errorMessage = message;
+    },
+  );
+  const shares = createShareSession({
+    canSave: () => historyReady && !closing,
+    selectedEntry: () => selectedEntry,
+    solution: () => solution,
+    entries: () => historyEntries,
+    add: (entry) => {
       historyEntries = [...historyEntries, entry];
-    }
-    selectedEntryId = entryId;
-    await hydrateViewFromEntry(entryId);
-    await flushHistoryToDisk();
-  }
-  onMount(() => {
-    const openFragment = () => {
-      if (window.location.hash) openShareDialog({ source: window.location.hash });
-    };
-    openFragment();
-    window.addEventListener('hashchange', openFragment);
-    return () => window.removeEventListener('hashchange', openFragment);
+    },
+    select: async (id) => {
+      selectedEntryId = id;
+      await hydrateViewFromEntry(id);
+    },
+    flushChrome: () => graph.flushChrome(),
+    flushHistory: () => flushHistoryToDisk(),
   });
   const savedForm = readUiPrefs().form;
   let nextEndpointId = $state(savedForm.nextEndpointId);
@@ -249,40 +219,12 @@
   );
   const displayRows = $derived(
     selectedEntry?.collection
-      ? pagedRows
+      ? resultPages.rows
       : solutions
           .map((item, sourceIndex) => ({ solution: item, sourceIndex }))
           .sort((left, right) => compareSolutions(left.solution, right.solution, sortColumns)),
   );
   const selectedDisplayIndex = $derived(displayRows.findIndex((row) => row.sourceIndex === selectedSourceIndex));
-  // Telemetry and graph edits rebuild entries, but do not change a page's data.
-  const pageRequestKey = $derived(JSON.stringify([selectedEntry?.id, selectedEntry?.collection, sortColumns]));
-
-  $effect(() => {
-    void pageRequestKey;
-    const entry = untrack(() => selectedEntry);
-    const columns = untrack(() => sortColumns);
-    pages?.clear();
-    if (entry?.id !== pageEntryId) {
-      pageEntryId = entry?.id ?? '';
-      pageOffset = 0;
-      pagedRows = [];
-    }
-    if (!entry?.collection || !pages) {
-      pages?.clear();
-      pageLoading = false;
-      return;
-    }
-    const offset = Math.min(
-      pageOffset,
-      Math.max(0, Math.floor((entry.collection.count - 1) / COLLECTION_PAGE_SIZE) * COLLECTION_PAGE_SIZE),
-    );
-    if (offset !== pageOffset) pageOffset = offset;
-    pageLoading = true;
-    const timer = setTimeout(() => pages.load(entry.collection!, offset, COLLECTION_PAGE_SIZE, columns), 20);
-    return () => clearTimeout(timer);
-  });
-
   $effect(() => {
     if (platform.runtime === 'browser') saveBrowserWorkers(browserWorkers);
   });
@@ -572,7 +514,6 @@
   }
 
   onDestroy(() => {
-    pages?.clear();
     queue.dispose();
     persist.dispose();
     document.body.classList.remove('graph-expanded');
@@ -598,7 +539,7 @@
 <div class="min-h-screen">
   <main class="mx-auto w-full max-w-[1680px] p-4">
     <div class="mb-3 flex flex-wrap justify-end gap-2">
-      <Button size="small" onclick={() => openShareDialog({})}>Open shared solution</Button>
+      <Button size="small" onclick={() => shares.open({})}>Open shared solution</Button>
     </div>
     <div class="grid grid-cols-1 items-start gap-4 xl:grid-cols-[minmax(240px,280px)_minmax(0,1fr)]">
       <div
@@ -727,14 +668,14 @@
             onToggleTelemetry={toggleTelemetry}
             solutions={displayRows.map((row) => row.solution)}
             selectedIndex={selectedDisplayIndex}
-            {pageOffset}
+            pageOffset={resultPages.offset}
             pageSize={COLLECTION_PAGE_SIZE}
             onPage={selectedEntry?.collection
               ? (offset) => {
-                  pageOffset = offset;
+                  resultPages.offset = offset;
                 }
               : undefined}
-            {pageLoading}
+            pageLoading={resultPages.loading}
             {sortColumns}
             nodes={flowNodes}
             edges={flowEdges}
@@ -745,7 +686,7 @@
               if (row) void graph.selectSolution(row.sourceIndex);
             }}
             onColumnsChange={(next) => {
-              pageOffset = 0;
+              resultPages.offset = 0;
               sortColumns = next;
               if (selectedEntryId) {
                 patchEntry(selectedEntryId, {
@@ -760,7 +701,7 @@
             onRedo={graph.redo}
             onReset={() => void graph.resetLayout()}
             onExport={() => void graph.exportSvg()}
-            onShare={shareSelected}
+            onShare={shares.shareSelected}
             onToggleFullscreen={graph.toggleFullscreen}
             onFlowError={handleFlowError}
             onNodeDragStart={graph.onNodeDragStart}
@@ -788,7 +729,7 @@
                 onRedo={graph.redo}
                 onReset={() => void graph.resetLayout()}
                 onExport={() => void graph.exportSvg()}
-                onShare={shareSelected}
+                onShare={shares.shareSelected}
                 onToggleFullscreen={graph.toggleFullscreen}
                 onFlowError={handleFlowError}
                 onNodeDragStart={graph.onNodeDragStart}
@@ -804,17 +745,8 @@
   </main>
 </div>
 
-{#if shareDialog}
-  {#key shareDialogRevision}
-    <ShareDialog
-      {...shareDialog}
-      canSave={historyReady && !closing}
-      onSave={saveSharedSolution}
-      onclose={() => {
-        shareDialog = null;
-        if (window.location.hash)
-          window.history.replaceState(null, '', window.location.pathname + window.location.search);
-      }}
-    />
+{#if shares.dialog}
+  {#key shares.revision}
+    <ShareDialog {...shares.dialog} canSave={historyReady && !closing} onSave={shares.save} onclose={shares.close} />
   {/key}
 {/if}
