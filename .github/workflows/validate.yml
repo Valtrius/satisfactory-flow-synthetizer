@@ -64,8 +64,11 @@ jobs:
       - name: Frontend typecheck
         run: npm run check
 
-      - name: Frontend build
-        run: npm run build:web
+      - name: Build desktop verifier
+        run: npm run build:web:verifier
+
+      - name: Desktop frontend build
+        run: npm run build -w frontend -- --mode desktop
 
       - name: Prepare bundled cvc5 and test backend
         shell: pwsh
