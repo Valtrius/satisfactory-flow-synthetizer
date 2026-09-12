@@ -12,10 +12,37 @@ async function configure(request, variant = 'a', failure = null) {
   await request.post(`${origin}/__control`, { data: { variant, failure } });
 }
 test.beforeEach(async ({ page, request }) => {
+  await request.post(`${origin}/__control`, { data: { variant: 'a', hold: null } });
   await configure(request);
   await page.addInitScript(() => {
     localStorage.setItem('sfs.browser-workers.v2', '2');
   });
+});
+
+test('a second build opened during first installation acquires the active build before starting the app', async ({
+  page,
+  context,
+  request,
+}) => {
+  await request.post(`${origin}/__control`, { data: { variant: 'a', hold: 'licenses.html' } });
+  await page.goto('./');
+  const firstBuild = await build(page);
+  await expect.poll(async () => (await request.get(`${origin}/__held`)).json()).toBe(true);
+  await configure(request, 'b');
+  const second = await context.newPage();
+  await second.goto(scope);
+  expect(await build(second)).not.toBe(firstBuild);
+  await expect(second.getByRole('status')).toContainText('Preparing the app');
+  expect(await second.getByRole('button', { name: /^Find/ }).count()).toBe(0);
+  await request.post(`${origin}/__control`, { data: { variant: 'b', hold: null } });
+  await ready(page);
+  await ready(second);
+  expect(await build(second)).toBe(firstBuild);
+  await context.setOffline(true);
+  await second.getByRole('button', { name: /^Find/ }).click();
+  await expect(second.locator('[data-history-band="history"]')).toContainText('Completed');
+  await second.getByRole('button', { name: 'Share selected solution', exact: true }).click();
+  await expect(second.getByRole('textbox', { name: 'Share link', exact: true })).toBeVisible();
 });
 
 test('the first visit caches automatically without starting compute, then every exact mode solves offline', async ({
@@ -98,6 +125,10 @@ for (const kind of ['missing', 'corrupt'])
     await expect(page.getByText('Ready for offline solving and viewing.', { exact: true })).toHaveCount(0);
     await configure(request);
     await page.getByRole('button', { name: 'Retry offline download', exact: true }).click();
+    await expect(
+      page.getByText('Offline files are saved. Finish your work, then reopen the app to use them.'),
+    ).toBeVisible();
+    await page.reload();
     await prepare(page);
   });
 

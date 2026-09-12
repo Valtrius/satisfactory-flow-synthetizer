@@ -4,6 +4,7 @@ import { extname, resolve, sep } from 'node:path';
 
 let variant = 'a';
 let failure = null;
+let held;
 const scopes = ['/satisfactory-flow-synthetizer/', '/second-app/'];
 createServer(async (request, response) => {
   try {
@@ -15,7 +16,20 @@ createServer(async (request, response) => {
       if (!['a', 'b'].includes(value.variant)) throw new Error('Unknown fixture');
       variant = value.variant;
       failure = value.failure ?? null;
+      if (Object.hasOwn(value, 'hold')) {
+        held?.release();
+        held = value.hold ? { path: value.hold, reached: false } : undefined;
+        if (held)
+          held.promise = new Promise((resolve) => {
+            held.release = resolve;
+          });
+      }
       response.end('ok');
+      return;
+    }
+    if (url.pathname === '/__held') {
+      response.setHeader('Content-Type', 'application/json');
+      response.end(JSON.stringify(Boolean(held?.reached)));
       return;
     }
     if (url.pathname === '/__outside') {
@@ -42,6 +56,10 @@ createServer(async (request, response) => {
       return;
     }
     const content = await readFile(path);
+    if (held && relative === held.path) {
+      held.reached = true;
+      await held.promise;
+    }
     response.setHeader(
       'Content-Type',
       {

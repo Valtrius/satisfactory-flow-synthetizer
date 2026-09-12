@@ -4,6 +4,7 @@
   import { createOfflineClient, type OfflineState } from './client';
   let state = $state<OfflineState>({
     available: false,
+    controlled: false,
     busy: false,
     installing: false,
     update: false,
@@ -23,7 +24,8 @@
   <div class="flex flex-wrap items-center gap-3">
     <span role="status" aria-live="polite">
       {#if state.busy || state.installing}Saving offline files or checking for updates…
-      {:else if state.status?.complete}Ready for offline solving and viewing.
+      {:else if state.status?.complete && state.controlled}Ready for offline solving and viewing.
+      {:else if state.status?.complete}Offline files are saved. Finish your work, then reopen the app to use them.
       {:else if state.status?.shellComplete}Some offline files are missing. Retry to restore full offline use.
       {:else}Offline files are not ready yet.{/if}
     </span>

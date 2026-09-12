@@ -8,6 +8,7 @@ export type OfflineStatus = {
 };
 export type OfflineState = {
   available: boolean;
+  controlled: boolean;
   busy: boolean;
   installing: boolean;
   update: boolean;
@@ -21,6 +22,7 @@ export function createOfflineClient(changed: (state: OfflineState) => void) {
   let disposed = false;
   let state: OfflineState = {
     available: false,
+    controlled: false,
     busy: false,
     installing: false,
     update: false,
@@ -71,7 +73,11 @@ export function createOfflineClient(changed: (state: OfflineState) => void) {
   async function refresh() {
     if (disposed || !registration?.active) return;
     try {
-      emit({ status: await request('offline-status'), update: Boolean(registration.waiting) });
+      emit({
+        status: await request('offline-status'),
+        controlled: Boolean(navigator.serviceWorker.controller),
+        update: Boolean(registration.waiting),
+      });
     } catch (error) {
       emit({ error: String(error) });
     }

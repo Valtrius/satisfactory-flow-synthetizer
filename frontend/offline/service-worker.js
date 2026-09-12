@@ -86,13 +86,12 @@ self.addEventListener('install', (event) => {
 });
 self.addEventListener('activate', (event) => {
   // No skipWaiting: upgrades activate only after the previous clients leave.
-  // Claim the initial visit too, so its later lazy imports use the saved build
-  // without requiring a reload. Activation never replaces a controlled tab.
+  // The initial bootstrap navigates before mounting the app. Never claim an
+  // uncontrolled document: it may have loaded a different build during install.
   event.waitUntil(
     (async () => {
       for (const name of await caches.keys())
         if (name.startsWith(prefix) && name !== cacheName) await caches.delete(name);
-      await self.clients.claim();
     })(),
   );
 });
@@ -138,9 +137,9 @@ self.addEventListener('message', (event) => {
           });
           await preparation;
         }
-        port.postMessage({ ok: true, status: await cachedStatus() });
+        port.postMessage({ ok: true, buildId: release.buildId, status: await cachedStatus() });
       } catch (error) {
-        port.postMessage({ ok: false, error: String(error).slice(0, 2048) });
+        port.postMessage({ ok: false, buildId: release.buildId, error: String(error).slice(0, 2048) });
       } finally {
         port.close();
       }
