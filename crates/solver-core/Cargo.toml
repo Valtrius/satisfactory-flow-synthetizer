@@ -4,6 +4,10 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 
+[features]
+default = ["native-runtime"]
+native-runtime = []
+
 [dependencies]
 solver-api = { path = "../solver-api" }
 solver-validation = { path = "../solver-validation" }
@@ -16,3 +20,7 @@ serde_json = "1.0"
 
 [lints]
 workspace = true
+
+[[test]]
+name = "contracts"
+required-features = ["native-runtime"]

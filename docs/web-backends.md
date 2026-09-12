@@ -1,6 +1,6 @@
 # Browser backend foundations and platform services
 
-Step 00 adds testable backend modules. Step 01 adds host adapters, shared job projection and IndexedDB history. Step 02 adds self-contained selected-solution links and verified viewing without backend storage. Browser solving remains explicitly unavailable. No GitHub Pages site is deployed. Native scheduling, cvc5 process ownership and SQLite storage remain native.
+Step 00 adds testable backend modules. Step 01 adds host adapters, shared job projection and IndexedDB history. Step 02 adds self-contained selected-solution links and verified viewing without backend storage. Step 03 extracts the exact planner and leaf protocol, ports Canonaut and adds native/Wasm qualification. Browser solving in the application remains explicitly unavailable. No GitHub Pages site is deployed. Threads, cvc5 process ownership and SQLite storage remain in the native host.
 
 ## Agreed product scope
 
@@ -89,15 +89,15 @@ The verifier Wasm file is 484,367 bytes, or 170,188 bytes under local gzip compr
 
 Browser evidence is written to `target/web-backends/browser-results.json`; source pins and cvc5 artifact checksums are in `target/web-backends/cvc5/build.json`. The added GitHub workflow has not run remotely. Firefox, Safari, mobile behavior and full browser search parity have not been qualified in this phase.
 
-## Canonicalization audit and next gates
+## Step 00 canonicalization audit
 
-The published `canonaut` 1.0.0 dependency is not wasm32-ready. The ordinary validator build with identity enabled first fails in its default `rand`/`getrandom` dependency. In a detached source probe with only seeded `SmallRng` enabled, wasm32 compilation reaches the Canonaut code and reports eleven overflowing `usize` literals. These are in `src/rng.rs` and `src/utilities.rs`.
+The unpatched registry `canonaut` 1.0.0 dependency initially failed the wasm32 build in its default `rand`/`getrandom` dependency. In a detached source probe with only seeded `SmallRng` enabled, wasm32 compilation reached the Canonaut code and reported eleven overflowing `usize` literals. These were in `src/rng.rs` and `src/utilities.rs`.
 
-The audit also found hardcoded 64-bit operations in `src/structs/schreier_arena.rs`, including division/remainders by 64 on `usize` bitsets, plus shifts by 58 and 43 in the RNG. Fixing only entropy or truncating constants would not establish a correct port. No Canonaut source or native identity encoding changes are included in this phase.
+The audit also found hardcoded 64-bit operations in `src/structs/schreier_arena.rs`, including division/remainders by 64 on `usize` bitsets, plus shifts by 58 and 43 in the RNG. Later inspection also found word-size assumptions in the one-word and two-word refinement and permutation routines. Step 00 did not modify the dependency. Step 03 below records the portability patch and its qualification.
 
-Before browser solving is released, port or replace canonicalization with parity tests around 31/32/33 and 63/64/65 vertices, relabeled graphs, duplicate terminals and the existing `layout-v1` corpus. The native canonical byte contract must not change silently. Complete minimum-N,L enumeration remains blocked until this gate passes.
+The identity acceptance gate compares pre-port native bytes against the patched native implementation and actual Wasm execution. It covers word boundaries, relabeled graphs, duplicate terminals and physical `layout-v1` identities. Compiling the dependency alone does not satisfy this gate.
 
-Step 01 below extracts the platform services and implements browser history before the search port. Later phases separate mathematical search transitions from native thread/process ownership, implement worker scheduling with unchanged proof obligations, and connect actual browser jobs to Svelte. Step 02 below implements selected-solution sharing. Offline assets and Pages deployment remain later work. Browser exactness tests must compare canonical result sets and proof completion against native runs, including interrupted enumeration. The current backend tests do not establish full search parity.
+Step 01 extracts platform services and implements browser history. Step 02 implements selected-solution sharing. Step 03 separates mathematical transitions from native execution. Later phases connect browser jobs to Svelte, implement parallel browser scheduling and add offline assets and Pages delivery. The standalone backend tests do not qualify that future application lifecycle.
 
 ## Step 01: platform services
 
@@ -205,7 +205,7 @@ The tests compare 15 native presentation exports and topology reconstructions ag
 
 ### Next implementation phase
 
-Step 03 separates the portable search planner and leaf driver from native process/thread ownership and resolves canonicalization portability. The browser's Find action remains disabled. The mandatory exact single-optimum and complete minimum-N,L modes still require browser/native result-set and proof-completion qualification. Sharing and verified viewing are an internal development milestone, not the requested browser solver release. Offline assets and Pages deployment remain unfinished, and no public links or release have been deployed.
+Step 03 below supplies the portable exact planner, leaf driver and canonicalization qualification. Step 04 will connect single-worker browser jobs to the shared interface. The browser's Find action remains disabled until that integration passes its lifecycle and exactness tests. Offline assets and Pages deployment remain unfinished. No public browser release has been deployed.
 
 ### Step 02 validation on 11 September 2026
 
@@ -214,3 +214,66 @@ After removing backend link storage and its UI, all 165 frontend tests, nine sha
 Native workspace Clippy, verifier wasm32 Clippy and portable job-projection wasm32 Clippy passed with warnings denied. The verifier and production frontend built successfully. Svelte checks, formatting and release metadata checks passed. Tauri library tests also passed after adding the file-size-check capability. The graph shortcut configuration warning still appears during some browser interactions without failing them.
 
 These are local Windows/Chrome results. No public browser deployment, packaged desktop sharing UI test, new installer, Firefox/WebKit qualification, mobile memory-budget test or remote GitHub workflow execution is claimed. Step 01 was committed as `d42ff639f4a509fd0a229fb6c8b35a31865ac6e8`.
+
+## Step 03: portable exact planner and leaf driver
+
+`solver-core` now builds without its default `native-runtime` feature. `planner/` owns objective progression, root dispatch, deduplication, disjoint proof coverage and terminal sealing. `leaf.rs` owns SMT command/reply progression, model blocking, exact reconstruction, validation and witness restoration. Neither owns a process, thread, channel, clock or cancellation atomic. Time enters the planner only as host-supplied telemetry.
+
+The native API names and exact scopes are unchanged. `native_api.rs` retains the public facade and final cancellation check after public identity normalization. `native.rs` owns scoped worker threads, cvc5 sessions, cancellation observations and diagnostic timing. `process.rs` still resolves the same backend paths and kills, reaps and joins each session on drop. The native `portfolio.rs` still divides the worker budget between independent Sparse and Boolean searches, gives Sparse the odd extra worker, and selects one complete proof owner after joining both branches. A one-worker request remains Boolean-only.
+
+### Planner and host contract
+
+`ExactPlanner::new` validates the problem/options and computes the same exact normalization and lower bounds. `poll(elapsed_ms)` returns a `PlannerUpdate` with leaf tasks, internal solver events and closed-group diagnostic evidence. The planner visits N, then exact operator-link L, then the accounted profiles in the existing order. `all_min_n` continues through higher-L groups at the minimum N; `all_min_nl` stops after exhausting the minimum-L group; `one_min_nl` accepts the first validated optimum without claiming equal-L enumeration exhaustion.
+
+Each dispatched leaf has a group/index identity. `PlannerEvent::Witness` accepts trusted output from the exact leaf driver, not arbitrary imported graphs or proof labels. `PlannerEvent::Retired` means the host has already disposed the leaf's backend session. Unknown, duplicate, stale or post-seal events reject. A rejection poisons an unfinished branch rather than discharging an obligation. Browser job/worker epochs remain a host responsibility; the group identity does not replace them.
+
+`poll` is the branch's completion-sealing point. A valid witness alone does not seal completion. The planner waits for every dispatched leaf to retire, including competing searches outside the winning parent/child cover. Cancellation accepted before sealing produces an incomplete result and preserves accepted witnesses. Cancellation after sealing cannot rewrite that branch result. The application host still owns its later cancellation/presentation seal, as the existing native facade does.
+
+The hybrid scheduling rules are unchanged. First-output producers dispatch in descending order. Static second-output partitions replace parents when there are fewer live roots than branch workers. Otherwise, a validated current-group optimum enables adaptive children in spare slots after all unstarted parents. Stable rounds interleave second producers. A parent completion or an exhausted full child cover owns the root, never both. Partial and duplicate child completions cannot establish exhaustion.
+
+Internal branch events retain the existing private search identity convention. A host must normalize caller-scale public identities before app delivery, as native `SolutionCollector` already does. `ExactPlanner::outcome` normalizes terminal identities and sorts the result collection by the public keys. It must not be used as an import verifier. No JS callback implements `SolveObserver: Sync`, and no unsafe Send/Sync declaration was added.
+
+### Leaf protocol
+
+`LeafDriver::advance` starts with no reply, then accepts one complete `check-sat` or `get-value` reply at a time. It returns the next SMT batch, an optional accepted witness and optional completion. A host keeps one incremental session for that leaf. It must publish an accepted witness before the next synchronous backend call, then dispose the session before reporting retirement.
+
+Only exact `sat` and `unsat` replies advance the proof protocol. `unknown`, backend errors, malformed model lists, missing/duplicate variables, non-Boolean values and unexpected replies poison the leaf. A later `unsat` cannot revive a poisoned leaf. Exact reconstruction still rejects nonunique steady states and checks the requested objective and restored caller rates. No floating-point rate conversion or new graph restriction was introduced.
+
+### Canonaut and canonical identity
+
+`vendor/canonaut` contains the audited registry 1.0.0 library with its Apache-2.0 license, notices and source provenance. A root Cargo patch selects it for native and Wasm builds. `PORTABILITY.md` records the original archive SHA-256 and changed paths.
+
+The patch preserves full 64-bit KISS random state, arithmetic and seeds. Conversion to a host index occurs after bounded reduction. Bitsets instead use each target's actual `usize` width throughout masks, scans, one-word/two-word specializations, permutation scratch storage and search bounds. The dependency's unused default entropy path is disabled. Canonical labeling does not use JavaScript randomness or a wall clock. The `layout-v1` encoding in `solver-validation/src/identity.rs` is unchanged.
+
+The immutable `crates/solver-portable-tests/fixtures/identity-v1.json` was captured with the unpatched registry dependency before the port. It contains 30 colored-graph cases and 12 physical witnesses. Every case is compared directly and under three equivalent relabelings in native Rust and actual wasm32 execution. Cases cover 31/32/33, 63/64/65 and 127/128/129 vertex boundaries, symmetric graphs, node/link storage order, symmetric operator ports, equal-rate terminal permutations, discards and feedback. Separate tests compare bitset operations, permutation powers and the full 64-bit RNG sequence against direct expected operations.
+
+The fixture generator now emits explicitly labeled review candidates. It cannot silently label newly generated data as the old unpatched baseline. Do not replace the stored pre-port evidence to make a failed comparison pass.
+
+### Qualification commands and CI
+
+The `solver-portable-tests` crate is a test-only cdylib, separate from the application verifier. It links the production portable planner and leaf driver without the native runtime. Its browser worker runs those components against the existing local cvc5 Wasm session API. This does not enable browser jobs in the Svelte application.
+
+```powershell
+cargo test -p solver-core --no-default-features --lib --locked -j 2
+cargo clippy -p solver-core --no-default-features --target wasm32-unknown-unknown --lib --locked -j 2 -- -D warnings
+npm run build:web:portable
+$env:SOLVER_CVC5=Join-Path (Get-Location) 'src-tauri/binaries/cvc5-x86_64-pc-windows-msvc.exe'; $env:WEB_TEST_CHANNEL='chrome'; npm run test:web:portable
+```
+
+The last command requires the native backend and existing cvc5 Wasm assets. The fixture generator compares 36 native requests against the independent reference across all three modes. Browser tests then compare the exact objective, optimality projection, enumeration status and full canonical result sets. Cases include arbitrary fractions, surplus/discards, duplicate terminals, feedback, multiple optimal layouts, global contradictions and a finite node cap. Separate tests cancel after an accepted witness, inject `unknown` after a witness, and exercise actual cvc5 resource exhaustion. All sessions must be disposed before the test accepts a terminal result.
+
+The suite serves only local assets at the project subpath on port 4183, with one browser test worker and no cross-origin isolation headers. Evidence goes under `target/web-portable`. The workflow creates native comparison fixtures on Windows with the pinned cvc5 package, then sends those fixtures to the Linux browser job. It does not rely on an unpinned distribution cvc5 package. Existing verifier, sharing and history suites remain separate.
+
+### Remaining application work
+
+Step 04 must connect real single-worker browser jobs to platform services, shared snapshots, UI progress, hard cancellation, history checkpoints and job epochs. The qualification worker is not that production coordinator. Step 05 adds parallel browser workers and paged collections. Step 06 covers offline assets, version-coherent upgrades and Pages delivery. Browser Find remains disabled. No public deployment, browser performance claim or packaged desktop sharing qualification follows from Step 03.
+
+### Step 03 validation on 12 September 2026
+
+The full native workspace passed 173 tests, including all 12 solver/reference integration contracts and the existing desktop cancellation/history tests. The core passed 34 tests with the native runtime and 32 without it. The two additional native tests exercise the cvc5 process and Boolean encoding through a real child process; their modules are correctly feature-gated. The frontend passed 165 tests, and Python tooling passed 40 tests.
+
+All five portable browser tests passed after rebuilding the final Wasm module. They checked 42 pre-port canonical identities with three permutations per case, nine primitive word-boundary sizes, 36 native/reference search comparisons through real cvc5 Wasm, cancellation after a witness, injected unknown after a witness and actual resource exhaustion. The existing nine sharing, nine browser history and four backend tests also passed. Sharing still matched 15 native/Wasm round trips; the backend verifier still matched 28 fixtures.
+
+Native workspace Clippy and wasm32 Clippy for the portable core, qualification module, verifier and shared job projection passed with warnings denied. Svelte checks reported no errors or warnings. Verifier and qualification Wasm builds, production frontend build, formatting, whitespace and release metadata checks passed. The immutable pre-port fixture SHA-256 remains `759271f2ba1ff2b647719650806bc1c050fc0c5f36442c7c017e8a540292f214`. The production identity serialization and native portfolio files are unchanged.
+
+Evidence is in `.tmp/web-step03-native-final.log`, `.tmp/web-step03-frontend-final.json` and the four browser result files under `target/web-portable`, `target/web-shares`, `target/web-platform` and `target/web-backends`. These are local Windows/Chrome results. No benchmarks, installers, public deployment, Firefox/Safari qualification or remote workflow execution were performed. Step 02 is committed as `3dbf9b237200c55b5c6d6be7a455d1ca0984b118`; Step 03 implementation and documentation remain uncommitted on the same feature branch.

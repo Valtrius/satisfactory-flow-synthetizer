@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import argparse
 import os
 from pathlib import Path
 import shutil
@@ -16,6 +17,12 @@ WINDOWS_ARCHIVE_SHA256 = "fd52ef9896cbb0f4f59ef115bdf2f4664a76d716b6201c35e59360
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--qualification', action='store_true', help='Build the separate portable-search qualification module, not application assets')
+    arguments = parser.parse_args()
+    package = 'solver-portable-tests' if arguments.qualification else 'solver-web'
+    directory = 'portable' if arguments.qualification else 'verifier'
+    module = package.replace('-', '_')
     tools = ROOT / "target/web-tools"
     tools.mkdir(parents=True, exist_ok=True)
     executable = shutil.which("wasm-bindgen")
@@ -31,19 +38,19 @@ def main() -> None:
                 archive.write_bytes(response.read())
         if hashlib.sha256(archive.read_bytes()).hexdigest() != WINDOWS_ARCHIVE_SHA256:
             raise RuntimeError("wasm-bindgen archive checksum mismatch")
-        with tarfile.open(archive) as package:
-            package.extractall(tools, filter="data")
+        with tarfile.open(archive) as distribution:
+            distribution.extractall(tools, filter="data")
     elif executable is None:
         executable = str(tools / "bin/wasm-bindgen")
         if not Path(executable).is_file():
             subprocess.run(["cargo", "install", "wasm-bindgen-cli", "--version", VERSION, "--locked", "--root", str(tools), "-j", "2"], check=True, cwd=ROOT)
     if subprocess.check_output([executable, "--version"], text=True).strip() != f"wasm-bindgen {VERSION}":
         raise RuntimeError(f"wasm-bindgen {VERSION} is required")
-    subprocess.run(["cargo", "build", "-p", "solver-web", "--target", "wasm32-unknown-unknown", "--release", "--locked", "-j", "2"], check=True, cwd=ROOT)
-    output = ROOT / "target/web-backends/verifier"
+    subprocess.run(["cargo", "build", "-p", package, "--target", "wasm32-unknown-unknown", "--release", "--locked", "-j", "2"], check=True, cwd=ROOT)
+    output = ROOT / 'target/web-backends' / directory
     output.mkdir(parents=True, exist_ok=True)
-    subprocess.run([executable, "--target", "web", "--out-dir", str(output), str(ROOT / "target/wasm32-unknown-unknown/release/solver_web.wasm")], check=True, cwd=ROOT)
-    print(f"Verifier bindings: {output}")
+    subprocess.run([executable, "--target", "web", "--out-dir", str(output), str(ROOT / 'target/wasm32-unknown-unknown/release' / f'{module}.wasm')], check=True, cwd=ROOT)
+    print(f"{package} bindings: {output}")
 
 
 if __name__ == "__main__":

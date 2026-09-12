@@ -1,0 +1,11 @@
+canonaut — Rust port of nauty and Traces
+
+This crate is derived from nauty and Traces (https://pallini.di.uniroma1.it/),
+version 2.6 and later, licensed under the Apache License, Version 2.0.
+
+Original copyright holders:
+  Copyright (c) Brendan McKay, Australian National University (1984-)
+  Copyright (c) Adolfo Piperno, University of Rome "Sapienza" (2008-)
+  Copyright (c) Gunnar Brinkmann, University of Ghent (2009-)
+  Copyright (c) Magma project, University of Sydney
+  Copyright (c) Sampo Niskanen and Patric Östergård

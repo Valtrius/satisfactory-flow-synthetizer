@@ -11,11 +11,7 @@ use std::{
     time::Duration,
 };
 
-#[derive(Debug)]
-pub enum Failure {
-    Cancelled,
-    Worker(String),
-}
+use crate::Failure;
 
 impl From<std::io::Error> for Failure {
     fn from(error: std::io::Error) -> Self {

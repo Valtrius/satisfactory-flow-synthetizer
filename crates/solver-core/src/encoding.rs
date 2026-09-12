@@ -1,6 +1,6 @@
 //! Port quotient: unary belt multiplicities, one exact output rate per operator.
 use crate::profile::AccountedProfile;
-use crate::{cardinality::exactly, process::Failure};
+use crate::{Failure, cardinality::exactly};
 use solver_api::{
     ConsumerPortRef, DiscardTerminalIndex, InputTerminalIndex, NodeId, NodeType,
     OutputTerminalIndex, PhysicalGraph, PhysicalLink, PhysicalNode, Problem, ProducerPortRef,
@@ -8,8 +8,8 @@ use solver_api::{
 };
 use std::{collections::BTreeMap, fmt::Write};
 
-#[derive(Clone, Copy)]
-pub(crate) enum Counts {
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Counts {
     Sparse,
     Boolean,
 }
@@ -59,6 +59,39 @@ fn either(terms: &[String]) -> String {
 }
 fn rate(value: &Rational) -> String {
     format!("(/ {} {})", value.numerator(), value.denominator())
+}
+
+fn model_values(response: &str) -> Result<BTreeMap<&str, bool>, Failure> {
+    let malformed = || Failure::Worker("malformed cvc5 model".into());
+    let mut remaining = response
+        .trim()
+        .strip_prefix('(')
+        .and_then(|text| text.strip_suffix(')'))
+        .ok_or_else(malformed)?
+        .trim();
+    let mut values = BTreeMap::new();
+    while !remaining.is_empty() {
+        let pair = remaining.strip_prefix('(').ok_or_else(malformed)?;
+        let (pair, tail) = pair.split_once(')').ok_or_else(malformed)?;
+        let mut terms = pair.split_whitespace();
+        let name = terms.next().ok_or_else(malformed)?;
+        if name.contains(['(', ')']) {
+            return Err(malformed());
+        }
+        let value = match terms.next() {
+            Some("true") => true,
+            Some("false") => false,
+            _ => return Err(Failure::Worker("non-Boolean edge model".into())),
+        };
+        if terms.next().is_some() {
+            return Err(malformed());
+        }
+        if values.insert(name, value).is_some() {
+            return Err(Failure::Worker("duplicate model variable".into()));
+        }
+        remaining = tail.trim_start();
+    }
+    Ok(values)
 }
 
 impl Encoding {
@@ -289,23 +322,9 @@ impl Encoding {
     }
 
     pub fn model(&self, response: &str) -> Result<(PhysicalGraph, String), Failure> {
-        let tokens: Vec<_> = response
-            .split(|c: char| c.is_whitespace() || c == '(' || c == ')')
-            .filter(|s| !s.is_empty())
-            .collect();
-        let mut values = BTreeMap::new();
-        if tokens.len() != self.edges.len() * 2 {
+        let values = model_values(response)?;
+        if values.len() != self.edges.len() {
             return Err(Failure::Worker("malformed cvc5 model".into()));
-        }
-        for pair in tokens.as_chunks::<2>().0 {
-            let value = match pair[1] {
-                "true" => true,
-                "false" => false,
-                _ => return Err(Failure::Worker("non-Boolean edge model".into())),
-            };
-            if values.insert(pair[0], value).is_some() {
-                return Err(Failure::Worker("duplicate model variable".into()));
-            }
         }
         let mut graph = PhysicalGraph {
             nodes: self

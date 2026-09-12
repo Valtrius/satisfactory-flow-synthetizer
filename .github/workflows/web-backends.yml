@@ -5,6 +5,9 @@ on:
   pull_request:
     paths:
       - 'crates/solver-web/**'
+      - 'crates/solver-core/**'
+      - 'crates/solver-portable-tests/**'
+      - 'vendor/canonaut/**'
       - 'crates/solver-api/**'
       - 'crates/solver-validation/**'
       - 'crates/synthetizer-app/**'
@@ -12,6 +15,7 @@ on:
       - 'scripts/build-cvc5-wasm.py'
       - 'web/**'
       - 'scripts/prepare-share-fixtures.mjs'
+      - 'scripts/prepare-portable-fixtures.mjs'
       - 'frontend/**'
       - 'src-tauri/history-fixtures/**'
       - 'Cargo.toml'
@@ -28,7 +32,35 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  portable-fixtures:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    env:
+      CARGO_BUILD_JOBS: 2
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Prepare the pinned native comparison backend
+        shell: pwsh
+        run: |
+          ./scripts/prepare-cvc5.ps1
+          $backend = Join-Path $env:GITHUB_WORKSPACE 'src-tauri/binaries/cvc5-x86_64-pc-windows-msvc.exe'
+          "SOLVER_CVC5=$backend" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+      - name: Native planner and identity tests
+        run: cargo test -p solver-core -p solver-portable-tests --lib --locked -- --test-threads=1
+      - name: Compare native scopes against the exhaustive reference
+        run: node scripts/prepare-portable-fixtures.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: portable-native-fixtures
+          path: target/web-portable/solves.json
+          if-no-files-found: error
   browser:
+    needs: portable-fixtures
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     env:
@@ -60,12 +92,22 @@ jobs:
         run: cargo clippy -p solver-web --target wasm32-unknown-unknown --locked --lib -- -D warnings
       - name: Portable job projection lint
         run: cargo clippy -p synthetizer-app --no-default-features --target wasm32-unknown-unknown --locked --lib -- -D warnings
+      - name: Portable exact planner and leaf lint
+        run: cargo clippy -p solver-core --no-default-features --target wasm32-unknown-unknown --locked --lib -- -D warnings
       - name: Build both backend modules
         run: npm run build:web:backends
+      - name: Build the separate qualification module
+        run: npm run build:web:portable
+      - uses: actions/download-artifact@v4
+        with:
+          name: portable-native-fixtures
+          path: target/web-portable
       - name: Install browser
         run: npx playwright install --with-deps chromium
       - name: Browser integration tests
         run: npm run test:web:backends
+      - name: Native and Wasm identity and exact-search parity
+        run: npx playwright test -c web/portable/playwright.config.mjs
       - name: Frontend contracts
         run: npm run check && npm test && npm run build -w frontend
       - name: Browser platform and history tests
@@ -85,4 +127,7 @@ jobs:
             target/web-platform/test-results
             target/web-shares/results.json
             target/web-shares/test-results
+            target/web-portable/results.json
+            target/web-portable/test-results
+            target/web-portable/solves.json
           if-no-files-found: warn
