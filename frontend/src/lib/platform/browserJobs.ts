@@ -1,70 +1,13 @@
 import type { JobSnapshot, SolveRequest } from '../../types';
-import type { CollectionStore, JobClient } from './contracts';
+import type { JobClient } from './contracts';
 import { createBrowserHistoryStore } from './browserHistory';
-import { checkCollectionRef } from './browserCollections';
 import { browserThreadCount } from './browserWorkers';
-import { coordinatorQueueLimit } from '../solver/inbox';
-import {
-  BROWSER_SOLVER_PROTOCOL,
-  type ComputeEvent,
-  type Dispatch,
-  type LeafPacket,
-  type Receipt,
-  type Recovery,
-  type Scheduling,
-  type WorkerPacket,
-} from '../solver/protocol';
-import { assertSnapshot, emptySnapshot, materializeSnapshot, terminal } from '../solver/snapshots';
-
-type Listener = { snapshot(value: JobSnapshot): void; error(): void };
-type Slot = {
-  worker: Worker | null;
-  attempt: string;
-  task: string | null;
-  sequence: number;
-  waiting: boolean;
-  reported: boolean;
-  timer: ReturnType<typeof setTimeout> | null;
-  heap: number;
-};
-type Stop = { reason: 'cancelled' | 'failed'; detail?: string };
-type Job = {
-  id: string;
-  attempt: string;
-  worker: Worker | null;
-  slots: Slot[];
-  tasks: Map<string, Slot>;
-  retired: Set<string>;
-  current: JobSnapshot;
-  recovery: Recovery | null;
-  checkpoint: number;
-  sealed: boolean;
-  requested: Stop | null;
-  listeners: Set<Listener>;
-  startupTimer: ReturnType<typeof setTimeout> | null;
-  applying: Promise<void>;
-  receiving: boolean;
-  workerCount: number;
-  solverBase: string;
-  rustHeap: number;
-  peakHeap: number;
-  peakPending: number;
-  scheduling: Scheduling | null;
-};
-
-export type BrowserJobOptions = {
-  createWorker?: (role: 'coordinator' | 'compute', slot: number) => Worker;
-  collections?: CollectionStore;
-  solverBase?: string;
-  startupTimeoutMs?: number;
-  workerCount?: number;
-  maxNodes?: number;
-  maxLayouts?: number;
-  maxIdentityBytes?: number;
-  strategy?: 'portfolio' | 'boolean' | 'sparse';
-  resourceLimit?: number;
-  retention?: number;
-};
+import { BROWSER_SOLVER_PROTOCOL, type WorkerPacket } from '../solver/protocol';
+import { emptySnapshot, materializeSnapshot } from '../solver/snapshots';
+import { createBrowserComputePool } from './browserComputePool';
+import { createBrowserCheckpoint } from './browserCheckpoint';
+import type { BrowserJobOptions, Job, Stop } from './browserJobState';
+export type { BrowserJobOptions } from './browserJobState';
 
 export function createBrowserJobs(options: BrowserJobOptions = {}): JobClient {
   const jobs = new Map<string, Job>();
@@ -79,6 +22,15 @@ export function createBrowserJobs(options: BrowserJobOptions = {}): JobClient {
       role === 'coordinator'
         ? new Worker(new URL('../solver/solve.worker.ts', import.meta.url), { type: 'module' })
         : new Worker(new URL('../solver/leaf.worker.ts', import.meta.url), { type: 'module' }));
+
+  const pool = createBrowserComputePool({
+    spawn,
+    observe: decorate,
+    stop,
+    startupTimeoutMs: options.startupTimeoutMs,
+    resourceLimit: options.resourceLimit,
+  });
+  const apply = createBrowserCheckpoint({ collections, pool, emit, seal });
 
   function lookup(id: string): Job {
     const job = jobs.get(id);
@@ -129,19 +81,6 @@ export function createBrowserJobs(options: BrowserJobOptions = {}): JobClient {
         }
       }
   }
-  function killSlot(slot: Slot): void {
-    if (slot.timer !== null) clearTimeout(slot.timer);
-    slot.timer = null;
-    const worker = slot.worker;
-    slot.worker = null;
-    if (worker) {
-      worker.onmessage = null;
-      worker.onerror = null;
-      worker.onmessageerror = null;
-      worker.terminate();
-    }
-    slot.heap = 0;
-  }
   function terminateWorkers(job: Job): void {
     decorate(job); // Sample all still-owned heaps before disposal.
     if (job.startupTimer !== null) clearTimeout(job.startupTimer);
@@ -154,7 +93,7 @@ export function createBrowserJobs(options: BrowserJobOptions = {}): JobClient {
       worker.onmessageerror = null;
       worker.terminate();
     }
-    for (const slot of job.slots) killSlot(slot);
+    for (const slot of job.slots) pool.killSlot(slot);
     job.rustHeap = 0;
   }
   function seal(job: Job): void {
@@ -190,312 +129,6 @@ export function createBrowserJobs(options: BrowserJobOptions = {}): JobClient {
     return job.applying.then(() => {
       finishStop(job);
       return decorate(job);
-    });
-  }
-  function forward(job: Job, events: ComputeEvent[], receipts: Receipt[] = []): void {
-    if (job.requested || job.sealed) return;
-    try {
-      job.worker?.postMessage({
-        kind: 'events',
-        protocol: BROWSER_SOLVER_PROTOCOL,
-        jobId: job.id,
-        attempt: job.attempt,
-        events,
-        receipts,
-      });
-    } catch (error) {
-      // Event-handler callers cannot await a transport exception. Retire every
-      // worker and keep the last accepted prefix instead of leaving a live job.
-      void stop(job, 'failed', `Could not reach browser coordinator: ${String(error)}`);
-    }
-  }
-  function retired(job: Job, task: string): void {
-    job.retired.add(task);
-    if (job.retired.size > coordinatorQueueLimit(job.workerCount))
-      job.retired.delete(job.retired.values().next().value!);
-  }
-  function failSlot(job: Job, slot: Slot, detail: string): void {
-    if (!slot.worker || job.requested || job.sealed) return;
-    const task = slot.task;
-    killSlot(slot);
-    slot.task = null;
-    if (task) {
-      job.tasks.delete(task);
-      retired(job, task);
-      if (!slot.reported)
-        forward(job, [{ kind: 'retired', id: task, verdict: 'failed', detail: detail.slice(0, 2048) }]);
-    }
-  }
-  function acknowledge(job: Job, slot: Slot, receipt: Receipt): void {
-    slot.worker?.postMessage({
-      kind: 'leaf-ack',
-      protocol: BROWSER_SOLVER_PROTOCOL,
-      jobId: job.id,
-      attempt: job.attempt,
-      ...receipt,
-    });
-  }
-  function computeMessage(job: Job, slot: Slot, value: unknown): void {
-    if (job.requested || job.sealed || !slot.worker) return;
-    const packet = value as LeafPacket;
-    if (!packet || typeof packet !== 'object') {
-      failSlot(job, slot, 'Unreadable browser compute packet.');
-      return;
-    }
-    if (
-      packet.jobId !== job.id ||
-      packet.attempt !== job.attempt ||
-      packet.workerAttempt !== slot.attempt ||
-      packet.task !== slot.task
-    )
-      return;
-    try {
-      if (packet.protocol !== BROWSER_SOLVER_PROTOCOL) throw new Error('Incompatible browser compute protocol.');
-      if (packet.kind === 'failed') {
-        if (typeof packet.error !== 'string') throw new Error('Unreadable browser compute failure.');
-        failSlot(job, slot, packet.error);
-        return;
-      }
-      if (
-        !Number.isSafeInteger(packet.heapBytes) ||
-        !Number.isSafeInteger(packet.rustBytes) ||
-        packet.heapBytes < 0 ||
-        packet.rustBytes < 0
-      )
-        throw new Error('Invalid worker memory observation.');
-      slot.heap = packet.heapBytes + packet.rustBytes;
-      decorate(job);
-      if (packet.kind === 'ready') {
-        if (slot.timer !== null) clearTimeout(slot.timer);
-        slot.timer = null;
-        return;
-      }
-      if (slot.waiting || packet.sequence !== slot.sequence + 1 || !['heartbeat', 'leaf-events'].includes(packet.kind))
-        throw new Error('Noncontiguous compute packet.');
-      slot.sequence = packet.sequence;
-      const receipt = { task: packet.task, sequence: packet.sequence, workerAttempt: slot.attempt };
-      if (packet.kind === 'heartbeat') {
-        acknowledge(job, slot, receipt);
-        return;
-      }
-      if (
-        !Array.isArray(packet.events) ||
-        packet.events.length !== 1 ||
-        packet.events[0].id !== slot.task ||
-        !['witness', 'retired'].includes(packet.events[0].kind)
-      )
-        throw new Error('Invalid browser leaf event.');
-      slot.waiting = true;
-      slot.reported = packet.events[0].kind === 'retired';
-      job.peakPending = Math.max(job.peakPending, job.slots.filter((slot) => slot.waiting && slot.task).length);
-      forward(job, packet.events, [receipt]);
-    } catch (error) {
-      failSlot(job, slot, String(error));
-    }
-  }
-  function dispatch(job: Job, work: Dispatch): void {
-    if (job.tasks.has(work.id)) throw new Error('Duplicate browser leaf dispatch.');
-    let slot = job.slots.find((slot) => slot.task === null);
-    if (!slot) {
-      if (job.slots.length >= job.workerCount) throw new Error('Browser coordinator exceeded the compute budget.');
-      slot = {
-        worker: null,
-        attempt: '',
-        task: null,
-        sequence: 0,
-        waiting: false,
-        reported: false,
-        timer: null,
-        heap: 0,
-      };
-      job.slots.push(slot);
-    }
-    const selected = slot;
-    selected.task = work.id;
-    selected.sequence = 0;
-    selected.waiting = false;
-    selected.reported = false;
-    job.tasks.set(work.id, selected);
-    try {
-      if (!selected.worker) {
-        selected.attempt = crypto.randomUUID();
-        const worker = spawn('compute', job.slots.indexOf(selected));
-        selected.worker = worker;
-        worker.onmessage = ({ data }) => {
-          if (selected.worker === worker) computeMessage(job, selected, data);
-        };
-        worker.onerror = (event) => {
-          event.preventDefault();
-          if (selected.worker === worker) failSlot(job, selected, event.message || 'Browser compute worker crashed.');
-        };
-        worker.onmessageerror = () => {
-          if (selected.worker === worker) failSlot(job, selected, 'Unreadable browser compute message.');
-        };
-        selected.timer = setTimeout(
-          () => failSlot(job, selected, 'Browser compute assets exceeded the startup limit.'),
-          options.startupTimeoutMs ?? 120_000,
-        );
-      }
-      selected.worker.postMessage({
-        kind: 'leaf',
-        protocol: BROWSER_SOLVER_PROTOCOL,
-        jobId: job.id,
-        attempt: job.attempt,
-        workerAttempt: selected.attempt,
-        task: work.id,
-        source: work.source,
-        solverBase: job.solverBase,
-        resourceLimit: options.resourceLimit,
-      });
-    } catch (error) {
-      // Construction can fail before a Worker exists; still retire the dispatched obligation.
-      if (selected.worker) failSlot(job, selected, String(error));
-      else {
-        selected.task = null;
-        job.tasks.delete(work.id);
-        retired(job, work.id);
-        forward(job, [{ kind: 'retired', id: work.id, verdict: 'failed', detail: String(error) }]);
-      }
-    }
-  }
-  async function apply(job: Job, packet: Extract<WorkerPacket, { kind: 'update' }>): Promise<void> {
-    const update = packet.update;
-    if (
-      packet.checkpoint !== job.checkpoint + 1 ||
-      !update ||
-      !Array.isArray(update.packets) ||
-      !update.packets.length ||
-      update.packets.length > 4 ||
-      !Array.isArray(update.append) ||
-      update.append.length > 16 ||
-      !Array.isArray(update.dispatch) ||
-      update.dispatch.length > job.workerCount ||
-      !Array.isArray(update.stop) ||
-      !Array.isArray(packet.receipts) ||
-      packet.receipts.length > 16 ||
-      typeof update.done !== 'boolean' ||
-      !update.recovery
-    )
-      throw new Error('Invalid browser coordinator checkpoint.');
-    if (
-      !update.scheduling ||
-      !Array.isArray(update.scheduling.budgets) ||
-      update.scheduling.budgets.reduce((a, b) => a + b, 0) !== job.workerCount ||
-      !Number.isSafeInteger(update.scheduling.active) ||
-      update.scheduling.active < 0 ||
-      update.scheduling.active > job.workerCount ||
-      !Number.isSafeInteger(packet.rustBytes) ||
-      packet.rustBytes < 0 ||
-      new Set(update.dispatch.map((work) => work.id)).size !== update.dispatch.length ||
-      update.dispatch.some(
-        (work) =>
-          typeof work.id !== 'string' || typeof work.source !== 'string' || work.source.length > 16 * 1024 * 1024,
-      ) ||
-      update.stop.length > job.workerCount ||
-      update.stop.some((id) => typeof id !== 'string')
-    )
-      throw new Error('Invalid browser scheduler observations.');
-    let current = job.current;
-    let completed: JobSnapshot | undefined;
-    for (const [index, snapshot] of update.packets.entries()) {
-      assertSnapshot(snapshot, job.id);
-      if (snapshot.sequence !== (current.sequence ?? 0) + 1 || snapshot.resultAppended || snapshot.results.length)
-        throw new Error('Invalid paged browser snapshot sequence.');
-      if (terminal(snapshot)) {
-        if (!update.done || index !== update.packets.length - 1 || snapshot.resultsOmitted)
-          throw new Error('Invalid browser terminal proposal.');
-        completed = materializeSnapshot(current, snapshot);
-      } else {
-        current = materializeSnapshot(current, snapshot);
-      }
-    }
-    if (
-      Boolean(completed) !== update.done ||
-      !Number.isSafeInteger(update.count) ||
-      update.count !== (job.current.collection?.count ?? 0) + update.append.length
-    )
-      throw new Error('Browser collection count or completion is inconsistent.');
-    for (const reason of ['cancelled', 'failed'] as const) {
-      const recovery = update.recovery[reason];
-      assertSnapshot(recovery, job.id);
-      if (
-        recovery.status !== reason ||
-        !recovery.resultsOmitted ||
-        recovery.resultAppended ||
-        recovery.resultsLen !== 0 ||
-        recovery.enumerationComplete ||
-        recovery.sequence !== current.sequence! + 1
-      )
-        throw new Error('Invalid browser interruption packet.');
-    }
-    let ref = job.current.collection;
-    let storageError: unknown;
-    if (update.append.length) {
-      if (!ref) throw new Error('Enumeration batch without a collection.');
-      try {
-        ref = await collections().append(ref, update.append);
-      } catch (error) {
-        ref = collections().retain(ref, update.append);
-        storageError = error;
-      }
-    }
-    if (ref) {
-      ref = { ...ref, preferredIndex: update.preferredIndex };
-      checkCollectionRef(ref);
-    }
-    job.checkpoint = packet.checkpoint;
-    job.current = { ...current, collection: ref };
-    job.recovery = update.recovery;
-    job.scheduling = update.scheduling;
-    job.rustHeap = packet.rustBytes;
-    if (storageError)
-      throw new Error(
-        `Could not store the accepted solution batch. It is retained in this tab for export or a save retry. ${String(storageError)}`,
-      );
-    if (job.requested) return;
-    const acknowledgeLater: { slot: Slot; receipt: Receipt }[] = [];
-    for (const receipt of packet.receipts) {
-      const slot = job.tasks.get(receipt.task);
-      if (!slot && job.retired.has(receipt.task)) continue;
-      if (!slot || slot.attempt !== receipt.workerAttempt || !slot.waiting || slot.sequence !== receipt.sequence)
-        throw new Error('Invalid browser compute receipt.');
-      acknowledgeLater.push({ slot, receipt });
-      slot.waiting = false;
-      if (slot.reported) {
-        slot.task = null;
-        job.tasks.delete(receipt.task);
-      }
-    }
-    for (const task of update.stop) {
-      const slot = job.tasks.get(task);
-      if (!slot) continue;
-      killSlot(slot);
-      slot.task = null;
-      job.tasks.delete(task);
-      retired(job, task);
-      if (!slot.reported) forward(job, [{ kind: 'retired', id: task, verdict: 'cancelled', detail: '' }]);
-    }
-    if (completed) {
-      if (job.tasks.size || update.dispatch.length || update.scheduling.active !== 0)
-        throw new Error('Browser completion retained active compute work.');
-      job.current = { ...completed, collection: ref };
-      seal(job);
-      return;
-    }
-    emit(job);
-    if (job.requested) return;
-    for (const { slot, receipt } of acknowledgeLater) acknowledge(job, slot, receipt);
-    for (const work of update.dispatch) {
-      if (update.stop.includes(work.id))
-        forward(job, [{ kind: 'retired', id: work.id, verdict: 'cancelled', detail: '' }]);
-      else dispatch(job, work);
-    }
-    job.worker?.postMessage({
-      kind: 'ack',
-      protocol: BROWSER_SOLVER_PROTOCOL,
-      jobId: job.id,
-      attempt: job.attempt,
-      checkpoint: packet.checkpoint,
     });
   }
   function receive(job: Job, value: unknown): void {
