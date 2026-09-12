@@ -39,6 +39,7 @@
   import type { VerifiedShare } from './lib/sharing/client';
   import Button from './lib/ui/Button.svelte';
   import { getPlatform } from './lib/platform';
+  import OfflinePanel from './lib/offline/OfflinePanel.svelte';
   import { createPagedResults } from './lib/pagedResults';
   import { COLLECTION_PAGE_SIZE } from './lib/platform/browserCollections';
   import {
@@ -664,6 +665,10 @@
             limit memory use. Closing this tab stops the search. Browser storage is best-effort. Export a backup before clearing
             site data.
           </p>
+        {/if}
+
+        {#if import.meta.env.PROD && platform.capabilities.runtime === 'browser'}
+          <OfflinePanel />
         {/if}
 
         {#if errorMessage}

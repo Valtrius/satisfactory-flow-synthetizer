@@ -27,6 +27,7 @@ on:
       - 'package.json'
       - 'package-lock.json'
       - '.github/workflows/web-backends.yml'
+      - '.github/workflows/pages.yml'
 
 permissions:
   contents: read
@@ -118,6 +119,8 @@ jobs:
         run: npx playwright test -c web/portable/playwright.config.mjs
       - name: Frontend contracts
         run: npm run check && npm test -w frontend -- --maxWorkers=2 && npm run build -w frontend
+      - name: Build and verify the browser publication artifact
+        run: npm run build:web:release && npm run verify:web:relink
       - name: Browser asset build contracts
         run: python -m unittest discover -s scripts -p 'test_web_*.py'
       - name: Parallel browser jobs, proof ownership, cancellation and paged UI
@@ -126,6 +129,8 @@ jobs:
         run: npm run test:web:platform
       - name: Selected-solution sharing tests
         run: npm run test:web:shares
+      - name: Offline and publication delivery tests
+        run: npm run test:web:delivery
       - name: Upload test evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -144,4 +149,6 @@ jobs:
             target/web-portable/solves.json
             target/web-solver/results.json
             target/web-solver/test-results
+            target/web-delivery/results.json
+            target/web-delivery/test-results
           if-no-files-found: warn

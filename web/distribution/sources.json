@@ -1,0 +1,14 @@
+{
+  "elkjs": {
+    "version": "0.12.0",
+    "commit": "ff5771d7165445c42c408bb8a090c8035272218c",
+    "url": "https://codeload.github.com/kieler/elkjs/tar.gz/ff5771d7165445c42c408bb8a090c8035272218c",
+    "sha256": "2871a717524de81a0f928708722092d54e531d46313b32a4594508434400d421"
+  },
+  "elk": {
+    "version": "0.12.0",
+    "commit": "323312916048544e4e594eab3303cdb0d01e2929",
+    "url": "https://codeload.github.com/eclipse-elk/elk/tar.gz/323312916048544e4e594eab3303cdb0d01e2929",
+    "sha256": "ff68d72187dfda4697c63b2a684bd2febaa471bdb3d8e9fcd800a75463aaadba"
+  }
+}

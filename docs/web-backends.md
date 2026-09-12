@@ -1,6 +1,6 @@
 # Browser backend foundations and platform services
 
-The shared Svelte application runs exact searches locally through independent browser workers or the existing native desktop host. Step 05 adds bounded parallel scheduling, independent portfolio proof ownership and IndexedDB-backed result pages. All three search scopes remain available. Selected-solution links are self-contained and need no backend storage. No GitHub Pages site is deployed, and offline asset caching is not implemented. Native threads, cvc5 process ownership, portfolio scheduling and SQLite storage remain in the desktop host.
+The shared Svelte application runs exact searches locally through independent browser workers or the existing native desktop host. Step 05 adds bounded parallel scheduling, independent portfolio proof ownership and IndexedDB-backed result pages. Step 06 adds integrity-checked offline delivery, version-coherent upgrades, source/relink packaging and a manual GitHub Pages workflow. All three search scopes remain available. Selected-solution links are self-contained and need no backend storage. No public Pages deployment is claimed by these local changes. Native threads, cvc5 process ownership, portfolio scheduling and SQLite storage remain in the desktop host.
 
 ## Agreed product scope
 
@@ -97,7 +97,7 @@ The audit also found hardcoded 64-bit operations in `src/structs/schreier_arena.
 
 The identity acceptance gate compares pre-port native bytes against the patched native implementation and actual Wasm execution. It covers word boundaries, relabeled graphs, duplicate terminals and physical `layout-v1` identities. Compiling the dependency alone does not satisfy this gate.
 
-Step 01 extracts platform services and implements browser history. Step 02 implements selected-solution sharing. Step 03 separates mathematical transitions from native execution. Step 04 records the first production browser integration; Step 05 replaces its single-worker transport with parallel scheduling and paged collections. Offline assets and Pages delivery remain later work. The standalone backend tests do not replace application lifecycle tests.
+Step 01 extracts platform services and implements browser history. Step 02 implements selected-solution sharing. Step 03 separates mathematical transitions from native execution. Step 04 records the first production browser integration; Step 05 replaces its single-worker transport with parallel scheduling and paged collections. Step 06 adds offline and publication delivery. The standalone backend tests do not replace application lifecycle tests.
 
 ## Step 01: platform services
 
@@ -408,4 +408,38 @@ The final history suite rerun replaced an obsolete introductory-text assertion w
 
 Native workspace Clippy and targeted wasm32 Clippy passed with warnings denied. Svelte checks reported no errors or warnings. Browser and desktop-mode frontend builds passed. Desktop output retains the verifier and omits the browser solver distribution. The small verifier remains separate, and the immutable pre-port identity fixture retains SHA-256 `759271f2ba1ff2b647719650806bc1c050fc0c5f36442c7c017e8a540292f214`.
 
-Frontend evidence is in `.tmp/web-step05-frontend-threads.json`; browser evidence is in the five result directories under `target/web-solver`, `target/web-platform`, `target/web-shares`, `target/web-portable` and `target/web-backends`. The full native workspace and final lint/tooling runs also completed successfully in the recorded terminal session. The non-failing graph shortcut warning remains. These are local Windows/Chrome results, not remote CI, other-browser qualification, a benchmark campaign or packaged WebView2 validation. Step 05 remains uncommitted for review on `feature/web-backend-foundations`; Step 04 is commit `00419e54c2265bb8bbb11db1743510a1f8242535`. No push, deployment, installer or version change occurred.
+Frontend evidence is in `.tmp/web-step05-frontend-threads.json`; browser evidence is in the five result directories under `target/web-solver`, `target/web-platform`, `target/web-shares`, `target/web-portable` and `target/web-backends`. The full native workspace and final lint/tooling runs also completed successfully in the recorded terminal session. The non-failing graph shortcut warning remains. These are local Windows/Chrome results, not remote CI, other-browser qualification, a benchmark campaign or packaged WebView2 validation. Step 05 is committed as `3b7f24bcda4cc2b48c6abb3786cbd6898917106d` on `feature/web-backend-foundations`. No push, deployment, installer or version change occurred.
+
+## Step 06: offline and publication delivery
+
+### Offline runtime and upgrades
+
+Production browser builds register one service worker beneath the application's current base path. Vite emits a build-specific `release.json`, injects the same build ID into the page and embeds the release manifest into `service-worker.js`. Every manifest-listed runtime file records its exact byte count and SHA-256 hash. The worker verifies both before storing a network response. Downloads are sequential so hashing a large cvc5 Wasm response does not multiply transient buffers.
+
+Initial installation caches the interface shell. Full offline readiness is explicit: **Download for offline use** saves every runtime asset, including the small selected-solution verifier and the browser solver/cvc5 distribution, before the UI reports that offline solving and viewing are ready. A missing, truncated, corrupted or quota-failed download cannot mark that build complete. Cache eviction is visible on the next status check and the user can repair it explicitly. Source archives are publication downloads, not runtime cache entries.
+
+Updates never call `skipWaiting` or `clients.claim`. If the active version was fully prepared for offline use, a candidate version must prepare its complete runtime before it can wait. Existing tabs therefore keep the old service worker and their current solver-worker ownership until every app tab closes. The new version activates on the next open and removes only older `sfs-offline-v1` caches for the same service-worker scope. It never clears IndexedDB history, and reload still never resumes a mathematical search.
+
+The static delivery uses relative URLs and a local-only CSP, so the same artifact works beneath the normal GitHub project path without a custom domain or cross-origin isolation. Unknown URLs remain normal 404 responses rather than being rewritten to the application shell.
+
+### Public source and relink package
+
+`npm run build:web:release` packages publication material before the frontend build. `licenses.html` links content-hashed downloads for the exact application source snapshot, installed Rust/JavaScript dependency sources, pinned ELK/elkjs sources and the cvc5 relink bundle. `source-manifest.json` records source-file hashes, archive hashes, the source fingerprint and the cvc5 runtime build record. The release-mode Vite plugin refuses a stale or mismatched source snapshot.
+
+The cvc5 relink bundle includes the pinned cvc5, GMP, CaDiCaL and SymFPU sources, the Emscripten source pin, the application wrapper source/object, every static library used at the final link, notices, recorded build flags and a standalone `relink.py`. `npm run verify:web:relink` extracts that public archive, relinks it with Emscripten 3.1.70 and requires the resulting `cvc5.mjs` and `cvc5.wasm` hashes to match the shipped module exactly. A compatible rebuilt `libgmp.a` can be supplied to the same relink recipe.
+
+### GitHub Pages handoff
+
+`.github/workflows/pages.yml` is intentionally manual (`workflow_dispatch`). Its build job prepares the publication artifact on Ubuntu, verifies the relink bundle, runs frontend checks and the offline-delivery browser suite, then uploads `frontend/dist` with `.nojekyll`. The deploy job uses the `github-pages` environment with only `pages: write` and `id-token: write` permissions. Repository maintainers must set **Settings > Pages > Source** to **GitHub Actions** once before running it. The workflow does not push, merge, tag, bump the application version or choose an automatic branch deployment policy.
+
+See [Browser release and GitHub Pages](web-release.md) for the operator steps. Local validation establishes publication readiness only; it does not establish that remote GitHub Actions has run or that a public site exists.
+
+### Step 06 validation on 12 September 2026
+
+The full native workspace still passes 184 tests. The frontend passes 220 tests and Svelte checking reports no errors or warnings. Python tooling passes 49 tests, including deterministic source-archive packaging, npm license-metadata fallback and exact relink-record checks. Formatting, whitespace and release-metadata checks pass. The immutable pre-port identity fixture remains SHA-256 `759271f2ba1ff2b647719650806bc1c050fc0c5f36442c7c017e8a540292f214`.
+
+All 67 browser tests pass in installed Chrome: 26 production solver/UI tests, 16 platform/history tests, nine selected-solution sharing tests, five portable tests, four backend tests and seven new delivery tests. Delivery tests cover lazy first load, explicit full offline preparation, all three exact scopes after a network-off reload, offline selected-solution viewing, missing/corrupt asset recovery, waiting multi-tab updates, preservation of browser history across activation, failed candidate rollback, visible cache eviction, normal 404 behavior and project-path cache isolation.
+
+`npm run build:web:release` builds the verifier and production solver, reuses the verified cvc5 build, creates the public source downloads and emits the static publication directory. The tested release manifest contains 38 integrity-tracked runtime assets. `npm run verify:web:relink` reproduces the shipped cvc5 JavaScript and Wasm byte-for-byte from the public relink archive; the hashes remain `5de57bc7ebfd73bfc795f6a0fc66e560d48e5f31013b09461a66d3f6c44adbed` and `8b1d89aef4959100ee5c19902906a37fae7634f7efcfb3c6237da1502aca2bc0`. A desktop-mode frontend build still contains the small verifier and omits cvc5/search assets, the service worker and release metadata.
+
+These are local Windows/Chrome results with cvc5 relinking executed through Ubuntu WSL. The repository is public and its default branch is `develop`, but the new Pages workflow is manual and has not been pushed or run remotely. No Pages site, version change, tag, merge, installer, performance claim, Firefox/Safari qualification or packaged WebView2 test is claimed by Step 06.

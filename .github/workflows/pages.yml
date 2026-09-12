@@ -1,0 +1,75 @@
+name: Publish browser application
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      pages: read
+    env:
+      CARGO_BUILD_JOBS: 2
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Cache cvc5 toolchain and library build
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/satisfactory-flow-synthetizer-web
+          key: web-cvc5-pages-ubuntu24-${{ hashFiles('web/cvc5/toolchain.json', 'scripts/build-cvc5-wasm.py') }}
+      - name: Install dependencies
+        run: npm ci
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v6
+      - name: Build publication artifact
+        run: npm run build:web:release
+      - name: Verify public relink material
+        run: npm run verify:web:relink
+      - name: Check frontend contracts
+        run: npm run check && npm test -w frontend -- --maxWorkers=2
+      - name: Install browser
+        run: npx playwright install --with-deps chromium
+      - name: Test offline and upgrade delivery
+        run: npm run test:web:delivery
+      - name: Upload GitHub Pages artifact
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: frontend/dist
+          include-hidden-files: true
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy GitHub Pages artifact
+        id: deployment
+        uses: actions/deploy-pages@v5
