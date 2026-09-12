@@ -77,6 +77,9 @@ fn verify_paged_sources(case: &Value, source_keys: &[CanonicalGraphKey]) {
 }
 
 fn verify_case(case: &Value) -> Value {
+    if !case["native_outcome"].is_null() {
+        return verify_native(case);
+    }
     let request = &case["request"];
     let snapshot = &case["snapshot"];
     let result = (!snapshot["result"].is_null()).then(|| physical(request, &snapshot["result"]));
@@ -166,7 +169,89 @@ fn verify_case(case: &Value) -> Value {
         let expected: Problem = serde_json::from_value(case["problem"].clone()).unwrap();
         assert_eq!(public.problem.prepare().unwrap().problem, expected);
     }
-    json!({"name": case["name"], "status": snapshot["status"], "result": result.map(|(_, graph)| graph), "solutions": solutions})
+    verify_browser_proof(case, result.as_ref().map(|(_, graph)| graph));
+    json!({"name": case["name"], "status": snapshot["status"], "result": result.map(|(_, graph)| graph), "solutions": solutions,
+        "proof": snapshot["proof"], "enumeration_complete": snapshot["enumerationComplete"]})
+}
+
+fn verify_browser_proof(case: &Value, result: Option<&Value>) {
+    let snapshot = &case["snapshot"];
+    if snapshot["status"] == "completed" {
+        assert_eq!(snapshot["result"]["status"], "proven_optimal");
+        let validation = &result.unwrap()["validation"];
+        assert_eq!(
+            snapshot["proof"]["minimumNodeCount"],
+            validation["nodeCount"]
+        );
+        assert_eq!(
+            snapshot["proof"]["minimumLinkCount"],
+            validation["linkCount"]
+        );
+        assert_eq!(
+            snapshot["enumerationComplete"],
+            case["request"]["solveMode"] != "one_min_nl"
+        );
+    } else if snapshot["status"] != "unsat" {
+        assert_ne!(snapshot["enumerationComplete"], true);
+        assert!(snapshot["proof"]["minimumLinkCount"].is_null());
+    }
+}
+
+// Benchmark records pass the original production outcome through the same
+// independent physical validator and canonicalizer as browser presentations.
+fn verify_native(case: &Value) -> Value {
+    let problem: Problem = serde_json::from_value(case["problem"].clone()).unwrap();
+    let outcome: solver_api::SolveOutcome =
+        serde_json::from_value(case["native_outcome"].clone()).unwrap();
+    let physical = |graph: &PhysicalGraph| {
+        let validation = solver_validation::validate_solution(&problem, graph).unwrap();
+        let (key, graph) = solver_validation::canonical_layout(&problem, graph);
+        (
+            key.clone(),
+            json!({"key": key, "graph": graph, "validation": validation}),
+        )
+    };
+    let mut collection = BTreeMap::new();
+    for solution in &outcome.solutions {
+        let (key, graph) = physical(&solution.graph);
+        assert_eq!(graph["validation"]["nodeCount"], solution.node_count);
+        assert_eq!(graph["validation"]["linkCount"], solution.link_count);
+        assert!(
+            collection.insert(key, graph).is_none(),
+            "duplicate native layout"
+        );
+    }
+    let (status, result) = match &outcome.result {
+        solver_api::SolveResult::Optimal(s) => {
+            assert_eq!(outcome.proof.minimum_node_count, Some(s.node_count));
+            assert_eq!(outcome.proof.minimum_link_count, Some(s.link_count));
+            let result = physical(&s.graph).1;
+            assert_eq!(result["validation"]["nodeCount"], s.node_count);
+            assert_eq!(result["validation"]["linkCount"], s.link_count);
+            ("completed", Some(result))
+        }
+        solver_api::SolveResult::Incomplete(s) => {
+            assert_eq!(outcome.proof.minimum_link_count, None);
+            (
+                "incomplete",
+                s.best_known.as_ref().map(|s| physical(&s.graph).1),
+            )
+        }
+        solver_api::SolveResult::GloballyUnsat(_) => ("unsat", None),
+    };
+    let enumeration_complete = match outcome.enumeration {
+        solver_api::EnumerationStatus::NotRequested => false,
+        solver_api::EnumerationStatus::AllMinN { complete, .. }
+        | solver_api::EnumerationStatus::AllMinNL { complete, .. } => complete,
+    };
+    if status == "completed" {
+        assert_eq!(enumeration_complete, case["mode"] != "one_min_nl");
+    } else if status == "incomplete" {
+        assert!(!enumeration_complete);
+    }
+    json!({"name": case["case"], "status": status, "result": result,
+        "solutions": collection.into_values().collect::<Vec<_>>(),
+        "proof": outcome.proof, "enumeration_complete": enumeration_complete})
 }
 
 fn main() {

@@ -25,5 +25,7 @@
   "hybrid-final-campaign": "../target/optimization-hybrid-20260910/frozen",
   "hybrid-final-analysis": "../target/optimization-hybrid-20260910/analysis",
   "release-audit-opportunities": "../target/readiness-20260911-105255",
-  "application-promotion": "../target/promotion-20260911-135547"
+  "application-promotion": "../target/promotion-20260911-135547",
+  "native-web-20260912": "../target/platform-benchmarks-20260912-224500",
+  "native-web-20260912-analysis": "../target/platform-benchmarks-20260912-224500/analysis-20260912-185750"
 }
