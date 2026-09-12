@@ -136,6 +136,7 @@ function memoryCollections() {
     }),
     flush: vi.fn(async () => {}),
     forget: vi.fn(),
+    discard: vi.fn(async () => {}),
     read: async (ref, offset, limit) =>
       values
         .get(ref.id)!

@@ -351,3 +351,102 @@ test('missing graph and summary records fail explicitly rather than silently ret
   expect(result[0]).toContain('incomplete or corrupt');
   expect(result[1]).toContain('Corrupt collection summary');
 });
+
+test('discard removes an abandoned prefix and overlay while protecting saved and unrelated collections', async ({
+  page,
+}) => {
+  const result = await page.evaluate(async () => {
+    const c = window.store.collections;
+    const rows = [{ index: 0, solution: window.example.result }];
+    let abandoned = await c.create('abandoned');
+    abandoned = await c.append(abandoned, rows);
+    abandoned = c.retain(abandoned, [{ ...rows[0], index: 1 }]);
+    const saved = await c.append(await c.create('saved'), rows);
+    const live = await c.append(await c.create('unattached-live-job'), rows);
+    // A separate writer may already own a reference when cleanup runs.
+    const { createBrowserHistoryStore } =
+      await import('/satisfactory-flow-synthetizer/src/lib/platform/browserHistory.ts');
+    const other = createBrowserHistoryStore();
+    await other.load();
+    await other.apply([{ op: 'upsertEntry', entry: { ...window.example, collection: saved } }]);
+    other.close();
+    await c.discard(saved);
+    await c.discard(abandoned);
+    await c.discard(abandoned);
+    let missing;
+    try {
+      await c.get(abandoned, 1);
+    } catch (error) {
+      missing = String(error);
+    }
+    const db = await new Promise((resolve) => {
+      const open = indexedDB.open('satisfactory-flow-synthetizer.history');
+      open.onsuccess = () => resolve(open.result);
+    });
+    const counts = await Promise.all(
+      ['collections', 'collectionSolutions', 'collectionSummaries'].map(
+        (name) =>
+          new Promise((resolve) => {
+            const read = db.transaction(name).objectStore(name).count();
+            read.onsuccess = () => resolve(read.result);
+          }),
+      ),
+    );
+    db.close();
+    return { missing, counts, saved: await c.get(saved, 0), live: await c.get(live, 0) };
+  });
+  expect(result.missing).toContain('incomplete or corrupt');
+  expect(result.counts).toEqual([2, 2, 2]);
+  expect(result.saved.status).toBe('best_known');
+  expect(result.live.status).toBe('best_known');
+});
+
+test('a failed multi-entry import discards every staged prefix without removing other live work', async ({ page }) => {
+  const result = await page.evaluate(async () => {
+    const { pageImportedEntries } = await import('/satisfactory-flow-synthetizer/src/lib/historyIo.ts');
+    const live = await window.store.collections.append(await window.store.collections.create('live'), [
+      { index: 0, solution: window.example.result },
+    ]);
+    const entries = ['first', 'second'].map((id) => ({
+      ...window.example,
+      id,
+      results: Array.from({ length: 65 }, () => structuredClone(window.example.result)),
+    }));
+    const original = IDBObjectStore.prototype.add;
+    let written = 0;
+    IDBObjectStore.prototype.add = function (...args) {
+      if (this.name === 'collectionSolutions' && ++written === 82)
+        throw new DOMException('Injected import quota failure', 'QuotaExceededError');
+      return original.apply(this, args);
+    };
+    let failure;
+    try {
+      await pageImportedEntries(
+        entries,
+        entries.map((entry) => entry.id),
+      );
+    } catch (error) {
+      failure = String(error);
+    } finally {
+      IDBObjectStore.prototype.add = original;
+    }
+    const db = await new Promise((resolve) => {
+      const open = indexedDB.open('satisfactory-flow-synthetizer.history');
+      open.onsuccess = () => resolve(open.result);
+    });
+    const counts = await Promise.all(
+      ['collections', 'collectionSolutions', 'collectionSummaries'].map(
+        (name) =>
+          new Promise((resolve) => {
+            const read = db.transaction(name).objectStore(name).count();
+            read.onsuccess = () => resolve(read.result);
+          }),
+      ),
+    );
+    db.close();
+    return { failure, counts, live: await window.store.collections.get(live, 0) };
+  });
+  expect(result.failure).toContain('QuotaExceededError');
+  expect(result.counts).toEqual([1, 1, 1]);
+  expect(result.live.status).toBe('best_known');
+});

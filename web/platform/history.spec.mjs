@@ -355,6 +355,62 @@ test('unknown database versions and damaged metadata are rejected without resett
   expect(results.corruptError).toContain('Invalid browser history metadata');
 });
 
+for (const action of ['Delete', 'Delete all'])
+  test(`${action} removes a large imported collection before its first history checkpoint`, async ({ page }) => {
+    const payload = await page.evaluate(async () => {
+      const { historyEntry } = await import('/satisfactory-flow-synthetizer/src/test/fixtures.ts');
+      // Hold only the normal checkpoint timers; explicit deletion flushes must
+      // still run. This makes the pre-checkpoint race deterministic.
+      const schedule = window.setTimeout;
+      window.setTimeout = (callback, delay, ...args) =>
+        schedule(callback, [400, 5000].includes(delay) ? 120_000 : delay, ...args);
+      const entry = historyEntry({ title: 'Uncheckpointed import' });
+      entry.results = Array.from({ length: 65 }, () => structuredClone(entry.result));
+      return { kind: 'history-bundle', version: 2, entries: [entry] };
+    });
+    const counts = () =>
+      page.evaluate(async () => {
+        const db = await new Promise((resolve, reject) => {
+          const open = indexedDB.open('satisfactory-flow-synthetizer.history');
+          open.onsuccess = () => resolve(open.result);
+          open.onerror = () => reject(open.error);
+        });
+        const values = await Promise.all(
+          ['entries', 'collections', 'collectionSolutions', 'collectionSummaries'].map(
+            (name) =>
+              new Promise((resolve) => {
+                const read = db.transaction(name).objectStore(name).count();
+                read.onsuccess = () => resolve(read.result);
+              }),
+          ),
+        );
+        db.close();
+        return values;
+      });
+    const chooser = page.waitForEvent('filechooser');
+    await page.getByRole('button', { name: 'History actions', exact: true }).click();
+    await page.getByRole('menuitem', { name: /Import history/ }).click();
+    await (
+      await chooser
+    ).setFiles({ name: 'large.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(payload)) });
+    const card = page.locator('[data-history-band="history"]');
+    await expect(card).toContainText('Uncheckpointed import');
+    expect(await counts()).toEqual([0, 1, 65, 65]);
+    if (action === 'Delete') {
+      await card.getByRole('button', { name: 'More actions' }).click();
+      await page.getByRole('menuitem', { name: 'Delete', exact: true }).click();
+    } else {
+      await page.getByRole('button', { name: 'History actions', exact: true }).click();
+      await page.getByRole('menuitem', { name: /Delete all history/ }).click();
+      await page.getByRole('button', { name: 'Delete all', exact: true }).click();
+    }
+    await expect(card).toHaveCount(0);
+    await expect.poll(counts).toEqual([0, 0, 0, 0]);
+    await page.reload();
+    await expect(card).toHaveCount(0);
+    expect(await counts()).toEqual([0, 0, 0, 0]);
+  });
+
 test('the shared persister repairs a lost append acknowledgement without rewriting another entry', async ({ page }) => {
   await storageOnlyPage(page);
   const result = await page.evaluate(async () => {

@@ -31,6 +31,8 @@ export interface CollectionStore {
   flush(ref: CollectionRef): Promise<void>;
   /** Drop a failed-write overlay only after its owning history entry was deleted. */
   forget(id: string): void;
+  /** Discard an abandoned collection only if no saved history entry references it. */
+  discard(ref: CollectionRef): Promise<void>;
   page(ref: CollectionRef, offset: number, limit: number, columns: SortColumn[]): Promise<SolutionPage>;
   read(ref: CollectionRef, offset: number, limit: number): Promise<IndexedSolution[]>;
   get(ref: CollectionRef, index: number): Promise<Solution>;

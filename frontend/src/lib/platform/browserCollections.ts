@@ -167,6 +167,28 @@ export function createBrowserCollections(database: () => Promise<IDBDatabase>): 
     forget: (id) => {
       pending.delete(id);
     },
+    discard: (ref) =>
+      enqueue(async () => {
+        checkCollectionRef(ref);
+        if (ref.legacyEntryId) return;
+        const removed = await idbTransaction(
+          await database(),
+          ['entries', ...COLLECTION_STORES],
+          'readwrite',
+          async (tx) => {
+            // Check references in the same transaction as deletion, including
+            // entries committed by another tab. Never collect unrelated work.
+            const entries = await request(tx.objectStore('entries').getAll());
+            if (entries.some((entry) => entry.collection?.id === ref.id)) return false;
+            const range = IDBKeyRange.bound([ref.id], [ref.id, []]);
+            await request(tx.objectStore('collections').delete(ref.id));
+            await request(tx.objectStore('collectionSolutions').delete(range));
+            await request(tx.objectStore('collectionSummaries').delete(range));
+            return true;
+          },
+        );
+        if (removed) pending.delete(ref.id);
+      }),
     read,
     async get(ref, index) {
       const row = (await read(ref, index, 1))[0];

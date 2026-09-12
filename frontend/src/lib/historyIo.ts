@@ -1,6 +1,7 @@
 import { getPlatform } from './platform';
 import { exportBundlePayload, exportEntryPayload, persistableEntries, type HistoryEntry } from './historyModel';
 import { COLLECTION_PAGE_SIZE } from './platform/browserCollections';
+import type { CollectionRef } from '../types';
 
 export async function exportHistoryEntry(entry: HistoryEntry): Promise<void> {
   if (entry.collection) {
@@ -78,23 +79,35 @@ export async function pageImportedEntries(entries: HistoryEntry[], ids: string[]
   const store = getPlatform().collections;
   if (!store) return entries;
   const result: HistoryEntry[] = [];
-  for (const entry of entries) {
-    if (!ids.includes(entry.id) || entry.results.length <= COLLECTION_PAGE_SIZE) {
-      result.push(entry);
-      continue;
-    }
-    let ref = await store.create(crypto.randomUUID());
-    for (let offset = 0; offset < entry.results.length; offset += 16) {
-      ref = await store.append(
-        ref,
-        entry.results.slice(offset, offset + 16).map((solution, index) => ({ index: offset + index, solution })),
+  const staged: CollectionRef[] = [];
+  try {
+    for (const entry of entries) {
+      if (!ids.includes(entry.id) || entry.results.length <= COLLECTION_PAGE_SIZE) {
+        result.push(entry);
+        continue;
+      }
+      let ref = await store.create(crypto.randomUUID());
+      staged.push(ref);
+      for (let offset = 0; offset < entry.results.length; offset += 16) {
+        ref = await store.append(
+          ref,
+          entry.results.slice(offset, offset + 16).map((solution, index) => ({ index: offset + index, solution })),
+        );
+      }
+      const selected = entry.result ? JSON.stringify([entry.result.nodes, entry.result.edges]) : '';
+      const preferred = entry.results.findIndex(
+        (solution) => JSON.stringify([solution.nodes, solution.edges]) === selected,
       );
+      result.push({ ...entry, results: [], collection: { ...ref, preferredIndex: preferred < 0 ? null : preferred } });
     }
-    const selected = entry.result ? JSON.stringify([entry.result.nodes, entry.result.edges]) : '';
-    const preferred = entry.results.findIndex(
-      (solution) => JSON.stringify([solution.nodes, solution.edges]) === selected,
-    );
-    result.push({ ...entry, results: [], collection: { ...ref, preferredIndex: preferred < 0 ? null : preferred } });
+    return result;
+  } catch (error) {
+    // Nothing from this import has been attached to history yet. This also
+    // discards earlier entries when a later entry fails partway through.
+    const cleanup = await Promise.allSettled(staged.map((ref) => store.discard(ref)));
+    const failure = cleanup.find((result) => result.status === 'rejected');
+    if (failure?.status === 'rejected')
+      throw new Error(`${String(error)}; could not discard imported collection: ${String(failure.reason)}`);
+    throw error;
   }
-  return result;
 }

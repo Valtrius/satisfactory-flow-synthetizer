@@ -189,6 +189,9 @@
   });
 
   const queue = new HistoryQueue({
+    discardCollection: async (ref) => {
+      await platform.collections?.discard(ref);
+    },
     getEntries: () => historyEntries,
     setEntries: (entries) => {
       historyEntries = entries;
@@ -417,7 +420,8 @@
     patchEntry(id, { title });
   }
 
-  function deleteEntry(id: string): void {
+  async function deleteEntry(id: string): Promise<void> {
+    if (!historyReady || closing) return;
     const entry = historyEntries.find((item) => item.id === id);
     if (!entry) return;
     if (entry.status === 'running' || entry.status === 'cancelling') return;
@@ -430,6 +434,14 @@
         graph.clearView();
         sortColumns = [...DEFAULT_SORT_COLUMNS];
       }
+    }
+    try {
+      // Flush the removal before discarding storage, even if this entry never
+      // reached the debounced checkpoint and produces no history operations.
+      await persist.flushNow(historyEntries, selectedEntryId);
+      if (entry.collection) await platform.collections?.discard(entry.collection);
+    } catch (error) {
+      errorMessage = `Could not delete history entry: ${error instanceof Error ? error.message : String(error)}`;
     }
   }
 
@@ -445,12 +457,14 @@
       }
     }
     queue.reset();
+    const removed = historyEntries;
     historyEntries = [];
     selectedEntryId = null;
     graph.clearView();
     sortColumns = [...DEFAULT_SORT_COLUMNS];
     try {
       await persist.flushNow([], null);
+      for (const entry of removed) if (entry.collection) await platform.collections?.discard(entry.collection);
     } catch (error) {
       errorMessage = `Could not clear history: ${error instanceof Error ? error.message : String(error)}`;
     }
