@@ -195,6 +195,7 @@ export class HistoryQueue {
       sequence: snapshot.sequence,
       result,
       results,
+      collection: snapshot.collection,
       enumerationComplete: snapshot.enumerationComplete,
       error: snapshot.error,
       startedAtMs: snapshot.startedAtMs,

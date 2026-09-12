@@ -19,7 +19,7 @@ use solver_api::{
     LinkConstraint, OptimalSolution, Problem, ProofSummary, RunOptions, SolveMode, SolveOutcome,
     SolvePhase, SolveResult, SolverError, SolverEvent, SolverProgress,
 };
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct LeafId {
@@ -75,6 +75,7 @@ pub struct ExactPlanner {
     proof: ProofSummary,
     best: Option<BestKnownSolution>,
     layouts: BTreeMap<CanonicalGraphKey, BestKnownSolution>,
+    streamed_keys: Option<BTreeSet<CanonicalGraphKey>>,
     node: u32,
     groups: VecDeque<AccountedProfileGroup>,
     loaded_node: bool,
@@ -124,6 +125,7 @@ impl ExactPlanner {
             counts,
             best: None,
             layouts: BTreeMap::new(),
+            streamed_keys: None,
             node: 0,
             groups: VecDeque::new(),
             loaded_node: false,
@@ -151,6 +153,27 @@ impl ExactPlanner {
             }
         }
         Ok(planner)
+    }
+
+    /// Keep deduplication keys but hand graph storage to the host. This planner
+    /// exposes a sealed result, not an in-memory complete collection.
+    /// # Errors
+    /// Returns the same preparation errors as `new`.
+    pub fn streaming(
+        problem: &Problem,
+        options: RunOptions,
+        counts: Counts,
+    ) -> Result<Self, SolverError> {
+        let mut planner = Self::new(problem, options, counts)?;
+        planner.streamed_keys = Some(BTreeSet::new());
+        Ok(planner)
+    }
+
+    #[must_use]
+    pub fn layout_count(&self) -> usize {
+        self.streamed_keys
+            .as_ref()
+            .map_or(self.layouts.len(), BTreeSet::len)
     }
 
     #[must_use]
@@ -234,9 +257,17 @@ impl ExactPlanner {
                 }
                 if self.options.mode != SolveMode::OneMinNL
                     && !self.layouts.contains_key(&solution.canonical_graph_key)
+                    && !self
+                        .streamed_keys
+                        .as_ref()
+                        .is_some_and(|keys| keys.contains(&solution.canonical_graph_key))
                 {
-                    self.layouts
-                        .insert(solution.canonical_graph_key.clone(), solution.clone());
+                    if let Some(keys) = &mut self.streamed_keys {
+                        keys.insert(solution.canonical_graph_key.clone());
+                    } else {
+                        self.layouts
+                            .insert(solution.canonical_graph_key.clone(), solution.clone());
+                    }
                     self.pending
                         .events
                         .push(SolverEvent::SolutionFound(solution));
@@ -451,6 +482,9 @@ impl ExactPlanner {
     /// terminal presentation seal, as the native facade does.
     #[must_use]
     pub fn outcome(&self) -> Option<SolveOutcome> {
+        if self.streamed_keys.is_some() {
+            return None;
+        }
         let mut outcome = SolveOutcome::new(
             self.sealed.clone()?,
             self.options.mode,
@@ -463,6 +497,17 @@ impl ExactPlanner {
             .solutions
             .sort_by(|left, right| left.canonical_graph_key.cmp(&right.canonical_graph_key));
         Some(outcome)
+    }
+
+    /// Return the sealed mathematical result with caller-scale identity, without
+    /// claiming to contain the externally stored enumeration collection.
+    #[must_use]
+    pub fn public_result(&self) -> Option<SolveResult> {
+        let mut single = SolveOutcome::new(self.sealed.clone()?, SolveMode::OneMinNL, Vec::new());
+        if let Some(context) = &self.context {
+            solver_validation::normalize_outcome_identity(&context.original, &mut single);
+        }
+        Some(single.result)
     }
 
     #[must_use]
@@ -531,7 +576,7 @@ impl ExactPlanner {
             node_lower_bound: nodes,
             best_node_count: self.best.as_ref().map(|b| b.node_count),
             best_link_count: self.best.as_ref().map(|b| b.link_count),
-            solutions_found: self.layouts.len() as u64,
+            solutions_found: self.layout_count() as u64,
             custom,
         })
     }

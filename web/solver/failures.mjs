@@ -57,12 +57,22 @@ export function createSessionApi(module) {
 export async function observeWorkers(page) {
   await page.addInitScript(() => {
     const OriginalWorker = window.Worker;
-    window.computeTest = { starts: 0, terminated: 0, checking: false, returned: false, ticks: 0 };
+    window.computeTest = {
+      starts: 0,
+      terminated: 0,
+      live: 0,
+      peak: 0,
+      coordinators: 0,
+      checking: false,
+      returned: false,
+      ticks: 0,
+    };
     setInterval(() => {
       if (window.computeTest.checking) window.computeTest.ticks++;
     }, 20);
     window.Worker = class extends OriginalWorker {
       compute = false;
+      coordinator = false;
       constructor(...args) {
         super(...args);
         this.addEventListener('message', ({ data }) => {
@@ -71,9 +81,15 @@ export async function observeWorkers(page) {
         });
       }
       postMessage(...args) {
-        if (args[0]?.kind === 'start' && args[0]?.solverBase) {
+        if (args[0]?.kind === 'start' && args[0]?.solverBase && !this.coordinator) {
+          this.coordinator = true;
+          window.computeTest.coordinators++;
+        }
+        if (args[0]?.kind === 'leaf' && args[0]?.solverBase && !this.compute) {
           this.compute = true;
           window.computeTest.starts++;
+          window.computeTest.live++;
+          window.computeTest.peak = Math.max(window.computeTest.peak, window.computeTest.live);
         }
         return super.postMessage(...args);
       }
@@ -81,6 +97,11 @@ export async function observeWorkers(page) {
         if (this.compute) {
           this.compute = false;
           window.computeTest.terminated++;
+          window.computeTest.live--;
+        }
+        if (this.coordinator) {
+          this.coordinator = false;
+          window.computeTest.coordinators--;
         }
         return super.terminate();
       }

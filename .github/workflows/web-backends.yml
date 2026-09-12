@@ -120,9 +120,9 @@ jobs:
         run: npm run check && npm test -w frontend -- --maxWorkers=2 && npm run build -w frontend
       - name: Browser asset build contracts
         run: python -m unittest discover -s scripts -p 'test_web_*.py'
-      - name: Production browser jobs, cancellation and history
+      - name: Parallel browser jobs, proof ownership, cancellation and paged UI
         run: npm run test:web:solver
-      - name: Browser platform and history tests
+      - name: Browser history, collection storage and migration tests
         run: npm run test:web:platform
       - name: Selected-solution sharing tests
         run: npm run test:web:shares

@@ -23,7 +23,11 @@
     showDetails: boolean;
     telemetryExpanded: boolean;
     onToggleTelemetry: () => void;
-    solutions: Solution[];
+    solutions: Pick<Solution, 'stats'>[];
+    pageOffset?: number;
+    pageSize?: number;
+    onPage?: (offset: number) => void;
+    pageLoading?: boolean;
     selectedIndex: number;
     sortColumns: SortColumn[];
     nodes: Writable<Node[]>;
@@ -60,6 +64,10 @@
     telemetryExpanded,
     onToggleTelemetry,
     solutions,
+    pageOffset = 0,
+    pageSize = 64,
+    onPage,
+    pageLoading = false,
     selectedIndex,
     sortColumns,
     nodes,
@@ -108,7 +116,18 @@
       class="grid min-h-0 flex-1 grid-cols-1 items-stretch max-xl:grid-rows-[minmax(16rem,50vh)_minmax(16rem,50vh)] xl:grid-cols-[minmax(280px,360px)_minmax(0,1fr)] xl:grid-rows-[minmax(0,1fr)]"
     >
       <div class="border-line h-full min-h-0 overflow-hidden border-b xl:border-r xl:border-b-0">
-        <SolutionsTable {solutions} {selectedIndex} columns={sortColumns} {onSelect} {onColumnsChange} />
+        <SolutionsTable
+          {solutions}
+          {selectedIndex}
+          columns={sortColumns}
+          {onSelect}
+          {onColumnsChange}
+          {pageOffset}
+          {pageSize}
+          {onPage}
+          totalCount={foundCount}
+          loading={pageLoading}
+        />
       </div>
       <TopologyGraphPanel
         {nodes}

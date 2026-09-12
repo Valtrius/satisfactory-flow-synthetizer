@@ -8,6 +8,7 @@ use std::{collections::BTreeMap, io::Read};
 fn physical(request: &Value, display: &Value) -> (CanonicalGraphKey, Value) {
     let mut request = request.clone();
     request.as_object_mut().unwrap().remove("solveMode");
+    request.as_object_mut().unwrap().remove("browserWorkers");
     let prepared: ProblemRequest = serde_json::from_value(request.clone()).unwrap();
     let prepared = prepared.prepare().unwrap();
     for side in ["inputs", "outputs"] {
@@ -51,13 +52,40 @@ fn physical(request: &Value, display: &Value) -> (CanonicalGraphKey, Value) {
     )
 }
 
+fn verify_paged_sources(case: &Value, source_keys: &[CanonicalGraphKey]) {
+    let snapshot = &case["snapshot"];
+    if let Some(count) = snapshot["collection"]["count"].as_u64() {
+        assert!(
+            snapshot["results"].as_array().unwrap().is_empty(),
+            "paged job duplicated its graph collection"
+        );
+        assert_eq!(usize::try_from(count).unwrap(), source_keys.len());
+    }
+    if let Some(published) = case["published"].as_array() {
+        for (index, row) in published.iter().enumerate() {
+            assert_eq!(row["index"], index);
+            assert_eq!(
+                physical(&case["request"], &row["solution"]).0,
+                source_keys[index],
+                "paged source identity changed after publication"
+            );
+            assert_eq!(row["solution"]["status"], "best_known");
+            assert!(row["solution"]["proof"].is_null());
+        }
+        assert_eq!(published.len(), source_keys.len());
+    }
+}
+
 fn verify_case(case: &Value) -> Value {
     let request = &case["request"];
     let snapshot = &case["snapshot"];
     let result = (!snapshot["result"].is_null()).then(|| physical(request, &snapshot["result"]));
     let mut collection = BTreeMap::new();
     let mut source_keys = Vec::new();
-    for display in snapshot["results"].as_array().unwrap() {
+    let displays = case["solutions"]
+        .as_array()
+        .unwrap_or_else(|| snapshot["results"].as_array().unwrap());
+    for display in displays {
         let (key, graph) = physical(request, display);
         source_keys.push(key.clone());
         assert!(
@@ -65,6 +93,7 @@ fn verify_case(case: &Value) -> Value {
             "duplicate browser layout"
         );
     }
+    verify_paged_sources(case, &source_keys);
     if let Some(live) = case["live"].as_array() {
         let mut appended = 0;
         for packet in live {
@@ -74,6 +103,13 @@ fn verify_case(case: &Value) -> Value {
             assert_eq!(packet["result"]["status"], "best_known");
             assert!(packet["result"]["proof"].is_null());
             let (key, _) = physical(request, &packet["result"]);
+            if let Some(index) = packet["collection"]["preferredIndex"].as_u64() {
+                assert_eq!(
+                    key,
+                    source_keys[usize::try_from(index).unwrap()],
+                    "paged preferred source index changed"
+                );
+            }
             if packet["resultAppended"] == true {
                 assert_eq!(
                     source_keys[appended], key,

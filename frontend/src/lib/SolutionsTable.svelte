@@ -8,14 +8,30 @@
   import { SORT_LABELS, type SortColumn, type SortKey, flipColumnDir, reorderColumns } from './solutionSort';
 
   type Props = {
-    solutions: Solution[];
+    solutions: Pick<Solution, 'stats'>[];
     selectedIndex: number;
     columns: SortColumn[];
     onSelect: (index: number) => void;
     onColumnsChange: (columns: SortColumn[]) => void;
+    pageOffset?: number;
+    totalCount?: number;
+    pageSize?: number;
+    onPage?: (offset: number) => void;
+    loading?: boolean;
   };
 
-  let { solutions, selectedIndex, columns, onSelect, onColumnsChange }: Props = $props();
+  let {
+    solutions,
+    selectedIndex,
+    columns,
+    onSelect,
+    onColumnsChange,
+    pageOffset = 0,
+    totalCount = 0,
+    pageSize = 64,
+    onPage,
+    loading = false,
+  }: Props = $props();
 
   let dragFrom = $state<number | null>(null);
   let dragInsertAt = $state<number | null>(null);
@@ -101,12 +117,13 @@
     onColumnsChange(reorderColumns(columns, from, to));
   }
 
-  function cellValue(solution: Solution, key: SortKey): string {
+  function cellValue(solution: Pick<Solution, 'stats'>, key: SortKey): string {
     if (key === 'belts') return String(solution.stats.linkCount ?? solution.stats.beltCount ?? '—');
     if (key === 'peak') return solution.stats.internalMaxThroughput?.exact ?? '—';
     return String(solution.stats.feedbackLoops);
   }
   function navigateLayouts(event: KeyboardEvent, index: number): void {
+    if (loading) return;
     const keys: Record<string, number> = {
       ArrowDown: Math.min(solutions.length - 1, index + 1),
       ArrowUp: Math.max(0, index - 1),
@@ -126,7 +143,7 @@
 
 <div class="flex h-full min-h-0 flex-col overflow-hidden bg-[#0d1922]">
   <div class="min-h-0 flex-1 overflow-auto">
-    <table class="w-full border-collapse text-sm">
+    <table class="w-full border-collapse text-sm" aria-busy={loading}>
       <caption class="sr-only">
         Select layouts with their buttons or Up/Down, Home and End. Drag column handles to set sort priority; click
         labels to flip direction.
@@ -194,7 +211,9 @@
             class={`cursor-pointer border-b border-[#1a2c36] tabular-nums hover:bg-[#122430] ${
               rowIndex === selectedIndex ? 'bg-selected shadow-[inset_3px_0_0_var(--color-accent)]' : ''
             }`}
-            onclick={() => onSelect(rowIndex)}
+            onclick={() => {
+              if (!loading) onSelect(rowIndex);
+            }}
           >
             {#each visualColumns as item, columnIndex (item.kind === 'ghost' ? `ghost-${rowIndex}` : `${item.item.key}-${rowIndex}`)}
               <td
@@ -210,9 +229,10 @@
                       variant="plain"
                       class="w-full text-left tabular-nums"
                       data-layout-select={rowIndex}
-                      aria-label={`Select layout ${rowIndex + 1}`}
+                      disabled={loading}
+                      aria-label={`Select layout ${pageOffset + rowIndex + 1}`}
                       aria-pressed={rowIndex === selectedIndex}
-                      tabindex={rowIndex === selectedIndex ? 0 : -1}
+                      tabindex={rowIndex === (selectedIndex < 0 ? 0 : selectedIndex) ? 0 : -1}
                       onclick={(event) => {
                         event.stopPropagation();
                         onSelect(rowIndex);
@@ -232,6 +252,33 @@
       </tbody>
     </table>
   </div>
+  {#if onPage}
+    <nav
+      aria-label="Solution pages"
+      class="border-line flex shrink-0 flex-wrap items-center justify-between gap-2 border-t px-3 py-2 text-xs"
+      aria-busy={loading}
+    >
+      <Button
+        size="small"
+        disabled={pageOffset === 0 || loading}
+        onclick={() => onPage?.(Math.max(0, pageOffset - pageSize))}
+      >
+        Previous page
+      </Button>
+      <span role="status">
+        {loading
+          ? 'Loading...'
+          : `${totalCount ? pageOffset + 1 : 0}-${Math.min(totalCount, pageOffset + solutions.length)} of ${totalCount}`}
+      </span>
+      <Button
+        size="small"
+        disabled={pageOffset + pageSize >= totalCount || loading}
+        onclick={() => onPage?.(pageOffset + pageSize)}
+      >
+        Next page
+      </Button>
+    </nav>
+  {/if}
 </div>
 
 {#if dragActive && dragColumn}

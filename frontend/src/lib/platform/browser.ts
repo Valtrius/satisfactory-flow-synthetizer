@@ -4,6 +4,23 @@ import type { CloseFlushOptions, FileActions, PlatformServices } from './contrac
 import { createBrowserJobs } from './browserJobs';
 
 export const browserFiles: FileActions = {
+  async saveChunks({ fileName, format }, chunks) {
+    const parts: BlobPart[] = [];
+    for await (const chunk of chunks) parts.push(chunk);
+    const url = URL.createObjectURL(
+      new Blob(parts, { type: format === 'json' ? 'application/json;charset=utf-8' : 'image/svg+xml;charset=utf-8' }),
+    );
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = fileName;
+    document.body.append(link);
+    try {
+      link.click();
+    } finally {
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 0);
+    }
+  },
   async saveText({ contents, fileName, format }) {
     const mime = format === 'json' ? 'application/json' : 'image/svg+xml';
     const url = URL.createObjectURL(new Blob([contents], { type: `${mime};charset=utf-8` }));
@@ -83,10 +100,12 @@ export async function installBrowserCloseFlush(options: CloseFlushOptions): Prom
 }
 
 export function createBrowserPlatform(): PlatformServices {
+  const history = createBrowserHistoryStore();
   return {
     capabilities: { runtime: 'browser', solve: 'ready', persistentStorage: 'best-effort' },
-    jobs: createBrowserJobs(),
-    history: createBrowserHistoryStore(),
+    jobs: createBrowserJobs({ collections: history.collections }),
+    history,
+    collections: history.collections,
     files: browserFiles,
     shareViewerUrl: publicViewerUrl('browser'),
     lifecycle: { installCloseFlush: installBrowserCloseFlush },

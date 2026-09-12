@@ -38,6 +38,7 @@ export type GraphSessionHost = {
   setSortColumns: (columns: HistoryEntry['sortColumns']) => void;
   patchEntry: (id: string, patch: Partial<HistoryEntry>) => void;
   setError: (message: string) => void;
+  loadSolution?: (entry: HistoryEntry, sourceIndex: number) => Promise<Solution>;
   /** Called when undo/redo availability or fit/fullscreen chrome changes. */
   onChromeChange?: (chrome: { fitRevision: number; fullscreen: boolean; canUndo: boolean; canRedo: boolean }) => void;
 };
@@ -79,6 +80,8 @@ export function createGraphSession(host: GraphSessionHost): GraphSession {
   let layoutKey = '';
   let committedSourceIndex: number | null = null;
   let committedEntryId: string | null = null;
+  let pendingPagedKey = '';
+  let pagedRead = 0;
 
   function beginLayout() {
     const ticket = ++layoutTicket;
@@ -459,6 +462,30 @@ export function createGraphSession(host: GraphSessionHost): GraphSession {
   }
 
   async function selectSolution(sourceIndex: number): Promise<void> {
+    const entry = host.getSelectedEntry();
+    if (entry?.collection && host.loadSolution) {
+      if (sourceIndex < 0 || sourceIndex >= entry.collection.count) return;
+      snapshotCurrentLayout(host.getSelectedSourceIndex());
+      host.setSelectedSourceIndex(sourceIndex);
+      host.patchEntry(entry.id, { selectedSourceIndex: sourceIndex });
+      const operation = beginLayout();
+      const pendingKey = `${entry.id}:${sourceIndex}`;
+      const readId = ++pagedRead;
+      pendingPagedKey = pendingKey;
+      try {
+        const next = await host.loadSolution(entry, sourceIndex);
+        if (!operation.current()) return;
+        const cached = layoutsForSelected()[String(sourceIndex)];
+        if (cached && cached.layoutKey === solutionLayoutKey(next) && cached.nodes.length)
+          await restoreLayout(next, sourceIndex, cached);
+        else await applySolution(next);
+      } catch (error) {
+        if (operation.current()) host.setError(`Could not read selected solution: ${String(error)}`);
+      } finally {
+        if (pagedRead === readId) pendingPagedKey = '';
+      }
+      return;
+    }
     const solutions = host.getSolutions();
     const next = solutions[sourceIndex];
     if (!next) return;
@@ -484,6 +511,8 @@ export function createGraphSession(host: GraphSessionHost): GraphSession {
   }
 
   function clearView(): void {
+    pendingPagedKey = '';
+    pagedRead++;
     layoutTicket += 1;
     layoutKey = '';
     committedSourceIndex = null;
@@ -501,8 +530,16 @@ export function createGraphSession(host: GraphSessionHost): GraphSession {
     host.setSortColumns(
       entry.sortColumns.length > 0 ? entry.sortColumns.map((column) => ({ ...column })) : [...DEFAULT_SORT_COLUMNS],
     );
-    const sourceIndex = Math.max(0, Math.min(entry.selectedSourceIndex, entry.results.length - 1));
+    const sourceIndex = Math.max(
+      0,
+      Math.min(entry.selectedSourceIndex, (entry.collection?.count ?? entry.results.length) - 1),
+    );
     host.setSelectedSourceIndex(sourceIndex);
+    if (entry.collection) {
+      host.setSolutions([]);
+      if (entry.collection.count) await selectSolution(sourceIndex);
+      return;
+    }
     const enumerate = enumeratesLayouts(entry.request.solveMode);
     if (enumerate) {
       host.setSolutions(entry.results);
@@ -544,6 +581,17 @@ export function createGraphSession(host: GraphSessionHost): GraphSession {
   }
 
   function syncLiveResults(entry: HistoryEntry): void {
+    if (entry.collection) {
+      host.setSolutions([]);
+      const index = host.getSelectedSourceIndex();
+      if (entry.collection.count && (!host.getSolution() || index >= entry.collection.count)) {
+        const next = Math.min(index, entry.collection.count - 1);
+        if (pendingPagedKey !== `${entry.id}:${next}`) void selectSolution(next);
+      } else if (entry.collection.preferredIndex === index && entry.result && host.getSolution()) {
+        void applySolution(entry.result);
+      }
+      return;
+    }
     if (enumeratesLayouts(entry.request.solveMode)) {
       const prior = host.getSolutions();
       const had = prior.length > 0;

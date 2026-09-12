@@ -4,6 +4,11 @@ import { runJob, storedEntries, verifyJobs } from './helpers.mjs';
 
 const direct = { inputs: [], outputs: [{ id: 'o', name: '', rate: '1/3' }], beltRate: '1', solveMode: 'all_min_nl' };
 
+test.beforeEach(async ({ page }) => {
+  // These tests isolate one blocked worker. Parallel cancellation is covered separately.
+  await page.addInitScript(() => localStorage.setItem('sfs.browser-workers.v2', '1'));
+});
+
 test('the actual cancel button retires a worker blocked inside cvc5 without losing its saved witness', async ({
   page,
 }) => {
@@ -27,7 +32,8 @@ test('the actual cancel button retires a worker blocked inside cvc5 without losi
     {
       name: 'blocked cancellation',
       request: saved.entries[0].request,
-      snapshot: { ...saved.entries[0], results: saved.solutions.map((row) => row.value) },
+      snapshot: { ...saved.entries[0], results: [] },
+      solutions: saved.solutions.map((row) => row.value),
     },
   ]);
   await removeFault();
@@ -70,7 +76,8 @@ test('reloading a running browser job restores the saved incomplete witness with
   });
   expect(restored.jobId).toBeNull();
   expect(restored.error).toContain('Interrupted before completion');
-  expect(restored.results).toHaveLength(1);
+  expect(restored.results).toHaveLength(0);
+  expect(restored.collection.count).toBe(1);
   expect(restored.result.status).toBe('best_known');
   expect(restored.enumerationComplete).toBe(false);
   expect(await page.evaluate(() => window.computeTest.starts)).toBe(0);
@@ -86,7 +93,8 @@ for (const fault of ['unknown', 'trap', 'dispose']) {
     const stopped = await runJob(page, direct);
     expect(stopped.snapshot.status).toBe('failed');
     expect(stopped.snapshot.result.status).toBe('best_known');
-    expect(stopped.snapshot.results).toHaveLength(1);
+    expect(stopped.solutions).toHaveLength(1);
+    expect(stopped.snapshot.results).toHaveLength(0);
     expect(stopped.snapshot.enumerationComplete).toBe(false);
     expect(stopped.snapshot.proof.minimumLinkCount).toBeNull();
     expect(stopped.snapshot.error).toContain(fault === 'dispose' ? 'disposal' : fault);
@@ -96,7 +104,7 @@ for (const fault of ['unknown', 'trap', 'dispose']) {
   });
 }
 
-test('HistoryQueue reconciles a missed append from the retained full browser snapshot', async ({ page }) => {
+test('HistoryQueue recovers a missed collection update from the next immutable prefix', async ({ page }) => {
   await page.goto('./');
   await page.evaluate(async () => {
     const { getPlatform } = await import('/satisfactory-flow-synthetizer/src/lib/platform/index.ts');
@@ -113,7 +121,7 @@ test('HistoryQueue reconciles a missed append from the retained full browser sna
       watch(
         id,
         (snapshot) => {
-          if (!window.missedAppend && snapshot.resultAppended) {
+          if (!window.missedAppend && snapshot.status === 'running' && snapshot.collection?.count) {
             window.missedAppend = true;
             return;
           }
@@ -131,7 +139,9 @@ test('HistoryQueue reconciles a missed append from the retained full browser sna
   await page.getByRole('button', { name: /^Find/ }).click();
   await expect(page.locator('[data-history-band="history"]')).toContainText('Completed', { timeout: 60_000 });
   expect(await page.evaluate(() => window.missedAppend)).toBe(true);
-  expect(await page.evaluate(() => window.fullFetches)).toBeGreaterThan(0);
+  // Every subsequent scalar snapshot carries the complete immutable prefix
+  // reference, so no full-graph get is needed to repair a missed notification.
+  expect(await page.evaluate(() => window.fullFetches)).toBe(0);
   await expect.poll(async () => (await storedEntries(page)).entries[0]?.status).toBe('completed');
   const saved = await storedEntries(page);
   expect(saved.solutions.length).toBeGreaterThan(1);

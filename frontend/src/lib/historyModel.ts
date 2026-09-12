@@ -7,6 +7,7 @@ import type {
   OptimalityProof,
   JobSnapshot,
   SolveMode,
+  CollectionRef,
 } from '../types';
 import { enumeratesLayouts, parseSolveMode, SOLVE_MODE_LABELS } from '../types';
 import { DEFAULT_SORT_COLUMNS, type SortColumn } from './solutionSort';
@@ -49,6 +50,7 @@ export interface HistoryEntry {
   sequence?: number;
   result: Solution | null;
   results: Solution[];
+  collection?: CollectionRef;
   enumerationComplete: boolean;
   error: string | null;
   selectedSourceIndex: number;
@@ -74,6 +76,7 @@ export function entryToJobSnapshot(entry: HistoryEntry): JobSnapshot {
     sequence: entry.sequence,
     result: entry.result,
     results: entry.results,
+    collection: entry.collection,
     enumerationComplete: entry.enumerationComplete,
     error: entry.error,
   };
@@ -221,6 +224,7 @@ export function defaultTitle(request: SolveRequest): string {
 }
 
 export function entryLayoutCount(entry: HistoryEntry): number {
+  if (entry.collection) return entry.collection.count;
   if (entry.results.length > 0) return entry.results.length;
   return entry.result ? 1 : 0;
 }
@@ -475,6 +479,7 @@ function normalizeEntry(entry: HistoryEntry): HistoryEntry {
     sequence: entry.sequence,
     result: entry.result ? stripSolverType(entry.result) : null,
     results: Array.isArray(entry.results) ? entry.results.map(stripSolverType) : [],
+    collection: entry.collection ? { ...entry.collection } : undefined,
     enumerationComplete: Boolean(entry.enumerationComplete),
     error: entry.error ?? null,
     selectedSourceIndex: entry.selectedSourceIndex ?? 0,
@@ -494,6 +499,7 @@ export type HistoryExportPayload =
   | { kind: 'history-bundle'; version: number; entries: HistoryEntry[] };
 
 export function exportEntryPayload(entry: HistoryEntry): HistoryExportPayload {
+  if (entry.collection) throw new Error('Paged history must be exported through the collection reader.');
   const cleaned = persistableEntries([entry])[0];
   return {
     kind: 'history-entry',
@@ -503,6 +509,8 @@ export function exportEntryPayload(entry: HistoryEntry): HistoryExportPayload {
 }
 
 export function exportBundlePayload(entries: HistoryEntry[]): HistoryExportPayload {
+  if (entries.some((entry) => entry.collection))
+    throw new Error('Paged history must be exported through the collection reader.');
   return {
     kind: 'history-bundle',
     version: HISTORY_DOCUMENT_VERSION,
@@ -539,6 +547,8 @@ function extractImportEntries(payload: unknown): HistoryEntry[] {
 }
 
 function remapEntry(entry: HistoryEntry): HistoryEntry {
+  if (entry.collection)
+    throw new Error('Local collection references cannot be imported. Export the full history JSON first.');
   const now = Date.now();
   return {
     ...normalizeEntry(entry),

@@ -23,7 +23,7 @@ test.beforeEach(async ({ page }) => {
     };
   });
   await page.goto('./');
-  await expect(page.getByText('Solving runs locally in one browser worker.', { exact: false })).toBeVisible();
+  await expect(page.getByLabel('Browser compute workers')).toBeVisible();
 });
 
 test.afterEach(async ({ page }) => {
@@ -245,6 +245,7 @@ test('the Svelte UI imports, renames and reloads browser-local history without T
   await page.getByRole('textbox', { name: 'Rename history entry' }).press('Enter');
   const node = page.locator('.svelte-flow__node[data-id="s"]');
   await expect(node).toBeVisible();
+  await node.scrollIntoViewIfNeeded();
   const originalPosition = await node.evaluate((element) => element.style.transform);
   const box = await node.boundingBox();
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);

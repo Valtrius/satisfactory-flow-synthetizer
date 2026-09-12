@@ -16,7 +16,8 @@ export interface SolveRequest {
   outputs: EndpointInput[];
   beltRate: string;
   solveMode: SolveMode;
-  /** Defaults to `custom` when omitted. */
+  /** Browser host budget only. Native solving and public selected-solution shares ignore it. */
+  browserWorkers?: number;
 }
 
 export function enumeratesLayouts(mode: SolveMode): boolean {
@@ -98,6 +99,19 @@ export interface Solution {
   buildSteps: string[];
 }
 
+/** Origin-local reference to an immutable solution prefix. Never exported as a share. */
+export interface CollectionRef {
+  version: 1;
+  id: string;
+  count: number;
+  preferredIndex: number | null;
+  pending?: boolean;
+  /** Large schema-1 histories are read lazily without rewriting their graphs. */
+  legacyEntryId?: string;
+}
+export type SolutionRow = { sourceIndex: number; solution: Pick<Solution, 'stats'> };
+export type SolutionPage = { offset: number; total: number; rows: SolutionRow[] };
+
 export type SolvePhase = 'computing_lower_bound' | 'searching' | 'enumerating';
 
 export type DiagnosticValue =
@@ -143,6 +157,7 @@ export interface JobSnapshot {
   sequence?: number;
   result: Solution | null;
   results: Solution[];
+  collection?: CollectionRef;
   enumerationComplete: boolean;
   /** Progress-only emit: result/results empty on purpose; keep local copies. */
   resultsOmitted?: boolean;

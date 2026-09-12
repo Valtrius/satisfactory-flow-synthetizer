@@ -5,24 +5,26 @@ import {
   type HistoryEntry,
 } from '../historyModel';
 import type { HistoryOp } from '../historyOps';
-import type { Solution } from '../../types';
-import type { HistoryStore } from './contracts';
+import type { CollectionRef, Solution } from '../../types';
+import type { CollectionStore, HistoryStore } from './contracts';
+import {
+  COLLECTION_STORES,
+  COLLECTION_PAGE_SIZE,
+  checkCollectionRef,
+  createBrowserCollections,
+  type CollectionMetadata,
+} from './browserCollections';
+import { idbRequest as request, idbTransaction } from './idb';
 
 export const HISTORY_DATABASE = 'satisfactory-flow-synthetizer.history';
-const SCHEMA_VERSION = 1;
-const STORES = ['meta', 'entries', 'solutions', 'layouts'];
+const SCHEMA_VERSION = 2;
+const LEGACY_STORES = ['meta', 'entries', 'solutions', 'layouts'];
+const STORES = [...LEGACY_STORES, ...COLLECTION_STORES];
 
 type Metadata = { schema: number; revision: number; order: string[]; selectedEntryId: string | null };
 type EntryRecord = Omit<HistoryEntry, 'results' | 'layouts'>;
 type SolutionRecord = { entryId: string; index: number; value: Solution };
 type LayoutRecord = { entryId: string; key: string; value: CachedGraphLayout };
-
-function request<T>(operation: IDBRequest<T>): Promise<T> {
-  return new Promise((resolve, reject) => {
-    operation.onsuccess = () => resolve(operation.result);
-    operation.onerror = () => reject(operation.error ?? new Error('IndexedDB request failed.'));
-  });
-}
 
 /** The body may await IndexedDB requests only, never a timer, network call or UI event. */
 function transaction<T>(
@@ -30,26 +32,7 @@ function transaction<T>(
   mode: IDBTransactionMode,
   body: (tx: IDBTransaction) => Promise<T>,
 ): Promise<T> {
-  return new Promise((resolve, reject) => {
-    const tx = database.transaction(STORES, mode);
-    let value: T;
-    let failure: unknown;
-    tx.oncomplete = () => resolve(value);
-    tx.onabort = () => reject(failure ?? tx.error ?? new Error('History transaction aborted.'));
-    void body(tx).then(
-      (result) => {
-        value = result;
-      },
-      (error) => {
-        failure = error;
-        try {
-          tx.abort();
-        } catch {
-          reject(error);
-        }
-      },
-    );
-  });
+  return idbTransaction(database, STORES, mode, body);
 }
 
 function openDatabase(name: string): Promise<IDBDatabase> {
@@ -65,19 +48,42 @@ function openDatabase(name: string): Promise<IDBDatabase> {
       reject(new Error('History storage is blocked by another tab. Close that tab, then reload.'));
     };
     operation.onupgradeneeded = (event) => {
-      if (abandoned || event.oldVersion !== 0) {
+      if (abandoned || ![0, 1].includes(event.oldVersion)) {
         operation.transaction?.abort();
         return;
       }
       const db = operation.result;
-      const meta = db.createObjectStore('meta');
-      db.createObjectStore('entries', { keyPath: 'id' });
-      db.createObjectStore('solutions', { keyPath: ['entryId', 'index'] });
-      db.createObjectStore('layouts', { keyPath: ['entryId', 'key'] });
-      meta.put(
-        { schema: SCHEMA_VERSION, revision: 0, order: [], selectedEntryId: null } satisfies Metadata,
-        'document',
-      );
+      if (event.oldVersion === 0) {
+        const meta = db.createObjectStore('meta');
+        db.createObjectStore('entries', { keyPath: 'id' });
+        db.createObjectStore('solutions', { keyPath: ['entryId', 'index'] });
+        db.createObjectStore('layouts', { keyPath: ['entryId', 'key'] });
+        meta.put(
+          { schema: SCHEMA_VERSION, revision: 0, order: [], selectedEntryId: null } satisfies Metadata,
+          'document',
+        );
+      } else {
+        if (
+          db.objectStoreNames.length !== LEGACY_STORES.length ||
+          LEGACY_STORES.some((name) => !db.objectStoreNames.contains(name))
+        ) {
+          operation.transaction?.abort();
+          return;
+        }
+        const meta = operation.transaction!.objectStore('meta');
+        const read = meta.get('document');
+        read.onsuccess = () => {
+          const value = read.result as Metadata | undefined;
+          if (!value || value.schema !== 1 || !Number.isSafeInteger(value.revision) || !Array.isArray(value.order)) {
+            operation.transaction?.abort();
+            return;
+          }
+          meta.put({ ...value, schema: SCHEMA_VERSION }, 'document');
+        };
+      }
+      db.createObjectStore('collections', { keyPath: 'id' });
+      db.createObjectStore('collectionSolutions', { keyPath: ['collectionId', 'index'] });
+      db.createObjectStore('collectionSummaries', { keyPath: ['collectionId', 'index'] });
     };
     operation.onerror = () => reject(operation.error ?? new Error('Could not open browser history.'));
     operation.onsuccess = () => {
@@ -136,7 +142,26 @@ async function replaceLayouts(
   }
 }
 
-async function applyOperation(tx: IDBTransaction, meta: Metadata, op: HistoryOp): Promise<void> {
+async function checkStoredCollection(tx: IDBTransaction, ref: CollectionRef, entryId: string): Promise<number> {
+  checkCollectionRef(ref);
+  if (ref.legacyEntryId) {
+    if (ref.legacyEntryId !== entryId) throw new Error('A legacy collection cannot belong to another history entry.');
+    const count = await request(tx.objectStore('solutions').count(children(entryId)));
+    if (count < ref.count) throw new Error('Stored legacy collection is incomplete.');
+    return count;
+  }
+  const meta = (await request(tx.objectStore('collections').get(ref.id))) as CollectionMetadata | undefined;
+  if (!meta || !Number.isSafeInteger(meta.count) || meta.count < ref.count)
+    throw new Error('Stored solution collection is missing or incomplete.');
+  return meta.count;
+}
+
+async function applyOperation(
+  tx: IDBTransaction,
+  meta: Metadata,
+  op: HistoryOp,
+  releasedCollections: string[],
+): Promise<void> {
   const entries = tx.objectStore('entries');
   const solutions = tx.objectStore('solutions');
   switch (op.op) {
@@ -153,8 +178,9 @@ async function applyOperation(tx: IDBTransaction, meta: Metadata, op: HistoryOp)
         throw new Error('Invalid history entry.');
       }
       if (!meta.order.includes(entry.id)) meta.order.push(entry.id);
+      if (entry.collection) await checkStoredCollection(tx, entry.collection, entry.id);
       await request(entries.put(entry));
-      await request(solutions.delete(children(entry.id)));
+      if (!entry.collection?.legacyEntryId) await request(solutions.delete(children(entry.id)));
       for (const [index, value] of results.entries()) {
         await request(solutions.add({ entryId: entry.id, index, value } satisfies SolutionRecord));
       }
@@ -200,9 +226,19 @@ async function applyOperation(tx: IDBTransaction, meta: Metadata, op: HistoryOp)
     }
     case 'deleteEntries':
       for (const id of op.ids) {
+        const prior = (await request(entries.get(id))) as EntryRecord | undefined;
         await request(entries.delete(id));
         await request(solutions.delete(children(id)));
         await request(tx.objectStore('layouts').delete(children(id)));
+        if (prior?.collection && !prior.collection.legacyEntryId) {
+          const remaining = (await request(entries.getAll())) as EntryRecord[];
+          if (!remaining.some((entry) => entry.collection?.id === prior.collection!.id)) {
+            await request(tx.objectStore('collections').delete(prior.collection.id));
+            await request(tx.objectStore('collectionSolutions').delete(children(prior.collection.id)));
+            await request(tx.objectStore('collectionSummaries').delete(children(prior.collection.id)));
+            releasedCollections.push(prior.collection.id);
+          }
+        }
       }
       meta.order = meta.order.filter((id) => !op.ids.includes(id));
       return;
@@ -226,7 +262,6 @@ async function applyOperation(tx: IDBTransaction, meta: Metadata, op: HistoryOp)
 
 async function loadDocument(tx: IDBTransaction, meta: Metadata): Promise<HistoryDocument> {
   const records = (await request(tx.objectStore('entries').getAll())) as EntryRecord[];
-  const solutions = (await request(tx.objectStore('solutions').getAll())) as SolutionRecord[];
   const layouts = (await request(tx.objectStore('layouts').getAll())) as LayoutRecord[];
   if (
     records.some(
@@ -255,19 +290,47 @@ async function loadDocument(tx: IDBTransaction, meta: Metadata): Promise<History
   );
   if (byId.size !== meta.order.length || meta.order.some((id) => !byId.has(id)))
     throw new Error('Invalid browser history order. Stored data was preserved.');
-  for (const row of solutions) {
-    const entry = byId.get(row.entryId);
-    if (
-      !entry ||
-      row.index !== entry.results.length ||
-      !row.value ||
-      !Array.isArray(row.value.nodes) ||
-      !Array.isArray(row.value.edges)
-    ) {
-      throw new Error('Invalid browser history solution records. Stored data was preserved.');
+  let legacyCount = 0;
+  for (const entry of byId.values()) {
+    const count = await request(tx.objectStore('solutions').count(children(entry.id)));
+    legacyCount += count;
+    if (!entry.collection && count > COLLECTION_PAGE_SIZE) {
+      entry.collection = { version: 1, id: `legacy:${entry.id}`, legacyEntryId: entry.id, count, preferredIndex: null };
     }
-    entry.results.push(row.value);
+    if (entry.collection) {
+      const stored = await checkStoredCollection(tx, entry.collection, entry.id);
+      // Recover a newer durable prefix only for an interrupted checkpoint.
+      // It cannot establish any new optimality or enumeration proof.
+      entry.collection = {
+        ...entry.collection,
+        pending: undefined,
+        count: entry.status === 'incomplete' ? stored : entry.collection.count,
+      };
+      if (!entry.result && entry.collection.count) {
+        const store = tx.objectStore(entry.collection.legacyEntryId ? 'solutions' : 'collectionSolutions');
+        const row = await request(store.get([entry.collection.legacyEntryId ?? entry.collection.id, 0]));
+        if (!row?.value?.nodes || !row?.value?.edges) throw new Error('Missing preferred collection witness.');
+        entry.result = row.value;
+      }
+      continue;
+    }
+    const solutions = (await request(
+      tx.objectStore('solutions').getAll(children(entry.id), COLLECTION_PAGE_SIZE),
+    )) as SolutionRecord[];
+    for (const row of solutions) {
+      if (
+        row.index !== entry.results.length ||
+        !row.value ||
+        !Array.isArray(row.value.nodes) ||
+        !Array.isArray(row.value.edges)
+      ) {
+        throw new Error('Invalid browser history solution records. Stored data was preserved.');
+      }
+      entry.results.push(row.value);
+    }
   }
+  if (legacyCount !== (await request(tx.objectStore('solutions').count())))
+    throw new Error('Orphaned browser history solution records. Stored data was preserved.');
   for (const row of layouts) {
     const entry = byId.get(row.entryId);
     if (
@@ -293,7 +356,9 @@ async function loadDocument(tx: IDBTransaction, meta: Metadata): Promise<History
   };
 }
 
-export function createBrowserHistoryStore(name = HISTORY_DATABASE): HistoryStore & { close(): void } {
+export function createBrowserHistoryStore(
+  name = HISTORY_DATABASE,
+): HistoryStore & { close(): void; collections: CollectionStore } {
   let connection: Promise<IDBDatabase> | undefined;
   let revision: number | null = null;
   let tail = Promise.resolve();
@@ -325,7 +390,9 @@ export function createBrowserHistoryStore(name = HISTORY_DATABASE): HistoryStore
       });
     return connection;
   }
+  const collections = createBrowserCollections(database);
   return {
+    collections,
     load: () =>
       enqueue(async () => {
         revision = null;
@@ -340,6 +407,9 @@ export function createBrowserHistoryStore(name = HISTORY_DATABASE): HistoryStore
       enqueue(async () => {
         if (revision === null) throw new Error('Load browser history successfully before saving.');
         if (ops.length === 0) return;
+        for (const op of ops)
+          if (op.op === 'upsertEntry' && op.entry.collection) await collections.flush(op.entry.collection);
+        const releasedCollections: string[] = [];
         const nextRevision = await transaction(await database(), 'readwrite', async (tx) => {
           const meta = await metadata(tx);
           if (meta.revision !== revision) {
@@ -347,13 +417,14 @@ export function createBrowserHistoryStore(name = HISTORY_DATABASE): HistoryStore
               'History changed in another tab. Export any unsaved changes, then reload. No stored history was overwritten.',
             );
           }
-          for (const op of ops) await applyOperation(tx, meta, op);
+          for (const op of ops) await applyOperation(tx, meta, op, releasedCollections);
           meta.revision++;
           if (!Number.isSafeInteger(meta.revision)) throw new Error('History revision overflow.');
           await request(tx.objectStore('meta').put(meta, 'document'));
           return meta.revision;
         });
         revision = nextRevision;
+        for (const id of releasedCollections) collections.forget(id);
       }),
     close() {
       const closing = connection;

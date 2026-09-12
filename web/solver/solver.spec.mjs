@@ -6,6 +6,8 @@ const corpus = JSON.parse(await readFile(new URL('../../target/web-portable/solv
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
+    // Qualify explicit budgets independently of the CI runner's hardware report.
+    Object.defineProperty(navigator, 'hardwareConcurrency', { configurable: true, value: 32 });
     window.tauriCalls = 0;
     window.__TAURI_INTERNALS__ = {
       invoke() {
@@ -20,46 +22,53 @@ test.afterEach(async ({ page }) => {
   expect(await page.evaluate(() => window.tauriCalls)).toBe(0);
 });
 
-test('production browser jobs match native/reference outcomes and full exact collections in all three scopes', async ({
-  page,
-}, testInfo) => {
-  test.setTimeout(180_000);
-  const results = [];
-  // The public preparer rejects out-of-capacity terminals before solver admission,
-  // unlike the lower-level Problem corpus which classifies that contradiction.
-  for (const fixture of corpus.filter((entry) => !entry.name.startsWith('external capacity'))) {
-    const request = publicRequest(fixture);
-    const result = await runJob(page, request, { maxNodes: fixture.request.options.maxNodes });
-    results.push({
-      name: fixture.name,
-      request,
-      expected: fixture.expected,
-      problem: fixture.request.problem,
-      ...result,
+for (const workerCount of [1, 2, 4, 32])
+  test(`production browser jobs with ${workerCount} workers match native/reference full collections in all three scopes`, async ({
+    page,
+  }, testInfo) => {
+    test.setTimeout(180_000);
+    const results = [];
+    // The public preparer rejects out-of-capacity terminals before solver admission,
+    // unlike the lower-level Problem corpus which classifies that contradiction.
+    for (const fixture of corpus.filter((entry) => !entry.name.startsWith('external capacity'))) {
+      const request = publicRequest(fixture);
+      const result = await runJob(page, request, { workerCount, maxNodes: fixture.request.options.maxNodes });
+      results.push({
+        name: fixture.name,
+        request,
+        expected: fixture.expected,
+        problem: fixture.request.problem,
+        ...result,
+      });
+    }
+    const checked = verifyJobs(results);
+    await testInfo.attach('native-reference-browser-comparisons', {
+      body: JSON.stringify(checked),
+      contentType: 'application/json',
     });
-  }
-  const checked = verifyJobs(results);
-  await testInfo.attach('native-reference-browser-comparisons', {
-    body: JSON.stringify(checked),
-    contentType: 'application/json',
+    expect(checked.length).toBe(corpus.length - 3);
+    expect(results.every((value) => value.live.every((packet) => packet.results.length === 0))).toBe(true);
+    expect(results.some((value) => value.published.length > 1)).toBe(true);
+    expect(
+      results.some(
+        (value) =>
+          value.request.solveMode === 'all_min_n' &&
+          value.solutions.some((solution) => solution.stats.linkCount > value.snapshot.proof.minimumLinkCount),
+      ),
+    ).toBe(true);
+    for (const result of results) {
+      const sequences = result.live.map((packet) => packet.sequence);
+      expect(sequences.every((sequence, index) => index === 0 || sequence >= sequences[index - 1])).toBe(true);
+      expect(result.snapshot.resultsOmitted).toBe(false);
+      const count = result.snapshot.collection?.count ?? 0;
+      expect(result.published).toHaveLength(count);
+      expect(result.live.every((packet) => (packet.collection?.count ?? 0) <= count)).toBe(true);
+      const diagnostics = result.snapshot.progress?.custom ?? [];
+      const pending = diagnostics.find((entry) => entry.name === 'solver.browser_peak_pending');
+      if (pending) expect(Number(pending.value.value)).toBeLessThanOrEqual(workerCount);
+    }
+    expect(await page.evaluate(() => crossOriginIsolated)).toBe(false);
   });
-  expect(checked.length).toBe(corpus.length - 3);
-  expect(results.some((value) => value.live.some((packet) => packet.resultsOmitted))).toBe(true);
-  expect(results.some((value) => value.live.some((packet) => packet.resultAppended))).toBe(true);
-  expect(
-    results.some(
-      (value) =>
-        value.request.solveMode === 'all_min_n' &&
-        value.snapshot.results.some((solution) => solution.stats.linkCount > value.snapshot.proof.minimumLinkCount),
-    ),
-  ).toBe(true);
-  for (const result of results) {
-    const sequences = result.live.map((packet) => packet.sequence);
-    expect(sequences.every((sequence, index) => index === 0 || sequence >= sequences[index - 1])).toBe(true);
-    expect(result.snapshot.resultsOmitted).toBe(false);
-  }
-  expect(await page.evaluate(() => crossOriginIsolated)).toBe(false);
-});
 
 test('cancellation after an acknowledged exact witness keeps it prooflessly and allows a fresh worker', async ({
   page,
@@ -144,7 +153,18 @@ for (const mode of ['One min N/L', 'All min N/L', 'All min N']) {
     expect(saved.result.status).toBe('proven_optimal');
     expect(saved.proof).toEqual({ minimumNodeCount: 1, minimumLinkCount: 0 });
     expect(saved.enumerationComplete).toBe(mode !== 'One min N/L');
-    verifyJobs([{ name: mode, request: saved.request, snapshot: saved }]);
+    const solutions = await page.evaluate(async (ref) => {
+      if (!ref) return [];
+      const { createBrowserHistoryStore } =
+        await import('/satisfactory-flow-synthetizer/src/lib/platform/browserHistory.ts');
+      const store = createBrowserHistoryStore();
+      try {
+        return (await store.collections.read(ref, 0, 64)).map((row) => row.solution);
+      } finally {
+        store.close();
+      }
+    }, saved.collection);
+    verifyJobs([{ name: mode, request: saved.request, snapshot: saved, solutions }]);
   });
 }
 

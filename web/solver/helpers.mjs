@@ -34,7 +34,24 @@ export async function runJob(page, request, options = {}, cancelOnWitness = fals
   return page.evaluate(
     async ({ request, options, cancelOnWitness }) => {
       const { createBrowserJobs } = await import('/satisfactory-flow-synthetizer/src/lib/platform/browserJobs.ts');
-      const jobs = createBrowserJobs(options);
+      const { createBrowserHistoryStore } =
+        await import('/satisfactory-flow-synthetizer/src/lib/platform/browserHistory.ts');
+      const history = createBrowserHistoryStore();
+      const published = [];
+      const collections = {
+        ...history.collections,
+        async append(ref, rows) {
+          const result = await history.collections.append(ref, rows);
+          published.push(...structuredClone(rows));
+          return result;
+        },
+        retain(ref, rows) {
+          const result = history.collections.retain(ref, rows);
+          published.push(...structuredClone(rows));
+          return result;
+        },
+      };
+      const jobs = createBrowserJobs({ workerCount: 1, ...options, collections });
       const live = [];
       const id = await jobs.create(request);
       let watch;
@@ -59,11 +76,18 @@ export async function runJob(page, request, options = {}, cancelOnWitness = fals
             },
           );
         });
-        return { snapshot, live };
+        // Qualification deliberately materializes small fixtures. Production
+        // get/watch retain only metadata and the preferred graph.
+        const solutions = [];
+        for (let offset = 0; offset < (snapshot.collection?.count ?? 0); offset += 64) {
+          solutions.push(...(await collections.read(snapshot.collection, offset, 64)).map((row) => row.solution));
+        }
+        return { snapshot, live, solutions, published };
       } finally {
         watch?.close();
         await jobs.shutdown();
         await jobs.release(id);
+        history.close();
       }
     },
     { request, options, cancelOnWitness },
@@ -79,10 +103,22 @@ export async function storedEntries(page) {
     });
     try {
       return await new Promise((resolve, reject) => {
-        const tx = db.transaction(['entries', 'solutions']);
+        const tx = db.transaction(['entries', 'solutions', 'collectionSolutions']);
         const entries = tx.objectStore('entries').getAll();
         const solutions = tx.objectStore('solutions').getAll();
-        tx.oncomplete = () => resolve({ entries: entries.result, solutions: solutions.result });
+        const collected = tx.objectStore('collectionSolutions').getAll();
+        tx.oncomplete = () =>
+          resolve({
+            entries: entries.result,
+            solutions: [
+              ...solutions.result,
+              ...collected.result.filter((row) =>
+                entries.result.some(
+                  (entry) => entry.collection?.id === row.collectionId && row.index < entry.collection.count,
+                ),
+              ),
+            ],
+          });
         tx.onerror = () => reject(tx.error);
       });
     } finally {

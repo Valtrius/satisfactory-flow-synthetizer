@@ -46,7 +46,7 @@ export function solverAssets(desktop: boolean): Plugin {
     }
     const manifest = {
       schema: 1,
-      protocol: 1,
+      protocol: 2,
       assets: Object.fromEntries(
         [...contents].map(([name, content]) => [name, { bytes: content.length, sha256: digest(content) }]),
       ),

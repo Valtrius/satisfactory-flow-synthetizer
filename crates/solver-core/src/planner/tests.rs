@@ -361,3 +361,42 @@ fn all_min_n_advances_to_higher_links_at_the_same_minimum_node_count() {
         "old group packets must not discharge new obligations"
     );
 }
+
+#[test]
+fn streaming_planners_keep_only_identity_keys_and_never_claim_to_return_a_collection() {
+    let (_, _, witness) = direct(SolveMode::AllMinNL);
+    let original = problem(&["1/3"], &["1/3"], "1");
+    let mut planner =
+        ExactPlanner::streaming(&original, options(SolveMode::AllMinNL, 1), Counts::Boolean)
+            .unwrap();
+    let task = planner.poll(0).dispatch[0];
+    planner
+        .accept(PlannerEvent::Witness(task.id, witness.clone()), 1)
+        .unwrap();
+    planner
+        .accept(PlannerEvent::Witness(task.id, witness), 2)
+        .unwrap();
+    let events = planner.poll(3).events;
+    assert_eq!(
+        events
+            .iter()
+            .filter(|event| matches!(event, SolverEvent::SolutionFound(_)))
+            .count(),
+        1
+    );
+    assert!(planner.layouts.is_empty());
+    assert_eq!(planner.layout_count(), 1);
+    planner
+        .accept(PlannerEvent::Retired(task.id, Ok(Completion::Exhausted)), 4)
+        .unwrap();
+    let _ = planner.poll(5);
+    assert!(planner.outcome().is_none());
+    let Some(SolveResult::Optimal(result)) = planner.public_result() else {
+        panic!()
+    };
+    assert_eq!(
+        result.canonical_graph_key,
+        solver_validation::layout_key(&original, &result.graph)
+    );
+    assert_eq!(result.proof.root_partitions_exhausted, 1);
+}

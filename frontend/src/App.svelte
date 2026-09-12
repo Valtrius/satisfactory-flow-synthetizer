@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy, onMount } from 'svelte';
+  import { onDestroy, onMount, untrack } from 'svelte';
   import { writable, type Writable } from 'svelte/store';
   import type { Edge, Node } from '@xyflow/svelte';
   import EmptyGraphState from './lib/EmptyGraphState.svelte';
@@ -20,7 +20,7 @@
     type EndpointCollection,
   } from './lib/endpoints';
   import { createGraphSession } from './lib/graphSession';
-  import { exportHistoryBundle, exportHistoryEntry, importHistoryPayload } from './lib/historyIo';
+  import { exportHistoryBundle, exportHistoryEntry, importHistoryPayload, pageImportedEntries } from './lib/historyIo';
   import { createPersistController, installCloseFlush, loadHistoryOrEmpty } from './lib/historyLifecycle';
   import {
     assembleEntries,
@@ -39,12 +39,40 @@
   import type { VerifiedShare } from './lib/sharing/client';
   import Button from './lib/ui/Button.svelte';
   import { getPlatform } from './lib/platform';
+  import { createPagedResults } from './lib/pagedResults';
+  import { COLLECTION_PAGE_SIZE } from './lib/platform/browserCollections';
+  import {
+    browserThreadCount,
+    browserWorkerChoices,
+    readBrowserWorkers,
+    saveBrowserWorkers,
+  } from './lib/platform/browserWorkers';
   import { formatElapsed, searchHeadline, searchStageView, searchSubline, sizeSearchBody } from './lib/searchStage';
   import { DEFAULT_SORT_COLUMNS, compareSolutions, type SortColumn } from './lib/solutionSort';
   import { readUiPrefs, updateUiPrefs } from './lib/uiPrefs';
-  import { enumeratesLayouts, type EndpointRow, type Solution, type SolveRequest } from './types';
+  import { enumeratesLayouts, type EndpointRow, type Solution, type SolutionRow, type SolveRequest } from './types';
 
   const platform = getPlatform();
+  const clientThreads = browserThreadCount();
+  let browserWorkers = $state(readBrowserWorkers(clientThreads));
+  const workerChoices = $derived(browserWorkerChoices(clientThreads, browserWorkers));
+  let pageOffset = $state(0);
+  let pageEntryId = '';
+  let pageLoading = $state(false);
+  let pagedRows = $state<SolutionRow[]>([]);
+  const pages = platform.collections
+    ? createPagedResults(
+        platform.collections,
+        (page) => {
+          pagedRows = page.rows;
+          pageLoading = false;
+        },
+        (message) => {
+          errorMessage = message;
+          pageLoading = false;
+        },
+      )
+    : null;
   let shareDialog = $state<{
     target?: { request: SolveRequest; solution: Solution };
     source?: string;
@@ -145,6 +173,12 @@
     setError: (message) => {
       errorMessage = message;
     },
+    loadSolution: async (entry, index) => {
+      if (!entry.collection || !platform.collections)
+        throw new Error('This host cannot read that solution collection.');
+      if (entry.collection.preferredIndex === index && entry.result) return entry.result;
+      return platform.collections.get(entry.collection, index);
+    },
     onChromeChange: (chrome) => {
       graphFitRevision = chrome.fitRevision;
       graphFullscreen = chrome.fullscreen;
@@ -198,22 +232,56 @@
   const searchView = $derived(searchStageView(viewJob?.progress ?? null));
   const inputSlots = $derived(endpointSlots(inputs));
   const outputSlots = $derived(endpointSlots(outputs));
-  const showResultsTable = $derived(searchEnumerate && solutions.length > 0);
+  const foundCount = $derived(selectedEntry?.collection?.count ?? solutions.length);
+  const showResultsTable = $derived(searchEnumerate && foundCount > 0);
   const searchCopyContext = $derived({
-    solutionsLength: solutions.length,
+    solutionsLength: foundCount,
     searchEnumerate,
-    firstNodeCount: solutions[0]?.stats.nodeCount ?? null,
+    firstNodeCount: selectedEntry?.result?.stats.nodeCount ?? solutions[0]?.stats.nodeCount ?? null,
   });
   const elapsedLabel = $derived(formatElapsed(elapsedMs));
   const runningElapsedLabel = $derived(
     bands.running?.startedAtMs ? formatElapsed(Math.max(0, runningTick - bands.running.startedAtMs)) : '',
   );
   const displayRows = $derived(
-    solutions
-      .map((item, sourceIndex) => ({ solution: item, sourceIndex }))
-      .sort((left, right) => compareSolutions(left.solution, right.solution, sortColumns)),
+    selectedEntry?.collection
+      ? pagedRows
+      : solutions
+          .map((item, sourceIndex) => ({ solution: item, sourceIndex }))
+          .sort((left, right) => compareSolutions(left.solution, right.solution, sortColumns)),
   );
   const selectedDisplayIndex = $derived(displayRows.findIndex((row) => row.sourceIndex === selectedSourceIndex));
+  // Telemetry and graph edits rebuild entries, but do not change a page's data.
+  const pageRequestKey = $derived(JSON.stringify([selectedEntry?.id, selectedEntry?.collection, sortColumns]));
+
+  $effect(() => {
+    void pageRequestKey;
+    const entry = untrack(() => selectedEntry);
+    const columns = untrack(() => sortColumns);
+    pages?.clear();
+    if (entry?.id !== pageEntryId) {
+      pageEntryId = entry?.id ?? '';
+      pageOffset = 0;
+      pagedRows = [];
+    }
+    if (!entry?.collection || !pages) {
+      pages?.clear();
+      pageLoading = false;
+      return;
+    }
+    const offset = Math.min(
+      pageOffset,
+      Math.max(0, Math.floor((entry.collection.count - 1) / COLLECTION_PAGE_SIZE) * COLLECTION_PAGE_SIZE),
+    );
+    if (offset !== pageOffset) pageOffset = offset;
+    pageLoading = true;
+    const timer = setTimeout(() => pages.load(entry.collection!, offset, COLLECTION_PAGE_SIZE, columns), 20);
+    return () => clearTimeout(timer);
+  });
+
+  $effect(() => {
+    if (platform.capabilities.runtime === 'browser') saveBrowserWorkers(browserWorkers);
+  });
 
   onMount(() => {
     let unlistenClose: (() => void) | undefined;
@@ -316,6 +384,8 @@
     graph.setFullscreen(false);
     errorMessage = '';
     const request = buildSolveRequest(inputs, outputs, beltRate, solveMode);
+    if (platform.capabilities.runtime === 'browser')
+      request.browserWorkers = browserWorkers === 'auto' ? clientThreads : browserWorkers;
     if (request.outputs.length < 1) {
       errorMessage = 'Add at least one output before solving.';
       return;
@@ -429,7 +499,13 @@
         errorMessage = 'No history entries found in that file.';
         return;
       }
-      historyEntries = entries;
+      const imported = await pageImportedEntries(
+        entries.filter((entry) => importedIds.includes(entry.id)),
+        importedIds,
+      );
+      // Active jobs and edits can change while import writes collection pages.
+      // Attach only the imported entries to the latest document.
+      historyEntries = [...historyEntries, ...imported];
       selectedEntryId = importedIds[0] ?? selectedEntryId;
       if (selectedEntryId) await hydrateViewFromEntry(selectedEntryId);
     } catch (error) {
@@ -481,6 +557,7 @@
   }
 
   onDestroy(() => {
+    pages?.clear();
     queue.dispose();
     persist.dispose();
     document.body.classList.remove('graph-expanded');
@@ -567,9 +644,25 @@
         />
 
         {#if platform.capabilities.runtime === 'browser'}
+          <label class="text-muted flex flex-wrap items-center gap-3 text-sm">
+            Compute workers
+            <select
+              class="border-field-border bg-well rounded-md border px-2 py-1"
+              aria-label="Browser compute workers"
+              bind:value={browserWorkers}
+            >
+              <option value="auto">Automatic ({clientThreads} {clientThreads === 1 ? 'worker' : 'workers'})</option>
+              {#each workerChoices as count (count)}
+                <option value={count}>{count} {count === 1 ? 'worker' : 'workers'}</option>
+              {/each}
+            </select>
+          </label>
           <p class="text-muted m-0 text-sm" role="status">
-            Solving runs locally in one browser worker. Closing this tab stops the search. Browser storage is
-            best-effort. Export a backup before clearing site data.
+            Solving runs locally. Automatic uses the {clientThreads} logical {clientThreads === 1
+              ? 'processor'
+              : 'processors'} reported by this browser. Each compute worker has its own solver memory. Reduce the count to
+            limit memory use. Closing this tab stops the search. Browser storage is best-effort. Export a backup before clearing
+            site data.
           </p>
         {/if}
 
@@ -588,7 +681,7 @@
                 headline={searchHeadline(viewJob, searchCopyContext)}
                 subline={searchSubline(viewJob, searchView, searchCopyContext)}
                 sizeBody={sizeSearchBody(viewJob, searchView)}
-                foundCount={solutions.length}
+                {foundCount}
                 showFound={searchEnumerate}
                 showDetails={searchEnumerate || busy || Boolean(viewJob.progress)}
                 collapsible={searchEnumerate}
@@ -608,13 +701,21 @@
             headline={searchHeadline(viewJob, searchCopyContext)}
             subline={searchSubline(viewJob, searchView, searchCopyContext)}
             sizeBody={sizeSearchBody(viewJob, searchView)}
-            foundCount={solutions.length}
+            {foundCount}
             showFound={searchEnumerate}
             showDetails
             {telemetryExpanded}
             onToggleTelemetry={toggleTelemetry}
             solutions={displayRows.map((row) => row.solution)}
-            selectedIndex={Math.max(0, selectedDisplayIndex)}
+            selectedIndex={selectedDisplayIndex}
+            {pageOffset}
+            pageSize={COLLECTION_PAGE_SIZE}
+            onPage={selectedEntry?.collection
+              ? (offset) => {
+                  pageOffset = offset;
+                }
+              : undefined}
+            {pageLoading}
             {sortColumns}
             nodes={flowNodes}
             edges={flowEdges}
@@ -625,6 +726,7 @@
               if (row) void graph.selectSolution(row.sourceIndex);
             }}
             onColumnsChange={(next) => {
+              pageOffset = 0;
               sortColumns = next;
               if (selectedEntryId) {
                 patchEntry(selectedEntryId, {

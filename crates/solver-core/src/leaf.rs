@@ -18,6 +18,20 @@ pub struct LeafContext {
 }
 
 impl LeafContext {
+    /// Prepare the same normalized context in a separately owned compute worker.
+    /// # Errors
+    /// Rejects invalid problems and globally impossible work dispatches.
+    pub fn prepare(original: Problem) -> Result<Self, Failure> {
+        match crate::prepare_problem(&original)
+            .map_err(|error| Failure::Worker(error.to_string()))?
+        {
+            crate::Preparation::Prepared(normalized) => Ok(Self::new(original, normalized)),
+            crate::Preparation::GloballyUnsat(_) => {
+                Err(Failure::Worker("globally impossible leaf dispatch".into()))
+            }
+        }
+    }
+
     pub(crate) fn new(original: Problem, normalized: NormalizedProblem) -> Self {
         Self {
             problem: Problem {

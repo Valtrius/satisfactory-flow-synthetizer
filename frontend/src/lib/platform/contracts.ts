@@ -1,4 +1,5 @@
-import type { JobSnapshot, SolveRequest } from '../../types';
+import type { CollectionRef, JobSnapshot, Solution, SolutionPage, SolveRequest } from '../../types';
+import type { SortColumn } from '../solutionSort';
 import type { HistoryOp } from '../historyOps';
 
 export interface JobWatch {
@@ -21,6 +22,20 @@ export interface HistoryStore {
   apply(ops: HistoryOp[]): Promise<void>;
 }
 
+export type IndexedSolution = { index: number; solution: Solution };
+export interface CollectionStore {
+  create(id: string): Promise<CollectionRef>;
+  append(ref: CollectionRef, values: IndexedSolution[]): Promise<CollectionRef>;
+  /** Retain a bounded failed write for viewing/export and a later save retry. */
+  retain(ref: CollectionRef, values: IndexedSolution[]): CollectionRef;
+  flush(ref: CollectionRef): Promise<void>;
+  /** Drop a failed-write overlay only after its owning history entry was deleted. */
+  forget(id: string): void;
+  page(ref: CollectionRef, offset: number, limit: number, columns: SortColumn[]): Promise<SolutionPage>;
+  read(ref: CollectionRef, offset: number, limit: number): Promise<IndexedSolution[]>;
+  get(ref: CollectionRef, index: number): Promise<Solution>;
+}
+
 export type TextFile = {
   contents: string;
   fileName: string;
@@ -30,6 +45,7 @@ export type TextFile = {
 export interface FileActions {
   saveText(file: TextFile): Promise<void>;
   openJsonText(maxBytes?: number): Promise<string | null>;
+  saveChunks?(file: Omit<TextFile, 'contents'>, chunks: AsyncIterable<string>): Promise<void>;
 }
 
 export type CloseFlushOptions = {
@@ -48,6 +64,7 @@ export interface PlatformServices {
   };
   jobs: JobClient;
   history: HistoryStore;
+  collections?: CollectionStore;
   files: FileActions;
   readonly shareViewerUrl: string | null;
   lifecycle: {
