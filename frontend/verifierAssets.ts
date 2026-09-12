@@ -1,5 +1,5 @@
 import type { Plugin } from 'vite';
-import { localAssets } from './localAssets';
+import { localAssets } from './localAssets.ts';
 
 /** Ship only the production verifier pair, independently of browser search. */
 export function verifierAssets(): Plugin {

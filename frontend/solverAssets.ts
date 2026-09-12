@@ -1,7 +1,7 @@
 import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Plugin } from 'vite';
-import { localAssets, assetRoot, assetDigest } from './localAssets';
+import { localAssets, assetRoot, assetDigest } from './localAssets.ts';
 
 /** Desktop bundles omit search assets; cvc5 artifacts must match their build provenance. */
 export function solverAssets(desktop: boolean): Plugin {
