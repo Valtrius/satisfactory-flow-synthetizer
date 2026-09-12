@@ -59,11 +59,7 @@ export type CloseFlushOptions = {
 };
 
 export interface PlatformServices {
-  readonly capabilities: {
-    readonly runtime: 'desktop' | 'browser';
-    readonly solve: 'ready' | 'unavailable';
-    readonly persistentStorage: 'native' | 'best-effort';
-  };
+  readonly runtime: 'desktop' | 'browser';
   jobs: JobClient;
   history: HistoryStore;
   collections?: CollectionStore;

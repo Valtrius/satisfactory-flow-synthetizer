@@ -74,11 +74,7 @@ describe('platform job contracts', () => {
 
   it('never invokes native IPC or invents results in browser mode', async () => {
     const platform = createBrowserPlatform();
-    expect(platform.capabilities).toEqual({
-      runtime: 'browser',
-      solve: 'ready',
-      persistentStorage: 'best-effort',
-    });
+    expect(platform.runtime).toBe('browser');
     await expect(platform.jobs.get('job')).rejects.toThrow('Unknown browser job');
     await expect(platform.jobs.watch('job', vi.fn(), vi.fn())).rejects.toThrow('Unknown browser job');
     await expect(platform.jobs.shutdown()).resolves.toEqual([]);

@@ -102,7 +102,7 @@ export async function installBrowserCloseFlush(options: CloseFlushOptions): Prom
 export function createBrowserPlatform(): PlatformServices {
   const history = createBrowserHistoryStore();
   return {
-    capabilities: { runtime: 'browser', solve: 'ready', persistentStorage: 'best-effort' },
+    runtime: 'browser',
     jobs: createBrowserJobs({ collections: history.collections }),
     history,
     collections: history.collections,

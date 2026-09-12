@@ -100,7 +100,7 @@ async function installDesktopCloseFlush(options: CloseFlushOptions): Promise<() 
 
 export function createDesktopPlatform(): PlatformServices {
   return {
-    capabilities: { runtime: 'desktop', solve: 'ready', persistentStorage: 'native' },
+    runtime: 'desktop',
     shareViewerUrl: publicViewerUrl('desktop'),
     jobs: createDesktopJobs(),
     history: { load: () => invoke('load_history'), apply: (ops) => invoke('apply_history_ops', { ops }) },

@@ -284,7 +284,7 @@
   });
 
   $effect(() => {
-    if (platform.capabilities.runtime === 'browser') saveBrowserWorkers(browserWorkers);
+    if (platform.runtime === 'browser') saveBrowserWorkers(browserWorkers);
   });
 
   onMount(() => {
@@ -384,11 +384,11 @@
   }
 
   async function solve(): Promise<void> {
-    if (!historyReady || closing || platform.capabilities.solve !== 'ready') return;
+    if (!historyReady || closing) return;
     graph.setFullscreen(false);
     errorMessage = '';
     const request = buildSolveRequest(inputs, outputs, beltRate, solveMode);
-    if (platform.capabilities.runtime === 'browser')
+    if (platform.runtime === 'browser')
       request.browserWorkers = browserWorkers === 'auto' ? clientThreads : browserWorkers;
     if (request.outputs.length < 1) {
       errorMessage = 'Add at least one output before solving.';
@@ -643,7 +643,7 @@
           bind:beltRate
           {solveMode}
           {hasRunning}
-          ready={historyReady && !closing && platform.capabilities.solve === 'ready'}
+          ready={historyReady && !closing}
           onAddInput={() => addEndpoint('inputs')}
           onRemoveInput={(index) => removeEndpoint('inputs', index)}
           onUpdateInput={(index, field, value) => updateEndpoint('inputs', index, field, value)}
@@ -658,7 +658,7 @@
           onSolve={() => void solve()}
         />
 
-        {#if platform.capabilities.runtime === 'browser'}
+        {#if platform.runtime === 'browser'}
           <label class="text-muted flex flex-wrap items-center gap-3 text-sm">
             Compute workers
             <select
@@ -681,7 +681,7 @@
           </p>
         {/if}
 
-        {#if import.meta.env.PROD && platform.capabilities.runtime === 'browser'}
+        {#if import.meta.env.PROD && platform.runtime === 'browser'}
           <OfflinePanel />
         {/if}
 
