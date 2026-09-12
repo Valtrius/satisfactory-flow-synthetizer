@@ -211,7 +211,8 @@ pub(crate) fn run(
     counts: Counts,
 ) -> Result<SolveResult, SolverError> {
     let started = Instant::now();
-    let mut planner = ExactPlanner::new(problem, *options, counts)?;
+    // The outer SolutionCollector owns graphs; each branch retains its own identity ledger.
+    let mut planner = ExactPlanner::streaming(problem, *options, counts)?;
     let context = planner.context().cloned();
     let stop = AtomicBool::new(false);
     let diagnostics = std::env::var_os("SOLVER_DIAGNOSTICS").is_some_and(|v| v == "1");
