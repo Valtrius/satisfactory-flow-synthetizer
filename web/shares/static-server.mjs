@@ -22,6 +22,7 @@ createServer(async (request, response) => {
       {
         '.html': 'text/html',
         '.js': 'text/javascript',
+        '.mjs': 'text/javascript',
         '.css': 'text/css',
         '.wasm': 'application/wasm',
         '.svg': 'image/svg+xml',
@@ -29,7 +30,7 @@ createServer(async (request, response) => {
     );
     response.setHeader(
       'Content-Security-Policy',
-      "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' http://127.0.0.1:4180; object-src 'none'; base-uri 'none'",
+      "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'",
     );
     response.setHeader('Referrer-Policy', 'no-referrer');
     response.end(content);

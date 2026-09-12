@@ -97,7 +97,7 @@ test('inline links preview without saving and retain a proofless witness after e
   expect(saved.result.proof).toBeNull();
   expect(saved.proof).toBeNull();
   expect(saved.enumerationComplete).toBe(false);
-  await expect(page.getByRole('button', { name: /^Find/ })).toBeDisabled();
+  await expect(page.getByRole('button', { name: /^Find/ })).toBeEnabled();
 });
 
 test('untrusted endpoint text is rendered as text and never executes', async ({ page }) => {

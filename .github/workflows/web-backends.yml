@@ -5,6 +5,7 @@ on:
   pull_request:
     paths:
       - 'crates/solver-web/**'
+      - 'crates/solver-browser/**'
       - 'crates/solver-core/**'
       - 'crates/solver-portable-tests/**'
       - 'vendor/canonaut/**'
@@ -16,6 +17,9 @@ on:
       - 'web/**'
       - 'scripts/prepare-share-fixtures.mjs'
       - 'scripts/prepare-portable-fixtures.mjs'
+      - 'scripts/prepare-browser-fixtures.mjs'
+      - 'scripts/test_web_backends.py'
+      - 'scripts/test_web_solver.py'
       - 'frontend/**'
       - 'src-tauri/history-fixtures/**'
       - 'Cargo.toml'
@@ -87,17 +91,21 @@ jobs:
       - name: Install dependencies
         run: npm ci
       - name: Native verifier tests
-        run: cargo test -p solver-web --locked --lib
+        run: cargo test -p solver-web -p solver-browser --locked --lib
       - name: Browser verifier lint
         run: cargo clippy -p solver-web --target wasm32-unknown-unknown --locked --lib -- -D warnings
       - name: Portable job projection lint
         run: cargo clippy -p synthetizer-app --no-default-features --target wasm32-unknown-unknown --locked --lib -- -D warnings
       - name: Portable exact planner and leaf lint
         run: cargo clippy -p solver-core --no-default-features --target wasm32-unknown-unknown --locked --lib -- -D warnings
+      - name: Production browser solver lint
+        run: cargo clippy -p solver-browser --target wasm32-unknown-unknown --locked --lib -- -D warnings
       - name: Build both backend modules
         run: npm run build:web:backends
       - name: Build the separate qualification module
         run: npm run build:web:portable
+      - name: Build the production browser solver
+        run: npm run build:web:solver && python scripts/prepare-web-solver.py
       - uses: actions/download-artifact@v4
         with:
           name: portable-native-fixtures
@@ -109,7 +117,11 @@ jobs:
       - name: Native and Wasm identity and exact-search parity
         run: npx playwright test -c web/portable/playwright.config.mjs
       - name: Frontend contracts
-        run: npm run check && npm test && npm run build -w frontend
+        run: npm run check && npm test -w frontend -- --maxWorkers=2 && npm run build -w frontend
+      - name: Browser asset build contracts
+        run: python -m unittest discover -s scripts -p 'test_web_*.py'
+      - name: Production browser jobs, cancellation and history
+        run: npm run test:web:solver
       - name: Browser platform and history tests
         run: npm run test:web:platform
       - name: Selected-solution sharing tests
@@ -130,4 +142,6 @@ jobs:
             target/web-portable/results.json
             target/web-portable/test-results
             target/web-portable/solves.json
+            target/web-solver/results.json
+            target/web-solver/test-results
           if-no-files-found: warn

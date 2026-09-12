@@ -1,6 +1,6 @@
 # Browser backend foundations and platform services
 
-Step 00 adds testable backend modules. Step 01 adds host adapters, shared job projection and IndexedDB history. Step 02 adds self-contained selected-solution links and verified viewing without backend storage. Step 03 extracts the exact planner and leaf protocol, ports Canonaut and adds native/Wasm qualification. Browser solving in the application remains explicitly unavailable. No GitHub Pages site is deployed. Threads, cvc5 process ownership and SQLite storage remain in the native host.
+The shared Svelte application now runs exact searches locally in a browser worker or through the existing native desktop host. Step 04 connects the portable planner to browser jobs, progress, hard cancellation and IndexedDB history. All three search scopes are available. Selected-solution links remain self-contained and need no backend storage. No GitHub Pages site is deployed, and offline asset caching is not implemented. Native threads, cvc5 process ownership and SQLite storage remain in the desktop host.
 
 ## Agreed product scope
 
@@ -97,7 +97,7 @@ The audit also found hardcoded 64-bit operations in `src/structs/schreier_arena.
 
 The identity acceptance gate compares pre-port native bytes against the patched native implementation and actual Wasm execution. It covers word boundaries, relabeled graphs, duplicate terminals and physical `layout-v1` identities. Compiling the dependency alone does not satisfy this gate.
 
-Step 01 extracts platform services and implements browser history. Step 02 implements selected-solution sharing. Step 03 separates mathematical transitions from native execution. Later phases connect browser jobs to Svelte, implement parallel browser scheduling and add offline assets and Pages delivery. The standalone backend tests do not qualify that future application lifecycle.
+Step 01 extracts platform services and implements browser history. Step 02 implements selected-solution sharing. Step 03 separates mathematical transitions from native execution. Step 04 below records production browser job integration and its application tests. Parallel browser scheduling, offline assets and Pages delivery remain later work. The standalone backend tests do not replace application lifecycle tests.
 
 ## Step 01: platform services
 
@@ -105,7 +105,7 @@ Step 01 extracts platform services and implements browser history. Step 02 imple
 
 The desktop adapter retains the existing command names and snapshot event. Watching subscribes before fetching the full snapshot; the queue still reconciles sequences and missing appends. Native close still hides the window, joins solver work, retries cleanup or returns to the app, and asks explicitly before exiting without saving. `resume_jobs` reopens native job admission. It does not resume a mathematical search.
 
-The browser adapter rejects job creation with an explicit unavailable error. The interface disables Find but keeps inputs, history and graph edits usable. This is a development milestone, not the requested browser solver release. History import/export and SVG export use browser file actions. Cancelling import returns `null`; file read and JSON errors now propagate instead of pretending the picker was cancelled.
+At the Step 01 milestone, the browser adapter rejected job creation and disabled Find. Step 04 replaces that adapter with real local worker jobs. History import/export and SVG export use browser file actions. Cancelling import returns `null`; file read and JSON errors propagate instead of pretending the picker was cancelled.
 
 ### Shared job projection
 
@@ -142,7 +142,7 @@ Storage is origin-local. Different GitHub project paths on the same origin are n
 npm run dev -w frontend
 ```
 
-Import an existing history JSON file, edit a title or graph, and reload after a checkpoint. Find remains disabled until the search port is implemented. No cvc5 build is required for this history-only development interface.
+Import an existing history JSON file, edit a title or graph, and reload after a checkpoint. Browsing history does not load cvc5. Use `npm run dev:web` to prepare all local assets before running searches; the bare frontend command does not build missing Wasm modules.
 
 ```powershell
 $env:WEB_TEST_CHANNEL='chrome'; npm run test:web:platform
@@ -194,7 +194,7 @@ rustup target add wasm32-unknown-unknown
 npm run dev:web
 ```
 
-That command builds the verifier and starts the shared frontend. Import a current history file, choose a layout and use Share selected solution. A desktop share needs the browser viewer address, either configured with `VITE_PUBLIC_APP_URL` or entered in the dialog. Tauri's build hooks now build the verifier too. Its CSP permits only the local worker/Wasm assets and native IPC.
+That command prepares the verifier and browser solver assets, then starts the shared frontend. Opening or creating a share loads only the separate verifier. Import a current history file, choose a layout and use Share selected solution. A desktop share needs the browser viewer address, either configured with `VITE_PUBLIC_APP_URL` or entered in the dialog. Tauri's build hooks build the verifier but omit the browser search distribution. Its CSP permits only the local worker/Wasm assets and native IPC.
 
 ```powershell
 npm run build:web
@@ -203,9 +203,9 @@ $env:WEB_TEST_CHANNEL='chrome'; npm run test:web:shares
 
 The tests compare 15 native presentation exports and topology reconstructions against the actual Wasm worker. They also exercise selected-layout export, invalid payload rejection, proofless persistence, text escaping, decompression bounds, worker cancellation and static-only sharing. The browser suite uses ports 4181 and 4182. It starts and stops its own servers and writes evidence under `target/web-shares`.
 
-### Next implementation phase
+### Integration after sharing
 
-Step 03 below supplies the portable exact planner, leaf driver and canonicalization qualification. Step 04 will connect single-worker browser jobs to the shared interface. The browser's Find action remains disabled until that integration passes its lifecycle and exactness tests. Offline assets and Pages deployment remain unfinished. No public browser release has been deployed.
+Step 03 supplies the portable exact planner, leaf driver and canonicalization qualification. Step 04 connects single-worker browser jobs to the shared interface. Offline assets and Pages deployment remain unfinished. No public browser release has been deployed.
 
 ### Step 02 validation on 11 September 2026
 
@@ -260,13 +260,13 @@ npm run build:web:portable
 $env:SOLVER_CVC5=Join-Path (Get-Location) 'src-tauri/binaries/cvc5-x86_64-pc-windows-msvc.exe'; $env:WEB_TEST_CHANNEL='chrome'; npm run test:web:portable
 ```
 
-The last command requires the native backend and existing cvc5 Wasm assets. The fixture generator compares 36 native requests against the independent reference across all three modes. Browser tests then compare the exact objective, optimality projection, enumeration status and full canonical result sets. Cases include arbitrary fractions, surplus/discards, duplicate terminals, feedback, multiple optimal layouts, global contradictions and a finite node cap. Separate tests cancel after an accepted witness, inject `unknown` after a witness, and exercise actual cvc5 resource exhaustion. All sessions must be disposed before the test accepts a terminal result.
+The last command requires the native backend and existing cvc5 Wasm assets. The fixture generator compares 42 native requests against the independent reference across all three modes. Step 04 extended the original 36 cases with wide rational literals and reordered terminals. Browser tests compare the exact objective, optimality projection, enumeration status and full canonical result sets. Cases include arbitrary fractions, surplus/discards, duplicate terminals, feedback, multiple optimal layouts, global contradictions and a finite node cap. Separate tests cancel after an accepted witness, inject `unknown` after a witness, and exercise actual cvc5 resource exhaustion. All sessions must be disposed before the test accepts a terminal result.
 
 The suite serves only local assets at the project subpath on port 4183, with one browser test worker and no cross-origin isolation headers. Evidence goes under `target/web-portable`. The workflow creates native comparison fixtures on Windows with the pinned cvc5 package, then sends those fixtures to the Linux browser job. It does not rely on an unpinned distribution cvc5 package. Existing verifier, sharing and history suites remain separate.
 
-### Remaining application work
+### Application integration after extraction
 
-Step 04 must connect real single-worker browser jobs to platform services, shared snapshots, UI progress, hard cancellation, history checkpoints and job epochs. The qualification worker is not that production coordinator. Step 05 adds parallel browser workers and paged collections. Step 06 covers offline assets, version-coherent upgrades and Pages delivery. Browser Find remains disabled. No public deployment, browser performance claim or packaged desktop sharing qualification follows from Step 03.
+Step 04 below connects real single-worker browser jobs to platform services, shared snapshots, UI progress, hard cancellation, history checkpoints and job attempts. The qualification worker remains separate from production code. Step 05 adds parallel browser workers and paged collections. Step 06 covers offline assets, version-coherent upgrades and Pages delivery. No public deployment, browser performance claim or packaged desktop sharing qualification follows from these local tests.
 
 ### Step 03 validation on 12 September 2026
 
@@ -276,4 +276,74 @@ All five portable browser tests passed after rebuilding the final Wasm module. T
 
 Native workspace Clippy and wasm32 Clippy for the portable core, qualification module, verifier and shared job projection passed with warnings denied. Svelte checks reported no errors or warnings. Verifier and qualification Wasm builds, production frontend build, formatting, whitespace and release metadata checks passed. The immutable pre-port fixture SHA-256 remains `759271f2ba1ff2b647719650806bc1c050fc0c5f36442c7c017e8a540292f214`. The production identity serialization and native portfolio files are unchanged.
 
-Evidence is in `.tmp/web-step03-native-final.log`, `.tmp/web-step03-frontend-final.json` and the four browser result files under `target/web-portable`, `target/web-shares`, `target/web-platform` and `target/web-backends`. These are local Windows/Chrome results. No benchmarks, installers, public deployment, Firefox/Safari qualification or remote workflow execution were performed. Step 02 is committed as `3dbf9b237200c55b5c6d6be7a455d1ca0984b118`; Step 03 implementation and documentation remain uncommitted on the same feature branch.
+Evidence is in `.tmp/web-step03-native-final.log`, `.tmp/web-step03-frontend-final.json` and the four browser result files under `target/web-portable`, `target/web-shares`, `target/web-platform` and `target/web-backends`. These are local Windows/Chrome results. No benchmarks, installers, public deployment, Firefox/Safari qualification or remote workflow execution were performed. Step 02 is committed as `3dbf9b237200c55b5c6d6be7a455d1ca0984b118`. Step 03 is committed as `0d7cbe28440f95ddf91e3971b26a3e34340526ad` on `feature/web-backend-foundations`.
+
+## Step 04: single-worker browser solving
+
+Find now creates a real browser job through the existing platform `JobClient` and `HistoryQueue`. `solver-browser` is the production Rust/Wasm bridge. It depends on `solver-core` without `native-runtime`, exact validation with canonical identity, and `synthetizer-app` without native execution. Neither `solver-portable-tests` nor the small sharing verifier performs production searches.
+
+`BrowserRun` parses the application `SolveRequest`, limits its UTF-8 JSON to 256 KiB and checks job/endpoint identifier lengths before exact preparation. The shared preparer still checks endpoint counts, names, positive rates, automatic supply and external belt capacity. Rates remain arbitrary-precision strings, not JavaScript numbers. There is no public arbitrary-SMT endpoint. The production options use one Boolean branch and one active leaf. Find imposes no node cap or solve deadline; an optional host node cap is inclusive and returns incomplete on exhaustion, never global UNSAT.
+
+### Exact results and live delivery
+
+The Rust bridge uses the same `ExactPlanner`, `LeafDriver`, exact reconstruction and independent validation as native solving. It normalizes caller-scale canonical keys before live presentation and uses the shared `project_outcome` for terminal results. Enumeration deduplication and terminal source-index preservation therefore use the same public identity convention as desktop jobs.
+
+`one_min_nl` proves minimum N and minimum operator-link L without claiming equal-L exhaustion. `all_min_nl` exhausts that minimum-L collection. `all_min_n` continues through higher-L groups at the same minimum N. Optimized L still excludes external terminal stubs and discard belts. Imported selected solutions remain proofless regardless of the browser's new ability to solve their configurations.
+
+`solve.worker.ts` loads the production Rust module in a dedicated module worker. It loads cvc5 only when a non-impossible leaf needs a session. Global contradictions and rejected requests need no cvc5 download. The worker sends progress and one-result append packets through the existing snapshot contract. The page retains a full snapshot, so `get` and a newly registered `watch` can recover packets missed by the UI. The job registry allows one active search, retains at most eight jobs by default and supports explicit terminal release. `shutdown` closes admission and cancels active work; `resume` reopens admission without restarting old searches.
+
+### Cancellation, failures and the host seal
+
+Each packet carries a protocol version, job ID, unique attempt ID and monotonic checkpoint. Snapshot sequences and append counts must be contiguous. The host ignores foreign/retired attempts and rejects malformed checkpoints without accepting their results or proof.
+
+Before entering the next blocking backend call, the worker publishes each accepted witness and waits for the page's acknowledgement. That checkpoint also includes thin cancellation and worker-failure packets prepared by Rust's shared `interruption_packet`. The page retains the graphs separately. The acknowledgement confirms receipt in page memory, not an IndexedDB commit. These packets describe interruption at that checkpoint, not persistent search state or a resume certificate.
+
+Cancellation terminates the worker from the page. It does not depend on a cancel message reaching synchronous cvc5, a shared Wasm heap or a JavaScript callback marked `Send`/`Sync`. After termination, the page combines the retained graphs with the Rust-projected interruption packet. Any accepted witnesses remain `best_known`; enumeration stays incomplete and interruption cannot establish minimum L. Proven minimum N may remain when the completed lower-bound evidence supports it. A failure before the first Rust checkpoint has no witness or proof to retain.
+
+For normal completion, the worker disposes every backend session, prepares the shared terminal projection and frees its Rust run before sending the completion proposal. The page terminates the worker and seals the job when it accepts that proposal, before notifying subscribers. Cancellation accepted before this host seal wins. Cancellation after it returns the sealed result unchanged. Unknown, resource exhaustion, malformed models, traps, transport failures and failed session disposal cannot become UNSAT or complete enumeration.
+
+The page enforces a 120-second startup limit. It removes that timer once cvc5 loads; no solve timeout applies after readiness. A timed-out load becomes a failed, incomplete job and a later search creates a fresh worker. Progress packets describe completed planner/leaf work. A single synchronous backend call can delay new solver telemetry, but the page and its elapsed-time display remain independent.
+
+### History and local assets
+
+Completed jobs and acknowledged partial witnesses use the existing IndexedDB transaction and checkpoint path. Live running jobs serialize as incomplete checkpoints, clear job ownership and retain their solutions and graph edits. Reload never resumes the search or restores queued work. Pagehide saves supplement normal checkpoints but cannot guarantee a final transaction when the page is destroyed. Storage remains origin-local and best-effort.
+
+`frontend/solverAssets.ts` emits the production Rust JavaScript/Wasm pair, cvc5 JavaScript/Wasm pair, session adapter, manifest, build record and notices into one content-hashed directory. It verifies cvc5 artifact hashes against its build record. URLs resolve beneath the application's base path. There are no runtime CDNs, backend services or cross-origin isolation requirements. Opening a share or browsing history does not load the search modules. The separate verifier directory remains unchanged.
+
+`prepare-web-solver.py` checks cached source pins, build flags, wrapper hash, runtime hashes and notices before reusing cvc5. A matching build avoids relinking the toolchain. A stale or absent build invokes the existing pinned builder. Desktop Vite mode omits the browser search distribution; Tauri continues to use its native sidecar. Notice copies and build records do not replace the source/relink distribution work required before public release.
+
+### Build and validate the application
+
+```powershell
+npm run dev:web
+npm run build:web
+```
+
+Both commands prepare browser assets. They use the existing Linux/WSL cvc5 builder only when its verified outputs are missing or stale. To validate production jobs against fresh native/reference fixtures:
+
+```powershell
+$env:SOLVER_CVC5=Join-Path (Get-Location) 'src-tauri/binaries/cvc5-x86_64-pc-windows-msvc.exe'; node scripts/prepare-portable-fixtures.mjs
+$env:WEB_TEST_CHANNEL='chrome'; npm run test:web:solver
+```
+
+The production suite uses one Playwright worker, Vite on port 4184 and the static subpath/CSP server on port 4182. It verifies 39 application-compatible cases from the 42-case native/reference corpus. The other three cases exceed external terminal capacity and are rejected by the application preparer before solving. The test-only native `verify_browser_jobs` example reconstructs and validates every emitted graph, compares complete canonical collections and checks that terminal projection preserves live source indices. Comparison evidence is attached under `target/web-solver/test-results` and indexed by `target/web-solver/results.json`.
+
+The application tests also cover all three Find controls, completed history reload, interrupted history reload, missed-append reconciliation, cancellation during a real blocked cvc5 call, cancellation after a witness, worker replacement, unknown, resource limits, traps and disposal failure. Fault injection replaces test HTTP responses rather than adding a production test switch. The existing sharing, history, portable and backend suites remain separate. The workflow prepares comparison fixtures on Windows and consumes them in its Linux browser job.
+
+### Remaining phases
+
+Step 05 adds independent parallel compute workers, paged/batched collections and bounded collection backpressure. Step 04 acknowledges worker checkpoints but still retains full collections in memory and returns full terminal snapshots. It does not qualify very large result sets or device memory limits.
+
+Step 06 covers offline asset caching, version-coherent upgrades, distribution/source/relink packaging and authorized Pages delivery. Firefox, Safari/WebKit, device-pressure testing and packaged Tauri/WebView2 end-to-end checks remain unqualified. No benchmark campaign, installer, public deployment, push or version change is part of Step 04.
+
+### Step 04 validation on 12 September 2026
+
+The full native workspace passed 179 tests, including the 12 solver/reference integration contracts, 19 desktop tests, four production browser bridge tests and 14 shared application tests. The portable core also passed its 32 no-native unit tests. Frontend tests passed 182 cases, including 17 browser job ownership tests. Python tooling passed 45 tests, including five new cached-asset preparation tests.
+
+All 40 browser tests passed in installed Chrome, with no skipped, flaky or failed cases: 13 production job/UI tests, five portable tests, nine sharing tests, nine history tests and four backend tests. Production jobs matched 39 application-compatible native/reference cases, including full canonical result collections. The expanded portable corpus matched 42 lower-level search cases. The existing 42 pre-port identities, 15 selected-solution round trips and 28 verifier fixtures still passed.
+
+The two assertions left unresolved in the initial Step 04 run now pass. Reload tests correctly expect the stored running checkpoint to be `incomplete`, while the live page still shows a running job. Missed-append reconciliation now uses an all-min-N problem with several layouts rather than assuming a one-layout problem has more results. Disposal-failure handling also passed after changing it to require whole-worker termination instead of claiming leaf retirement.
+
+Native workspace Clippy and targeted wasm32 Clippy passed with warnings denied for the production browser bridge, portable core, shared application, verifier and qualification module. Svelte checks reported no errors or warnings. `npm run build:web` rebuilt both Rust modules and reused the verified cvc5 artifacts without relinking them. The search directory was `assets/solver-53a0331e11fbbf29`; the separate verifier remained `assets/verifier-cb682091b747c5b7`. These hashes identify the tested asset sets, not a guarantee of byte-identical builds on every host.
+
+Evidence is in `.tmp/web-step04-native-final.log`, `.tmp/web-step04-frontend-final.json`, `.tmp/web-step04-clippy-native.log` and the five browser result directories. The existing non-failing graph shortcut configuration warning still appears in sharing/history interactions. These are local Windows/Chrome checks, not remote CI or other-browser qualification. Step 04 changes remain uncommitted on `feature/web-backend-foundations`; Step 03 remains commit `0d7cbe28440f95ddf91e3971b26a3e34340526ad`.

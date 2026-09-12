@@ -23,7 +23,7 @@ test.beforeEach(async ({ page }) => {
     };
   });
   await page.goto('./');
-  await expect(page.getByText('Browser solving is not available', { exact: false })).toBeVisible();
+  await expect(page.getByText('Solving runs locally in one browser worker.', { exact: false })).toBeVisible();
 });
 
 test.afterEach(async ({ page }) => {
@@ -223,7 +223,7 @@ test('history checkpoints keep interrupted solutions, exclude queued work and re
   expect(entry.error).toContain('Interrupted before completion');
   expect(entry.results).toHaveLength(1);
   // Graph hydration may replace an incompatible cache key, but it never reruns the solver.
-  await expect(page.getByRole('button', { name: /^Find/ })).toBeDisabled();
+  await expect(page.getByRole('button', { name: /^Find/ })).toBeEnabled();
 });
 
 test('the Svelte UI imports, renames and reloads browser-local history without Tauri', async ({ page }) => {

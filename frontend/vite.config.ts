@@ -2,10 +2,11 @@ import { svelte } from '@sveltejs/vite-plugin-svelte';
 import tailwindcss from '@tailwindcss/vite';
 import { defineConfig } from 'vitest/config';
 import { verifierAssets } from './verifierAssets.ts';
+import { solverAssets } from './solverAssets.ts';
 
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   base: './',
-  plugins: [svelte(), tailwindcss(), verifierAssets()],
+  plugins: [svelte(), tailwindcss(), verifierAssets(), solverAssets(mode === 'desktop')],
   clearScreen: false,
   build: {
     // ELK is intentionally lazy-loaded only when a graph is laid out. Its standalone bundled
@@ -32,4 +33,4 @@ export default defineConfig({
       },
     ],
   },
-});
+}));

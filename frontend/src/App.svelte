@@ -39,7 +39,6 @@
   import type { VerifiedShare } from './lib/sharing/client';
   import Button from './lib/ui/Button.svelte';
   import { getPlatform } from './lib/platform';
-  import { BROWSER_SOLVE_UNAVAILABLE } from './lib/platform/browser';
   import { formatElapsed, searchHeadline, searchStageView, searchSubline, sizeSearchBody } from './lib/searchStage';
   import { DEFAULT_SORT_COLUMNS, compareSolutions, type SortColumn } from './lib/solutionSort';
   import { readUiPrefs, updateUiPrefs } from './lib/uiPrefs';
@@ -567,9 +566,10 @@
           onSolve={() => void solve()}
         />
 
-        {#if platform.capabilities.solve === 'unavailable'}
+        {#if platform.capabilities.runtime === 'browser'}
           <p class="text-muted m-0 text-sm" role="status">
-            {BROWSER_SOLVE_UNAVAILABLE} Browser storage is best-effort. Export a backup before clearing site data.
+            Solving runs locally in one browser worker. Closing this tab stops the search. Browser storage is
+            best-effort. Export a backup before clearing site data.
           </p>
         {/if}
 

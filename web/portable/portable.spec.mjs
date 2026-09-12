@@ -39,7 +39,7 @@ test('32-bit Canonaut preserves pre-port native golden identities and primitive 
 test('the portable planner and leaf driver match native/reference scopes through real cvc5 Wasm', async ({ page }) => {
   const result = await inWorker(page, { operation: 'search' });
   expect(result.kind, result.error).toBe('verified');
-  expect(result.results).toHaveLength(36);
+  expect(result.results).toHaveLength(42);
   for (const item of result.results) {
     expect(item.actual.done, item.name).toEqual(item.expected);
     expect(item.actual.failures, item.name).toEqual([]);

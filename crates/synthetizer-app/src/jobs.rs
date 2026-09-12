@@ -192,6 +192,59 @@ pub fn project_outcome<Id>(
     Ok(())
 }
 
+/// Pre-project a hard interruption while the compute worker is still available.
+/// The host retains the live graphs and applies this thin packet only after it
+/// retires the worker. It must not apply it after accepting a terminal snapshot.
+/// This keeps proof and status rules in Rust even if the worker traps or blocks.
+#[must_use]
+pub fn interruption_packet<Id: Clone>(
+    snapshot: &JobSnapshot<Id>,
+    mode: SolveMode,
+    best: Option<&solver_api::BestKnownSolution>,
+    proof: &solver_api::ProofSummary,
+    reason: IncompleteReason,
+) -> Option<JobSnapshot<Id>> {
+    if !matches!(snapshot.status, JobStatus::Running | JobStatus::Cancelling) {
+        return None;
+    }
+    let outcome = SolveOutcome::new(
+        SolveResult::Incomplete(solver_api::IncompleteResult {
+            reason: reason.clone(),
+            best_known: best.cloned(),
+            proof: proof.clone(),
+        }),
+        mode,
+        Vec::new(),
+    );
+    let mut packet = snapshot.thin_packet();
+    packet.sequence += 1;
+    packet.results_omitted = true;
+    packet.enumeration_complete = false;
+    packet.proof = Some(outcome.proof);
+    packet.unsat = None;
+    apply_incomplete_status(&mut packet, reason);
+    Some(packet)
+}
+
+fn apply_incomplete_status<Id>(snapshot: &mut JobSnapshot<Id>, reason: IncompleteReason) {
+    snapshot.error = None;
+    snapshot.status = match reason {
+        IncompleteReason::Cancelled => JobStatus::Cancelled,
+        IncompleteReason::WorkerFailed { detail } => {
+            snapshot.error = Some(detail);
+            JobStatus::Failed
+        }
+        IncompleteReason::DeadlineReached => {
+            snapshot.error = Some("Solve deadline reached.".to_owned());
+            JobStatus::Incomplete
+        }
+        IncompleteReason::ResourceLimit { detail } => {
+            snapshot.error = Some(detail);
+            JobStatus::Incomplete
+        }
+    };
+}
+
 fn terminal_solutions<Id>(
     snapshot: &JobSnapshot<Id>,
     prepared: &PreparedProblem,
@@ -280,21 +333,7 @@ fn apply_terminal<Id>(
             snapshot.error = Some("No exact network exists for these rates.".to_owned());
         }
         PresentedSolveOutcome::Incomplete(incomplete) => {
-            snapshot.status = match incomplete.reason {
-                IncompleteReason::Cancelled => JobStatus::Cancelled,
-                IncompleteReason::WorkerFailed { detail } => {
-                    snapshot.error = Some(detail);
-                    JobStatus::Failed
-                }
-                IncompleteReason::DeadlineReached => {
-                    snapshot.error = Some("Solve deadline reached.".to_owned());
-                    JobStatus::Incomplete
-                }
-                IncompleteReason::ResourceLimit { detail } => {
-                    snapshot.error = Some(detail);
-                    JobStatus::Incomplete
-                }
-            };
+            apply_incomplete_status(snapshot, incomplete.reason);
             if (mode == SolveMode::OneMinNL || snapshot.result.is_none())
                 && let (Some(display), SolveResult::Incomplete(exact)) =
                     (incomplete.best_known, &outcome.result)
@@ -596,5 +635,88 @@ mod tests {
                 minimum_link_count: None
             })
         );
+    }
+
+    #[test]
+    fn hard_interruption_uses_the_same_proof_and_status_rules_as_normal_projection() {
+        let prepared = request().problem.prepare().unwrap();
+        for mode in [SolveMode::OneMinNL, SolveMode::AllMinNL, SolveMode::AllMinN] {
+            let stopped = cancel_before_presentation(fixture_outcome(mode), mode, true);
+            let SolveResult::Incomplete(exact) = &stopped.result else {
+                panic!()
+            };
+            let best = exact.best_known.as_ref().unwrap();
+            for reason in [
+                IncompleteReason::Cancelled,
+                IncompleteReason::WorkerFailed {
+                    detail: "worker trapped".into(),
+                },
+                IncompleteReason::DeadlineReached,
+                IncompleteReason::ResourceLimit {
+                    detail: "host budget".into(),
+                },
+            ] {
+                let mut snapshot = JobSnapshot::new("job".to_owned(), 42);
+                if mode == SolveMode::OneMinNL {
+                    snapshot.result = Some(Solution::from_best(&prepared, best).unwrap());
+                    snapshot.finish_update();
+                } else {
+                    for solution in &stopped.solutions {
+                        let _ = snapshot
+                            .append_solution(Solution::from_best(&prepared, solution).unwrap());
+                    }
+                }
+                let before = serde_json::to_value(&snapshot).unwrap();
+                let packet =
+                    interruption_packet(&snapshot, mode, Some(best), &exact.proof, reason.clone())
+                        .unwrap();
+                let outcome = SolveOutcome::new(
+                    SolveResult::Incomplete(IncompleteResult {
+                        reason,
+                        best_known: Some(best.clone()),
+                        proof: exact.proof.clone(),
+                    }),
+                    mode,
+                    stopped.solutions.clone(),
+                );
+                let mut projected = snapshot.clone();
+                project_outcome(&mut projected, mode, &prepared, &outcome).unwrap();
+                projected.finish_update();
+                assert!(packet.status == projected.status);
+                assert_eq!(packet.error, projected.error);
+                assert_eq!(packet.proof, projected.proof);
+                assert_eq!(packet.sequence, projected.sequence);
+                assert_eq!(packet.results_len, snapshot.results.len());
+                assert!(packet.results_omitted && !packet.result_appended);
+                assert!(packet.result.is_none() && packet.results.is_empty());
+                assert!(packet.unsat.is_none() && !packet.enumeration_complete);
+                assert_eq!(packet.proof.unwrap().minimum_link_count, None);
+                assert_eq!(before, serde_json::to_value(&snapshot).unwrap());
+            }
+        }
+    }
+
+    #[test]
+    fn hard_interruption_rejects_every_sealed_status() {
+        let mut snapshot = JobSnapshot::new("job".to_owned(), 42);
+        for status in [
+            JobStatus::Completed,
+            JobStatus::Cancelled,
+            JobStatus::Failed,
+            JobStatus::Incomplete,
+            JobStatus::Unsat,
+        ] {
+            snapshot.status = status;
+            assert!(
+                interruption_packet(
+                    &snapshot,
+                    SolveMode::AllMinN,
+                    None,
+                    &ProofSummary::default(),
+                    IncompleteReason::Cancelled
+                )
+                .is_none()
+            );
+        }
     }
 }

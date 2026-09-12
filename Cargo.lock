@@ -3079,6 +3079,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "solver-browser"
+version = "1.0.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "solver-api",
+ "solver-core",
+ "solver-validation",
+ "synthetizer-app",
+ "wasm-bindgen",
+]
+
+[[package]]
 name = "solver-core"
 version = "1.0.0"
 dependencies = [
@@ -3100,6 +3113,8 @@ dependencies = [
  "solver-core",
  "solver-reference",
  "solver-validation",
+ "solver-web",
+ "synthetizer-app",
  "wasm-bindgen",
 ]
 

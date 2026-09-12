@@ -1,26 +1,22 @@
 [package]
-name = "solver-portable-tests"
+name = "solver-browser"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-publish = false
 
 [lib]
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-solver-api = { path = "../solver-api" }
-solver-validation = { path = "../solver-validation" }
-solver-core = { path = "../solver-core", default-features = false }
-canonaut = "1.0.0"
+serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-wasm-bindgen = "=0.2.127"
-
-[dev-dependencies]
-solver-reference = { path = "../solver-reference" }
-solver-core = { path = "../solver-core", features = ["native-runtime"] }
-solver-web = { path = "../solver-web" }
+solver-api = { path = "../solver-api" }
+solver-core = { path = "../solver-core", default-features = false }
+solver-validation = { path = "../solver-validation", features = ["identity"] }
 synthetizer-app = { path = "../synthetizer-app", default-features = false }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = "=0.2.127"
 
 [lints]
 workspace = true

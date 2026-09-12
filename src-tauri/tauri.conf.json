@@ -4,8 +4,8 @@
   "version": "1.0.0",
   "identifier": "dev.satisfactory.flowsynthetizer",
   "build": {
-    "beforeDevCommand": "npm run prepare:cvc5 && npm run build:web:verifier && npm run dev -w frontend",
-    "beforeBuildCommand": "npm run prepare:cvc5 && npm run build:web:verifier && npm run build -w frontend",
+    "beforeDevCommand": "npm run prepare:cvc5 && npm run build:web:verifier && npm run dev -w frontend -- --mode desktop",
+    "beforeBuildCommand": "npm run prepare:cvc5 && npm run build:web:verifier && npm run build -w frontend -- --mode desktop",
     "devUrl": "http://localhost:5173",
     "frontendDist": "../frontend/dist"
   },

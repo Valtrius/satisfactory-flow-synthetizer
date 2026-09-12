@@ -76,12 +76,11 @@ describe('platform job contracts', () => {
     const platform = createBrowserPlatform();
     expect(platform.capabilities).toEqual({
       runtime: 'browser',
-      solve: 'unavailable',
+      solve: 'ready',
       persistentStorage: 'best-effort',
     });
-    await expect(platform.jobs.create(historyEntry().request)).rejects.toThrow('Browser solving is not available');
-    await expect(platform.jobs.get('job')).rejects.toThrow('Browser solving is not available');
-    await expect(platform.jobs.watch('job', vi.fn(), vi.fn())).rejects.toThrow('Browser solving is not available');
+    await expect(platform.jobs.get('job')).rejects.toThrow('Unknown browser job');
+    await expect(platform.jobs.watch('job', vi.fn(), vi.fn())).rejects.toThrow('Unknown browser job');
     await expect(platform.jobs.shutdown()).resolves.toEqual([]);
     await platform.jobs.resume();
     expect(mocks.invoke).not.toHaveBeenCalled();

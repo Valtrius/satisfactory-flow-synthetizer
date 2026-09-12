@@ -1,13 +1,7 @@
 import { createBrowserHistoryStore } from './browserHistory';
 import { publicViewerUrl } from '../sharing/viewer';
 import type { CloseFlushOptions, FileActions, PlatformServices } from './contracts';
-
-export const BROWSER_SOLVE_UNAVAILABLE =
-  'Browser solving is not available in this development build. History can be imported, edited and saved locally.';
-
-async function unavailable(): Promise<never> {
-  throw new Error(BROWSER_SOLVE_UNAVAILABLE);
-}
+import { createBrowserJobs } from './browserJobs';
 
 export const browserFiles: FileActions = {
   async saveText({ contents, fileName, format }) {
@@ -90,16 +84,8 @@ export async function installBrowserCloseFlush(options: CloseFlushOptions): Prom
 
 export function createBrowserPlatform(): PlatformServices {
   return {
-    capabilities: { runtime: 'browser', solve: 'unavailable', persistentStorage: 'best-effort' },
-    jobs: {
-      create: unavailable,
-      get: unavailable,
-      watch: unavailable,
-      cancel: unavailable,
-      release: unavailable,
-      shutdown: async () => [],
-      resume: async () => {},
-    },
+    capabilities: { runtime: 'browser', solve: 'ready', persistentStorage: 'best-effort' },
+    jobs: createBrowserJobs(),
     history: createBrowserHistoryStore(),
     files: browserFiles,
     shareViewerUrl: publicViewerUrl('browser'),

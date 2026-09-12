@@ -18,10 +18,12 @@ WINDOWS_ARCHIVE_SHA256 = "fd52ef9896cbb0f4f59ef115bdf2f4664a76d716b6201c35e59360
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--qualification', action='store_true', help='Build the separate portable-search qualification module, not application assets')
+    selection = parser.add_mutually_exclusive_group()
+    selection.add_argument('--qualification', action='store_true', help='Build the separate portable-search qualification module, not application assets')
+    selection.add_argument('--browser', action='store_true', help='Build the production browser solver, separately from the small share verifier')
     arguments = parser.parse_args()
-    package = 'solver-portable-tests' if arguments.qualification else 'solver-web'
-    directory = 'portable' if arguments.qualification else 'verifier'
+    package = 'solver-portable-tests' if arguments.qualification else 'solver-browser' if arguments.browser else 'solver-web'
+    directory = 'portable' if arguments.qualification else 'solver' if arguments.browser else 'verifier'
     module = package.replace('-', '_')
     tools = ROOT / "target/web-tools"
     tools.mkdir(parents=True, exist_ok=True)

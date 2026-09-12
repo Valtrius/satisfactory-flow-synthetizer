@@ -7,6 +7,7 @@ members = [
     "crates/solver-reference",
     "crates/solver-validation",
     "crates/solver-web",
+    "crates/solver-browser",
     "crates/solver-portable-tests",
     "crates/synthetizer-app",
     "src-tauri",
