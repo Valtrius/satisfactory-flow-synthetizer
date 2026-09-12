@@ -66,20 +66,15 @@ async function prepareAll() {
 }
 
 async function install() {
-  let retainFullOffline = false;
-  for (const name of await caches.keys()) {
-    if (name.startsWith(prefix) && name !== cacheName && (await (await caches.open(name)).match(readyUrl)))
-      retainFullOffline = true;
-  }
   try {
     const cache = await caches.open(cacheName);
     await cache.put(
       metadataUrl,
       new Response(JSON.stringify(release), { headers: { 'Content-Type': 'application/json' } }),
     );
-    for (const [url, asset] of assets)
-      if (retainFullOffline || asset.group === 'shell') await download(url, asset, true);
-    await cachedStatus();
+    // A tab may request its first solver or verifier after the host has already
+    // replaced this release. Install only a complete, verified runtime.
+    await prepareAll();
   } catch (error) {
     await caches.delete(cacheName);
     throw error;
@@ -90,12 +85,14 @@ self.addEventListener('install', (event) => {
   event.waitUntil(install());
 });
 self.addEventListener('activate', (event) => {
-  // No skipWaiting or clients.claim. An upgrade cannot replace an open page's
-  // assets. The browser activates it only after the previous clients leave.
+  // No skipWaiting: upgrades activate only after the previous clients leave.
+  // Claim the initial visit too, so its later lazy imports use the saved build
+  // without requiring a reload. Activation never replaces a controlled tab.
   event.waitUntil(
     (async () => {
       for (const name of await caches.keys())
         if (name.startsWith(prefix) && name !== cacheName) await caches.delete(name);
+      await self.clients.claim();
     })(),
   );
 });

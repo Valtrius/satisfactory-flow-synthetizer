@@ -9,6 +9,7 @@ export type OfflineStatus = {
 export type OfflineState = {
   available: boolean;
   busy: boolean;
+  installing: boolean;
   update: boolean;
   status: OfflineStatus | null;
   error: string;
@@ -18,7 +19,14 @@ export type OfflineState = {
 export function createOfflineClient(changed: (state: OfflineState) => void) {
   let registration: ServiceWorkerRegistration | undefined;
   let disposed = false;
-  let state: OfflineState = { available: false, busy: false, update: false, status: null, error: '' };
+  let state: OfflineState = {
+    available: false,
+    busy: false,
+    installing: false,
+    update: false,
+    status: null,
+    error: '',
+  };
   const buildId = document.querySelector<HTMLMetaElement>('meta[name="sfs-build"]')?.content;
   const listeners: (() => void)[] = [];
   const emit = (patch: Partial<OfflineState>) => {
@@ -77,20 +85,22 @@ export function createOfflineClient(changed: (state: OfflineState) => void) {
           updateViaCache: 'none',
         });
         if (disposed) return;
-        emit({ available: Boolean(registration.active) });
+        emit({ available: true });
         const track = () => {
           const worker = registration?.installing;
           if (!worker) return;
+          emit({ installing: true });
           observe(worker, 'statechange', () => {
-            if (worker.state === 'installed') emit({ update: Boolean(registration?.waiting) });
+            if (worker.state === 'installed') emit({ installing: false, update: Boolean(registration?.waiting) });
             if (worker.state === 'activated') {
-              emit({ available: true });
+              emit({ installing: false, error: '' });
               void refresh();
             }
             if (worker.state === 'redundant')
               emit({
+                installing: false,
                 error:
-                  'Could not install the offline update. The current version was kept. Check the connection and storage, then retry.',
+                  'Could not save the complete offline version. Any current version was kept. Check the connection and storage, then retry.',
               });
           });
         };
@@ -100,6 +110,7 @@ export function createOfflineClient(changed: (state: OfflineState) => void) {
         });
         observe(window, 'online', () => {
           void refresh();
+          void registration?.update().catch(() => {});
         });
         observe(window, 'offline', () => {
           void refresh();
@@ -111,9 +122,13 @@ export function createOfflineClient(changed: (state: OfflineState) => void) {
       }
     },
     async prepare() {
-      if (state.busy) return;
+      if (state.busy || state.installing) return;
       emit({ busy: true, error: '' });
       try {
+        if (!registration?.active) {
+          await this.start();
+          return;
+        }
         emit({ status: await request('offline-prepare') });
       } catch (error) {
         emit({ error: `Offline download failed: ${String(error)}. Existing history was not changed.` });
