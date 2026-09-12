@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_SORT_COLUMNS, compareSolutions, flipColumnDir, reorderColumns, sortSolutions } from './solutionSort';
+import { DEFAULT_SORT_COLUMNS, compareSolutions, flipColumnDir, reorderColumns, type SortColumn } from './solutionSort';
+
+function sortSolutions<T extends Parameters<typeof compareSolutions>[0]>(solutions: T[], columns: SortColumn[]): T[] {
+  return [...solutions].sort((left, right) => compareSolutions(left, right, columns));
+}
 
 function sol(belts: number, peak: string, feedbacks: number) {
   return {

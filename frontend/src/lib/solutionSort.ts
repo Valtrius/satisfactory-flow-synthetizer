@@ -96,10 +96,6 @@ function compareExactRates(left: string, right: string): number {
   return delta < 0n ? -1 : delta > 0n ? 1 : 0;
 }
 
-export function sortSolutions<T extends Parameters<typeof metricValue>[0]>(solutions: T[], columns: SortColumn[]): T[] {
-  return [...solutions].sort((left, right) => compareSolutions(left, right, columns));
-}
-
 export function flipColumnDir(columns: SortColumn[], key: SortKey): SortColumn[] {
   return columns.map((column) =>
     column.key === key ? { ...column, dir: column.dir === 'asc' ? 'desc' : 'asc' } : column,
