@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { SolveRequest, SolverProgress } from '../types';
+import { solution } from '../test/fixtures';
 import {
   createQueuedEntry,
   defaultTitle,
@@ -146,7 +147,7 @@ describe('entryOutcomeLine', () => {
 });
 
 describe('entryHistoryMetrics', () => {
-  it('summarizes search, engine, nodes, and layouts', () => {
+  it('summarizes search, the smallest found belt count, nodes, and layouts', () => {
     const entry = completed({
       id: 'metrics',
       enumerationComplete: true,
@@ -193,11 +194,63 @@ describe('entryHistoryMetrics', () => {
     });
     expect(entryHistoryMetrics(entry)).toEqual({
       search: { value: 'All min N', tip: 'Search: All min N' },
-      belts: { value: 'L=—', tip: 'Minimum operator belt count not yet proved' },
+      belts: { value: 'L=4', tip: 'Best operator belt count found L = 4' },
       nodes: { value: 'N=5', tip: 'Node count N = 5' },
       layouts: { value: '2', tip: '2 layouts found' },
     });
     expect(entryStatusCaption(entry)).toBe('Completed');
+  });
+
+  it.each(['one_min_nl', 'all_min_nl', 'all_min_n'] as const)(
+    'shows the first found L before %s finishes and retains it after an interrupted checkpoint',
+    (solveMode) => {
+      const entry = createQueuedEntry({ ...form, solveMode }, { ...request, solveMode });
+      entry.status = 'running';
+      entry.progress = {
+        phase: 'searching',
+        elapsedMs: 100,
+        nodeCount: 4,
+        nodeLowerBound: 4,
+        linkConstraint: { kind: 'exact', value: 3 },
+        bestNodeCount: null,
+        bestLinkCount: null,
+        solutionsFound: 0,
+        custom: [],
+      };
+      expect(entryHistoryMetrics(entry).nodes.value).toBe('N=4');
+      expect(entryHistoryMetrics(entry).belts.value).toBe('L=—');
+
+      // The witness can arrive before the next progress update or final proof.
+      entry.result = { ...solution, status: 'best_known', stats: { ...solution.stats, nodeCount: 4, linkCount: 3 } };
+      expect(entryHistoryMetrics(entry).belts.value).toBe('L=3');
+
+      entry.progress = { ...entry.progress, bestNodeCount: 4, bestLinkCount: 3, solutionsFound: 1 };
+      expect(entryHistoryMetrics({ ...entry, result: null }).belts.value).toBe('L=3');
+      if (solveMode === 'all_min_n') {
+        entry.progress.linkConstraint = { kind: 'exact', value: 5 };
+        entry.results = [{ ...entry.result, stats: { ...entry.result.stats, linkCount: 5 } }, entry.result];
+        expect(entryHistoryMetrics({ ...entry, result: null, progress: null }).belts.value).toBe('L=3');
+      }
+      expect(entryHistoryMetrics(entry).belts.value).toBe('L=3');
+
+      const [restored] = parseHistoryDocument(
+        JSON.parse(JSON.stringify({ entries: persistableEntries([entry]) })),
+      ).entries;
+      expect(restored.status).toBe('incomplete');
+      expect(restored.enumerationComplete).toBe(false);
+      expect(restored.proof).toBeNull();
+      expect(entryHistoryMetrics(restored).belts.value).toBe('L=3');
+    },
+  );
+
+  it('shows a found zero-belt layout before the final proof', () => {
+    const entry = completed({
+      id: 'zero-links',
+      status: 'running',
+      enumerationComplete: false,
+      result: { ...solution, status: 'best_known' },
+    });
+    expect(entryHistoryMetrics(entry).belts.value).toBe('L=0');
   });
 
   it('labels a finished All min N/L search Completed even when layouts stay best_known', () => {

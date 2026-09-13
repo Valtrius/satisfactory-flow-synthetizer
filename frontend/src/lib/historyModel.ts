@@ -254,15 +254,29 @@ export function entryHistoryMetrics(entry: HistoryEntry): HistoryMetrics {
   const mode = entry.request.solveMode;
   const nodeCount = entryNodeCount(entry);
   const layoutCount = entryLayoutCount(entry);
-  const proved = [entry.result, ...entry.results].find((s) => s?.status === 'proven_optimal');
+  const solutions = [entry.result, ...entry.results];
+  const proved = solutions.find((s) => s?.status === 'proven_optimal');
   const minimumL = entry.proof?.minimumLinkCount ?? proved?.stats.linkCount ?? null;
+  // Found layouts arrive before the terminal proof. All min N can then search
+  // larger L, so retain the best found count rather than the current constraint.
+  let bestL = entry.progress?.bestNodeCount === nodeCount ? (entry.progress.bestLinkCount ?? null) : null;
+  for (const solution of solutions) {
+    if (solution?.stats.nodeCount === nodeCount) {
+      bestL = bestL == null ? solution.stats.linkCount : Math.min(bestL, solution.stats.linkCount);
+    }
+  }
+  const linkCount = minimumL ?? bestL;
 
   return {
     search: { value: SOLVE_MODE_LABELS[mode], tip: `Search: ${SOLVE_MODE_LABELS[mode]}` },
     belts: {
-      value: minimumL != null ? `L=${minimumL}` : 'L=—',
+      value: linkCount != null ? `L=${linkCount}` : 'L=—',
       tip:
-        minimumL != null ? `Minimum operator belt count L = ${minimumL}` : 'Minimum operator belt count not yet proved',
+        minimumL != null
+          ? `Minimum operator belt count L = ${minimumL}`
+          : bestL != null
+            ? `Best operator belt count found L = ${bestL}`
+            : 'Minimum operator belt count not yet proved',
     },
     nodes: {
       value: nodeCount != null ? `N=${nodeCount}` : 'N=—',
