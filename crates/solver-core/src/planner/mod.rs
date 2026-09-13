@@ -323,7 +323,9 @@ impl ExactPlanner {
             if self.cancelled || self.failure.is_some() {
                 if self.group.as_ref().is_none_or(|group| group.active == 0) {
                     self.close_group();
-                    self.pending.events.push(self.progress(elapsed_ms));
+                    if self.search_work().is_some() {
+                        self.pending.events.push(self.progress(elapsed_ms));
+                    }
                     let reason = if self.cancelled {
                         IncompleteReason::Cancelled
                     } else {
