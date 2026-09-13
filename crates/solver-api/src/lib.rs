@@ -18,7 +18,8 @@ pub use graph::{
 };
 pub use problem::Problem;
 pub use progress::{
-    Diagnostic, DiagnosticValue, LinkConstraint, SolvePhase, SolverEvent, SolverProgress,
+    Diagnostic, DiagnosticValue, LinkConstraint, SearchWork, SolvePhase, SolverEvent,
+    SolverProgress, WorkCount,
 };
 pub use rational::{Rational, RationalParseError};
 pub use result::{

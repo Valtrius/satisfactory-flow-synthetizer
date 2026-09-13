@@ -92,6 +92,7 @@ fn incremental_packets_preserve_wire_fields_and_full_snapshot_state() {
         node_lower_bound: Some(7),
         best_node_count: Some(7),
         best_link_count: None,
+        work: None,
         solutions_found: 1,
         custom: Vec::new(),
     };

@@ -6,7 +6,7 @@ use crate::{
     lower_bound::profile_impossibility,
     profile::{AccountedProfile, AccountedProfileGroup},
 };
-use solver_api::{ProofSummary, RunOptions, SolveMode};
+use solver_api::{ProofSummary, RunOptions, SearchWork, SolveMode, WorkCount};
 use std::collections::VecDeque;
 
 enum Coverage {
@@ -149,6 +149,25 @@ impl Group {
 
     pub fn profile_count_matches(&self, proof: &ProofSummary) -> bool {
         proof.profiles_exhausted - self.completed_before == self.tasks.len() as u64
+    }
+
+    pub fn progress(&self, proof: &ProofSummary, link_groups: WorkCount) -> SearchWork {
+        let ledger = match &self.coverage {
+            Coverage::Static(ledger) => ledger,
+            Coverage::Adaptive(ledger) => &ledger.base,
+        };
+        SearchWork {
+            node_count: self.nodes,
+            link_count: self.links,
+            link_groups,
+            profiles: WorkCount {
+                completed: usize::try_from(proof.profiles_exhausted - self.completed_before)
+                    .expect("completed profiles belong to this allocated group"),
+                total: self.tasks.len(),
+            },
+            partitions: ledger.progress(),
+            active_workers: self.active,
+        }
     }
 
     pub fn require_running(&self, id: LeafId) -> Result<(), Failure> {

@@ -59,6 +59,29 @@ pub enum LinkConstraint {
     Exact(u32),
 }
 
+/// Exhausted obligations in a finite scope, not an estimate of elapsed work or time.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkCount {
+    pub completed: usize,
+    pub total: usize,
+}
+
+/// One independent branch's current scope. Alternative proof covers are never added.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SearchWork {
+    pub node_count: u32,
+    pub link_count: u32,
+    /// All planned exact-L groups at this N, including groups an optimum may skip.
+    pub link_groups: WorkCount,
+    pub profiles: WorkCount,
+    /// Fixed root obligations; an adaptive parent counts once its parent OR all children exhaust.
+    pub partitions: WorkCount,
+    /// Running leaves in this branch, including competing adaptive covers.
+    pub active_workers: usize,
+}
+
 /// Common facts only. Diagnostics are a complete replacement on each snapshot.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -72,6 +95,9 @@ pub struct SolverProgress {
     pub best_link_count: Option<u32>,
     /// Distinct enumeration layouts; Opt incumbents do not increment this count.
     pub solutions_found: u64,
+    /// Optional so older saved snapshots remain readable.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub work: Option<SearchWork>,
     pub custom: Vec<Diagnostic>,
 }
 

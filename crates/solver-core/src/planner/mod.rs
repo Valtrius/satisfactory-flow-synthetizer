@@ -16,8 +16,8 @@ use group::Group;
 pub use roots::Root;
 use solver_api::{
     BestKnownSolution, CanonicalGraphKey, Diagnostic, IncompleteReason, IncompleteResult,
-    LinkConstraint, OptimalSolution, Problem, ProofSummary, RunOptions, SolveMode, SolveOutcome,
-    SolvePhase, SolveResult, SolverError, SolverEvent, SolverProgress,
+    LinkConstraint, OptimalSolution, Problem, ProofSummary, RunOptions, SearchWork, SolveMode,
+    SolveOutcome, SolvePhase, SolveResult, SolverError, SolverEvent, SolverProgress, WorkCount,
 };
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
@@ -78,6 +78,8 @@ pub struct ExactPlanner {
     streamed_keys: Option<BTreeSet<CanonicalGraphKey>>,
     node: u32,
     groups: VecDeque<AccountedProfileGroup>,
+    node_groups: WorkCount,
+    last_work: Option<SearchWork>,
     loaded_node: bool,
     group: Option<Group>,
     next_group: u64,
@@ -128,6 +130,11 @@ impl ExactPlanner {
             streamed_keys: None,
             node: 0,
             groups: VecDeque::new(),
+            node_groups: WorkCount {
+                completed: 0,
+                total: 0,
+            },
+            last_work: None,
             loaded_node: false,
             group: None,
             next_group: 0,
@@ -316,6 +323,7 @@ impl ExactPlanner {
             if self.cancelled || self.failure.is_some() {
                 if self.group.as_ref().is_none_or(|group| group.active == 0) {
                     self.close_group();
+                    self.pending.events.push(self.progress(elapsed_ms));
                     let reason = if self.cancelled {
                         IncompleteReason::Cancelled
                     } else {
@@ -362,14 +370,15 @@ impl ExactPlanner {
                     &self.proof,
                 ) {
                     Ok(group) => {
+                        let links = group.links;
+                        self.group = Some(group);
                         self.pending.events.push(self.progress_at(
                             Some(self.node),
-                            Some(group.links),
+                            Some(links),
                             SolvePhase::Searching,
                             elapsed_ms,
                             None,
                         ));
-                        self.group = Some(group);
                         if let Some(next) = self.next_group.checked_add(1) {
                             self.next_group = next;
                         } else {
@@ -412,6 +421,11 @@ impl ExactPlanner {
             &context.normalized.max_link_rate,
         ) {
             Ok(groups) => {
+                self.node_groups = WorkCount {
+                    completed: 0,
+                    total: groups.len(),
+                };
+                self.last_work = None;
                 self.groups = groups.into();
                 self.loaded_node = true;
                 true
@@ -433,31 +447,39 @@ impl ExactPlanner {
             self.fail(Failure::Worker("unfinished Solver profile group".into()));
             return true;
         }
-        self.close_group();
         if optimum {
+            self.close_group();
+            self.pending.events.push(self.progress(elapsed_ms));
             self.seal_optimum();
             return false;
         }
         self.proof.link_groups_exhausted += 1;
+        self.node_groups.completed += 1;
+        self.close_group();
         if self.best.is_some() {
             self.minimum_links_ms.get_or_insert(elapsed_ms);
-            self.pending.events.push(self.progress_at(
-                Some(nodes),
-                Some(links),
-                SolvePhase::Enumerating,
-                elapsed_ms,
-                None,
-            ));
-            if self.options.mode != SolveMode::AllMinN {
-                self.seal_optimum();
-                return false;
-            }
+        }
+        self.pending.events.push(self.progress_at(
+            Some(nodes),
+            Some(links),
+            if self.best.is_some() {
+                SolvePhase::Enumerating
+            } else {
+                SolvePhase::Searching
+            },
+            elapsed_ms,
+            None,
+        ));
+        if self.best.is_some() && self.options.mode != SolveMode::AllMinN {
+            self.seal_optimum();
+            return false;
         }
         true
     }
 
     fn close_group(&mut self) {
         if let Some(group) = self.group.take() {
+            self.last_work = Some(group.progress(&self.proof, self.node_groups));
             self.pending.closed_groups.push(group.evidence());
         }
     }
@@ -512,7 +534,7 @@ impl ExactPlanner {
 
     #[must_use]
     pub fn progress(&self, elapsed_ms: u64) -> SolverEvent {
-        let links = self.group.as_ref().map(|group| group.links);
+        let links = self.search_work().map(|work| work.link_count);
         self.progress_at(
             Some(self.node),
             links,
@@ -520,6 +542,17 @@ impl ExactPlanner {
             elapsed_ms,
             None,
         )
+    }
+
+    fn search_work(&self) -> Option<SearchWork> {
+        self.group
+            .as_ref()
+            .map(|group| group.progress(&self.proof, self.node_groups))
+            .or_else(|| {
+                self.last_work
+                    .clone()
+                    .filter(|work| work.node_count == self.node)
+            })
     }
 
     #[must_use]
@@ -577,6 +610,11 @@ impl ExactPlanner {
             best_node_count: self.best.as_ref().map(|b| b.node_count),
             best_link_count: self.best.as_ref().map(|b| b.link_count),
             solutions_found: self.layout_count() as u64,
+            work: self.search_work().filter(|work| {
+                phase != SolvePhase::ComputingLowerBound
+                    && Some(work.node_count) == nodes
+                    && Some(work.link_count) == links
+            }),
             custom,
         })
     }

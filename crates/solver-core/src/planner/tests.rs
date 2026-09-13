@@ -40,6 +40,114 @@ fn direct(mode: SolveMode) -> (ExactPlanner, LeafTask, BestKnownSolution) {
 }
 
 #[test]
+fn progress_tracks_exact_scopes_and_resets_at_each_link_and_node_count() {
+    let mut planner = ExactPlanner::new(
+        &problem(&["1"], &["1"], "1"),
+        options(SolveMode::AllMinN, 1),
+        Counts::Boolean,
+    )
+    .unwrap();
+    assert!(planner.search_work().is_none());
+    // Exercise planner accounting by exhausting synthetic leaves; physical
+    // search/result equivalence is covered by the native/reference contracts.
+    let mut previous: Option<SearchWork> = None;
+    let mut saw_new_links = false;
+    let mut saw_new_nodes = false;
+    loop {
+        let update = planner.poll(0);
+        for event in update.events {
+            let SolverEvent::Progress(progress) = event else {
+                continue;
+            };
+            let Some(work) = progress.work else { continue };
+            assert_eq!(Some(work.node_count), progress.node_count);
+            assert_eq!(
+                Some(LinkConstraint::Exact(work.link_count)),
+                progress.link_constraint
+            );
+            for count in [work.link_groups, work.profiles, work.partitions] {
+                assert!(count.total > 0);
+                assert!(count.completed <= count.total);
+            }
+            if let Some(prior) = &previous {
+                if work.node_count != prior.node_count {
+                    saw_new_nodes = true;
+                    assert_eq!(prior.link_groups.completed, prior.link_groups.total);
+                    assert_eq!(work.link_groups.completed, 0);
+                    assert_eq!(work.profiles.completed, 0);
+                } else if work.link_count != prior.link_count {
+                    saw_new_links = true;
+                    assert_eq!(work.link_groups, prior.link_groups);
+                    assert_eq!(work.profiles.completed, 0);
+                    assert_eq!(work.partitions.completed, 0);
+                }
+            }
+            previous = Some(work);
+        }
+        if planner.result().is_some() {
+            break;
+        }
+        assert!(!update.dispatch.is_empty());
+        for task in update.dispatch {
+            planner
+                .accept(PlannerEvent::Retired(task.id, Ok(Completion::Exhausted)), 1)
+                .unwrap();
+        }
+    }
+    assert!(saw_new_links);
+    assert!(saw_new_nodes);
+}
+
+#[test]
+fn completed_enumeration_keeps_its_final_scoped_counts() {
+    let (mut planner, task, witness) = direct(SolveMode::AllMinNL);
+    planner
+        .accept(PlannerEvent::Witness(task.id, witness), 1)
+        .unwrap();
+    assert_eq!(planner.search_work().unwrap().profiles.completed, 0);
+    planner
+        .accept(PlannerEvent::Retired(task.id, Ok(Completion::Exhausted)), 2)
+        .unwrap();
+    let _ = planner.poll(3);
+    let SolverEvent::Progress(progress) = planner.progress(4) else {
+        panic!()
+    };
+    let work = progress.work.as_ref().unwrap();
+    assert_eq!(
+        work.link_groups,
+        WorkCount {
+            completed: 1,
+            total: 1
+        }
+    );
+    assert_eq!(
+        work.profiles,
+        WorkCount {
+            completed: 1,
+            total: 1
+        }
+    );
+    assert_eq!(
+        work.partitions,
+        WorkCount {
+            completed: 1,
+            total: 1
+        }
+    );
+    assert_eq!(work.active_workers, 0);
+    // This is the same optional wire field consumed by desktop and browser jobs.
+    let mut wire = serde_json::to_value(progress).unwrap();
+    assert_eq!(wire["work"]["linkGroups"]["completed"], 1);
+    wire.as_object_mut().unwrap().remove("work");
+    assert!(
+        serde_json::from_value::<SolverProgress>(wire)
+            .unwrap()
+            .work
+            .is_none()
+    );
+}
+
+#[test]
 fn cancellation_before_sealing_wins_and_sealed_results_reject_late_packets() {
     for cancel_before_seal in [true, false] {
         let (mut planner, task, witness) = direct(SolveMode::AllMinNL);
@@ -147,6 +255,22 @@ fn first_optimum_requires_a_witness_and_does_not_claim_equal_link_exhaustion() {
     assert_eq!(outcome.enumeration, EnumerationStatus::NotRequested);
     assert!(outcome.solutions.is_empty());
     assert_eq!(planner.proof().link_groups_exhausted, 0);
+    let work = planner.search_work().unwrap();
+    assert_eq!(
+        work.link_groups,
+        WorkCount {
+            completed: 0,
+            total: 1
+        }
+    );
+    assert_eq!(
+        work.profiles,
+        WorkCount {
+            completed: 0,
+            total: 1
+        }
+    );
+    assert_eq!(work.active_workers, 0);
     let (mut planner, task, _) = direct(SolveMode::OneMinNL);
     assert!(
         planner
@@ -214,6 +338,27 @@ fn static_children_replace_parents_and_only_the_full_cover_exhausts() {
     }
     assert!(!group.covered());
     assert_eq!(proof.profiles_exhausted, 0);
+    let work = group.progress(
+        &proof,
+        WorkCount {
+            completed: 0,
+            total: 1,
+        },
+    );
+    assert_eq!(
+        work.profiles,
+        WorkCount {
+            completed: 0,
+            total: 1
+        }
+    );
+    assert_eq!(
+        work.partitions,
+        WorkCount {
+            completed: 3,
+            total: 4
+        }
+    );
     assert!(
         group
             .retire(tasks[0].id, Ok(Completion::Exhausted), false, &mut proof)
@@ -225,6 +370,10 @@ fn static_children_replace_parents_and_only_the_full_cover_exhausts() {
     assert!(group.covered());
     assert_eq!(proof.profiles_exhausted, 1);
     assert_eq!(proof.root_partitions_exhausted, 4);
+    assert_eq!(
+        group.progress(&proof, work.link_groups).profiles.completed,
+        1
+    );
 }
 
 #[test]
@@ -250,6 +399,19 @@ fn adaptive_parent_and_child_covers_have_one_owner_and_wait_for_retirement() {
         assert_eq!(first.len(), 1);
         assert_eq!(first[0].root.second_source, Some(0));
         assert_eq!(group.active, 2);
+        let scope = WorkCount {
+            completed: 0,
+            total: 1,
+        };
+        let work = group.progress(&proof, scope);
+        assert_eq!(
+            work.partitions,
+            WorkCount {
+                completed: 1,
+                total: 2
+            }
+        );
+        assert_eq!(work.profiles.completed, 0);
         if parent_wins {
             group
                 .retire(parents[0].id, Ok(Completion::Exhausted), false, &mut proof)
@@ -269,6 +431,8 @@ fn adaptive_parent_and_child_covers_have_one_owner_and_wait_for_retirement() {
                 .retire(first[0].id, Ok(Completion::Exhausted), false, &mut proof)
                 .unwrap();
             assert!(!group.covered());
+            // A partial alternative cover does not inflate either completion bar.
+            assert_eq!(group.progress(&proof, scope).partitions, work.partitions);
             let second = group.dispatch();
             assert_eq!(second.len(), 1);
             assert_eq!(second[0].root.second_source, Some(1));
@@ -284,6 +448,22 @@ fn adaptive_parent_and_child_covers_have_one_owner_and_wait_for_retirement() {
         }
         assert_eq!(group.active, 0);
         assert_eq!(proof.profiles_exhausted, 1);
+        let work = group.progress(&proof, scope);
+        assert_eq!(
+            work.partitions,
+            WorkCount {
+                completed: 2,
+                total: 2
+            }
+        );
+        assert_eq!(
+            work.profiles,
+            WorkCount {
+                completed: 1,
+                total: 1
+            }
+        );
+        assert_eq!(work.active_workers, 0);
         let evidence = group.evidence();
         assert_eq!(evidence.jobs[0].committed, parent_wins);
         assert_eq!(evidence.jobs[2].committed, !parent_wins);
@@ -311,6 +491,23 @@ fn cancel_waits_for_all_backends_and_never_dispatches_queued_roots() {
         assert_eq!(planner.result().is_some(), index + 1 == tasks.len());
     }
     assert_eq!(planner.proof().root_partitions_exhausted, 0);
+    let work = planner.search_work().unwrap();
+    assert_eq!(
+        work.partitions,
+        WorkCount {
+            completed: 0,
+            total: 4
+        }
+    );
+    assert_eq!(
+        work.profiles,
+        WorkCount {
+            completed: 0,
+            total: 1
+        }
+    );
+    assert_eq!(work.link_groups.completed, 0);
+    assert_eq!(work.active_workers, 0);
 }
 
 #[test]
@@ -330,6 +527,10 @@ fn all_min_n_advances_to_higher_links_at_the_same_minimum_node_count() {
     assert!(groups.len() > 1);
     planner.group = None;
     planner.node = 3;
+    planner.node_groups = WorkCount {
+        completed: 0,
+        total: groups.len(),
+    };
     planner.groups = groups.into();
     planner.loaded_node = true;
     let first = planner.poll(0).dispatch;

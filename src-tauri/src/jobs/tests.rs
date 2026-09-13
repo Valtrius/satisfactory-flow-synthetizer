@@ -11,6 +11,7 @@ fn progress(branch: Option<usize>, nodes: u32, links: u32) -> SolverProgress {
         best_node_count: None,
         best_link_count: None,
         solutions_found: 0,
+        work: None,
         custom: branch
             .map(|branch| {
                 Diagnostic::text(

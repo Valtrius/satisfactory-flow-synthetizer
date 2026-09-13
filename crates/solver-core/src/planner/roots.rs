@@ -169,6 +169,7 @@ pub(super) struct RootLedger {
     owners: Vec<usize>,
     completed: Vec<bool>,
     remaining: Vec<usize>,
+    completed_count: usize,
 }
 
 impl RootLedger {
@@ -181,6 +182,7 @@ impl RootLedger {
             owners: roots.iter().map(|root| root.profile).collect(),
             completed: vec![false; roots.len()],
             remaining,
+            completed_count: 0,
         }
     }
 
@@ -193,6 +195,7 @@ impl RootLedger {
             return Err(Failure::Worker("duplicate Solver root completion".into()));
         }
         *completed = true;
+        self.completed_count += 1;
         proof.root_partitions_exhausted += 1;
         let remaining = &mut self.remaining[self.owners[root]];
         *remaining -= 1;
@@ -204,6 +207,13 @@ impl RootLedger {
 
     pub(super) fn complete(&self) -> bool {
         self.remaining.iter().all(|&count| count == 0)
+    }
+
+    pub(super) fn progress(&self) -> solver_api::WorkCount {
+        solver_api::WorkCount {
+            completed: self.completed_count,
+            total: self.completed.len(),
+        }
     }
 }
 

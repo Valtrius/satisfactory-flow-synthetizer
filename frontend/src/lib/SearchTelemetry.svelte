@@ -38,11 +38,13 @@
   }: Props = $props();
   const detailsId = $props.id();
   const detailsVisible = $derived(showDetails && (!collapsible || detailsExpanded));
+  const work = $derived(searchView.work);
+  const progressVisible = $derived(work != null && (busy || detailsVisible));
 </script>
 
 <div
   class={`flex flex-col items-start justify-between gap-4 px-6 py-3 @min-[700px]/telemetry:flex-row @min-[700px]/telemetry:items-center ${
-    borderBottom || detailsVisible ? 'border-line border-b' : ''
+    !progressVisible && (borderBottom || detailsVisible) ? 'border-line border-b' : ''
   } bg-[#0a151d]`}
 >
   <div class="flex items-center gap-3">
@@ -92,6 +94,39 @@
   </div>
 </div>
 
+{#if progressVisible && work}
+  <div class={`bg-[#0a151d] px-6 pt-0.5 pb-4 ${borderBottom || detailsVisible ? 'border-line border-b' : ''}`}>
+    <div class="grid gap-3 @min-[560px]/telemetry:grid-cols-2 @min-[560px]/telemetry:gap-6">
+      {#each [{ label: `Link groups · N = ${formatTelemetryNumber(work.nodeCount)}`, count: work.linkGroups, color: 'groups' }, { label: `Profiles · L = ${formatTelemetryNumber(work.linkCount)}`, count: work.profiles, color: 'profiles' }] as scope}
+        {#if scope.count.total > 0}
+          <div class="min-w-0">
+            <div class="mb-1.5 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 text-xs">
+              <span class="text-[#dfe9ed]">{scope.label}</span>
+              <span class="text-muted shrink-0 tabular-nums">
+                <strong class="font-semibold text-[#dfe9ed]">{formatTelemetryNumber(scope.count.completed)}</strong>
+                / {formatTelemetryNumber(scope.count.total)} completed
+              </span>
+            </div>
+            <progress
+              class={`search-progress ${scope.color}`}
+              aria-label={scope.label}
+              aria-valuetext={`${scope.count.completed} of ${scope.count.total} completed`}
+              value={scope.count.completed}
+              max={scope.count.total}
+            ></progress>
+          </div>
+        {/if}
+      {/each}
+    </div>
+    <p
+      class="text-dim m-0 mt-2 text-[0.68rem]"
+      title="Each bar counts exhausted scopes in the displayed independent search. The first resets at a new N; the second resets at a new L. Finding an optimum can finish a search before all scopes are exhausted."
+    >
+      Work completed · time per group varies
+    </p>
+  </div>
+{/if}
+
 {#if detailsVisible}
   <div
     id={detailsId}
@@ -128,6 +163,20 @@
     >
       <h3 class="text-dim m-0 mb-3 text-[0.68rem] font-bold tracking-wider uppercase">Solver diagnostics</h3>
       <div class="text-muted grid gap-1.5 text-xs">
+        {#if work}
+          <div class="flex justify-between gap-3">
+            <span>Partitions completed at L = {formatTelemetryNumber(work.linkCount)}</span>
+            <strong class="text-right text-[#dfe9ed] tabular-nums">
+              {formatTelemetryNumber(work.partitions.completed)} / {formatTelemetryNumber(work.partitions.total)}
+            </strong>
+          </div>
+          <div class="flex justify-between gap-3">
+            <span>{busy ? 'Active workers in this search' : 'Active workers at last update'}</span>
+            <strong class="text-right text-[#dfe9ed] tabular-nums">
+              {formatTelemetryNumber(work.activeWorkers)}
+            </strong>
+          </div>
+        {/if}
         {#each searchView.custom as entry (entry.name)}
           <div class="flex justify-between gap-3">
             <span>{entry.label}</span>
@@ -136,9 +185,42 @@
             </strong>
           </div>
         {:else}
-          <span>No diagnostics reported yet.</span>
+          {#if !work}<span>No diagnostics reported yet.</span>{/if}
         {/each}
       </div>
     </div>
   </div>
 {/if}
+
+<style>
+  .search-progress {
+    display: block;
+    width: 100%;
+    height: 0.375rem;
+    overflow: hidden;
+    appearance: none;
+    border: 0;
+    border-radius: 999px;
+    background: #253a45;
+    color: #71cc91;
+  }
+
+  .search-progress.profiles {
+    color: #69b8d4;
+  }
+
+  .search-progress::-webkit-progress-bar {
+    background: #253a45;
+    border-radius: 999px;
+  }
+
+  .search-progress::-webkit-progress-value {
+    background: currentColor;
+    border-radius: 999px;
+  }
+
+  .search-progress::-moz-progress-bar {
+    background: currentColor;
+    border-radius: 999px;
+  }
+</style>

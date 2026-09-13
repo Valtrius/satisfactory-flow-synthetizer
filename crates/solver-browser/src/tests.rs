@@ -145,6 +145,9 @@ fn streamed_results_keep_caller_scale_identity_and_never_emit_the_collection_twi
         assert_eq!(live["packets"][0]["result"]["totalInput"]["exact"], "1/3");
         assert_eq!(live["packets"][0]["result"]["status"], "best_known");
         assert!(live["packets"][0]["result"]["proof"].is_null());
+        let work = &live["packets"][0]["progress"]["work"];
+        assert_eq!(work["profiles"], json!({"completed":0,"total":1}));
+        assert_eq!(work["activeWorkers"], 1);
         retire(
             &mut run,
             &tasks[1]["id"],
@@ -167,6 +170,12 @@ fn streamed_results_keep_caller_scale_identity_and_never_emit_the_collection_twi
         assert!(final_value["append"].as_array().unwrap().is_empty());
         let terminal = final_value["packets"].as_array().unwrap().last().unwrap();
         assert_eq!(terminal["status"], "completed");
+        let work = &terminal["progress"]["work"];
+        let completed = u32::from(mode != "one_min_nl");
+        for scope in ["linkGroups", "profiles", "partitions"] {
+            assert_eq!(work[scope], json!({"completed":completed,"total":1}));
+        }
+        assert_eq!(work["activeWorkers"], 0);
         assert_eq!(
             terminal["proof"],
             json!({"minimumNodeCount":0,"minimumLinkCount":0})

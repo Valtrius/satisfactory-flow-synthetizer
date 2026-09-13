@@ -47,6 +47,19 @@ const context = {
 };
 
 describe('shared search progress', () => {
+  it('keeps the reported scope and clears it when the next snapshot has no work counts', () => {
+    const work = {
+      nodeCount: 6,
+      linkCount: 4,
+      linkGroups: { completed: 2, total: 7 },
+      profiles: { completed: 3, total: 12 },
+      partitions: { completed: 23, total: 48 },
+      activeWorkers: 4,
+    };
+    expect(searchStageView(progress({ work })).work).toEqual(work);
+    expect(searchStageView(progress()).work).toBeNull();
+  });
+
   it('formats elapsed time and node counts', () => {
     expect(formatElapsed(65_200)).toBe('1:05.2');
     expect(formatElapsed(3_661_000)).toBe('1:01:01');

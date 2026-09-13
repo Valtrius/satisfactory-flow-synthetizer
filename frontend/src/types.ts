@@ -133,7 +133,24 @@ export interface SolverProgress {
   bestNodeCount: number | null;
   bestLinkCount: number | null;
   solutionsFound: number;
+  /** Absent in older history entries and while preparing the search. */
+  work?: SearchWork | null;
   custom: Diagnostic[];
+}
+
+export interface WorkCount {
+  completed: number;
+  total: number;
+}
+
+/** Exhausted scopes from one independent search; counts do not estimate remaining time. */
+export interface SearchWork {
+  nodeCount: number;
+  linkCount: number;
+  linkGroups: WorkCount;
+  profiles: WorkCount;
+  partitions: WorkCount;
+  activeWorkers: number;
 }
 
 export interface OptimalityProof {

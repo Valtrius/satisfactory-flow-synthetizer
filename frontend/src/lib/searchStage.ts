@@ -1,4 +1,4 @@
-import type { Diagnostic, JobSnapshot, SolverProgress } from '../types';
+import type { Diagnostic, JobSnapshot, SearchWork, SolverProgress } from '../types';
 
 export type SearchStageView = {
   phase: string | null;
@@ -9,6 +9,7 @@ export type SearchStageView = {
   bestNodeCount: number | null;
   bestLinkCount: number | null;
   ruledOutThrough: number | null;
+  work: SearchWork | null;
   custom: Diagnostic[];
 };
 
@@ -64,6 +65,7 @@ export function searchStageView(progress: SolverProgress | null): SearchStageVie
     bestNodeCount: progress?.bestNodeCount ?? null,
     bestLinkCount: progress?.bestLinkCount ?? null,
     ruledOutThrough: lowerBound != null && lowerBound > 0 ? lowerBound - 1 : null,
+    work: progress?.work ?? null,
     custom: progress?.custom ?? [],
   };
 }

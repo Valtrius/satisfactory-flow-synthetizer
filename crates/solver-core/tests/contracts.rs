@@ -45,12 +45,45 @@ fn compare(problem: &Problem, mode: SolveMode, cap: u32) -> SolveOutcome {
 fn compare_workers(problem: &Problem, mode: SolveMode, cap: u32, workers: usize) -> SolveOutcome {
     let cancel = AtomicBool::new(false);
     let opts = options(mode, cap, workers);
-    let actual = solver_core::solve_problem(problem, &opts, &cancel, &|_| {}).unwrap();
+    let progress_work = Mutex::new(Vec::new());
+    let actual = solver_core::solve_problem(problem, &opts, &cancel, &|event| {
+        if let SolverEvent::Progress(progress) = event
+            && let Some(work) = progress.work
+        {
+            progress_work.lock().unwrap().push((
+                progress.node_count,
+                progress.link_constraint,
+                work,
+            ));
+        }
+    })
+    .unwrap();
+    let progress_work = progress_work.into_inner().unwrap();
+    for (nodes, links, work) in &progress_work {
+        assert_eq!(Some(work.node_count), *nodes);
+        assert_eq!(
+            Some(solver_api::LinkConstraint::Exact(work.link_count)),
+            *links
+        );
+        for scope in [work.link_groups, work.profiles, work.partitions] {
+            assert!(scope.total > 0 && scope.completed <= scope.total);
+        }
+    }
     let reference = solver_reference::solve_problem(problem, &opts, &cancel).unwrap();
     assert_eq!(actual.proof, reference.proof, "{problem:?}");
     assert_eq!(actual.enumeration, reference.enumeration, "{problem:?}");
     match (&actual.result, &reference.result) {
         (SolveResult::Optimal(a), SolveResult::Optimal(b)) => {
+            let (_, _, work) = progress_work.last().expect("final scoped progress");
+            assert_eq!(work.node_count, a.node_count);
+            assert_eq!(work.active_workers, 0);
+            if mode != SolveMode::OneMinNL {
+                assert_eq!(work.profiles.completed, work.profiles.total);
+                assert_eq!(work.partitions.completed, work.partitions.total);
+            }
+            if mode == SolveMode::AllMinN {
+                assert_eq!(work.link_groups.completed, work.link_groups.total);
+            }
             assert_eq!((a.node_count, a.link_count), (b.node_count, b.link_count));
             assert_eq!(validate_solution(problem, &a.graph).unwrap(), a.validation);
         }
