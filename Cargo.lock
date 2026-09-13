@@ -2733,7 +2733,7 @@ dependencies = [
 
 [[package]]
 name = "satisfactory-flow-synthetizer"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "rusqlite",
  "serde",
@@ -3069,7 +3069,7 @@ dependencies = [
 
 [[package]]
 name = "solver-api"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "num",
  "serde",
@@ -3079,7 +3079,7 @@ dependencies = [
 
 [[package]]
 name = "solver-browser"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -3092,7 +3092,7 @@ dependencies = [
 
 [[package]]
 name = "solver-core"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "num",
  "serde_json",
@@ -3104,7 +3104,7 @@ dependencies = [
 
 [[package]]
 name = "solver-portable-tests"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "canonaut",
  "serde_json",
@@ -3119,7 +3119,7 @@ dependencies = [
 
 [[package]]
 name = "solver-reference"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "solver-api",
  "solver-validation",
@@ -3128,7 +3128,7 @@ dependencies = [
 
 [[package]]
 name = "solver-validation"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "canonaut",
  "num",
@@ -3138,7 +3138,7 @@ dependencies = [
 
 [[package]]
 name = "solver-web"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -3287,7 +3287,7 @@ dependencies = [
 
 [[package]]
 name = "synthetizer-app"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "num",
  "serde",

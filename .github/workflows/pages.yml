@@ -2,6 +2,9 @@ name: Publish browser application
 
 on:
   workflow_dispatch:
+  push:
+    tags:
+      - '[0-9]+.[0-9]+.[0-9]+'
 
 permissions:
   contents: read
@@ -35,6 +38,9 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.13'
+      - name: Check tagged release metadata
+        if: github.ref_type == 'tag'
+        run: python scripts/check-release.py --tag "${{ github.ref_name }}"
       - name: Cache cvc5 toolchain and library build
         uses: actions/cache@v4
         with:

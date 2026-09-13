@@ -27,7 +27,7 @@ Closing or reloading a tab never resumes a search. Browser storage remains best-
 
 ## Publish with GitHub Pages
 
-The repository includes `.github/workflows/pages.yml`. It is manual and does not deploy automatically on branch changes.
+The repository includes `.github/workflows/pages.yml`. It deploys automatically when a stable `X.Y.Z` version tag is pushed and can also be run manually. Branch pushes do not deploy the site.
 
 One-time repository setup requires admin or maintainer access:
 
@@ -35,7 +35,7 @@ One-time repository setup requires admin or maintainer access:
 2. Under **Build and deployment**, set **Source** to **GitHub Actions**.
 3. Review the `github-pages` environment protection rules if the repository uses them.
 
-For a reviewed ref already available on GitHub, open **Actions > Publish browser application**, choose **Run workflow**, and select the reviewed ref. The workflow builds the publication artifact on Ubuntu, runs frontend and offline-delivery tests, uploads `frontend/dist`, then deploys that exact artifact through the `github-pages` environment.
+Pushing a reviewed stable version tag starts **Publish browser application** automatically. To deploy another reviewed ref already available on GitHub, open **Actions > Publish browser application**, choose **Run workflow**, and select the ref. The workflow builds the publication artifact on Ubuntu, runs frontend and offline-delivery tests, uploads `frontend/dist`, then deploys that exact artifact through the `github-pages` environment.
 
 No custom domain is required. Relative asset URLs and the scoped service worker support the normal GitHub project path. The browser itself creates selected-solution links from its current project URL. The desktop application defaults to `https://valtrius.github.io/satisfactory-flow-synthetizer/` for selected-solution links. Set `VITE_PUBLIC_APP_URL` at build time to use a different public viewer address on either host.
 

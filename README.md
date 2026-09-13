@@ -1,17 +1,22 @@
 # Satisfactory Flow Synthetizer
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](package.json)
+[![Version](https://img.shields.io/badge/version-1.1.0-blue.svg)](package.json)
 [![Platform](https://img.shields.io/badge/platform-Windows-0078D6.svg?logo=windows&logoColor=white)](#)
+[![Platform](https://img.shields.io/badge/platform-Web-654FF0.svg?logo=webassembly&logoColor=white)](https://valtrius.github.io/satisfactory-flow-synthetizer/)
 [![Tauri](https://img.shields.io/badge/Tauri-2-FFC131.svg?logo=tauri&logoColor=white)](https://tauri.app)
 [![Rust](https://img.shields.io/badge/Rust-orange.svg?logo=rust&logoColor=white)](https://www.rust-lang.org)
 [![Svelte](https://img.shields.io/badge/Svelte_5-FF3E00.svg?logo=svelte&logoColor=white)](https://svelte.dev)
 
 Offline Windows desktop app for exact Satisfactory splitter/merger flow synthesis. Set supply and demand, choose a result scope, and inspect, arrange or export validated belt layouts.
 
+[Run in the browser](https://valtrius.github.io/satisfactory-flow-synthetizer/) · [Download the Windows installer](https://github.com/Valtrius/satisfactory-flow-synthetizer/releases/download/1.1.0/satisfactory-flow-synthetizer_1.1.0_setup.exe) ([SHA-256](https://github.com/Valtrius/satisfactory-flow-synthetizer/releases/download/1.1.0/satisfactory-flow-synthetizer_1.1.0_setup.exe.sha256)) · [Download the portable ZIP](https://github.com/Valtrius/satisfactory-flow-synthetizer/releases/download/1.1.0/satisfactory-flow-synthetizer_1.1.0_portable.zip) ([SHA-256](https://github.com/Valtrius/satisfactory-flow-synthetizer/releases/download/1.1.0/satisfactory-flow-synthetizer_1.1.0_portable.zip.sha256))
+
 ![Usage screenshot](docs/usage.png)
 
 ## Use
+
+The [web version](https://valtrius.github.io/satisfactory-flow-synthetizer/) runs entirely in the browser and can work offline after its runtime has been cached. It is currently about twice as slow as the desktop app.
 
 The Windows x64 installer and portable ZIP include cvc5 1.3.4 and its license notices. Install the app, or extract the entire portable ZIP and run `satisfactory-flow-synthetizer.exe`, keeping `cvc5.exe` beside it. No separate cvc5 installation is needed. The app solves offline. Microsoft Edge WebView2 is required; the installer can install that runtime if it is missing.
 
@@ -44,7 +49,7 @@ The first development build downloads and verifies the pinned cvc5 package. Solv
 
 The shared interface also runs in the browser. `npm run dev:web` prepares the local Wasm assets and starts it; `npm run build:web` produces the static browser build. All three exact scopes use independent local compute workers, hard cancellation and browser-local history. Automatic worker selection uses the client's reported logical processor count; lower counts are available to reduce memory use. Selected-solution links need no backend service. The first cvc5 Wasm build requires Linux x64 or Ubuntu WSL, Python and the `wasm32-unknown-unknown` Rust target. See the [browser development guide](docs/web-backends.md) for setup, architecture and tests.
 
-The browser build stores paged result collections in IndexedDB and caches its complete runtime for offline use. `npm run build:web:release` prepares the static publication artifact plus its source/relink downloads, and the repository has a manual GitHub Pages workflow. No public deployment is implied by a local build. See the [browser release guide](docs/web-release.md). The Windows release above remains an offline native application.
+The browser build stores paged result collections in IndexedDB and caches its complete runtime for offline use. `npm run build:web:release` prepares the static publication artifact plus its source/relink downloads. Stable version tags deploy that artifact through GitHub Pages automatically, and the workflow can also be run manually. No public deployment is implied by a local build. See the [browser release guide](docs/web-release.md). The Windows release above remains an offline native application.
 
 See the [development guide](docs/development.md) for checks and the code map, the [Windows release guide](docs/release.md), the [browser release guide](docs/web-release.md), and the [benchmark guide](benchmarks/README.md) for performance work.
 

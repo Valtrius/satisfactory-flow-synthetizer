@@ -43,5 +43,3 @@ Do not turn the release check into another performance campaign.
 Before tagging, run `python scripts/check-release.py --tag <version>`. The release workflow runs the shared validation job against that exact commit before packaging or publishing. It rejects missing notes or inconsistent versions.
 
 Package verification does not replace an installer upgrade or interactive desktop test. In an isolated app-data profile, check startup, import/export outside the home directory, graph placement, cancellation, and closing during a hard solve. Check the failed-save choices and confirm that cvc5 children exit after the window disappears. Do not use a release test to migrate the user's real history.
-
-For 1.0.0, complete the five performance-opportunity experiments before the historical release comparison. Keep the old release notes and SVGs unchanged. Generate the new three-version wall-seconds chart and table from one provenance-backed dataset; caps are not completion times.
