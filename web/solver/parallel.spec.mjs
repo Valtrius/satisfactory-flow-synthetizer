@@ -12,7 +12,7 @@ const metric = (snapshot, name) =>
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() =>
-    Object.defineProperty(navigator, 'hardwareConcurrency', { configurable: true, value: 32 }),
+    Object.defineProperty(navigator, 'hardwareConcurrency', { configurable: true, value: 8 }),
   );
 });
 

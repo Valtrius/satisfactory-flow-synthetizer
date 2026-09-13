@@ -41,7 +41,7 @@ test('a second build opened during first installation acquires the active build 
   await context.setOffline(true);
   await second.getByRole('button', { name: /^Find/ }).click();
   await expect(second.locator('[data-history-band="history"]')).toContainText('Completed');
-  await second.getByRole('button', { name: 'Share selected solution', exact: true }).click();
+  await second.getByRole('button', { name: 'Share solution', exact: true }).click();
   await expect(second.getByRole('textbox', { name: 'Share link', exact: true })).toBeVisible();
 });
 
@@ -77,7 +77,7 @@ test('the first visit caches automatically without starting compute, then every 
     );
   }
   await expect(page.locator('.svelte-flow__node')).toHaveCount(4);
-  await page.getByRole('button', { name: 'Share selected solution', exact: true }).click();
+  await page.getByRole('button', { name: 'Share solution', exact: true }).click();
   const shareLink = page.getByRole('textbox', { name: 'Share link', exact: true });
   await expect(shareLink).toBeVisible();
   const sharedUrl = await shareLink.inputValue();
@@ -154,7 +154,7 @@ test('an unused first-visit solver and verifier survive replacement of their fil
   await context.setOffline(true);
   await page.getByRole('button', { name: /^Find/ }).click();
   await expect(page.locator('[data-history-band="history"]')).toContainText('Completed');
-  await page.getByRole('button', { name: 'Share selected solution', exact: true }).click();
+  await page.getByRole('button', { name: 'Share solution', exact: true }).click();
   await expect(page.getByRole('textbox', { name: 'Share link', exact: true })).toBeVisible();
   await page.getByRole('dialog').press('Escape');
   await page.reload();

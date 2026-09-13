@@ -1,6 +1,9 @@
 import { test, expect } from '@playwright/test';
 
-test('automatic uses the real client thread count for a completed browser solve', async ({ page }, testInfo) => {
+test('automatic uses the reported client thread count for a completed browser solve', async ({ page }, testInfo) => {
+  await page.addInitScript(() =>
+    Object.defineProperty(navigator, 'hardwareConcurrency', { configurable: true, value: 4 }),
+  );
   await page.goto('./');
   const threads = await page.evaluate(() => navigator.hardwareConcurrency);
   const select = page.getByRole('combobox', { name: 'Browser compute workers', exact: true });

@@ -15,11 +15,11 @@ async function savedEntry(page) {
   });
 }
 
-test('paged UI preserves off-page selection, graph edits, selected sharing and source-ordered history export', async ({
+test('incrementally loaded UI preserves off-screen selection, graph edits, sharing and source-ordered history export', async ({
   page,
 }) => {
   await page.addInitScript(() =>
-    Object.defineProperty(navigator, 'hardwareConcurrency', { configurable: true, value: 32 }),
+    Object.defineProperty(navigator, 'hardwareConcurrency', { configurable: true, value: 4 }),
   );
   await page.goto('./');
   const request = {
@@ -67,10 +67,10 @@ test('paged UI preserves off-page selection, graph edits, selected sharing and s
   await expect(page.locator('[data-history-band="history"]')).toContainText('Paged UI fixture');
   await expect(page.locator('[data-layout-select]')).toHaveCount(64);
   await expect.poll(async () => (await savedEntry(page))?.collection?.count).toBe(145);
-  await page.getByRole('button', { name: /^Next/ }).click();
-  await expect(page.locator('[data-layout-select]')).toHaveCount(64);
-  await page.getByRole('button', { name: /^Next/ }).click();
-  await expect(page.locator('[data-layout-select]')).toHaveCount(17);
+  await page.locator('[data-layout-select]').last().scrollIntoViewIfNeeded();
+  await expect(page.locator('[data-layout-select]')).toHaveCount(128);
+  await page.locator('[data-layout-select]').last().scrollIntoViewIfNeeded();
+  await expect(page.locator('[data-layout-select]')).toHaveCount(145);
   const expected = await page.evaluate(async () => {
     const { getPlatform } = await import('/satisfactory-flow-synthetizer/src/lib/platform/index.ts');
     const { createSelectedShare } = await import('/satisfactory-flow-synthetizer/src/lib/sharing/client.ts');
@@ -88,7 +88,7 @@ test('paged UI preserves off-page selection, graph edits, selected sharing and s
     };
     return { index, share };
   });
-  await page.locator('[data-layout-select]').first().click();
+  await page.locator('[data-layout-select="128"]').click();
   await expect.poll(async () => (await savedEntry(page))?.selectedSourceIndex).toBe(expected.index);
   await expect
     .poll(async () => (await savedEntry(page))?.layouts[expected.index]?.nodes.length ?? 0)
@@ -100,13 +100,12 @@ test('paged UI preserves off-page selection, graph edits, selected sharing and s
     .not.toBe(JSON.stringify(before.nodes));
   const edited = (await savedEntry(page)).layouts[expected.index];
   expect(await page.evaluate(() => window.pageReads)).toBe(0);
-  await page.getByRole('button', { name: /^Previous/ }).click();
-  await page.getByRole('button', { name: /^Previous/ }).click();
-  await expect(page.locator('[data-layout-select]')).toHaveCount(64);
+  await page.locator('[data-layout-select]').first().scrollIntoViewIfNeeded();
+  await expect(page.locator('[data-layout-select]')).toHaveCount(145);
   expect((await savedEntry(page)).selectedSourceIndex).toBe(expected.index);
 
-  await page.getByRole('button', { name: 'Share selected solution', exact: true }).click();
-  const dialog = page.getByRole('dialog', { name: 'Share selected solution' });
+  await page.getByRole('button', { name: 'Share solution', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Share solution' });
   const link = dialog.getByRole('textbox', { name: 'Share link', exact: true });
   await expect(link).toBeVisible();
   const shared = await page.evaluate(

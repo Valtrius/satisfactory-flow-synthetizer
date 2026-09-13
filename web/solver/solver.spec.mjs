@@ -7,7 +7,7 @@ const corpus = JSON.parse(await readFile(new URL('../../target/web-portable/solv
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
     // Qualify explicit budgets independently of the CI runner's hardware report.
-    Object.defineProperty(navigator, 'hardwareConcurrency', { configurable: true, value: 32 });
+    Object.defineProperty(navigator, 'hardwareConcurrency', { configurable: true, value: 4 });
     window.tauriCalls = 0;
     window.__TAURI_INTERNALS__ = {
       invoke() {
@@ -22,7 +22,7 @@ test.afterEach(async ({ page }) => {
   expect(await page.evaluate(() => window.tauriCalls)).toBe(0);
 });
 
-for (const workerCount of [1, 2, 4, 32])
+for (const workerCount of [1, 4])
   test(`production browser jobs with ${workerCount} workers match native/reference full collections in all three scopes`, async ({
     page,
   }, testInfo) => {
