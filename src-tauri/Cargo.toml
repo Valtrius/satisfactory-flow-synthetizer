@@ -22,10 +22,8 @@ solver-api = { path = "../crates/solver-api" }
 tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"
 tauri-plugin-fs = "2"
+tempfile = "3.23"
 uuid = { version = "1.18", features = ["serde", "v4"] }
 
 [lints]
 workspace = true
-
-[dev-dependencies]
-tempfile = "3.23"

@@ -2,6 +2,7 @@ mod contract;
 mod history;
 mod jobs;
 mod shutdown;
+mod window_state;
 use shutdown::{resume_jobs, shutdown_jobs};
 
 use std::{
@@ -236,6 +237,10 @@ pub fn run() {
                 .map_err(|error| -> Box<dyn std::error::Error> { error.into() })?;
             app.manage(store);
             app.manage(AppState::default());
+            if let Some(window) = app.get_webview_window("main") {
+                window_state::init(&window);
+                window.show()?;
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -251,6 +256,9 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app, event| {
+            if matches!(event, tauri::RunEvent::Exit) {
+                window_state::save(app);
+            }
             if let tauri::RunEvent::ExitRequested { api, .. } = event {
                 let state = app.state::<AppState>();
                 if !state
