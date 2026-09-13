@@ -7,6 +7,11 @@ and adverse results; [evidence.json](evidence.json) locates frozen local artifac
 
 ## Current tools
 
+For a matched pre-Wasm native/current-native/browser comparison, use the
+[platform benchmark workflow](platform/README.md). It prepares fresh release
+builds and a production browser worker host, checks exact results, and launches
+a bounded background suite with durable status and a completion dialog.
+
 Build the runner with:
 
 ```powershell

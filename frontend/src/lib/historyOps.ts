@@ -127,6 +127,7 @@ function coreFields(entry: HistoryEntry): unknown {
     request: entry.request,
     form: entry.form,
     result: entry.result,
+    collection: entry.collection,
   };
 }
 

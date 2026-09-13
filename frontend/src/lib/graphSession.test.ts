@@ -40,7 +40,7 @@ const solution: Solution = {
 };
 const layout = (id: string): FlowGraph => ({ nodes: [{ id, position: { x: 0, y: 0 }, data: {} }], edges: [] });
 
-function setup() {
+function setup(loadSolution?: (entry: HistoryEntry, index: number) => Promise<Solution>) {
   const request = {
     inputs: [],
     outputs: [{ id: 'o', name: '', rate: '1' }],
@@ -57,7 +57,9 @@ function setup() {
   let solutions: Solution[] = [];
   const nodes = writable<Node[]>([]),
     edges = writable<Edge[]>([]);
-  const patchEntry = vi.fn();
+  const patchEntry = vi.fn((id: string, patch: Partial<HistoryEntry>) => {
+    if (id === entry.id) entry = { ...entry, ...patch };
+  });
   const setError = vi.fn();
   const session = createGraphSession({
     nodes,
@@ -80,23 +82,180 @@ function setup() {
     setSortColumns: () => {},
     patchEntry,
     setError,
+    loadSolution,
   });
   return {
     session,
     nodes,
     patchEntry,
     setError,
+    getEntry: () => entry,
+    getSolution: () => current,
+    getSelected: () => selected,
+    setPaged: (count: number) => {
+      entry = { ...entry, collection: count ? { version: 1, id: 'pages', count, preferredIndex: null } : undefined };
+    },
     setRequest: (request: SolveRequest) => {
       entry = { ...entry, request };
     },
     select: (id: string, result: Solution | null) => {
-      entry = { ...entry, id, result };
+      entry = { ...entry, id, result, layouts: id === entry.id ? entry.layouts : {} };
       return session.hydrateFromEntry(entry);
     },
   };
 }
 
 describe('graph session ownership', () => {
+  it('toggles fullscreen with F only when a graph is available, without stealing browser shortcuts', () => {
+    const { session, nodes } = setup();
+    const press = (options: KeyboardEventInit = {}) => {
+      const event = new KeyboardEvent('keydown', { key: 'f', cancelable: true, ...options });
+      session.handleKeydown(event);
+      return event;
+    };
+    try {
+      expect(press().defaultPrevented).toBe(false);
+      expect(session.fullscreen).toBe(false);
+      nodes.set(layout('visible').nodes);
+      expect(press({ ctrlKey: true }).defaultPrevented).toBe(false);
+      expect(press({ repeat: true }).defaultPrevented).toBe(false);
+      expect(session.fullscreen).toBe(false);
+      expect(press().defaultPrevented).toBe(true);
+      expect(session.fullscreen).toBe(true);
+      press({ key: 'F', shiftKey: true });
+      expect(session.fullscreen).toBe(false);
+    } finally {
+      session.setFullscreen(false);
+    }
+  });
+
+  it.each(['input', 'textarea', 'select', '[contenteditable="true"]', '[role="combobox"]', '[role="dialog"]'])(
+    'leaves F to focused %s controls',
+    (selector) => {
+      const { session, nodes } = setup();
+      nodes.set(layout('visible').nodes);
+      const element = document.createElement(selector.startsWith('[') ? 'div' : selector);
+      if (selector.includes('contenteditable')) element.setAttribute('contenteditable', 'true');
+      if (selector.includes('role'))
+        element.setAttribute('role', selector.includes('combobox') ? 'combobox' : 'dialog');
+      document.body.append(element);
+      try {
+        element.addEventListener('keydown', session.handleKeydown, { once: true });
+        const event = new KeyboardEvent('keydown', { key: 'f', bubbles: true, cancelable: true });
+        element.dispatchEvent(event);
+        expect(session.fullscreen).toBe(false);
+        expect(event.defaultPrevented).toBe(false);
+      } finally {
+        element.remove();
+        session.setFullscreen(false);
+      }
+    },
+  );
+
+  it.each(['read', 'layout'] as const)(
+    'keeps the committed selection and graph when a paged %s fails',
+    async (failure) => {
+      const pending = deferred<Solution>();
+      const load = vi.fn().mockResolvedValueOnce(solution).mockReturnValueOnce(pending.promise);
+      const state = setup(load);
+      state.setPaged(2);
+      vi.mocked(layoutSolution).mockResolvedValueOnce(layout('committed'));
+      await state.session.selectSolution(0);
+      state.session.rotate('cw');
+      const before = get(state.nodes);
+      const selection = state.session.selectSolution(1);
+      expect(state.getSelected()).toBe(0);
+      expect(state.getEntry().selectedSourceIndex).toBe(0);
+      expect(state.getSolution()).toBe(solution);
+      if (failure === 'read') pending.reject(new Error('unreadable collection'));
+      else {
+        vi.mocked(layoutSolution).mockRejectedValueOnce(new Error('layout failed'));
+        pending.resolve({ ...solution, buildSteps: ['new selection'] });
+      }
+      await selection;
+      expect(state.getSelected()).toBe(0);
+      expect(state.getEntry().selectedSourceIndex).toBe(0);
+      expect(state.getSolution()).toBe(solution);
+      expect(get(state.nodes)).toEqual(before);
+      expect(state.session.canUndo).toBe(true);
+      expect(state.setError).toHaveBeenCalledOnce();
+    },
+  );
+
+  it('reselects a committed paged row without losing edits and cancels a pending switch', async () => {
+    const pending = deferred<Solution>();
+    const load = vi.fn().mockResolvedValueOnce(solution).mockReturnValueOnce(pending.promise);
+    const state = setup(load);
+    state.setPaged(2);
+    vi.mocked(layoutSolution).mockResolvedValueOnce(layout('committed'));
+    await state.session.selectSolution(0);
+    state.session.onNodeDragStart();
+    state.nodes.update((nodes) => nodes.map((node) => ({ ...node, position: { x: 12, y: 34 } })));
+    state.session.onNodeDragStop();
+    await state.session.selectSolution(0);
+    expect(load).toHaveBeenCalledOnce();
+    expect(state.session.canUndo).toBe(true);
+    const selection = state.session.selectSolution(1);
+    await state.session.selectSolution(0);
+    pending.resolve({ ...solution, buildSteps: ['abandoned'] });
+    await selection;
+    expect(state.getSelected()).toBe(0);
+    expect(state.getSolution()).toBe(solution);
+    expect(state.session.canUndo).toBe(true);
+    state.session.undo();
+    expect(get(state.nodes)[0].position).toEqual({ x: 0, y: 0 });
+  });
+
+  it('loads only the requested source index and restores its saved edit independently of page order', async () => {
+    const load = vi.fn(async (_entry: HistoryEntry, _index: number) => solution);
+    const state = setup(load);
+    state.setPaged(200);
+    vi.mocked(layoutSolution).mockResolvedValue(layout('paged'));
+    await state.session.selectSolution(130);
+    expect(load.mock.calls[0][1]).toBe(130);
+    state.session.onNodeDragStart();
+    state.nodes.update((nodes) => nodes.map((node) => ({ ...node, position: { x: 130, y: 42 } })));
+    state.session.onNodeDragStop();
+    await state.session.selectSolution(3);
+    await state.session.selectSolution(130);
+    expect(state.getSelected()).toBe(130);
+    expect(get(state.nodes)[0].position).toEqual({ x: 130, y: 42 });
+    expect(state.getEntry().layouts['130'].nodes[0].position).toEqual({ x: 130, y: 42 });
+    expect(layoutSolution).toHaveBeenCalledTimes(2);
+  });
+
+  it('discards an out-of-order graph read after selecting another source index', async () => {
+    const first = deferred<Solution>(),
+      second = deferred<Solution>();
+    const load = vi.fn().mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+    const state = setup(load);
+    state.setPaged(200);
+    vi.mocked(layoutSolution).mockResolvedValue(layout('latest'));
+    const oldRead = state.session.selectSolution(130);
+    const newRead = state.session.selectSolution(3);
+    second.resolve({ ...solution, buildSteps: ['new selection'] });
+    await newRead;
+    first.resolve({ ...solution, buildSteps: ['old selection'] });
+    await oldRead;
+    expect(state.getSelected()).toBe(3);
+    expect(state.getSolution()?.buildSteps).toEqual(['new selection']);
+    expect(layoutSolution).toHaveBeenCalledOnce();
+  });
+
+  it('does not duplicate a pending first graph read on repeated live collection updates', async () => {
+    const pending = deferred<Solution>();
+    const load = vi.fn(() => pending.promise);
+    const state = setup(load);
+    state.setPaged(200);
+    state.session.clearView();
+    state.session.syncLiveResults(state.getEntry());
+    state.session.syncLiveResults(state.getEntry());
+    expect(load).toHaveBeenCalledOnce();
+    vi.mocked(layoutSolution).mockResolvedValue(layout('first-page'));
+    pending.resolve(solution);
+    await vi.waitFor(() => expect(get(state.nodes)[0]?.id).toBe('first-page'));
+  });
+
   it('names the exported graph from its saved request rather than the editable form', async () => {
     const state = setup();
     vi.mocked(layoutSolution).mockResolvedValue(layout('A'));

@@ -1,0 +1,15 @@
+{
+  "baseline": "0b60d36",
+  "repeats": 2,
+  "session_seconds": 10800,
+  "cleanup_seconds": 20,
+  "verification_reserve_seconds": 600,
+  "cases": [
+    { "case": "tiny", "mode": "all_min_n", "workers": [8, 16], "max_nodes": 2, "seconds": 15 },
+    { "case": "acyclic36", "mode": "all_min_n", "workers": [8, 16], "max_nodes": 12, "seconds": 45 },
+    { "case": "cyclic115", "mode": "all_min_n", "workers": [8, 16], "max_nodes": 12, "seconds": 30 },
+    { "case": "cyclic10", "mode": "one_min_nl", "workers": [8, 16], "max_nodes": 12, "seconds": 120 },
+    { "case": "medium258", "mode": "all_min_nl", "workers": [8, 16], "max_nodes": 12, "seconds": 120 },
+    { "case": "ratio97", "mode": "all_min_nl", "workers": [16], "max_nodes": 12, "seconds": 600 }
+  ]
+}

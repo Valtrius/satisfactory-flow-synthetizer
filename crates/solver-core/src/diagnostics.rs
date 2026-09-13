@@ -31,7 +31,7 @@ impl RootStats {
         root: usize,
         nodes: u32,
         links: u32,
-        root_info: &crate::Root,
+        root_info: &crate::planner::Root,
         state: &str,
         origin: Instant,
     ) -> String {

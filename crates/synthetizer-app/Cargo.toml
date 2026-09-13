@@ -5,8 +5,12 @@ edition.workspace = true
 license.workspace = true
 autobins = false
 
+[features]
+default = ["native-runtime"]
+native-runtime = ["dep:solver-core"]
+
 [dependencies]
-solver-core = { path = "../solver-core" }
+solver-core = { path = "../solver-core", optional = true }
 solver-api = { path = "../solver-api" }
 num = "0.4.3"
 serde = { version = "1.0", features = ["derive"] }
@@ -19,3 +23,15 @@ workspace = true
 solver-validation = { path = "../solver-validation" }
 solver-reference = { path = "../solver-reference" }
 serde_json = "1.0"
+
+[[test]]
+name = "common_api"
+required-features = ["native-runtime"]
+
+[[example]]
+name = "profile_solver"
+required-features = ["native-runtime"]
+
+[[example]]
+name = "verify_bundle"
+required-features = ["native-runtime"]

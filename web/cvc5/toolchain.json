@@ -1,0 +1,37 @@
+{
+  "cvc5": {
+    "version": "1.3.4",
+    "commit": "f3b21c4483d3b88dc63cb7cd3e5eb092eee5e341",
+    "url": "https://codeload.github.com/cvc5/cvc5/tar.gz/f3b21c4483d3b88dc63cb7cd3e5eb092eee5e341",
+    "sha256": "cbaa927c4d8085e38e7a097191bb9dd3a6780cc17fcde65cb156c9583e597760"
+  },
+  "emsdk": {
+    "version": "3.1.70",
+    "commit": "2514ec738de72cebbba7f4fdba0cf2fabcb779a5",
+    "url": "https://codeload.github.com/emscripten-core/emsdk/tar.gz/2514ec738de72cebbba7f4fdba0cf2fabcb779a5",
+    "sha256": "1755eeca6c58d033a0b8bd6e9820ddf2c0d7244898a8e9d021beeaa7f71c9134",
+    "releaseBuild": "6fa6145af41e835f3d13edf7d308c08e4573357a"
+  },
+  "cmake": {
+    "version": "3.31.6",
+    "url": "https://github.com/Kitware/CMake/releases/download/v3.31.6/cmake-3.31.6-linux-x86_64.tar.gz",
+    "sha256": "5a1133ff103c71eb5120e2cc3de922733e7d8a26a98ae716397e8676adb367bf"
+  },
+  "dependencies": {
+    "GMP-EP": {
+      "version": "6.3.0",
+      "url": "https://github.com/cvc5/cvc5-deps/blob/main/gmp-6.3.0.tar.bz2?raw=true",
+      "sha256": "ac28211a7cfb609bae2e2c8d6058d66c8fe96434f740cf6fe2e47b000d1c20cb"
+    },
+    "CaDiCaL-EP": {
+      "version": "rel-2.1.3-elevate",
+      "url": "https://github.com/arminbiere/cadical/archive/rel-2.1.3-elevate.tar.gz",
+      "sha256": "15e1e82f7f9a9da0e97070cb8ac41d5b32139f65d54f72d2ff84849b0466ef92"
+    },
+    "SymFPU-EP": {
+      "version": "227a7246b8ce513b393cc2645d6d65d3490ea1de",
+      "url": "https://github.com/cvc5/symfpu/archive/227a7246b8ce513b393cc2645d6d65d3490ea1de.tar.gz",
+      "sha256": "ff22e37dbc133120ada5760878974811737bec65b12a8883f92b1ed9e3f96e99"
+    }
+  }
+}

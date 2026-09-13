@@ -1,0 +1,156 @@
+name: Web backend proof
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'crates/solver-web/**'
+      - 'crates/solver-browser/**'
+      - 'crates/solver-core/**'
+      - 'crates/solver-portable-tests/**'
+      - 'vendor/canonaut/**'
+      - 'crates/solver-api/**'
+      - 'crates/solver-validation/**'
+      - 'crates/synthetizer-app/**'
+      - 'scripts/*web*'
+      - 'scripts/build-cvc5-wasm.py'
+      - 'web/**'
+      - 'scripts/prepare-share-fixtures.mjs'
+      - 'scripts/prepare-portable-fixtures.mjs'
+      - 'scripts/prepare-browser-fixtures.mjs'
+      - 'scripts/test_web_backends.py'
+      - 'scripts/test_web_solver.py'
+      - 'frontend/**'
+      - 'src-tauri/history-fixtures/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/web-backends.yml'
+      - '.github/workflows/pages.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: web-backends-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  portable-fixtures:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    env:
+      CARGO_BUILD_JOBS: 2
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Prepare the pinned native comparison backend
+        shell: pwsh
+        run: |
+          ./scripts/prepare-cvc5.ps1
+          $backend = Join-Path $env:GITHUB_WORKSPACE 'src-tauri/binaries/cvc5-x86_64-pc-windows-msvc.exe'
+          "SOLVER_CVC5=$backend" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+      - name: Vendored Canonaut library tests
+        run: npm run test:vendor
+      - name: Native planner and identity tests
+        run: cargo test -p solver-core -p solver-portable-tests --lib --locked -- --test-threads=1
+      - name: Compare native scopes against the exhaustive reference
+        run: node scripts/prepare-portable-fixtures.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: portable-native-fixtures
+          path: target/web-portable/solves.json
+          if-no-files-found: error
+  browser:
+    needs: portable-fixtures
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      CARGO_BUILD_JOBS: 2
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+          components: clippy
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - uses: Swatinem/rust-cache@v2
+      - name: Cache cvc5 toolchain and library build
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/satisfactory-flow-synthetizer-web
+          key: web-cvc5-ubuntu24-${{ hashFiles('web/cvc5/toolchain.json', 'scripts/build-cvc5-wasm.py') }}
+      - name: Install dependencies
+        run: npm ci
+      - name: Native verifier tests
+        run: cargo test -p solver-web -p solver-browser --locked --lib
+      - name: Browser verifier lint
+        run: cargo clippy -p solver-web --target wasm32-unknown-unknown --locked --lib -- -D warnings
+      - name: Portable job projection lint
+        run: cargo clippy -p synthetizer-app --no-default-features --target wasm32-unknown-unknown --locked --lib -- -D warnings
+      - name: Portable exact planner and leaf lint
+        run: cargo clippy -p solver-core --no-default-features --target wasm32-unknown-unknown --locked --lib -- -D warnings
+      - name: Production browser solver lint
+        run: cargo clippy -p solver-browser --target wasm32-unknown-unknown --locked --lib -- -D warnings
+      - name: Build both backend modules
+        run: npm run build:web:backends
+      - name: Build the separate qualification module
+        run: npm run build:web:portable
+      - name: Build the production browser solver
+        run: npm run build:web:solver && python scripts/prepare-web-solver.py
+      - uses: actions/download-artifact@v4
+        with:
+          name: portable-native-fixtures
+          path: target/web-portable
+      - name: Install browser
+        run: npx playwright install --with-deps chromium
+      - name: Browser integration tests
+        run: npm run test:web:backends
+      - name: Native and Wasm identity and exact-search parity
+        run: npx playwright test -c web/portable/playwright.config.mjs
+      - name: Frontend contracts
+        run: npm run check && npm test -w frontend -- --maxWorkers=2 && npm run build -w frontend
+      - name: Build and verify the browser publication artifact
+        run: npm run build:web:release && npm run verify:web:relink
+      - name: Browser asset build contracts
+        run: python -m unittest discover -s scripts -p 'test_web_*.py'
+      - name: Parallel browser jobs, proof ownership, cancellation and paged UI
+        run: npm run test:web:solver
+      - name: Browser history, collection storage and migration tests
+        run: npm run test:web:platform
+      - name: Selected-solution sharing tests
+        run: npm run test:web:shares
+      - name: Offline and publication delivery tests
+        run: npm run test:web:delivery
+      - name: Upload test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-backend-test-evidence
+          path: |
+            target/web-backends/browser-results.json
+            target/web-backends/cvc5/build.json
+            target/web-backends/test-results
+            target/web-platform/results.json
+            target/web-platform/test-results
+            target/web-shares/results.json
+            target/web-shares/test-results
+            target/web-portable/results.json
+            target/web-portable/test-results
+            target/web-portable/solves.json
+            target/web-solver/results.json
+            target/web-solver/test-results
+            target/web-delivery/results.json
+            target/web-delivery/test-results
+          if-no-files-found: warn

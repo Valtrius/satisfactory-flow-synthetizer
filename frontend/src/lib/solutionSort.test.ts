@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_SORT_COLUMNS, compareSolutions, flipColumnDir, reorderColumns, sortSolutions } from './solutionSort';
+import { DEFAULT_SORT_COLUMNS, compareSolutions, flipColumnDir, reorderColumns, type SortColumn } from './solutionSort';
+
+function sortSolutions<T extends Parameters<typeof compareSolutions>[0]>(solutions: T[], columns: SortColumn[]): T[] {
+  return [...solutions].sort((left, right) => compareSolutions(left, right, columns));
+}
 
 function sol(belts: number, peak: string, feedbacks: number) {
   return {
@@ -40,5 +44,13 @@ describe('solutionSort', () => {
   it('reorders columns for sort priority', () => {
     const reordered = reorderColumns(DEFAULT_SORT_COLUMNS, 2, 0);
     expect(reordered.map((column) => column.key)).toEqual(['feedbacks', 'belts', 'peak']);
+  });
+  it('orders close arbitrary rational peaks without floating-point rounding', () => {
+    const larger = sol(1, '100000000000000000000000000000000000001/100000000000000000000000000000000000000', 0);
+    const equal = sol(1, '1', 0);
+    const smaller = sol(1, '99999999999999999999999999999999999999/100000000000000000000000000000000000000', 0);
+    expect(sortSolutions([larger, equal, smaller], DEFAULT_SORT_COLUMNS)).toEqual([smaller, equal, larger]);
+    expect(compareSolutions(sol(1, '-3/2', 0), sol(1, '-1.5', 0), DEFAULT_SORT_COLUMNS)).toBe(0);
+    expect(compareSolutions(sol(1, '1/-2', 0), sol(1, '0', 0), DEFAULT_SORT_COLUMNS)).toBeLessThan(0);
   });
 });

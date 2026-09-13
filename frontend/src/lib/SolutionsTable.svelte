@@ -8,14 +8,49 @@
   import { SORT_LABELS, type SortColumn, type SortKey, flipColumnDir, reorderColumns } from './solutionSort';
 
   type Props = {
-    solutions: Solution[];
+    solutions: Pick<Solution, 'stats'>[];
     selectedIndex: number;
     columns: SortColumn[];
     onSelect: (index: number) => void;
     onColumnsChange: (columns: SortColumn[]) => void;
+    totalCount?: number;
+    resetKey?: string;
+    onLoadMore?: () => void;
+    loading?: boolean;
+    loadFailed?: boolean;
+    onRetry?: () => void;
   };
 
-  let { solutions, selectedIndex, columns, onSelect, onColumnsChange }: Props = $props();
+  let {
+    solutions,
+    selectedIndex,
+    columns,
+    onSelect,
+    onColumnsChange,
+    totalCount = 0,
+    resetKey = '',
+    onLoadMore,
+    loading = false,
+    loadFailed = false,
+    onRetry,
+  }: Props = $props();
+
+  let scrollContainer = $state<HTMLDivElement>();
+  let viewportHeight = $state(0);
+
+  function loadNearBottom(): void {
+    if (!scrollContainer || !viewportHeight || loading || loadFailed || solutions.length >= totalCount) return;
+    if (scrollContainer.scrollHeight - scrollContainer.scrollTop - viewportHeight < 200) onLoadMore?.();
+  }
+
+  $effect(() => {
+    void resetKey;
+    if (scrollContainer) scrollContainer.scrollTop = 0;
+  });
+  $effect(() => {
+    void solutions.length;
+    loadNearBottom();
+  });
 
   let dragFrom = $state<number | null>(null);
   let dragInsertAt = $state<number | null>(null);
@@ -59,12 +94,6 @@
     onColumnsChange(flipColumnDir(columns, key));
   }
 
-  function priorityClass(rank: number): string {
-    if (rank === 0) return 'bg-accent text-[#1a1008]';
-    if (rank === 1) return 'bg-flow text-root';
-    return 'bg-[#5d7180] text-[#eaf1f5]';
-  }
-
   function updateDropTarget(clientX: number): void {
     const headers = [...(dragContainer?.querySelectorAll<HTMLElement>('th[data-col-source-index]') ?? [])].filter(
       (element) => Number(element.dataset.colSourceIndex) !== dragFrom,
@@ -101,7 +130,7 @@
     onColumnsChange(reorderColumns(columns, from, to));
   }
 
-  function cellValue(solution: Solution, key: SortKey): string {
+  function cellValue(solution: Pick<Solution, 'stats'>, key: SortKey): string {
     if (key === 'belts') return String(solution.stats.linkCount ?? solution.stats.beltCount ?? '—');
     if (key === 'peak') return solution.stats.internalMaxThroughput?.exact ?? '—';
     return String(solution.stats.feedbackLoops);
@@ -125,15 +154,20 @@
 </script>
 
 <div class="flex h-full min-h-0 flex-col overflow-hidden bg-[#0d1922]">
-  <div class="min-h-0 flex-1 overflow-auto">
-    <table class="w-full border-collapse text-sm">
+  <div
+    class="min-h-0 flex-1 overflow-auto"
+    bind:this={scrollContainer}
+    bind:clientHeight={viewportHeight}
+    onscroll={loadNearBottom}
+  >
+    <table class="w-full border-collapse text-sm" aria-busy={loading}>
       <caption class="sr-only">
         Select layouts with their buttons or Up/Down, Home and End. Drag column handles to set sort priority; click
         labels to flip direction.
       </caption>
       <thead>
         <tr>
-          {#each visualColumns as item, visualIndex (item.kind === 'ghost' ? 'ghost' : item.item.key)}
+          {#each visualColumns as item (item.kind === 'ghost' ? 'ghost' : item.item.key)}
             <th
               scope="col"
               aria-sort={item.kind === 'item' && item.index === 0
@@ -154,11 +188,11 @@
               {#if item.kind === 'item'}
                 {@const column = item.item}
                 {@const index = item.index}
-                <div class="flex items-center gap-1.5">
+                <div class="flex items-center gap-0.5">
                   <Button
                     variant="plain"
                     type="button"
-                    class="cursor-grab touch-none px-0.5 text-base leading-none text-[#5d7180]"
+                    class="w-2.5 shrink-0 cursor-grab touch-none p-0 text-sm leading-none text-[#5d7180]"
                     title="Drag to change sort priority"
                     aria-label={`Drag to reorder ${SORT_LABELS[column.key]} column`}
                     onpointerdown={(event) => onHandlePointerDown(index, event)}
@@ -172,11 +206,6 @@
                     title="Click to flip sort direction"
                     onclick={() => headerClick(column.key)}
                   >
-                    <span
-                      class={`inline-grid size-4 place-items-center rounded-sm text-[0.65rem] font-extrabold ${priorityClass(visualIndex)}`}
-                    >
-                      {visualIndex + 1}
-                    </span>
                     {SORT_LABELS[column.key]}
                     <span class="text-accent">
                       {column.dir === 'asc' ? '↑' : '↓'}
@@ -212,7 +241,7 @@
                       data-layout-select={rowIndex}
                       aria-label={`Select layout ${rowIndex + 1}`}
                       aria-pressed={rowIndex === selectedIndex}
-                      tabindex={rowIndex === selectedIndex ? 0 : -1}
+                      tabindex={rowIndex === (selectedIndex < 0 ? 0 : selectedIndex) ? 0 : -1}
                       onclick={(event) => {
                         event.stopPropagation();
                         onSelect(rowIndex);
@@ -231,6 +260,14 @@
         {/each}
       </tbody>
     </table>
+    {#if loading}
+      <p role="status" class="text-muted m-0 px-3 py-3 text-center text-xs">Loading layouts…</p>
+    {:else if loadFailed}
+      <div class="text-muted flex items-center justify-center gap-2 px-3 py-3 text-xs">
+        <span role="status">Could not load layouts.</span>
+        <Button size="tiny" onclick={onRetry}>Retry</Button>
+      </div>
+    {/if}
   </div>
 </div>
 
@@ -243,14 +280,9 @@
     <div
       class="list-drag-float-card text-muted rounded-sm border border-[#1a2c36] bg-[#101f2a] px-2 py-2.5 text-left text-[0.7rem] font-bold tracking-wide uppercase"
     >
-      <div class="flex items-center gap-1.5">
-        <span class="px-0.5 text-base leading-none text-[#5d7180]">⠿</span>
+      <div class="flex items-center gap-0.5">
+        <span class="w-2.5 shrink-0 text-sm leading-none text-[#5d7180]">⠿</span>
         <span class="text-muted inline-flex items-center gap-1 font-bold tracking-wide uppercase">
-          <span
-            class={`inline-grid size-4 place-items-center rounded-sm text-[0.65rem] font-extrabold ${priorityClass(dragInsertAt ?? dragFrom ?? 0)}`}
-          >
-            {(dragInsertAt ?? dragFrom ?? 0) + 1}
-          </span>
           {SORT_LABELS[dragColumn.key]}
           <span class="text-accent">
             {dragColumn.dir === 'asc' ? '↑' : '↓'}

@@ -20,6 +20,7 @@ import {
   type RotateDirection,
 } from './graph';
 import type { CachedGraphLayout, HistoryEntry } from './historyModel';
+import { prepareGraphSelection } from './graphSelection';
 import { DEFAULT_SORT_COLUMNS } from './solutionSort';
 import { enumeratesLayouts, type Solution } from '../types';
 
@@ -38,6 +39,7 @@ export type GraphSessionHost = {
   setSortColumns: (columns: HistoryEntry['sortColumns']) => void;
   patchEntry: (id: string, patch: Partial<HistoryEntry>) => void;
   setError: (message: string) => void;
+  loadSolution?: (entry: HistoryEntry, sourceIndex: number) => Promise<Solution>;
   /** Called when undo/redo availability or fit/fullscreen chrome changes. */
   onChromeChange?: (chrome: { fitRevision: number; fullscreen: boolean; canUndo: boolean; canRedo: boolean }) => void;
 };
@@ -79,6 +81,8 @@ export function createGraphSession(host: GraphSessionHost): GraphSession {
   let layoutKey = '';
   let committedSourceIndex: number | null = null;
   let committedEntryId: string | null = null;
+  let pendingPagedKey = '';
+  let pagedRead = 0;
 
   function beginLayout() {
     const ticket = ++layoutTicket;
@@ -459,6 +463,41 @@ export function createGraphSession(host: GraphSessionHost): GraphSession {
   }
 
   async function selectSolution(sourceIndex: number): Promise<void> {
+    const entry = host.getSelectedEntry();
+    if (entry?.collection && host.loadSolution) {
+      if (sourceIndex < 0 || sourceIndex >= entry.collection.count) return;
+      const operation = beginLayout();
+      const readId = ++pagedRead;
+      pendingPagedKey = '';
+      const displayed = host.getSolution();
+      if (
+        committedEntryId === entry.id &&
+        committedSourceIndex === sourceIndex &&
+        displayed &&
+        layoutKey === solutionLayoutKey(displayed) &&
+        get(host.nodes).length > 0
+      )
+        return;
+      pendingPagedKey = `${entry.id}:${sourceIndex}`;
+      try {
+        const loadSolution = host.loadSolution;
+        const prepared = await prepareGraphSelection(
+          () => loadSolution(entry, sourceIndex),
+          () => layoutsForSelected()[String(sourceIndex)],
+          operation.current,
+        );
+        if (!prepared || !operation.current()) return;
+        snapshotCurrentLayout(host.getSelectedSourceIndex());
+        host.setSelectedSourceIndex(sourceIndex);
+        host.patchEntry(entry.id, { selectedSourceIndex: sourceIndex });
+        await restoreLayout(prepared.solution, sourceIndex, prepared.layout);
+      } catch (error) {
+        if (operation.current()) host.setError(`Could not read selected solution: ${String(error)}`);
+      } finally {
+        if (pagedRead === readId) pendingPagedKey = '';
+      }
+      return;
+    }
     const solutions = host.getSolutions();
     const next = solutions[sourceIndex];
     if (!next) return;
@@ -484,6 +523,8 @@ export function createGraphSession(host: GraphSessionHost): GraphSession {
   }
 
   function clearView(): void {
+    pendingPagedKey = '';
+    pagedRead++;
     layoutTicket += 1;
     layoutKey = '';
     committedSourceIndex = null;
@@ -501,8 +542,16 @@ export function createGraphSession(host: GraphSessionHost): GraphSession {
     host.setSortColumns(
       entry.sortColumns.length > 0 ? entry.sortColumns.map((column) => ({ ...column })) : [...DEFAULT_SORT_COLUMNS],
     );
-    const sourceIndex = Math.max(0, Math.min(entry.selectedSourceIndex, entry.results.length - 1));
+    const sourceIndex = Math.max(
+      0,
+      Math.min(entry.selectedSourceIndex, (entry.collection?.count ?? entry.results.length) - 1),
+    );
     host.setSelectedSourceIndex(sourceIndex);
+    if (entry.collection) {
+      host.setSolutions([]);
+      if (entry.collection.count) await selectSolution(sourceIndex);
+      return;
+    }
     const enumerate = enumeratesLayouts(entry.request.solveMode);
     if (enumerate) {
       host.setSolutions(entry.results);
@@ -544,6 +593,17 @@ export function createGraphSession(host: GraphSessionHost): GraphSession {
   }
 
   function syncLiveResults(entry: HistoryEntry): void {
+    if (entry.collection) {
+      host.setSolutions([]);
+      const index = host.getSelectedSourceIndex();
+      if (entry.collection.count && (!host.getSolution() || index >= entry.collection.count)) {
+        const next = Math.min(index, entry.collection.count - 1);
+        if (pendingPagedKey !== `${entry.id}:${next}`) void selectSolution(next);
+      } else if (entry.collection.preferredIndex === index && entry.result && host.getSolution()) {
+        void applySolution(entry.result);
+      }
+      return;
+    }
     if (enumeratesLayouts(entry.request.solveMode)) {
       const prior = host.getSolutions();
       const had = prior.length > 0;
@@ -562,6 +622,7 @@ export function createGraphSession(host: GraphSessionHost): GraphSession {
   }
 
   function handleKeydown(event: KeyboardEvent): void {
+    if (event.defaultPrevented) return;
     if (event.key === 'Escape' && fullscreen) setFullscreen(false);
 
     const target = event.target;
@@ -570,12 +631,27 @@ export function createGraphSession(host: GraphSessionHost): GraphSession {
       (target.isContentEditable ||
         target.tagName === 'INPUT' ||
         target.tagName === 'TEXTAREA' ||
-        target.tagName === 'SELECT')
+        target.tagName === 'SELECT' ||
+        target.closest(
+          '[contenteditable]:not([contenteditable="false"]), [role="combobox"], [role="dialog"], [role="menu"], [popover], dialog',
+        ))
     ) {
       return;
     }
 
     const mod = event.ctrlKey || event.metaKey;
+    if (
+      event.key.toLowerCase() === 'f' &&
+      !mod &&
+      !event.altKey &&
+      !event.repeat &&
+      host.getSolution() &&
+      get(host.nodes).length > 0
+    ) {
+      event.preventDefault();
+      toggleFullscreen();
+      return;
+    }
     if (!mod || event.altKey) return;
 
     const key = event.key.toLowerCase();

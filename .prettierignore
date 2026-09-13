@@ -10,3 +10,8 @@ Cargo.lock
 tmp
 .tmp
 *.log
+
+vendor/canonaut
+
+# Immutable, compact pre-port canonical identity evidence.
+crates/solver-portable-tests/fixtures/identity-v1.json

@@ -1,6 +1,6 @@
 import { cancelJob, createJob, getJob, releaseJob, shutdownJobs, resumeJobs, watchJob, type JobWatch } from './api';
 import { assembleEntries, isTerminalJobStatus, partitionEntries, type HistoryEntry } from './historyModel';
-import type { JobSnapshot, SolveRequest } from '../types';
+import type { CollectionRef, JobSnapshot, SolveRequest } from '../types';
 
 export type HistoryQueueHost = {
   getEntries: () => HistoryEntry[];
@@ -11,6 +11,7 @@ export type HistoryQueueHost = {
   syncViewIfSelected: (entryId: string, entry: HistoryEntry) => void;
   setError: (message: string) => void;
   setElapsedMs: (ms: number) => void;
+  discardCollection?: (ref: CollectionRef) => Promise<void>;
 };
 
 function isAlreadyRunningError(error: unknown): boolean {
@@ -22,17 +23,18 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function awaitJobTerminal(jobId: string, timeoutMs = 60_000): Promise<void> {
+async function awaitJobTerminal(jobId: string, timeoutMs = 60_000): Promise<JobSnapshot | null> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     try {
       const snapshot = await getJob(jobId);
-      if (isTerminalJobStatus(snapshot.status)) return;
+      if (isTerminalJobStatus(snapshot.status)) return snapshot;
     } catch {
-      return;
+      return null;
     }
     await sleep(50);
   }
+  throw new Error('The removed job has not stopped. Its solution storage was preserved.');
 }
 
 async function createJobWhenIdle(request: SolveRequest): Promise<string> {
@@ -195,6 +197,7 @@ export class HistoryQueue {
       sequence: snapshot.sequence,
       result,
       results,
+      collection: snapshot.collection,
       enumerationComplete: snapshot.enumerationComplete,
       error: snapshot.error,
       startedAtMs: snapshot.startedAtMs,
@@ -235,7 +238,9 @@ export class HistoryQueue {
         } catch {
           /* best-effort */
         }
-        await awaitJobTerminal(jobId);
+        const stopped = await awaitJobTerminal(jobId);
+        if (stopped?.collection) await this.host.discardCollection?.(stopped.collection);
+        await releaseJob(jobId);
         return false;
       }
       const startedAtMs = Date.now();

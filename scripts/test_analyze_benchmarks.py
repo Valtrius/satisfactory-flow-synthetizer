@@ -93,24 +93,39 @@ class AnalyzerTests(unittest.TestCase):
         # A synthetic child exercises process handling without running a solver benchmark.
         with tempfile.TemporaryDirectory(prefix="solver watchdog ") as directory:
             root = Path(directory)
-            source = root / "fixture.rs"
+            source = root / "fixture.cs"
             source.write_text(r'''
-fn main() {
-    let args: Vec<String> = std::env::args().collect();
-    let executable = std::env::current_exe().unwrap();
-    let variant = executable.parent().unwrap().file_name().unwrap().to_str().unwrap();
-    let marker = executable.parent().unwrap().parent().unwrap().join("started");
-    if !marker.exists() {
-        std::fs::write(marker, "first job").unwrap();
-        std::thread::sleep(std::time::Duration::from_secs(60));
-        return;
+using System;
+using System.IO;
+using System.Reflection;
+using System.Threading;
+
+public static class Fixture {
+    public static void Main(string[] args) {
+        string executable = Assembly.GetExecutingAssembly().Location;
+        string directory = Path.GetDirectoryName(executable);
+        string variant = new DirectoryInfo(directory).Name;
+        string marker = Path.Combine(Directory.GetParent(directory).FullName, "started");
+        if (!File.Exists(marker)) {
+            File.WriteAllText(marker, "first job");
+            Thread.Sleep(60000);
+            return;
+        }
+        string result = "{\"case\":\"fixture\",\"binary_origin\":\"" + variant
+            + "\",\"mode\":\"" + args[4]
+            + "\",\"stage\":\"baseline\",\"comparison_protocol\":\"layout-v1\",\"workers\":" + args[1]
+            + ",\"max_nodes\":" + args[2] + ",\"timeout_s\":" + args[0]
+            + ",\"hotspot_recording\":false,\"problem\":{\"maxLinkRate\":\"1200\"},\"status\":\"fixture_success\",\"layouts\":0,\"wall_s\":0.001}";
+        File.WriteAllText(args[3], result);
     }
-    let result = format!(r#"{{"case":"fixture","binary_origin":"{}","mode":"{}","stage":"baseline","comparison_protocol":"layout-v1","workers":{},"max_nodes":{},"timeout_s":{},"hotspot_recording":{},"problem":{{"maxLinkRate":"1200"}},"status":"fixture_success","layouts":0,"wall_s":0.001}}"#,
-        variant, args[5], args[2], args[3], args[1], false);
-    std::fs::write(&args[4], result).unwrap();
 }
 ''')
-            subprocess.run(["rustc", str(source), "-o", str(root / "profile_solver.exe")], check=True, capture_output=True, timeout=30)
+            compile_env = os.environ.copy()
+            compile_env.update(SFS_FIXTURE_SOURCE=str(source), SFS_FIXTURE_OUTPUT=str(root / "profile_solver.exe"))
+            subprocess.run(
+                ["powershell", "-NoProfile", "-Command", "Add-Type -TypeDefinition (Get-Content -LiteralPath $env:SFS_FIXTURE_SOURCE -Raw) -OutputAssembly $env:SFS_FIXTURE_OUTPUT -OutputType ConsoleApplication"],
+                check=True, capture_output=True, timeout=30, env=compile_env,
+            )
             for variant in ("before", "after"):
                 (root / variant).mkdir()
                 shutil.copy2(root / "profile_solver.exe", root / variant / "profile_solver.exe")

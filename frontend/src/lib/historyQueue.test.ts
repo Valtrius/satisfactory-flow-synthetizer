@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { JobSnapshot, Solution, SolveRequest } from '../types';
 import { createQueuedEntry, type HistoryEntry } from './historyModel';
 import { HistoryQueue } from './historyQueue';
-import { createJob, getJob, releaseJob, shutdownJobs, resumeJobs, watchJob } from './api';
+import { cancelJob, createJob, getJob, releaseJob, shutdownJobs, resumeJobs, watchJob } from './api';
 
 vi.mock('./api', () => ({
   createJob: vi.fn(),
@@ -161,4 +161,43 @@ it('recovers final results during shutdown without starting queued work', async 
   vi.mocked(resumeJobs).mockResolvedValue(undefined);
   await queue.resume();
   expect(resumeJobs).toHaveBeenCalledOnce();
+});
+
+it('discards a job collection when its queued entry is deleted during admission', async () => {
+  const entry = createQueuedEntry({ ...request, inputs: [], outputs: [], solveMode: 'all_min_n' }, request);
+  let entries = [entry];
+  let admit!: (id: string) => void;
+  vi.mocked(createJob).mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        admit = resolve;
+      }),
+  );
+  const collection = { version: 1 as const, id: 'unattached-job', count: 1, preferredIndex: null };
+  vi.mocked(getJob).mockResolvedValue(snapshot({ status: 'cancelled', collection }));
+  const discard = vi.fn(async () => {
+    expect(cancelJob).toHaveBeenCalledWith('job');
+    expect(getJob).toHaveBeenCalledWith('job');
+  });
+  queue = new HistoryQueue({
+    getEntries: () => entries,
+    setEntries: (value) => {
+      entries = value;
+    },
+    patchEntry: vi.fn(),
+    getSelectedId: () => null,
+    flushSelectedChrome: vi.fn(),
+    syncViewIfSelected: vi.fn(),
+    setError: vi.fn(),
+    setElapsedMs: vi.fn(),
+    discardCollection: discard,
+  });
+  const running = queue.pump();
+  entries = [];
+  admit('job');
+  await running;
+  expect(discard).toHaveBeenCalledExactlyOnceWith(collection);
+  expect(releaseJob).toHaveBeenCalledExactlyOnceWith('job');
+  expect(watchJob).not.toHaveBeenCalled();
+  expect(entries).toEqual([]);
 });

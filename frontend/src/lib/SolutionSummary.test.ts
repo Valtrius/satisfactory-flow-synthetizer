@@ -16,6 +16,7 @@ const solution: Solution = {
     physicalLinkCount: 7,
     discardLinkCount: 1,
     checkedThrough: 3,
+    internalMaxThroughput: { exact: '120/7', decimal: '17.142857' },
   },
   validation: {
     validatorVersion: 1,
@@ -36,20 +37,16 @@ const solution: Solution = {
 
 function renderSummary(overrides: Partial<Solution> = {}): string {
   return render(SolutionSummary, {
-    props: { solution: { ...solution, ...overrides }, elapsedLabel: '1.2s' },
+    props: { solution: { ...solution, ...overrides }, elapsedLabel: '1.2s', onclose: () => {} },
   }).body;
 }
 
 describe('SolutionSummary', () => {
-  it.each([
-    ['proven_optimal', 'Proven optimal', 'Best known'],
-    ['best_known', 'Best known', 'Proven optimal'],
-  ] as const)('distinguishes the %s result status', (status, label, other) => {
+  it.each(['proven_optimal', 'best_known'])('keeps %s statistics without a duplicate status header', (status) => {
     const html = renderSummary({ status });
-    expect(html).toContain('3 nodes');
-    expect(html).toContain(label);
-    expect(html).not.toContain(other);
-    if (status === 'best_known') expect(html).toContain('Not proven optimal');
+    expect(html).toContain('Graph information');
+    expect(html).not.toContain('Proven optimal');
+    expect(html).not.toContain('Best known');
   });
 
   it('shows the user statistics without internal proof diagnostics', () => {
@@ -59,14 +56,39 @@ describe('SolutionSummary', () => {
       .trim();
     for (const statistic of [
       'Solve time 1.2s',
+      'Nodes 3',
       'Splitters 2',
       'Mergers 1',
-      'Feedback loops 0',
-      'Links (L) 2',
+      'Links 2',
+      'Peak rate 120/7 /min',
       'Discard 20 /min',
     ])
       expect(text).toContain(statistic);
     for (const label of ['Physical links', 'Discard links', 'Checked through', 'Validator'])
       expect(text).not.toContain(label);
+  });
+
+  it('omits zero metrics, while retaining exact nonzero discard rates', () => {
+    const emptyStats = { nodeCount: 0, splitters: 0, mergers: 0, feedbackLoops: 0, linkCount: 0 };
+    const html = renderSummary({ stats: emptyStats, discardRate: { exact: '0/7', decimal: '0' } });
+    for (const label of ['Nodes', 'Splitters', 'Mergers', 'Feedbacks', 'Links', 'Peak rate', 'Discard'])
+      expect(html).not.toContain(label);
+    const fraction = renderSummary({
+      stats: emptyStats,
+      discardRate: { exact: '1/1000000000000000000000', decimal: '0' },
+    });
+    expect(fraction).toContain('Discard');
+    expect(fraction).toContain('1/1000000000000000000000');
+  });
+
+  it('orders links, exact peak rate and feedbacks, and omits a zero peak rate', () => {
+    const html = renderSummary({ stats: { ...solution.stats, feedbackLoops: 2 } });
+    expect(html.indexOf('Links')).toBeLessThan(html.indexOf('Peak rate'));
+    expect(html.indexOf('Peak rate')).toBeLessThan(html.indexOf('Feedbacks'));
+    expect(
+      renderSummary({
+        stats: { ...solution.stats, internalMaxThroughput: { exact: '0/7', decimal: '0' } },
+      }),
+    ).not.toContain('Peak rate');
   });
 });

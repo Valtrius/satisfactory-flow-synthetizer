@@ -1,6 +1,6 @@
 <script lang="ts">
-  import Download from '@lucide/svelte/icons/download';
-  import UploadCloud from '@lucide/svelte/icons/upload-cloud';
+  import ArrowRightToLine from '@lucide/svelte/icons/arrow-right-to-line';
+  import ArrowRightFromLine from '@lucide/svelte/icons/arrow-right-from-line';
   import type { EndpointRow, SolveMode } from '../types';
   import ConstraintPanel from './ConstraintPanel.svelte';
   import EndpointListPanel from './EndpointListPanel.svelte';
@@ -54,18 +54,19 @@
 </script>
 
 <Panel
+  variant="column"
   element="section"
-  class="divide-line grid shrink-0 grid-cols-1 items-stretch divide-y md:grid-cols-3 md:divide-x md:divide-y-0"
+  class="divide-line grid shrink-0 grid-cols-1 items-stretch divide-y"
   aria-label="Flow inputs"
 >
   <EndpointListPanel
-    title="Supply"
-    icon={Download}
+    title="Inputs"
+    icon={ArrowRightToLine}
     labelPrefix="Input"
     endpoints={inputs}
     slots={inputSlots}
-    emptyTitle="Automatic supply"
-    emptyBody="Automatic supply uses one belt. If total demand exceeds its capacity, add explicit inputs."
+    emptyTitle="Automatic input"
+    emptyBody="Automatic input uses one belt. If total output exceeds its capacity, add explicit inputs."
     onAdd={onAddInput}
     onRemove={onRemoveInput}
     onUpdate={onUpdateInput}
@@ -73,8 +74,8 @@
   />
 
   <EndpointListPanel
-    title="Demand"
-    icon={UploadCloud}
+    title="Outputs"
+    icon={ArrowRightFromLine}
     labelPrefix="Output"
     endpoints={outputs}
     slots={outputSlots}

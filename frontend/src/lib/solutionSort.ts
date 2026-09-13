@@ -6,7 +6,7 @@ export type SortColumn = {
   dir: SortDir;
 };
 
-/** Default: belts ↑, peak ↑, feedbacks ↑ */
+/** Default: links ↑, peak ↑, feedbacks ↑ */
 export const DEFAULT_SORT_COLUMNS: SortColumn[] = [
   { key: 'belts', dir: 'asc' },
   { key: 'peak', dir: 'asc' },
@@ -14,7 +14,7 @@ export const DEFAULT_SORT_COLUMNS: SortColumn[] = [
 ];
 
 export const SORT_LABELS: Record<SortKey, string> = {
-  belts: 'Belts',
+  belts: 'Links',
   peak: 'Peak',
   feedbacks: 'Feedbacks',
 };
@@ -56,14 +56,44 @@ export function compareSolutions(
   columns: SortColumn[],
 ): number {
   for (const column of columns) {
-    const delta = metricValue(left, column.key) - metricValue(right, column.key);
+    const delta =
+      column.key === 'peak'
+        ? compareExactRates(
+            left.stats.internalMaxThroughput?.exact ?? '0',
+            right.stats.internalMaxThroughput?.exact ?? '0',
+          )
+        : metricValue(left, column.key) - metricValue(right, column.key);
     if (delta !== 0) return column.dir === 'asc' ? delta : -delta;
   }
   return 0;
 }
 
-export function sortSolutions<T extends Parameters<typeof metricValue>[0]>(solutions: T[], columns: SortColumn[]): T[] {
-  return [...solutions].sort((left, right) => compareSolutions(left, right, columns));
+const rateCache = new Map<string, [bigint, bigint]>();
+function exactRate(value: string): [bigint, bigint] | null {
+  const cached = rateCache.get(value);
+  if (cached) return cached;
+  let result: [bigint, bigint];
+  const fraction = /^([+-]?\d+)\/([+-]?\d+)$/.exec(value);
+  const decimal = /^([+-]?)(\d+)(?:\.(\d*))?$/.exec(value);
+  if (fraction) {
+    const denominator = BigInt(fraction[2]);
+    if (denominator === 0n) return null;
+    result = [BigInt(fraction[1]) * (denominator < 0n ? -1n : 1n), denominator < 0n ? -denominator : denominator];
+  } else if (decimal) {
+    const digits = decimal[3] ?? '';
+    result = [BigInt(decimal[2] + digits) * (decimal[1] === '-' ? -1n : 1n), 10n ** BigInt(digits.length)];
+  } else return null;
+  if (rateCache.size >= 512) rateCache.clear();
+  rateCache.set(value, result);
+  return result;
+}
+
+function compareExactRates(left: string, right: string): number {
+  const a = exactRate(left);
+  const b = exactRate(right);
+  if (!a || !b) return peakValue(left) - peakValue(right);
+  const delta = a[0] * b[1] - b[0] * a[1];
+  return delta < 0n ? -1 : delta > 0n ? 1 : 0;
 }
 
 export function flipColumnDir(columns: SortColumn[], key: SortKey): SortColumn[] {

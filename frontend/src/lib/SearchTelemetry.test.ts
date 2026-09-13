@@ -88,7 +88,9 @@ describe('SearchTelemetry', () => {
   it('omits both the toggle and details when details are unavailable', () => {
     const html = renderTelemetry({ showDetails: false, detailsExpanded: true });
 
-    expect(html).not.toContain('telemetry');
+    expect(html).not.toContain('Show telemetry');
+    expect(html).not.toContain('Hide telemetry');
+    expect(html).not.toContain('aria-expanded');
     expect(html).not.toContain('Exact search');
   });
 });

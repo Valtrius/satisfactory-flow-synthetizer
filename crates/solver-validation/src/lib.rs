@@ -10,7 +10,11 @@ mod validator;
 pub use algebra::{LinearSolveError, solve_fraction_free};
 pub use validator::{ValidationError, solve_topology, validate_solution};
 
+#[cfg(feature = "identity")]
 mod collection;
+#[cfg(feature = "identity")]
 mod identity;
+#[cfg(feature = "identity")]
 pub use collection::SolutionCollector;
+#[cfg(feature = "identity")]
 pub use identity::{canonical_layout, layout_key, normalize_outcome_identity};

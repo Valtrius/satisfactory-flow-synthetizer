@@ -42,7 +42,7 @@
       tone: 'default' as const,
       items: [
         'N — number of splitters and mergers (nodes) in the layout.',
-        'L — operator-to-operator belt count; excludes supply/demand stubs and discard belts.',
+        'L — operator-to-operator belt count; excludes input/output stubs and discard belts.',
         'Maximum belt rate — capacity of every physical belt (/min), including discard.',
       ],
     },
@@ -73,7 +73,7 @@
       <SlidersHorizontal class="text-accent size-[1.05rem] shrink-0" strokeWidth={2.2} aria-hidden="true" />
       Constraint
     </h2>
-    <HelpPopover label="Constraint help" sections={helpSections} align="right" />
+    <HelpPopover label="Constraint help" sections={helpSections} align="right" anchor="parent" />
   </div>
   <label class="mt-3">
     <span class="text-muted mb-1.5 block text-xs font-bold tracking-wide">Maximum belt rate</span>

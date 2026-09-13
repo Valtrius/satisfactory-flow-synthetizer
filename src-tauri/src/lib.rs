@@ -13,11 +13,12 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
 use uuid::Uuid;
 
-use contract::{Solution, SolveRequest, SolverProgress, UnsatProof};
+use contract::{Solution, SolveRequest, SolverProgress};
+use synthetizer_app::jobs::JobStatus;
+type JobSnapshot = synthetizer_app::jobs::JobSnapshot<Uuid>;
 use history::{apply_history_ops, load_history};
 
 const JOB_SNAPSHOT_EVENT: &str = "job-snapshot";
@@ -34,67 +35,12 @@ pub(crate) struct Job {
     snapshot: Mutex<JobSnapshot>,
 }
 
-#[derive(Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct JobSnapshot {
-    job_id: Uuid,
-    status: JobStatus,
-    started_at_ms: u64,
-    progress: Option<SolverProgress>,
-    proof: Option<solver_api::OptimalityProof>,
-    sequence: u64,
-    result: Option<Solution>,
-    /// Populated during/after full-N enumeration. Empty in classic single-solution mode.
-    results: Vec<Solution>,
-    enumeration_complete: bool,
-    /// Progress-only emit: `result`/`results` are empty on purpose; UI must keep its copies.
-    #[serde(default)]
-    results_omitted: bool,
-    /// Incremental full-N emit: `result` is the newly found layout; append it locally.
-    #[serde(default)]
-    result_appended: bool,
-    /// Server result count, also included with progress to detect missed appends.
-    #[serde(default)]
-    results_len: usize,
-    error: Option<String>,
-    /// Present for a finite global contradiction from the solver.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    unsat: Option<UnsatProof>,
-}
-
-#[derive(Clone, Copy, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub(crate) enum JobStatus {
-    Running,
-    Cancelling,
-    Completed,
-    Cancelled,
-    Incomplete,
-    Unsat,
-    Failed,
-}
-
 impl Job {
     fn new(id: Uuid) -> Arc<Self> {
         Arc::new(Self {
             cancel: AtomicBool::new(false),
             accepts_cancel: AtomicBool::new(true),
-            snapshot: Mutex::new(JobSnapshot {
-                job_id: id,
-                status: JobStatus::Running,
-                started_at_ms: now_ms(),
-                progress: None,
-                proof: None,
-                sequence: 0,
-                result: None,
-                results: Vec::new(),
-                enumeration_complete: false,
-                results_omitted: false,
-                result_appended: false,
-                results_len: 0,
-                error: None,
-                unsat: None,
-            }),
+            snapshot: Mutex::new(JobSnapshot::new(id, now_ms())),
         })
     }
 
@@ -135,79 +81,31 @@ impl Job {
         let snapshot = {
             let mut snapshot = self.snapshot.lock().expect("job snapshot lock poisoned");
             update(&mut snapshot);
-            snapshot.sequence += 1;
-            snapshot.results_omitted = false;
-            snapshot.result_appended = false;
-            snapshot.results_len = 0;
+            snapshot.finish_update();
             snapshot.clone()
         };
         let _ = app.emit(JOB_SNAPSHOT_EVENT, &snapshot);
     }
 
-    /// Hot-path telemetry: update progress without cloning solution graphs on the wire.
+    /// Hot-path telemetry omits the accumulated solution graphs.
     pub(crate) fn update_progress(&self, app: &AppHandle, progress: SolverProgress) {
-        let payload = {
-            let mut snapshot = self.snapshot.lock().expect("job snapshot lock poisoned");
-            snapshot.progress = Some(progress);
-            snapshot.sequence += 1;
-            JobSnapshot {
-                job_id: snapshot.job_id,
-                status: snapshot.status,
-                started_at_ms: snapshot.started_at_ms,
-                progress: snapshot.progress.clone(),
-                proof: snapshot.proof,
-                sequence: snapshot.sequence,
-                result: None,
-                results: Vec::new(),
-                enumeration_complete: snapshot.enumeration_complete,
-                results_omitted: true,
-                result_appended: false,
-                results_len: snapshot.results.len(),
-                error: snapshot.error.clone(),
-                unsat: None,
-            }
-        };
+        let payload = self
+            .snapshot
+            .lock()
+            .expect("job snapshot lock poisoned")
+            .update_progress(progress);
         let _ = app.emit(JOB_SNAPSHOT_EVENT, &payload);
     }
 
-    /// Stream one new layout without cloning the accumulated results list.
     pub(crate) fn append_solution(&self, app: &AppHandle, solution: Solution) {
-        let payload = {
-            let mut snapshot = self.snapshot.lock().expect("job snapshot lock poisoned");
-            if !matches!(snapshot.status, JobStatus::Running | JobStatus::Cancelling) {
-                return;
-            }
-            if snapshot
-                .results
-                .iter()
-                .any(|existing| existing.has_same_layout(&solution))
-            {
-                return;
-            }
-            if snapshot.result.is_none() {
-                snapshot.result = Some(solution.clone());
-            }
-            snapshot.results.push(solution.clone());
-            snapshot.sequence += 1;
-            let results_len = snapshot.results.len();
-            JobSnapshot {
-                job_id: snapshot.job_id,
-                status: snapshot.status,
-                started_at_ms: snapshot.started_at_ms,
-                progress: snapshot.progress.clone(),
-                proof: snapshot.proof,
-                sequence: snapshot.sequence,
-                result: Some(solution),
-                results: Vec::new(),
-                enumeration_complete: snapshot.enumeration_complete,
-                results_omitted: false,
-                result_appended: true,
-                results_len,
-                error: snapshot.error.clone(),
-                unsat: None,
-            }
-        };
-        let _ = app.emit(JOB_SNAPSHOT_EVENT, &payload);
+        let payload = self
+            .snapshot
+            .lock()
+            .expect("job snapshot lock poisoned")
+            .append_solution(solution);
+        if let Some(payload) = payload {
+            let _ = app.emit(JOB_SNAPSHOT_EVENT, &payload);
+        }
     }
 
     #[cfg(test)]

@@ -53,7 +53,7 @@ pub(crate) fn exactly(script: &mut String, prefix: &str, literals: &[String], co
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "native-runtime"))]
 mod tests {
     use super::*;
     use crate::process::Session;

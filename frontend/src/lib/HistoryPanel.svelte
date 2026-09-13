@@ -83,6 +83,7 @@
   let menuId = $state<string | null>(null);
   /** When true, the entry ⋯ menu opens above the trigger to stay in view. */
   let menuOpenUpward = $state(false);
+  let menuMaxHeight = $state(168);
   let headerMenuOpen = $state(false);
   let confirmDeleteAll = $state(false);
   const savedToolbar = readUiPrefs().history;
@@ -444,7 +445,10 @@
     const bounds = (list ?? document.documentElement).getBoundingClientRect();
     // Four menuitems + padding; keep a little slack so we don't clip the shadow.
     const menuHeight = 168;
-    menuOpenUpward = triggerRect.bottom + menuHeight > bounds.bottom;
+    const spaceAbove = Math.max(0, triggerRect.top - bounds.top - 8);
+    const spaceBelow = Math.max(0, bounds.bottom - triggerRect.bottom - 8);
+    menuOpenUpward = spaceBelow < menuHeight && spaceAbove > spaceBelow;
+    menuMaxHeight = menuOpenUpward ? spaceAbove : spaceBelow;
     menuId = id;
   }
 </script>
@@ -474,8 +478,8 @@
   }}
 />
 
-<Panel element="aside" class="flex h-[calc(100dvh-2rem)] min-h-140 flex-col overflow-hidden">
-  <div class="border-line flex items-center justify-between gap-2 border-b px-4 py-3">
+<Panel variant="column" element="aside" class="[container-type:size] flex h-full min-h-0 flex-col overflow-hidden">
+  <div class="border-line flex min-h-[57px] shrink-0 items-center justify-between gap-2 border-b px-4 py-3">
     <h2 class="m-0 flex items-center gap-2 text-lg font-bold tracking-tight">
       <History class="text-accent size-[1.05rem]" strokeWidth={2.2} aria-hidden="true" />
       History
@@ -500,7 +504,7 @@
           onclose={() => {
             headerMenuOpen = false;
           }}
-          class="border-line bg-panel absolute top-[calc(100%+0.25rem)] right-0 z-20 min-w-48 rounded-lg border py-1 shadow-[0_14px_32px_rgb(0_0_0/45%)]"
+          class="border-line bg-panel absolute top-[calc(100%+0.25rem)] right-0 z-20 max-h-[calc(100cqh-4rem)] min-w-48 overflow-y-auto rounded-lg border py-1 shadow-[0_14px_32px_rgb(0_0_0/45%)]"
           role="menu"
         >
           <MenuItem
@@ -578,7 +582,7 @@
         onclose={() => {
           openPanel = null;
         }}
-        class="rounded-control border-line bg-panel-2 absolute inset-x-2 top-[calc(100%-0.15rem)] z-20 border py-1.5 shadow-[0_14px_32px_rgb(0_0_0/45%)]"
+        class="rounded-control border-line bg-panel-2 absolute inset-x-2 top-[calc(100%-0.15rem)] z-20 max-h-[calc(100cqh-7rem)] overflow-y-auto border py-1.5 shadow-[0_14px_32px_rgb(0_0_0/45%)]"
         role="dialog"
       >
         <p class="text-dim m-0 px-3 pt-1 pb-1.5 text-[0.65rem] font-bold tracking-[0.08em] uppercase">Sort by</p>
@@ -610,7 +614,7 @@
         onclose={() => {
           openPanel = null;
         }}
-        class="rounded-control border-line bg-panel-2 absolute inset-x-2 top-[calc(100%-0.15rem)] z-20 max-h-[min(28rem,70dvh)] overflow-y-auto border px-3 py-2.5 shadow-[0_14px_32px_rgb(0_0_0/45%)]"
+        class="rounded-control border-line bg-panel-2 absolute inset-x-2 top-[calc(100%-0.15rem)] z-20 max-h-[min(28rem,calc(100cqh-7rem))] overflow-y-auto border px-3 py-2.5 shadow-[0_14px_32px_rgb(0_0_0/45%)]"
         role="dialog"
       >
         <div class="mb-2.5 flex items-center justify-between gap-2">
@@ -751,6 +755,7 @@
     {runningElapsedLabel}
     menuOpen={menuId === entry.id}
     {menuOpenUpward}
+    {menuMaxHeight}
     {onSelect}
     {onRename}
     {onDelete}

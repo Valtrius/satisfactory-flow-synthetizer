@@ -1,10 +1,14 @@
 [workspace]
 resolver = "3"
+exclude = ["vendor/canonaut"]
 members = [
     "crates/solver-api",
     "crates/solver-core",
     "crates/solver-reference",
     "crates/solver-validation",
+    "crates/solver-web",
+    "crates/solver-browser",
+    "crates/solver-portable-tests",
     "crates/synthetizer-app",
     "src-tauri",
 ]
@@ -27,3 +31,6 @@ lto = "fat"
 codegen-units = 1
 panic = "abort"
 strip = true
+
+[patch.crates-io]
+canonaut = { path = "vendor/canonaut" }

@@ -42,7 +42,11 @@ npm run dev
 
 The first development build downloads and verifies the pinned cvc5 package. Solving itself is offline.
 
-See the [development guide](docs/development.md) for checks and the code map, the [release guide](docs/release.md) for packaging, and the [benchmark guide](benchmarks/README.md) for performance work.
+The shared interface also runs in the browser. `npm run dev:web` prepares the local Wasm assets and starts it; `npm run build:web` produces the static browser build. All three exact scopes use independent local compute workers, hard cancellation and browser-local history. Automatic worker selection uses the client's reported logical processor count; lower counts are available to reduce memory use. Selected-solution links need no backend service. The first cvc5 Wasm build requires Linux x64 or Ubuntu WSL, Python and the `wasm32-unknown-unknown` Rust target. See the [browser development guide](docs/web-backends.md) for setup, architecture and tests.
+
+The browser build stores paged result collections in IndexedDB and caches its complete runtime for offline use. `npm run build:web:release` prepares the static publication artifact plus its source/relink downloads, and the repository has a manual GitHub Pages workflow. No public deployment is implied by a local build. See the [browser release guide](docs/web-release.md). The Windows release above remains an offline native application.
+
+See the [development guide](docs/development.md) for checks and the code map, the [Windows release guide](docs/release.md), the [browser release guide](docs/web-release.md), and the [benchmark guide](benchmarks/README.md) for performance work.
 
 Use [Conventional Commits](https://www.conventionalcommits.org/) for focused commits and pull request titles. Do not commit machine-specific configuration, secrets or build artifacts.
 

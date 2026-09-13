@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { JobSnapshot, SolverProgress } from '../types';
+import { solution } from '../test/fixtures';
 import {
   diagnosticText,
   formatElapsed,
@@ -140,6 +141,18 @@ describe('shared search progress', () => {
         firstNodeCount: 1,
       }),
     ).toContain('cancelled');
+  });
+  it('describes completed single-result telemetry without implying an active search or inventing proof', () => {
+    const single = { ...context, searchEnumerate: false };
+    const completed = snapshot({ status: 'completed', result: solution });
+    expect(searchHeadline(completed, single)).toBe('Search completed');
+    expect(searchSubline(completed, searchStageView(null), single)).toContain(
+      'Minimum nodes and operator belts proved',
+    );
+    const imported = snapshot({ status: 'completed', result: { ...solution, status: 'best_known', proof: null } });
+    expect(searchSubline(imported, searchStageView(null), single)).toContain('optimality has not been proved');
+    expect(sizeSearchBody(completed, searchStageView(null))).toBe('No search diagnostics were recorded.');
+    expect(sizeSearchBody(completed, searchStageView(progress({ nodeCount: 3 })))).toBe('Finished at N=3.');
   });
   it('keeps engine-specific cancellation copy outside the progress contract', () => {
     expect(
