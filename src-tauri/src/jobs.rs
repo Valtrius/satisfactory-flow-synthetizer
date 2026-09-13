@@ -3,7 +3,10 @@ use crate::{
     Job, JobStatus,
     contract::{Solution, SolveRequest},
 };
-use solver_api::{PreparedProblem, RunOptions, SolveMode, SolveOutcome, SolverEvent};
+use solver_api::{
+    DiagnosticValue, PreparedProblem, RunOptions, SolveMode, SolveOutcome, SolverEvent,
+    SolverProgress,
+};
 use std::sync::{Mutex, atomic::Ordering};
 use synthetizer_app::{
     jobs::{cancel_before_presentation, project_outcome},
@@ -21,7 +24,9 @@ pub fn run_job(app: &AppHandle, job: &Job, request: &SolveRequest, prepared: &Pr
     let result = runtime::solve(&prepared.problem, &options, &job.cancel, &|event| {
         let converted = match event {
             SolverEvent::Progress(progress) => {
-                job.update_progress(app, progress);
+                if should_display_progress(&progress) {
+                    job.update_progress(app, progress);
+                }
                 return;
             }
             SolverEvent::Incumbent(best) => {
@@ -66,6 +71,22 @@ pub fn run_job(app: &AppHandle, job: &Job, request: &SolveRequest, prepared: &Pr
     apply_outcome(app, job, request, prepared, &outcome);
 }
 
+fn should_display_progress(progress: &SolverProgress) -> bool {
+    // Match the browser: follow branch 0 until the returned proof owner is known.
+    // Native portfolio diagnostics retain every branch for non-UI consumers.
+    progress
+        .custom
+        .iter()
+        .any(|diagnostic| diagnostic.name == "solver.portfolio_proof_owner")
+        || progress
+            .custom
+            .iter()
+            .find(|diagnostic| diagnostic.name == "solver.portfolio_branch")
+            .is_none_or(|diagnostic| {
+                matches!(&diagnostic.value, DiagnosticValue::Text(branch) if branch == "0")
+            })
+}
+
 fn apply_outcome(
     app: &AppHandle,
     job: &Job,
@@ -89,3 +110,6 @@ fn fail(app: &AppHandle, job: &Job, error: String) {
         snapshot.enumeration_complete = false;
     });
 }
+
+#[cfg(test)]
+mod tests;
