@@ -37,7 +37,7 @@ One-time repository setup requires admin or maintainer access:
 
 For a reviewed ref already available on GitHub, open **Actions > Publish browser application**, choose **Run workflow**, and select the reviewed ref. The workflow builds the publication artifact on Ubuntu, runs frontend and offline-delivery tests, uploads `frontend/dist`, then deploys that exact artifact through the `github-pages` environment.
 
-No custom domain is required. Relative asset URLs and the scoped service worker support the normal GitHub project path. The browser itself creates selected-solution links from its current project URL. A separately built desktop application can use the Pages address through its existing `VITE_PUBLIC_APP_URL` setting.
+No custom domain is required. Relative asset URLs and the scoped service worker support the normal GitHub project path. The browser itself creates selected-solution links from its current project URL. The desktop application defaults to `https://valtrius.github.io/satisfactory-flow-synthetizer/` for selected-solution links. Set `VITE_PUBLIC_APP_URL` at build time to use a different public viewer address on either host.
 
 The workflow does not enable Pages automatically and does not push, merge, tag or change the application version. GitHub Pages must already use GitHub Actions as its publishing source.
 

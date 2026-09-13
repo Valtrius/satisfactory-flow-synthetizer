@@ -59,10 +59,12 @@ it('cancellation rejects rather than accepting an unverified solution', async ()
   expect(FakeWorker.last.terminate).toHaveBeenCalledOnce();
 });
 
-it('uses the browser project directory without inventing a public desktop address', () => {
+it('uses the browser project directory and GitHub Pages for desktop shares by default', () => {
   vi.stubEnv('VITE_PUBLIC_APP_URL', '');
   expect(publicViewerUrl('browser')).toBe(new URL('./', document.baseURI).href);
-  expect(publicViewerUrl('desktop')).toBeNull();
+  expect(inlineLink(publicViewerUrl('desktop'), 's1.YQ')).toBe(
+    'https://valtrius.github.io/satisfactory-flow-synthetizer/#s1.YQ',
+  );
 });
 
 it('uses an explicitly configured public viewer on both hosts', () => {
