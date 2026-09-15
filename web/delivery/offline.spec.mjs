@@ -58,6 +58,14 @@ test('a second build opened during first installation acquires the active build 
   await page.goto('./');
   const firstBuild = await build(page);
   await expect.poll(async () => (await request.get(`${origin}/__held`)).json()).toBe(true);
+  const progress = page.locator('#sfs-web-load-progress');
+  await expect(progress).toBeVisible();
+  await expect(progress).toHaveAttribute('data-mode', 'determinate');
+  const initialPercent = await progress.evaluate((element) =>
+    Number.parseFloat(element.style.getPropertyValue('--sfs-load-progress')),
+  );
+  expect(initialPercent).toBeGreaterThan(0);
+  expect(initialPercent).toBeLessThan(100);
   await configure(request, 'b');
   const second = await context.newPage();
   await second.goto(scope);
@@ -72,6 +80,90 @@ test('a second build opened during first installation acquires the active build 
   await expect(second.locator('[data-history-band="history"]')).toContainText('Completed');
   await second.getByRole('button', { name: 'Share solution', exact: true }).click();
   await expect(second.getByRole('textbox', { name: 'Share link', exact: true })).toBeVisible();
+});
+
+test('an update download shows byte progress while the current build stays usable', async ({
+  page,
+  context,
+  request,
+}) => {
+  await page.goto('./');
+  await ready(page);
+  await request.post(`${origin}/__control`, { data: { variant: 'b', hold: 'licenses.html' } });
+  await context.setOffline(true);
+  await context.setOffline(false);
+  await expect.poll(async () => (await request.get(`${origin}/__held`)).json()).toBe(true);
+
+  const progress = page.locator('#sfs-web-load-progress');
+  await expect(progress).toBeVisible();
+  await expect(progress).toHaveAttribute('data-mode', 'determinate');
+  const updatePercent = await progress.evaluate((element) =>
+    Number.parseFloat(element.style.getPropertyValue('--sfs-load-progress')),
+  );
+  expect(updatePercent).toBeGreaterThan(0);
+  expect(updatePercent).toBeLessThan(100);
+  await expect(page.getByRole('button', { name: /^Find/ })).toBeEnabled();
+
+  await request.post(`${origin}/__control`, { data: { variant: 'b', hold: null } });
+  await waiting(page);
+  await expect(progress).toBeHidden();
+});
+
+test('completed offline progress hides on an uncontrolled document', async ({ page, request }) => {
+  await configure(request, 'a', { path: 'cvc5.wasm', kind: 'missing' });
+  await page.goto('./');
+  await expect(page.getByRole('button', { name: /^Find/ })).toBeVisible({ timeout: 60_000 });
+  expect(await page.evaluate(() => Boolean(navigator.serviceWorker.controller))).toBe(false);
+
+  const progress = page.locator('#sfs-web-load-progress');
+  await page.evaluate(() => {
+    navigator.serviceWorker.dispatchEvent(
+      new MessageEvent('message', { data: { kind: 'offline-progress', loaded: 50, total: 100, state: 'progress' } }),
+    );
+  });
+  await expect(progress).toBeVisible();
+  await page.evaluate(() => {
+    navigator.serviceWorker.dispatchEvent(
+      new MessageEvent('message', { data: { kind: 'offline-progress', loaded: 100, total: 100, state: 'complete' } }),
+    );
+  });
+  await expect(progress).toBeHidden();
+});
+
+test('offline progress stays inside its service-worker scope', async ({ page, context, request }) => {
+  await page.goto('./');
+  await ready(page);
+  const other = await context.newPage();
+  await other.goto(`${origin}/second-app/`);
+  await ready(other);
+  await request.post(`${origin}/__control`, { data: { variant: 'b', hold: 'licenses.html' } });
+
+  await page.evaluate(async () => {
+    const registration = await navigator.serviceWorker.getRegistration('./');
+    if (!registration) throw new Error('Offline registration is missing.');
+    await registration.update();
+  });
+  await expect.poll(async () => (await request.get(`${origin}/__held`)).json()).toBe(true);
+  await expect(page.locator('#sfs-web-load-progress')).toBeVisible();
+  await expect(other.locator('#sfs-web-load-progress')).toBeHidden();
+
+  await request.post(`${origin}/__control`, { data: { variant: 'b', hold: null } });
+  await waiting(page);
+});
+
+test('reduced motion keeps indeterminate loading progress static', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.goto('./');
+  await page.locator('#sfs-web-load-progress').evaluate((element) => {
+    element.hidden = false;
+    element.dataset.mode = 'indeterminate';
+  });
+  const style = await page.locator('#sfs-web-load-progress-bar').evaluate((element) => {
+    const computed = getComputedStyle(element);
+    return { animationName: computed.animationName, width: computed.width };
+  });
+  expect(style.animationName).toBe('none');
+  expect(Number.parseFloat(style.width)).toBeGreaterThan(0);
 });
 
 test('the first visit caches automatically without starting compute, then every exact mode solves offline', async ({

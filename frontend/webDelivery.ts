@@ -5,6 +5,49 @@ import type { Plugin } from 'vite';
 export const WEB_CSP =
   "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'";
 const hash = (value: Uint8Array | string) => createHash('sha256').update(value).digest('hex');
+const loadProgressMarkup = `
+    <style>
+      #sfs-web-load-progress {
+        position: fixed;
+        z-index: 2147483647;
+        top: 0;
+        right: 0;
+        left: 0;
+        height: 3px;
+        overflow: hidden;
+        pointer-events: none;
+      }
+      #sfs-web-load-progress[hidden] { display: none; }
+      #sfs-web-load-progress-bar {
+        height: 100%;
+        background: linear-gradient(90deg, #ffab6b, #ff8a3d);
+        box-shadow: 0 0 10px rgb(255 128 52 / 45%);
+      }
+      #sfs-web-load-progress[data-mode='determinate'] #sfs-web-load-progress-bar {
+        width: var(--sfs-load-progress, 0%);
+        transition: width 100ms linear;
+      }
+      #sfs-web-load-progress[data-mode='indeterminate'] #sfs-web-load-progress-bar {
+        width: 32%;
+        animation: sfs-web-load-progress 1.1s ease-in-out infinite;
+      }
+      @keyframes sfs-web-load-progress {
+        0% { transform: translateX(-120%); }
+        50% { transform: translateX(150%); }
+        100% { transform: translateX(330%); }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        #sfs-web-load-progress[data-mode='indeterminate'] #sfs-web-load-progress-bar {
+          width: 100%;
+          animation: none;
+          opacity: 0.6;
+        }
+      }
+    </style>`;
+const loadProgressElement = `
+    <div id="sfs-web-load-progress" data-mode="indeterminate" role="progressbar" aria-label="Loading application" aria-valuemin="0" aria-valuemax="100">
+      <div id="sfs-web-load-progress-bar"></div>
+    </div>`;
 
 /** Bind the HTML, lazy modules and offline worker to the same emitted build. */
 export function webDelivery(desktop: boolean, release: boolean): Plugin {
@@ -69,8 +112,9 @@ export function webDelivery(desktop: boolean, release: boolean): Plugin {
         const buildId = identity.digest('hex').slice(0, 24);
         index.source = String(index.source).replace(
           '<head>',
-          `<head>\n    <meta http-equiv="Content-Security-Policy" content="${WEB_CSP}" />\n    <meta name="referrer" content="no-referrer" />\n    <meta name="sfs-build" content="${buildId}" />`,
+          `<head>\n    <meta http-equiv="Content-Security-Policy" content="${WEB_CSP}" />\n    <meta name="referrer" content="no-referrer" />\n    <meta name="sfs-build" content="${buildId}" />${loadProgressMarkup}`,
         );
+        index.source = String(index.source).replace('<body>', `<body>${loadProgressElement}`);
         const manifest = {
           schema: 1,
           buildId,
