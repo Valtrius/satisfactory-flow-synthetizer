@@ -1,7 +1,7 @@
 # Satisfactory Flow Synthetizer
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.1.0-blue.svg)](package.json)
+[![Version](https://img.shields.io/badge/version-1.1.1-blue.svg)](package.json)
 [![Platform](https://img.shields.io/badge/platform-Windows-0078D6.svg?logo=windows&logoColor=white)](#)
 [![Platform](https://img.shields.io/badge/platform-Web-654FF0.svg?logo=webassembly&logoColor=white)](https://valtrius.github.io/satisfactory-flow-synthetizer/)
 [![Tauri](https://img.shields.io/badge/Tauri-2-FFC131.svg?logo=tauri&logoColor=white)](https://tauri.app)
@@ -10,7 +10,7 @@
 
 Offline Windows desktop app for exact Satisfactory splitter/merger flow synthesis. Set supply and demand, choose a result scope, and inspect, arrange or export validated belt layouts.
 
-[Run in the browser](https://valtrius.github.io/satisfactory-flow-synthetizer/) · [Download the Windows installer](https://github.com/Valtrius/satisfactory-flow-synthetizer/releases/download/1.1.0/satisfactory-flow-synthetizer_1.1.0_setup.exe) ([SHA-256](https://github.com/Valtrius/satisfactory-flow-synthetizer/releases/download/1.1.0/satisfactory-flow-synthetizer_1.1.0_setup.exe.sha256)) · [Download the portable ZIP](https://github.com/Valtrius/satisfactory-flow-synthetizer/releases/download/1.1.0/satisfactory-flow-synthetizer_1.1.0_portable.zip) ([SHA-256](https://github.com/Valtrius/satisfactory-flow-synthetizer/releases/download/1.1.0/satisfactory-flow-synthetizer_1.1.0_portable.zip.sha256))
+[Run in the browser](https://valtrius.github.io/satisfactory-flow-synthetizer/) · [Download the Windows installer](https://github.com/Valtrius/satisfactory-flow-synthetizer/releases/download/1.1.1/satisfactory-flow-synthetizer_1.1.1_setup.exe) ([SHA-256](https://github.com/Valtrius/satisfactory-flow-synthetizer/releases/download/1.1.1/satisfactory-flow-synthetizer_1.1.1_setup.exe.sha256)) · [Download the portable ZIP](https://github.com/Valtrius/satisfactory-flow-synthetizer/releases/download/1.1.1/satisfactory-flow-synthetizer_1.1.1_portable.zip) ([SHA-256](https://github.com/Valtrius/satisfactory-flow-synthetizer/releases/download/1.1.1/satisfactory-flow-synthetizer_1.1.1_portable.zip.sha256))
 
 ![Usage screenshot](docs/usage.png)
 
