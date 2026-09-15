@@ -1,5 +1,5 @@
 /** Acquire a controlled document before the app can own jobs or unsaved edits. */
-export async function prepareOfflineDocument(target: HTMLElement): Promise<boolean> {
+export async function prepareOfflineDocument(): Promise<boolean> {
   const buildId = document.querySelector<HTMLMetaElement>('meta[name="sfs-build"]')?.content;
   if (!buildId || !('serviceWorker' in navigator) || !window.isSecureContext) return true;
   const reload = () => {
@@ -26,11 +26,6 @@ export async function prepareOfflineDocument(target: HTMLElement): Promise<boole
       });
       return matches || reload();
     }
-    const message = document.createElement('p');
-    message.className = 'p-6';
-    message.setAttribute('role', 'status');
-    message.textContent = 'Preparing the app for offline use…';
-    target.replaceChildren(message);
     const registration = await navigator.serviceWorker.register(new URL('service-worker.js', document.baseURI), {
       scope: new URL('./', document.baseURI).href,
       updateViaCache: 'none',

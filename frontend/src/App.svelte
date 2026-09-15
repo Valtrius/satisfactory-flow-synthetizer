@@ -41,7 +41,7 @@
   import Select from './lib/ui/Select.svelte';
   import appIcon from '../../src-tauri/icons/icon.ico?url';
   import { getPlatform } from './lib/platform';
-  import OfflinePanel from './lib/offline/OfflinePanel.svelte';
+  import { createOfflineMaintenance } from './lib/offline/client';
   import { createResultPages } from './lib/resultPages.svelte';
   import {
     browserThreadCount,
@@ -53,6 +53,7 @@
   import { DEFAULT_SORT_COLUMNS, compareSolutions, type SortColumn } from './lib/solutionSort';
   import { readUiPrefs, updateUiPrefs } from './lib/uiPrefs';
   import { enumeratesLayouts, type EndpointRow, type Solution, type SolveRequest } from './types';
+  import frontendPackage from '../package.json';
 
   const platform = getPlatform();
   const clientThreads = browserThreadCount();
@@ -228,6 +229,9 @@
   onMount(() => {
     let unlistenClose: (() => void) | undefined;
     let disposed = false;
+    const offline = import.meta.env.PROD && platform.runtime === 'browser' ? createOfflineMaintenance() : null;
+
+    void offline?.start();
 
     void (async () => {
       try {
@@ -274,6 +278,7 @@
     return () => {
       disposed = true;
       unlistenClose?.();
+      offline?.dispose();
     };
   });
 
@@ -567,7 +572,13 @@
   {/if}
 {/snippet}
 
-<Workbench {graphFullscreen} bind:setupOpen bind:historyOpen bind:layoutsOpen>
+<Workbench
+  {graphFullscreen}
+  appVersion={platform.runtime === 'browser' ? frontendPackage.version : undefined}
+  bind:setupOpen
+  bind:historyOpen
+  bind:layoutsOpen
+>
   {#snippet setup()}
     <FlowInputsPanel
       {inputs}
@@ -611,16 +622,16 @@
           />
         </div>
         <p class="text-muted m-0 text-sm" role="status">
-          Solving runs locally. Automatic uses the {clientThreads} logical {clientThreads === 1
-            ? 'processor'
-            : 'processors'} reported by this browser. Each compute worker has its own solver memory. Reduce the count to limit
-          memory use. Closing this tab stops the search. Browser storage is best-effort. Export a backup before clearing site
-          data.
+          Solving runs locally.
+          <br />
+          Automatic uses the {clientThreads} logical {clientThreads === 1 ? 'processor' : 'processors'} reported by this browser.
+          Each compute worker has its own solver memory. Reduce the count to limit memory use.
+          <br />
+          Closing this tab stops the search.
+          <br />
+          Browser storage is best-effort. Export a backup before clearing site data.
         </p>
-      {/if}
-
-      {#if import.meta.env.PROD && platform.runtime === 'browser'}
-        <OfflinePanel />
+        <div class="border-line border-t" role="separator"></div>
       {/if}
 
       <Button size="small" onclick={() => shares.open({})}>Open shared solution</Button>

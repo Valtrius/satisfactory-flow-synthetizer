@@ -11,6 +11,7 @@
     layouts,
     children,
     graphFullscreen = false,
+    appVersion,
     setupOpen = $bindable(true),
     historyOpen = $bindable(true),
     layoutsOpen = $bindable(true),
@@ -20,6 +21,7 @@
     layouts: Snippet;
     children: Snippet;
     graphFullscreen?: boolean;
+    appVersion?: string;
     setupOpen?: boolean;
     historyOpen?: boolean;
     layoutsOpen?: boolean;
@@ -150,7 +152,7 @@
       class="text-dim mt-auto hidden rotate-180 py-2 text-[10px] font-bold tracking-[0.18em] whitespace-nowrap [writing-mode:vertical-rl] [@media(min-height:560px)]:block"
       aria-hidden="true"
     >
-      SATISFACTORY FLOW SYNTHETIZER
+      SATISFACTORY FLOW SYNTHETIZER{#if appVersion}{' · '}{appVersion}{/if}
     </span>
   </nav>
 

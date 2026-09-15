@@ -4,7 +4,7 @@ import Workbench from './Workbench.svelte';
 
 afterEach(() => vi.unstubAllGlobals());
 
-function setup(graphFullscreen = false) {
+function setup(graphFullscreen = false, appVersion?: string) {
   let wide = true;
   let change: () => void = () => {};
   vi.stubGlobal('matchMedia', (query: string) => ({
@@ -19,6 +19,7 @@ function setup(graphFullscreen = false) {
     target: document.body,
     props: {
       graphFullscreen,
+      appVersion,
       setup: snippet('<input aria-label="Draft" value="60" />'),
       history: snippet('<input aria-label="History filter" />'),
       layouts: snippet('<div data-test="layouts">Layouts</div>'),
@@ -35,6 +36,22 @@ function setup(graphFullscreen = false) {
     },
   };
 }
+
+it('renders the sidebar version separator only when a version is provided', async () => {
+  const withoutVersion = setup();
+  try {
+    expect(document.querySelector('nav span')?.textContent?.trim()).toBe('SATISFACTORY FLOW SYNTHETIZER');
+  } finally {
+    await unmount(withoutVersion.component);
+  }
+
+  const withVersion = setup(false, '1.2.3');
+  try {
+    expect(document.querySelector('nav span')?.textContent?.trim()).toBe('SATISFACTORY FLOW SYNTHETIZER · 1.2.3');
+  } finally {
+    await unmount(withVersion.component);
+  }
+});
 
 function toggle(label: string) {
   document.querySelector<HTMLButtonElement>(`[aria-label="Toggle ${label}"]`)!.click();

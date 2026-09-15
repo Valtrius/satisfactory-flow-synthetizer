@@ -1,4 +1,4 @@
-export type OfflineStatus = {
+type OfflineStatus = {
   buildId: string;
   cached: number;
   total: number;
@@ -6,35 +6,13 @@ export type OfflineStatus = {
   complete: boolean;
   shellComplete: boolean;
 };
-export type OfflineState = {
-  available: boolean;
-  controlled: boolean;
-  busy: boolean;
-  installing: boolean;
-  update: boolean;
-  status: OfflineStatus | null;
-  error: string;
-};
 
 /** Offline assets are independent of IndexedDB history and solver lifetimes. */
-export function createOfflineClient(changed: (state: OfflineState) => void) {
+export function createOfflineMaintenance() {
   let registration: ServiceWorkerRegistration | undefined;
   let disposed = false;
-  let state: OfflineState = {
-    available: false,
-    controlled: false,
-    busy: false,
-    installing: false,
-    update: false,
-    status: null,
-    error: '',
-  };
   const buildId = document.querySelector<HTMLMetaElement>('meta[name="sfs-build"]')?.content;
   const listeners: (() => void)[] = [];
-  const emit = (patch: Partial<OfflineState>) => {
-    state = { ...state, ...patch };
-    if (!disposed) changed({ ...state });
-  };
   function observe(target: EventTarget, name: string, listener: EventListener) {
     target.addEventListener(name, listener);
     listeners.push(() => target.removeEventListener(name, listener));
@@ -70,17 +48,23 @@ export function createOfflineClient(changed: (state: OfflineState) => void) {
       }
     });
   }
-  async function refresh() {
+  async function repairIfNeeded() {
     if (disposed || !registration?.active) return;
     try {
-      emit({
-        status: await request('offline-status'),
-        controlled: Boolean(navigator.serviceWorker.controller),
-        update: Boolean(registration.waiting),
-      });
-    } catch (error) {
-      emit({ error: String(error) });
+      const status = await request('offline-status');
+      if (!status.complete && navigator.onLine) await request('offline-prepare');
+    } catch {
+      // Offline support is best-effort and intentionally has no visible UI.
     }
+  }
+  async function checkForUpdate() {
+    if (disposed || !registration) return;
+    try {
+      await registration.update();
+    } catch {
+      // The active cached build remains usable when an update check fails.
+    }
+    await repairIfNeeded();
   }
   return {
     async start() {
@@ -91,67 +75,15 @@ export function createOfflineClient(changed: (state: OfflineState) => void) {
           updateViaCache: 'none',
         });
         if (disposed) return;
-        emit({ available: true });
-        const track = () => {
-          const worker = registration?.installing;
-          if (!worker) return;
-          emit({ installing: true });
-          observe(worker, 'statechange', () => {
-            if (worker.state === 'installed') emit({ installing: false, update: Boolean(registration?.waiting) });
-            if (worker.state === 'activated') {
-              emit({ installing: false, error: '' });
-              void refresh();
-            }
-            if (worker.state === 'redundant')
-              emit({
-                installing: false,
-                error:
-                  'Could not save the complete offline version. Any current version was kept. Check the connection and storage, then retry.',
-              });
-          });
-        };
-        observe(registration, 'updatefound', track);
         observe(navigator.serviceWorker, 'controllerchange', () => {
-          void refresh();
+          void repairIfNeeded();
         });
         observe(window, 'online', () => {
-          void refresh();
-          void registration?.update().catch(() => {});
+          void checkForUpdate();
         });
-        observe(window, 'offline', () => {
-          void refresh();
-        });
-        track();
-        await refresh();
-      } catch (error) {
-        emit({ error: `Offline caching is unavailable: ${String(error)}` });
-      }
-    },
-    async prepare() {
-      if (state.busy || state.installing) return;
-      emit({ busy: true, error: '' });
-      try {
-        if (!registration?.active) {
-          await this.start();
-          return;
-        }
-        emit({ status: await request('offline-prepare') });
-      } catch (error) {
-        emit({ error: `Offline download failed: ${String(error)}. Existing history was not changed.` });
-      } finally {
-        emit({ busy: false });
-      }
-    },
-    async checkUpdate() {
-      if (!registration || state.busy) return;
-      emit({ busy: true, error: '' });
-      try {
-        await registration.update();
-        await refresh();
-      } catch (error) {
-        emit({ error: `Could not check for updates: ${String(error)}` });
-      } finally {
-        emit({ busy: false });
+        await repairIfNeeded();
+      } catch {
+        // The app still works online if service-worker registration is unavailable.
       }
     },
     dispose() {
