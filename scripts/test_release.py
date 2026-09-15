@@ -43,15 +43,10 @@ class ReleaseTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "frontend"):
             CHECK.check_release(self.root)
 
-    def test_tag_requires_matching_version_and_nonempty_notes(self):
+    def test_tag_requires_matching_version(self):
         version = CHECK.check_release(self.root)
         with self.assertRaisesRegex(ValueError, "does not match"):
             CHECK.check_release(self.root, "99.0.0")
-        with self.assertRaisesRegex(ValueError, "Missing nonempty"):
-            CHECK.check_release(self.root, version)
-        notes = self.root / "docs/release-notes" / f"{version}.md"
-        notes.parent.mkdir(parents=True)
-        notes.write_text("Reviewed release highlights.")
         self.assertEqual(CHECK.check_release(self.root, version), version)
 
     def test_invalid_version_does_not_write_any_files(self):

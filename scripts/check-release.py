@@ -1,4 +1,4 @@
-"""Check local package versions and require reviewed notes for a release tag."""
+"""Check local package versions and validate a release tag."""
 import argparse
 import json
 import re
@@ -44,9 +44,6 @@ def check_release(root: Path, tag: str | None = None) -> str:
             raise ValueError("Release tags must use a stable X.Y.Z version")
         if tag != version:
             raise ValueError(f"Tag {tag} does not match package version {version}")
-        notes = root / "docs" / "release-notes" / f"{tag}.md"
-        if not notes.is_file() or not notes.read_text(encoding="utf-8").strip():
-            raise ValueError(f"Missing nonempty release notes: {notes}")
     return version
 
 

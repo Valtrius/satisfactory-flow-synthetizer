@@ -21,7 +21,7 @@ cargo test --workspace --locked -j 2 -- --test-threads=1
 cargo clippy --workspace --all-targets --locked -j 2 -- -D warnings
 ```
 
-Use `npm run format` before committing. CI and release publishing share `.github/workflows/validate.yml`. Release tags also require matching package versions and nonempty version-specific notes. Tests must not enforce machine-dependent speed thresholds.
+Use `npm run format` before committing. CI and release publishing share `.github/workflows/validate.yml`. Release tags require matching package versions. Version-specific highlights are optional because git-cliff generates the release changelog. Tests must not enforce machine-dependent speed thresholds.
 
 `SOLVER_CVC5` is an authoritative development override. Otherwise lookup checks beside the executable, PATH, then `%LOCALAPPDATA%/Programs/cvc5/bin/cvc5.exe`. An invalid override fails rather than silently choosing another backend.
 
